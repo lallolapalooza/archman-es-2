@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pmtime(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pmtime(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/pcp/">pcp</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later, LGPL-2.1-or-later, CC-BY-3.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PMTIME(3)</td>
+    <td class="head-vol">Manual de funciones de la biblioteca</td>
+    <td class="head-rtitle">PMTIME(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp"><b>pmTimeConnect</b>, <b>pmTimeDisconnect</b>, <b>pmTimeRecv</b>,
+    <b>pmTimeSendAck</b>, <b>pmTimeShowDialog</b> - funciones de control de tiempo
+    para sincronizar la posición del archivo y el intervalo de actualización entre
+    una o más aplicaciones</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS_C'><a class='permalink' href='#SINOPSIS_C'>SINOPSIS C</a></h1>
+<p class="Pp"><b>#include &lt;pcp/pmtime.h&gt;</b></p>
+<p class="Pp">int pmTimeConnect(int <i>port</i>, pmTime *<i>state</i>);
+  <br/>
+  int pmTimeDisconnect(int <i>fd</i>);
+  <br/>
+  int pmTimeSendAck(int <i>fd</i>, struct timeval *<i>fetchTime</i>);
+  <br/>
+  int pmTimeShowDialog(int <i>fd</i>, int <i>show</i>);
+  <br/>
+  int pmTimeRecv(int <i>fd</i>, pmTime *<i>state</i>);</p>
+<p class="Pp">cc ... -lpcp_gui</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Estas funciones forman parte de la Interfaz de Programación de Aplicaciones
+    de Métricas de Rendimiento (PMAPI) y están destinadas a proporcionar un
+    mecanismo uniforme para que las aplicaciones reproduzcan datos de archivo y
+    reporten datos en vivo de manera sincronizada en el tiempo.</p>
+<p class="Pp">La estructura <i>pmTime</i> tiene los siguientes campos:</p>
+<pre>typedef struct {
+    unsigned int        magic;
+    unsigned int        length;
+    pm_tctl_command     command;
+    pm_tctl_source      source;
+    pm_tctl_state       state;
+    pm_tctl_mode        mode;
+    struct timeval      delta;
+    struct timeval      position;
+    struct timeval      start;     /* solo archivo */
+    struct timeval      end;       /* solo archivo */
+    char                data[0];   /* información de longitud arbitraria (TZ) */
+} pmTime;
+<br/></pre>
+<p class="Pp">En el caso más simple, la aplicación debe llamar a
+    <b>pmTimeConnect</b> para conectarse al servidor de control de tiempo,
+    <a href='/man/pmtime.1.en'>pmtime(1)</a>, y luego llamar repetidamente a <b>pmTimeRecv</b>
+    en el bucle principal de la aplicación. En caso de éxito, <b>pmTimeConnect</b>
+    devuelve un descriptor de archivo no negativo. En aplicaciones que tienen
+    múltiples hilos de control, en lugar de bloquearse en <b>pmTimeRecv</b>, el
+    descriptor de archivo puede usarse en llamadas a <a href='/man/select.2.en'>select(2)</a>.
+    En aplicaciones gráficas, el descriptor de archivo puede usarse para
+    interactuar con el bucle de eventos.</p>
+<p class="Pp">El parámetro <i>port</i> de <b>pmTimeConnect</b> es el número de
+    puerto del socket en el que el servidor de control de tiempo está (o estará)
+    escuchando nuevas conexiones.</p>
+<p class="Pp">El parámetro state para <b>pmTimeConnect</b> se utiliza para
+    inicializar un nuevo servidor de control de tiempo o para pasar
+    información adicional a un servidor de control de tiempo existente. Los
+    campos <i>start</i> y <i>finish</i> indican los límites cronológicos de
+    interés para la aplicación. El campo <i>showgui</i> indica si el servidor
+    de control de tiempo debe mostrar u ocultar inicialmente el diálogo. Los
+    campos <i>position</i>, <i>delta</i> y <i>data</i> indican la posición
+    inicial del archivo, el intervalo de actualización, la cadena de zona
+    horaria y la cadena de etiqueta de zona horaria.</p>
+<p class="Pp"><b>pmTimeRecv</b> se bloquea hasta que el servidor de control de
+    tiempo envía un mensaje de comando. Luego, actualiza el parámetro state y
+    devuelve uno de los identificadores de comando PM_TCTL_*. </p>
+<p class="Pp">El comando PM_TCTL_SET indica que la aplicación debe buscar la
+    posición en el archivo (ver <a href='/man/pmSetMode.3.en'>pmSetMode(3)</a>)
+    devuelta en el campo <i>position</i> del parámetro state.</p>
+<p class="Pp">El comando PM_TCTL_STEP indica que la aplicación debe realizar una
+    actualización, es decir, avanzar (o retroceder, si delta es negativo) al
+    tiempo indicado por la posición y luego obtener nuevos valores métricos,
+    actualizar la pantalla o lo que sea. Para que varias aplicaciones permanezcan
+    sincronizadas, el servidor de control de tiempo esperará hasta que todas las
+    aplicaciones hayan reconocido que han completado el comando de paso. Las
+    aplicaciones deben llamar a pmTimeSendAck cuando el comando de paso se
+    haya procesado. Tenga en cuenta que PM_TCTL_STEP es el único comando que
+    requiere un acuse de recibo explícito.</p>
+<p class="Pp">El comando PM_TCTL_VCRMODE es utilizado por el servidor de control
+    de tiempo para indicar el modo VCR actual.</p>
+<p class="Pp">El valor se devuelve en el campo <i>mode</i> del parámetro state
+    pasado a <b>pmTimeRecv</b>, y permanece válido hasta que se reciba el
+    siguiente comando PM_TCTL_VCRMODE.</p>
+<p class="Pp">El comando PM_TCTL_TZ indica que la aplicación debe usar una nueva
+    zona horaria, como se indica en el campo <i>newzone</i> del parámetro
+    state.</p>
+<p class="Pp">El comando PM_TCTL_BOUNDS se envía a todas las aplicaciones cuando
+    el servidor de control de tiempo cambia sus límites cronológicos. Esto puede
+    ocurrir cuando una nueva aplicación se conecta al servidor de control de
+    tiempo o el usuario cambia manualmente los límites. La mayoría de las
+    aplicaciones ignorarán este comando.</p>
+<p class="Pp">Los comandos PM_TCTL_GUIHIDE o PM_TCTL_GUISHOW se enviarán a todas
+    las aplicaciones cuando cambie la visibilidad del servidor de control de
+    tiempo. Esto permite a las aplicaciones alterar el texto en menús o
+    botones para reflejar este cambio. Las aplicaciones pueden cambiar la
+    visibilidad del diálogo de control de tiempo utilizando la función
+    <b>pmTimeShowDialog</b>. La visibilidad inicial se determina cuando el
+    diálogo de control de tiempo se crea por primera vez llamando a
+    <b>pmTimeConnect</b> con el campo <i>showgui</i> en el parámetro state
+    establecido en el valor deseado.</p>
+<p class="Pp">La función <b>pmTimeDisconnect</b> puede usarse para cerrar el
+    socket de comandos al servidor de control de tiempo. Esto es útil cuando las
+    aplicaciones necesitan cambiar el modo de conexión, por ejemplo, para
+    divorciarse del servidor de control de tiempo actual y conectarse a uno
+    nuevo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/pmtime.1.en'>pmtime(1)</a>, <a href='/man/PMAPI.3.en'>PMAPI(3)</a> y <a href='/man/pmSetMode.3.en'>pmSetMode(3)</a>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">Aconex</td>
+    <td class="foot-os">Performance Co-Pilot</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/pcp/">extra/pcp</a></dd>
+        <dt>Versión:</dt>
+        <dd>7.0.5-1</dd>
+        <dt>Desarrollador:</dt>
+        <dd><a href="https://pcp.io">https://pcp.io</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later, LGPL-2.1-or-later, CC-BY-3.0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/pcp/">/listing/extra/pcp/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS_C">SINOPSIS C</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+<nav class="other-sections">
+    <p>En otras secciones:</p>
+    <ul>
+    
+        <li><a href="/man/pmtime.1.en">pmtime(1)</a></li>
+    
+    </ul>
+</nav>
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pmtime.3.en.txt">txt</a>, 
+        
+            <a href="/man/pmtime.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

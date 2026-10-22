@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tracefs_uprobe_alloc(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tracefs_uprobe_alloc(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libtracefs/">libtracefs</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LIBTRACEFS(3)</td>
+    <td class="head-vol">Manual de libtracefs</td>
+    <td class="head-rtitle">LIBTRACEFS(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">tracefs_uprobe_alloc, tracefs_uretprobe_alloc - Asigna una nueva sonda de usuario (de retorno)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;tracefs.h&gt;</b>
+struct tracefs_dynevent *
+<b>tracefs_uprobe_alloc</b>(const char *<i>system</i>, const char *<i>event</i>,
+                     const char *<i>file</i>, unsigned long long <i>offset</i>, const char *<i>fetchargs</i>)
+struct tracefs_dynevent *
+<b>tracefs_uretprobe_alloc</b>(const char *<i>system</i>, const char *<i>event</i>,
+                     const char *<i>file</i>, unsigned long long <i>offset</i>, const char *<i>fetchargs</i>)</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>tracefs_uprobe_alloc</b>() asigna un nuevo contexto de uprobe. Estará en el grupo
+    <i>system</i> (o uprobes si <i>system</i> es NULL) y con el nombre
+    <i>event</i>. La uprobe se adjuntará al <i>offset</i> dentro del
+    <i>file</i>. La lista de argumentos, descrita en <i>fetchargs</i>, se
+    recuperará con la uprobe. El puntero devuelto al contexto de la sonda de
+    usuario debe liberarse con <b>tracefs_dynevent_free</b>(). La uprobe no está
+    configurada en el sistema; se pueden usar las APIs del conjunto de
+    <b>tracefs_dynevent_</b>* para configurarla.</p>
+<p class="Pp"><b>tracefs_uretprobe_alloc</b>() se comporta igual que
+    <b>tracefs_uprobe_alloc</b>(), la única diferencia es que asigna un contexto
+    para la sonda de retorno de usuario (uretprobe).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Las APIs <b>tracefs_uprobe_alloc</b>() y
+    <b>tracefs_uretprobe_alloc</b>() devuelven un puntero a una estructura
+    tracefs_dynevent asignada, que describe la sonda de usuario. Este puntero debe
+    liberarse con <a href='/man/tracefs_dynevent_free.3.en'>tracefs_dynevent_free(3)</a>. Tenga en cuenta que esto solo asigna un
+    descriptor que representa la uprobe. No modifica el sistema en ejecución.
+    En caso de error, se devuelve NULL.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO'><a class='permalink' href='#EJEMPLO'>EJEMPLO</a></h1>
+<div class="Bd-indent">
+<pre>#include &lt;stdlib.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/wait.h&gt;
+#include &lt;tracefs.h&gt;
+static int callback(struct tep_event *event, struct tep_record *record,
+                    int cpu, void *data)
+{
+        struct trace_seq seq;
+        trace_seq_init(&amp;seq);
+        tep_print_event(event-&gt;tep, &amp;seq, record, &quot;%d-%s: %s&quot;,
+                        TEP_PRINT_PID, TEP_PRINT_COMM, TEP_PRINT_NAME);
+        trace_seq_puts(&amp;seq, &quot;'&quot;\n&quot;);
+        trace_seq_terminate(&amp;seq);
+        trace_seq_do_printf(&amp;seq);
+        trace_seq_destroy(&amp;seq);
+        return 0;
+}
+static pid_t run_exec(char **argv, char **env)
+{
+        pid_t pid;
+        pid = fork();
+        if (pid)
+                return pid;
+        execve(argv[0], argv, env);
+        perror(&quot;exec&quot;);
+        exit(-1);
+}
+const char *myprobe = &quot;my_urobes&quot;;
+int main (int argc, char **argv, char **env)
+{
+        struct tracefs_dynevent *uprobe, *uretprobe;
+        struct tep_handle *tep;
+        struct tracefs_instance *instance;
+        const char *sysnames[] = { myprobe, NULL };
+        long addr;
+        pid_t pid;
+        if (argc &lt; 3) {
+                printf(&quot;usage: %s file_offset command\n&quot;, argv[0]);
+                exit(-1);
+        }
+        addr = strtol(argv[1], NULL, 0);
+        instance = tracefs_instance_create(&quot;exec_open&quot;);
+        if (!instance) {
+                perror(&quot;creating instance&quot;);
+                exit(-1);
+        }
+        tracefs_dynevent_destroy_all(TRACEFS_DYNEVENT_UPROBE|TRACEFS_DYNEVENT_URETPROBE, true);
+        uprobe = tracefs_uprobe_alloc(myprobe, &quot;user_probe&quot;, argv[2], addr, NULL);
+        uretprobe = tracefs_uretprobe_alloc(myprobe, &quot;user_retprobe&quot;, argv[2], addr, NULL);
+        if (!uprobe || !uretprobe) {
+                perror(&quot;allocating user probes&quot;);
+                exit(-1);
+        }
+        if (tracefs_dynevent_create(uprobe) ||
+            tracefs_dynevent_create(uretprobe)) {
+                perror(&quot;creating user probes&quot;);
+                exit(-1);
+        }
+        tep = tracefs_local_events_system(NULL, sysnames);
+        if (!tep) {
+                perror(&quot;reading events&quot;);
+                exit(-1);
+        }
+        tracefs_event_enable(instance, myprobe, &quot;user_probe&quot;);
+        tracefs_event_enable(instance, myprobe, &quot;user_retprobe&quot;);
+        pid = run_exec(&amp;argv[2], env);
+        /* Let the child start to run */
+        sched_yield();
+        do {
+                tracefs_load_cmdlines(NULL, tep);
+                tracefs_iterate_raw_events(tep, instance, NULL, 0, callback, NULL);
+        } while (waitpid(pid, NULL, WNOHANG) != pid);
+        /* disable and destroy the events */
+        tracefs_dynevent_destroy(uprobe, true);
+        tracefs_dynevent_destroy(uretprobe, true);
+        tracefs_dynevent_free(uprobe);
+        tracefs_dynevent_free(uretprobe);
+        tracefs_instance_destroy(instance);
+        return 0;
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ARCHIVOS'><a class='permalink' href='#ARCHIVOS'>ARCHIVOS</a></h1>
+<div class="Bd-indent">
+<pre><b>tracefs.h</b>
+        Archivo de cabecera para incluir con el fin de tener acceso a las APIs de la biblioteca.
+<b>-ltracefs</b>
+        Opción del enlazador para añadir al compilar un programa que use la biblioteca.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/libtracefs.3.en'>libtracefs(3)</a>, <a href='/man/libtraceevent.3.en'>libtraceevent(3)</a>,
+  <a href='/man/trace-cmd.1.en'>trace-cmd(1)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<div class="Bd-indent">
+<pre><b>Steven Rostedt</b> &lt;<b>rostedt@goodmis.org</b>[1]&gt;
+<b>Tzvetomir Stoyanov</b> &lt;<b>tz.stoyanov@gmail.com</b>[2]&gt;</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTE_DE_ERRORES'><a class='permalink' href='#REPORTE_DE_ERRORES'>REPORTE DE ERRORES</a></h1>
+<p class="Pp">Reporte errores a
+  &lt;<b>linux-trace-devel@vger.kernel.org</b>[3]&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENCIA'><a class='permalink' href='#LICENCIA'>LICENCIA</a></h1>
+<p class="Pp">libtracefs es Software Libre bajo licencia GNU LGPL 2.1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RECURSOS'><a class='permalink' href='#RECURSOS'>RECURSOS</a></h1>
+<p class="Pp"><a href='https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/'>https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPIAR'><a class='permalink' href='#COPIAR'>COPIAR</a></h1>
+<p class="Pp">Copyright (C) 2022 VMware, Inc. El uso libre de este software se
+    concede bajo los términos de la Licencia Pública de GNU (GPL).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>rostedt@goodmis.org</dd>
+</dl>
+<div class="Bd-indent">mailto:rostedt@goodmis.org</div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>tz.stoyanov@gmail.com</dd>
+</dl>
+<div class="Bd-indent">mailto:tz.stoyanov@gmail.com</div>
+<dl class="Bl-tag">
+  <dt> 3.</dt>
+  <dd>linux-trace-devel@vger.kernel.org</dd>
+</dl>
+<div class="Bd-indent">mailto:linux-trace-devel@vger.kernel.org</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">08/24/2025</td>
+    <td class="foot-os">libtracefs 1.8.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libtracefs/">extra/libtracefs</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.8.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/">https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libtracefs/">/listing/extra/libtracefs/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EJEMPLO">EJEMPLO</a></li>
+        
+            <li><a href="#ARCHIVOS">ARCHIVOS</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#REPORTE_DE_ERRORES">REPORTE DE ERRORES</a></li>
+        
+            <li><a href="#LICENCIA">LICENCIA</a></li>
+        
+            <li><a href="#RECURSOS">RECURSOS</a></li>
+        
+            <li><a href="#COPIAR">COPIAR</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <title>tracefs_uprobe_alloc.3 - Arch Linux man pages</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <meta name="description" content="Arch Linux man pages">
+        <meta name="author" content="Arch Linux">
+        <link rel="stylesheet" href="/css/style.css">
+        <link rel="stylesheet" href="/css/man.css">
+    </head>
+    <body>
+        
+        <main>
+            <p>TRACEFS_UPROBE_ALLOC(3)               Library calls                TRACEFS_UPROBE_ALLOC(3)</p>
+
+            <p><strong>NAME</strong><br>
+tracefs_uprobe_alloc - allocate and initialize a uprobe structure</p>
+
+            <p><strong>SYNOPSIS</strong><br>
+<pre><code>
+       #include &lt;tracefs.h&gt;
+
+       struct tracefs_uprobe *tracefs_uprobe_alloc(const char *name,
+                                                  const char *group,
+                                                  const char *symbol,
+                                                  const char *offset_str,
+                                                  const char *retprobe_str);
+</code></pre></p>
+
+            <p><strong>DESCRIPTION</strong><br>
+The tracefs_uprobe_alloc() function allocates and initializes a new
+`struct tracefs_uprobe` structure. This structure is used to represent a
+uprobe event. The parameters are:</p>
+
+            <p>name: The name of the uprobe event. This will be the name of the
+event file under tracefs. The name must be unique within the group.</p>
+
+            <p>group: The group name for the uprobe event. This will be the name
+of the subdirectory under tracefs where the event file will be created.
+If NULL, the default group "uprobes" will be used.</p>
+
+            <p>symbol: The name of the symbol (function) to probe.</p>
+
+            <p>offset_str: A string representing the offset from the symbol
+address. This can be a hexadecimal number prefixed with "0x", or a
+decimal number. If NULL, the probe will be set at the beginning of the
+symbol.</p>
+
+            <p>retprobe_str: A string indicating that this is a return probe.
+If not NULL, the probe will be set to trigger on function return.
+This string is not used for anything other than its presence.</p>
+
+            <p>The function returns a pointer to the allocated `struct tracefs_uprobe`
+on success, or NULL on failure.</p>
+
+            <p><strong>RETURN VALUE</strong><br>
+On success, tracefs_uprobe_alloc() returns a pointer to the allocated
+`struct tracefs_uprobe`. On failure, it returns NULL.</p>
+
+            <p><strong>EXAMPLE</strong><br>
+<pre><code>
+       struct tracefs_uprobe *uprobe;
+
+       uprobe = tracefs_uprobe_alloc("my_uprobe", "my_group", "my_function", "0x10", NULL);
+       if (!uprobe) {
+           perror("tracefs_uprobe_alloc");
+           return 1;
+       }
+
+       // Use the uprobe structure ...
+
+       tracefs_uprobe_free(uprobe);
+</code></pre></p>
+
+            <p><strong>SEE ALSO</strong><br>
+tracefs_uprobe_free(3), tracefs_probe_enable(3), tracefs_probe_disable(3)</p>
+
+            <p>tracefs 1.0               November 2023                TRACEFS_UPROBE_ALLOC(3)</p>
+            
+            
+            
+<aside class="nav-sidebar">
+    <details class="nav-details">
+        <summary class="nav-summary">Table of contents</summary>
+        <nav class="nav-content">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#RETURN_VALUE">RETURN VALUE</a></li>
+        
+            <li><a href="#EXAMPLE">EXAMPLE</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+            <li><a href="#COPYING">COPYING</a></li>
+        
+            <li><a href="#NOTES">NOTES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/tracefs_uprobe_alloc.3.en.txt">txt</a>, 
+        
+            <a href="/man/tracefs_uprobe_alloc.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

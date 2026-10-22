@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-kill(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-kill(1p)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/percona-toolkit/">percona-toolkit</a></p>
+<p class="lic">Licencias: GPL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-KILL(1)</td>
+    <td class="head-vol">Documentación Perl contribuida por el usuario</td>
+    <td class="head-rtitle">PT-KILL(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pt-kill - Mata consultas MySQL que coinciden con ciertos criterios.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-kill [OPCIONES] [DSN]</p>
+<p class="Pp">pt-kill mata conexiones MySQL. pt-kill se conecta a MySQL y
+    obtiene consultas de SHOW PROCESSLIST a menos que se proporcione la opción
+    &quot;--test-matching&quot;. De lo contrario, lee consultas de uno o más
+    archivos que contienen la salida de SHOW PROCESSLIST. Si el archivo es -,
+    pt-kill lee desde STDIN.</p>
+<p class="Pp">Mata consultas que se ejecutan durante más de 60 s:</p>
+<pre>pt-kill --busy-time 60 --kill</pre>
+<p class="Pp">Imprime, sin matar, consultas que se ejecutan durante más de 60
+    s:</p>
+<pre>pt-kill --busy-time 60 --print</pre>
+<p class="Pp">Busca procesos inactivos y los mata todos cada 10 s:</p>
+<pre>pt-kill --match-command Sleep --kill --victims all --interval 10</pre>
+<p class="Pp">Imprime todos los procesos de inicio de sesión:</p>
+<pre>pt-kill --match-state login --print --victims all</pre>
+<p class="Pp">Ver qué consultas en la lista de procesos ahora mismo coincidirían:</p>
+<pre>mysql -e &quot;SHOW PROCESSLIST&quot; &gt; proclist.txt
+pt-kill --test-matching proclist.txt --busy-time 60 --print</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RIESGOS'><a class='permalink' href='#RIESGOS'>RIESGOS</a></h1>
+<p class="Pp">Percona Toolkit es maduro, probado en el mundo real y bien
+    verificado, pero todas las herramientas de bases de datos pueden suponer un
+    riesgo para el sistema y el servidor de base de datos. Antes de usar esta
+    herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lea la documentación de la herramienta</li>
+  <li>Revise los &quot;BUGS&quot; conocidos de la herramienta</li>
+  <li>Pruebe la herramienta en un servidor no productivo</li>
+  <li>Haga una copia de seguridad de su servidor de producción y verifique las copias de seguridad</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCION'><a class='permalink' href='#DESCRIPCION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">pt-kill captura consultas de SHOW PROCESSLIST, las filtra y luego
+    las mata o las imprime. Esto también se conoce como un &quot;francotirador
+    de consultas lentas&quot; en algunos círculos. La idea es vigilar las
+    consultas que podrían estar consumiendo demasiados recursos y matarlas.</p>
+<p class="Pp">Por brevedad, hablamos de matar consultas, pero es posible que solo
+    se impriman (o se realice alguna otra acción futura) dependiendo de las
+    opciones que se proporcionen.</p>
+<p class="Pp">Normalmente, pt-kill se conecta a MySQL para obtener consultas de
+    SHOW PROCESSLIST. Alternativamente, puede leer la salida de SHOW
+    PROCESSLIST de archivos. En este caso, pt-kill no se conecta a MySQL y
+    &quot;--kill&quot; no tiene ningún efecto. Debería usar &quot;--print&quot;
+    en su lugar al leer archivos. La capacidad de leer un archivo con
+    &quot;--test-matching&quot; le permite capturar SHOW PROCESSLIST y probarlo
+    más tarde con pt-kill para asegurarse de que sus coincidencias matan las
+    consultas adecuadas. Hay muchas reglas especiales que seguir, como
+    &quot;no matar hilos de replicación&quot;, ¡así que tenga cuidado de no
+    matar algo importante!</p>
+<p class="Pp">Dos opciones importantes a conocer son
+    &quot;--busy-time&quot; y &quot;--victims&quot;. Primero, mientras que la
+    mayoría de las opciones de coincidencia/filtro coinciden con su valor
+    correspondiente de SHOW PROCESSLIST (por ejemplo,
+    &quot;--match-command&quot; coincide con el valor Command de una consulta), el
+    valor Time se coincide con &quot;--busy-time&quot;. Vea también
+    &quot;--interval&quot;.</p>
+<p class="Pp">Segundo, &quot;--victims&quot; controla qué consultas coincidentes
+    de cada clase se matan. Por defecto, la consulta coincidente con el valor
+    Time más alto se mata (la consulta más antigua). Consulte la siguiente
+    sección, &quot;AGRUPAR, COINCIDIR Y MATAR&quot;, para obtener más
+    detalles.</p>
+<p class="Pp">Normalmente necesita especificar al menos una opción
+    <span class="Li">&quot;--match&quot;</span>, de lo contrario ninguna consulta
+    coincidirá. O, puede especificar &quot;--match-all&quot; para coincidir con
+    todas las consultas que no sean ignoradas por una opción
+    <span class="Li">&quot;--ignore&quot;</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AGRUPAR,_COINCIDIR_Y_MATAR'><a class='permalink' href='#AGRUPAR,_COINCIDIR_Y_MATAR'>AGRUPAR,
+    COINCIDIR Y MATAR</a></h1>
+<p class="Pp">Las consultas pasan por varios pasos para determinar cuáles
+    exactamente se matarán (o imprimirán, la acción que sea). Comprender estos
+    pasos le ayudará a coincidir con precisión las consultas que desea.</p>
+<p class="Pp">El primer paso es agrupar las consultas en clases. La opción
+    &quot;--group-by&quot; controla la agrupación. Por defecto, esta opción no
+    tiene valor, por lo que todas las consultas se agrupan en una clase
+    predeterminada. Todos los tipos de coincidencia y filtrado (el siguiente
+    paso) se aplican por clase. Por lo tanto, puede que necesite agrupar
+    consultas para coincidir/filtrar algunas clases pero no otras.</p>
+<p class="Pp">El segundo paso es la coincidencia. La coincidencia implica filtrado,
+    ya que si una consulta no coincide con ciertos criterios, se elimina de su
+    clase. La coincidencia ocurre para cada clase. Primero, las consultas se
+    filtran de su clase por las diversas opciones de
+    <span class="Li">&quot;Coincidencias de Consulta&quot;</span> como
+    &quot;--match-user&quot;. Luego, clases enteras se filtran por las diversas
+    opciones de <span class="Li">&quot;Coincidencias de Clase&quot;</span> como
+    &quot;--query-count&quot;.</p>
+<p class="Pp">El tercer paso es la selección de víctimas, es decir, qué consultas
+    coincidentes en cada clase matar. Esto se controla mediante la opción
+    &quot;--victims&quot;. Aunque muchas consultas en una clase pueden coincidir,
+    es posible que solo desee matar la consulta más antigua, o todas las
+    consultas, etc.</p>
+<p class="Pp">El cuarto y último paso es tomar alguna acción sobre todas las
+    consultas coincidentes de todas las clases. Las opciones de
+    <span class="Li">&quot;Acciones&quot;</span> especifican qué acciones se
+    tomarán. En este paso, ya no hay clases, solo una lista única de consultas
+    para matar, imprimir, etc.</p>
+<p class="Pp">pt-kill matará todas las consultas que coincidan CON CUALQUIERA de
+    los criterios especificados (OR lógico). Por ejemplo, usando:</p>
+<pre>--busy-time 114 --match-command 'Query|Execute'</pre>
+<p class="Pp">matará todas las consultas que tengan busy-time &gt; 114
+    <span class="Li">&quot;O&quot;</span> donde el comando sea
+    <span class="Li">&quot;Query&quot;</span> o
+    <span class="Li">&quot;Execute&quot;</span>.</p>
+<p class="Pp">Si desea matar solo las consultas donde
+    <span class="Li">&quot;busy-time&quot;</span> sea mayor que 114 y el comando
+    sea Query o Execute, necesita usar &quot;--kill-busy-commands&quot;:</p>
+<pre>--busy-time 114 --kill-busy-commands 'Query|Execute'</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SALIDA'><a class='permalink' href='#SALIDA'>SALIDA</a></h1>
+<p class="Pp">Si solo se proporciona &quot;--kill&quot;, no hay salida. Si solo se
+    proporciona &quot;--print&quot;, se imprimirá una marca de tiempo y una
+    sentencia KILL para cada consulta que hubiera sido matada, como:</p>
+<pre># 2009-07-15T15:04:01 KILL 8 (Query 42 sec) SELECT * FROM huge_table</pre>
+<p class="Pp">La línea muestra una marca de tiempo, el Id de la consulta (8), su
+    Tiempo (42 segundos) y su Info (generalmente la consulta SQL).</p>
+<p class="Pp">Si se proporcionan tanto &quot;--kill&quot; como &quot;--print&quot;,
+    se matarán las consultas coincidentes y se imprimirá una línea para cada una,
+    similar a la anterior.</p>
+<p class="Pp">Cualquier comando ejecutado por &quot;--execute-command&quot; es
+    responsable de su propia salida y registro. Después de ser ejecutado, pt-kill
+    no tiene control ni interacción con el comando.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES'><a class='permalink' href='#OPCIONES'>OPCIONES</a></h1>
+<p class="Pp">Especifique al menos una de las opciones &quot;--kill&quot;,
+    &quot;--kill-query&quot;, &quot;--print&quot;, &quot;--execute-command&quot; o
+    &quot;--stop&quot;.</p>
+<p class="Pp">&quot;--any-busy-time&quot; y &quot;--each-busy-time&quot; son
+    mutuamente excluyentes.</p>
+<p class="Pp">&quot;--kill&quot; y &quot;--kill-query&quot; son mutuamente
+    excluyentes.</p>
+<p class="Pp">&quot;--daemonize&quot; y &quot;--test-matching&quot; son mutuamente
+    excluyentes.</p>
+<p class="Pp">Esta herramienta acepta argumentos de línea de comandos
+    adicionales. Consulte la &quot;SINOPSIS&quot; y la información de uso para
+    obtener detalles.</p>
+<dl class="Bl-tag">
+  <dt id="preguntar"><a class="permalink" href="#preguntar">--ask-pass</a></dt>
+  <dd>Solicitar una contraseña al conectarse a MySQL.</dd>
+  <dt id="codificacion"><a class="permalink" href="#codificacion">--charset</a></dt>
+  <dd>forma corta: -A; tipo: string
+    <p class="Pp">Juego de caracteres predeterminado. Si el valor es utf8, establece
+        binmode de Perl en STDOUT a utf8, pasa la opción
+        mysql_enable_utf8 a DBD::mysql y ejecuta SET NAMES UTF8 después de
+        conectarse a MySQL. Cualquier otro valor establece binmode en STDOUT
+        sin la capa utf8, y ejecuta SET NAMES después de conectarse a
+        MySQL.</p>
+  </dd>
+  <dt id="configuracion"><a class="permalink" href="#configuracion">--config</a></dt>
+  <dd>tipo: Array
+    <p class="Pp">Lee esta lista de archivos de configuración separados por comas;
+        si se especifica, esta debe ser la primera opción en la línea de
+        comandos.</p>
+  </dd>
+  <dt id="crear"><a class="permalink" href="#crear">--create-log-table</a></dt>
+  <dd>Crea la tabla &quot;--log-dsn&quot; si no existe.
+    <p class="Pp">Esta opción hace que la tabla especificada por
+        &quot;--log-dsn&quot; se cree con la estructura predeterminada que se
+        muestra en la documentación para esa opción.</p>
+  </dd>
+  <dt id="daemonizar"><a class="permalink" href="#daemonizar">--daemonize</a></dt>
+  <dd>Se bifurca en segundo plano y se separa de la shell. Solo en sistemas
+      operativos POSIX.</dd>
+  <dt id="base-de-datos"><a class="permalink" href="#base-de-datos">--database</a></dt>
+  <dd>forma corta: -D; tipo: string
+    <p class="Pp">La base de datos a usar para la conexión.</p>
+  </dd>
+  <dt id="valores"><a class="perma
+</section>
+</div>
+</section>
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<dl class="Bl-tag">
+<dt id="defaults"><a class="permalink" href="#defaults">--defaults-file</a></dt>
+<dd>forma corta: -F; tipo: cadena
+<p class="Pp">Lee solo las opciones de mysql del archivo dado. Debe proporcionar
+una ruta de acceso absoluta.</p>
+</dd>
+<dt id="filter"><a class="permalink" href="#filter">--filter</a></dt>
+<dd>tipo: cadena
+<p class="Pp">Descarta eventos para los que este código Perl no devuelve
+true.</p>
+<p class="Pp">Esta opción es una cadena de código Perl o un archivo que contiene código Perl
+que se compila en una subrutina con un argumento: <span class="Li">$event</span>. Esto es un hashref. Si el valor proporcionado es un archivo legible, entonces pt-kill lee todo el archivo y utiliza su contenido como código. El archivo no debe contener una línea shebang (#!/usr/bin/perl).</p>
+<p class="Pp">Si el código devuelve true, la cadena de callbacks continúa; de lo contrario, termina. El código es la última declaración en la subrutina, aparte de <span class="Li">&quot;return $event&quot;</span>. La plantilla de la subrutina es:</p>
+<pre>sub { $event = shift; filter &amp;&amp; return $event; }
+</pre>
+<p class="Pp">Los filtros proporcionados en la línea de comandos se envuelven entre
+paréntesis, como <span class="Li">&quot;( filter )&quot;</span>. Para filtros complejos y de varias líneas, debe colocar el código dentro de un archivo para que no se envuelva entre paréntesis. En cualquier caso, el filtro debe producir código sintácticamente válido dado la plantilla. Por ejemplo, una rama if-else proporcionada en la línea de comandos no sería válida:</p>
+<pre>--filter 'if () { } else { }'  # INCORRECTO
+</pre>
+<p class="Pp">Dado que se proporciona en la línea de comandos, la rama if-else se envolvería entre paréntesis, lo que no es sintácticamente válido. Por lo tanto, para lograr algo más complejo como esto, se requeriría colocar el código en un archivo, por ejemplo, filter.txt:</p>
+<pre>my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
+</pre>
+<p class="Pp">Luego especifique <span class="Li">&quot;--filter
+filter.txt&quot;</span> para leer el código de filter.txt.</p>
+<p class="Pp">Si el código del filtro no compila, pt-kill fallará con un error. Si el código del filtro compila, aún puede ocurrir un error en tiempo de ejecución si el código intenta hacer algo incorrecto (como comparar con un valor indefinido). pt-kill no proporciona salvaguardas, ¡así que codifique con cuidado!</p>
+<p class="Pp">Es permisible que el código tenga efectos secundarios (alterar <span class="Li">$event</span>).</p>
+</dd>
+<dt id="group"><a class="permalink" href="#group">--group-by</a></dt>
+<dd>tipo: cadena
+<p class="Pp">Aplica coincidencias a cada clase de consultas agrupadas por esta columna de SHOW PROCESSLIST. Además de las columnas básicas de SHOW PROCESSLIST (user, host, command, state, etc.), las consultas se pueden hacer coincidir por
+<span class="Li">&quot;fingerprint&quot;</span>, que abstrae la consulta SQL en la columna
+<span class="Li">&quot;Info&quot;</span>.</p>
+<p class="Pp">Por defecto, las consultas no se agrupan, por lo que las coincidencias y las acciones se aplican a todas las consultas. El agrupamiento permite que las coincidencias y las acciones se apliquen a clases de consultas similares, si alguna consulta de la clase coincide.</p>
+<p class="Pp">Por ejemplo, detectar estampidas de caché (ver
+<span class="Li">&quot;all-but-oldest&quot;</span> en &quot;--victims&quot; para una explicación de ese término) requiere que las consultas se agrupen por el
+<span class="Li">&quot;arg&quot;</span>. Esto crea clases de consultas idénticas (sin comentarios). Por lo tanto, las consultas <span class="Li">&quot;SELECT c FROM t WHERE
+id=1&quot;</span> y <span class="Li">&quot;SELECT c FROM t WHERE
+id=1&quot;</span> se agrupan en la misma clase, pero la consulta
+<span class="Li">&quot;SELECT c FROM t WHERE id=3&quot;</span> no es idéntica a las dos primeras consultas, por lo que se agrupa en otra clase.
+Luego, cuando se especifica &quot;--victims&quot;
+<span class="Li">&quot;all-but-oldest&quot;</span>, se matan todas menos la consulta más antigua de cada clase, para cada clase de consultas que coincidan con los criterios de coincidencia.</p>
+</dd>
+<dt id="help"><a class="permalink" href="#help">--help</a></dt>
+<dd>Muestra la ayuda y sale.</dd>
+<dt id="host"><a class="permalink" href="#host">--host</a></dt>
+<dd>forma corta: -h; tipo: cadena; predeterminado: localhost
+<p class="Pp">Conéctate al host.</p>
+</dd>
+<dt id="interval"><a class="permalink" href="#interval">--interval</a></dt>
+<dd>tipo: tiempo
+<p class="Pp">Cada cuánto tiempo comprobar si hay consultas que matar. Si
+no se proporciona &quot;--busy-time&quot;, el intervalo predeterminado es de 30
+segundos. De lo contrario, el valor predeterminado es la mitad de la frecuencia de &quot;--busy-time&quot;.
+Si se proporcionan tanto &quot;--interval&quot; como &quot;--busy-time&quot;,
+se utiliza el valor explícito de &quot;--interval&quot;.</p>
+<p class="Pp">Ver también &quot;--run-time&quot;.</p>
+</dd>
+<dt id="log"><a class="permalink" href="#log">--log</a></dt>
+<dd>tipo: cadena
+<p class="Pp">Imprime toda la salida en este archivo cuando se ejecuta como demonio.</p>
+</dd>
+<dt>--log-dsn</dt>
+<dd>tipo: DSN
+<p class="Pp">Almacena cada consulta eliminada en este DSN.</p>
+<p class="Pp">El argumento especifica una tabla para almacenar todas las consultas eliminadas.
+El DSN proporcionado debe tener las opciones de base de datos (D) y tabla (t). La
+tabla debe tener al menos las siguientes columnas. Puede agregar más columnas
+para sus propios fines especiales, pero pt-kill no las usará. La
+siguiente definición CREATE TABLE también se utiliza para
+&quot;--create-log-table&quot;. MAGIC_create_log_table:</p>
+<pre>CREATE TABLE kill_log (
+   kill_id     int(10) unsigned NOT NULL AUTO_INCREMENT,
+   server_id   bigint(4) NOT NULL DEFAULT '0',
+   timestamp   DATETIME,
+   reason      TEXT,
+   kill_error  TEXT,
+   Id          bigint(4) NOT NULL DEFAULT '0',
+   User        varchar(16) NOT NULL DEFAULT '',
+   Host        varchar(64) NOT NULL DEFAULT '',
+   db          varchar(64) DEFAULT NULL,
+   Command     varchar(16) NOT NULL DEFAULT '',
+   Time        int(7) NOT NULL DEFAULT '0',
+   State       varchar(64) DEFAULT NULL,
+   Info        longtext,
+   Time_ms     bigint(21) DEFAULT '0', # NOTA, TODO: actualmente no se usa
+   PRIMARY KEY (kill_id)
+) DEFAULT CHARSET=utf8
+</pre>
+</dd>
+<dt id="json"><a class="permalink" href="#json">--json</a></dt>
+<dd>Imprime las consultas eliminadas como JSON, debe usarse con &quot;--print&quot;. Por ejemplo:
+<pre>--print --json
+</pre>
+<p class="Pp">La salida de texto plano habitual de &quot;--print&quot; no se mostrará.</p>
+<p class="Pp">La salida JSON tendrá el siguiente formato:</p>
+<pre>{
+   &quot;Command&quot;: &quot;Query&quot;,
+   &quot;Host&quot;: &quot;10.0.0.1:9999&quot;,
+   &quot;Id&quot;: 1234,
+   &quot;Info&quot;: &quot;SELECT SLEEP(5)&quot;,
+   &quot;State&quot;: &quot;User sleep&quot;,
+   &quot;Time&quot;: 10,
+   &quot;User&quot;: &quot;my_user&quot;,
+   &quot;Db&quot;: &quot;my_db&quot;,
+   &quot;Kill_Error&quot;: &quot;&quot;,
+   &quot;Digest&quot;: &quot;58A43A7DA83F58C1&quot;,
+   &quot;Reason&quot;: &quot;Exceeds busy time\nQuery matches Command spec&quot;,
+   &quot;Timestamp&quot;: &quot;2022-01-01T00:00:00&quot;
+}
+</pre>
+</dd>
+<dt>--json-fields</dt>
+<dd>tipo: cadena
+<p class="Pp">Especifica una lista de pares clave:valor adicionales para incluir en la salida JSON al usar &quot;--json&quot;, el valor de este parámetro debe especificarse en el formato:</p>
+<pre>--json-fields key1:value1,key2:value2
+</pre>
+<p class="Pp">Cualquier campo especificado usando &quot;--json-fields&quot; se incluirá en la salida de &quot;--json&quot;.</p>
+<p class="Pp">Por ejemplo:</p>
+<pre>--print --json --json-fields hostname:$(hostname),tag:my_tag
+</pre>
+<p class="Pp">Resultará en que se escriban registros JSON en
+&quot;kill_log.json&quot; usando este formato:</p>
+<pre>{
+   &quot;Command&quot;: &quot;Query&quot;,
+   &quot;Host&quot;: &quot;10.0.0.1:9999&quot;,
+   &quot;Id&quot;: 1234,
+   &quot;Info&quot;: &quot;SELECT SLEEP(5)&quot;,
+   &quot;State&quot;: &quot;User sleep&quot;,
+   &quot;Time&quot;: 10,
+   &quot;User&quot;: &quot;my_user&quot;,
+   &quot;Db&quot;: &quot;my_db&quot;,
+   &quot;Kill_Error&quot;: &quot;&quot;,
+   &quot;Digest&quot;: &quot;58A43A7DA83F58C1&quot;,
+   &quot;Reason&quot;: &quot;Exceeds busy time\nQuery matches Command spec&quot;,
+   &quot;Timestamp&quot;: &quot;2022-01-01T00:00:00&quot;,
+   &quot;hostname&quot;: &quot;my_host&quot;,
+   &quot;tag&quot;: &quot;my_tag&quot;
+}
+</pre>
+</dd>
+<dt id="password"><a class="permalink" href="#password">--password</a></dt>
+<dd>forma corta: -p; tipo: cadena
+<p class="Pp">Contraseña a utilizar al conectarse. Si la contraseña contiene comas,
+deben escaparse con una barra invertida: &quot;exam\,ple&quot;</p>
+</dd>
+<dt id="pid"><a class="permalink" href="#pid">--pid</a></dt>
+<dd>tipo: cadena
+<p class="Pp">Crea el archivo PID dado. La herramienta no se iniciará si el archivo PID ya existe y el PID que contiene es diferente del PID actual. Sin embargo, si el archivo PID existe y el PID que contiene ya no se está ejecutando, la herramienta sobrescribirá el archivo PID con el PID actual. El archivo PID se elimina automáticamente cuando la herramienta se cierra.</p>
+</dd>
+<dt id="port"><a class="permalink" href="#port">--port</a></dt>
+<dd>forma corta: -P; tipo: int
+<p class="Pp">Número de puerto a utilizar para la conexión.</p>
+</dd>
+<dt id="query"><a class="permalink" href="#query">--query-id</a></dt>
+<dd>Imprime un ID de la consulta que acaba de ser eliminada. Esto es equivalente a la
+salida &quot;ID&quot; de pt-query-digest. Esto permite la referencia cruzada de la salida de ambas herramientas.
+<p class="Pp">Ejemplo:</p>
+<pre>Query ID 0xE9800998ECF8427E
+</pre>
+<p class="Pp">Tenga en cuenta que este es un digest (o hash) de la
+&quot;huella digital&quot; de la consulta, por lo que las consultas de la misma forma pero con valores diferentes tendrán el mismo ID. Consulte pt-query-digest para obtener más
+información.</p>
+</dd>
+<dt id="rds"><a class="permalink" href="#rds">--rds</a></dt>
+<dd>Indica que la instancia en cuestión está en Amazon RDS. Por defecto, pt-kill ejecuta
+el comando MySQL &quot;kill&quot; para &quot;--kill&quot; y &quot;kill
+query&quot; &quot;--kill-query&quot;. En RDS, estos dos comandos no están
+disponibles y son reemplazados por llamadas a funciones. Esta opción modifica
+&quot;--kill&quot; para usar &quot;CALL mysql.rds_kill(thread-id)&quot;
+en su lugar y &quot;--kill-query&quot; para usar &quot;CALL
+mysql.rds_kill_query(thread-id)&quot;</dd>
+<dt id="run"><a class="permalink" href="#run">--run-time</a></dt>
+<dd>tipo: tiempo
+<p class="Pp">Cuánto tiempo ejecutar antes de salir. Por defecto, pt-kill se ejecuta
+para siempre, o hasta que su proceso sea eliminado o detenido por la creación de
+un archivo &quot;--sentinel&quot;. Si se especifica esta opción, pt-kill se ejecuta
+durante el tiempo especificado y duerme &quot;--interval&quot;
+segundos entre cada comprobación de PROCESSLIST.</p>
+</dd>
+<dt id="sentinel"><a class="permalink" href="#sentinel">--sentinel</a></dt>
+<dd>tipo: cadena; predeterminado: /tmp/pt-kill-sentinel
+<p class="Pp">Sale si este archivo existe.</p>
+<p class="Pp">La presencia del archivo especificado por &quot;--sentinel&quot;
+provocará que todas las instancias en ejecución de pt-kill salgan. Esto puede resultar útil para detener trabajos cron de forma elegante si es necesario. Ver también
+&quot;--stop&quot;.</p>
+</dd>
+<dt id="set"><a class="permalink" href="#set">--set-vars</a></dt>
+<dd>tipo: Array
+<p class="Pp">Establece las variables de MySQL en esta lista separada por comas de
+pares
+<span class="Li">&quot;variable=valor&quot;</span>.</p>
+<p class="Pp">Por defecto, la herramienta establece:</p>
+<pre>wait_timeout=10000
+</pre>
+</dd>
+</dl>
+ <p class="Pp">Las variables especificadas en la línea de comandos anulan estos
+        valores predeterminados. Por ejemplo, especificar <span class="Li">&quot;--set-vars
+        wait_timeout=500&quot;</span> anula el valor predeterminado de
+        <span class="Li">10000</span>.</p>
+    <p class="Pp">La herramienta imprime una advertencia y continúa si una variable
+        no se puede establecer.</p>
+  </dd>
+  <dt id="socket"><a class="permalink" href="#socket">--socket</a></dt>
+  <dd>forma corta: -S; tipo: string
+    <p class="Pp">Archivo de socket a utilizar para la conexión.</p>
+  </dd>
+  <dt id="stop"><a class="permalink" href="#stop">--stop</a></dt>
+  <dd>Detiene las instancias en ejecución creando el archivo &quot;--sentinel&quot;.
+    <p class="Pp">Hace que pt-kill cree el archivo centinela especificado por
+        &quot;--sentinel&quot; y salga. Esto debería tener el efecto de detener
+        todas las instancias en ejecución que están vigilando el mismo archivo
+        centinela.</p>
+  </dd>
+  <dt>--[no]strip-comments</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Elimina los comentarios SQL de las consultas en la columna Info
+        de PROCESSLIST.</p>
+  </dd>
+  <dt id="user"><a class="permalink" href="#user">--user</a></dt>
+  <dd>forma corta: -u; tipo: string
+    <p class="Pp">Usuario para iniciar sesión si no es el usuario actual.</p>
+  </dd>
+  <dt id="version"><a class="permalink" href="#version">--version</a></dt>
+  <dd>Muestra la versión y sale.</dd>
+  <dt>--[no]version-check</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Comprueba la última versión de Percona Toolkit, MySQL y otros
+        programas.</p>
+    <p class="Pp">Esta es una característica estándar de &quot;comprobar
+        actualizaciones automáticamente&quot;, con dos características adicionales.
+        Primero, la herramienta comprueba su propia versión y también las
+        versiones del siguiente software: sistema operativo, Percona Monitoring
+        and Management (PMM), MySQL, Perl, controlador MySQL para Perl (DBD::mysql)
+        y Percona Toolkit. Segundo, comprueba y advierte sobre versiones con
+        problemas conocidos. Por ejemplo, MySQL 5.5.25 tuvo un error crítico y
+        se volvió a lanzar como 5.5.25a.</p>
+    <p class="Pp">Se realiza una conexión segura al servidor de base de datos de
+        comprobación de versiones de Percona para realizar estas comprobaciones.
+        El servidor registra cada solicitud, incluyendo los números de versión
+        del software y el ID único del sistema verificado. El ID es generado por
+        el script de instalación de Percona Toolkit o cuando se realiza la llamada
+        a la base de datos de Verificación de Versiones por primera vez.</p>
+    <p class="Pp">Cualquier actualización o problema conocido se imprime en STDOUT
+        antes de la salida normal de la herramienta. Esta característica nunca
+        debería interferir con el funcionamiento normal de la herramienta.</p>
+    <p class="Pp">Para más información, visita
+        <a href='https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html'>https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html</a>.</p>
+  </dd>
+  <dt id="victims"><a class="permalink" href="#victims">--victims</a></dt>
+  <dd>tipo: string; predeterminado: oldest
+    <p class="Pp">Cuáles de las consultas coincidentes en cada clase serán
+        terminadas. Después de que las clases hayan coincidido/filtrado, esta
+        opción especifica cuáles de las consultas coincidentes en cada clase
+        serán terminadas (o impresas, etc.). Los siguientes valores son
+        posibles:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="oldest"><a class="permalink" href="#oldest">oldest</a></dt>
+  <dd>Solo termina la única consulta más antigua. Esto es para evitar terminar
+      consultas que no son realmente de larga duración, sino que están esperando
+      mucho tiempo. Esto ordena las consultas coincidentes por Tiempo y termina
+      la que tiene el valor de Tiempo más alto.</dd>
+  <dt id="all"><a class="permalink" href="#all">all</a></dt>
+  <dd>Termina todas las consultas de la clase.</dd>
+  <dt id="all-but-oldest"><a class="permalink" href="#all-but-oldest">all-but-oldest</a></dt>
+  <dd>Termina todas excepto la consulta más antigua. Esta es la inversa del valor
+      <span class="Li">&quot;oldest&quot;</span>.
+    <p class="Pp">Este valor se puede utilizar para prevenir &quot;cache
+        stampedes&quot; (estampidas de caché), la condición en la que varias
+        consultas idénticas se ejecutan y crean un backlog mientras la primera
+        consulta intenta terminar. Dado que todas las consultas son idénticas,
+        se terminan todas excepto la primera para que pueda completarse y
+        llenar la caché.</p>
+  </dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="wait"><a class="permalink" href="#wait">--wait-after-kill</a></dt>
+  <dd>tipo: tiempo
+    <p class="Pp">Espera después de terminar una consulta, antes de buscar más
+        para terminar. El propósito de esto es dar a las consultas bloqueadas
+        una oportunidad de ejecutarse, para que no terminemos una consulta que
+        está bloqueando a muchas otras y luego terminemos las otras
+        inmediatamente después.</p>
+  </dd>
+  <dt id="wait~2"><a class="permalink" href="#wait~2">--wait-before-kill</a></dt>
+  <dd>tipo: tiempo
+    <p class="Pp">Espera antes de terminar una consulta. El propósito de esto es
+        dar a &quot;--execute-command&quot; una oportunidad de ver la consulta
+        coincidente y recopilar otra información de MySQL o del sistema antes de
+        que sea terminada.</p>
+  </dd>
+</dl>
+<section class="Ss">
+<h2 class="Ss" id='QUERY_MATCHES'><a class='permalink' href='#QUERY_MATCHES'>COINCIDENCIAS DE CONSULTAS</a></h2>
+<p class="Pp">Estas opciones filtran las consultas de sus clases. Si una consulta
+    no coincide, se elimina de su clase. Las opciones
+    <span class="Li">&quot;--ignore&quot;</span> tienen prioridad. Las coincidencias
+    de comando, db, host, etc. corresponden a las columnas devueltas por SHOW
+    PROCESSLIST: Command, db, Host, etc. Todas las coincidencias de patrones
+    distinguen entre mayúsculas y minúsculas por defecto, pero se pueden hacer
+    que no distingan entre mayúsculas y minúsculas especificando un patrón regex
+    como
+    <span class="Li">&quot;(?i-xsm:select)&quot;</span>.</p>
+<p class="Pp">Ver también &quot;GROUP, MATCH AND KILL&quot;.</p>
+<dl class="Bl-tag">
+  <dt id="busy"><a class="permalink" href="#busy">--busy-time</a></dt>
+  <dd>tipo: tiempo; grupo: Query Matches
+    <p class="Pp">Coincide con consultas que se han estado ejecutando durante
+        más tiempo que este tiempo. Las consultas deben estar en estado
+        Command=Query. Esto coincide con el valor Time de una consulta tal como
+        lo informa SHOW PROCESSLIST.</p>
+  </dd>
+  <dt id="idle"><a class="permalink" href="#idle">--idle-time</a></dt>
+  <dd>tipo: tiempo; grupo: Query Matches
+    <p class="Pp">Coincide con consultas que han estado inactivas/durmiendo
+        durante más tiempo que este tiempo. Las consultas deben estar en estado
+        Command=Sleep. Esto coincide con el valor Time de una consulta tal como
+        lo informa SHOW PROCESSLIST.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore-command</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Ignora consultas cuyo Comando coincide con esta regex de Perl.</p>
+    <p class="Pp">Ver &quot;--match-command&quot;.</p>
+  </dd>
+  <dt id="ignore~2"><a class="permalink" href="#ignore~2">--ignore-db</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Ignora consultas cuya db (base de datos) coincide con esta
+        regex de Perl.</p>
+    <p class="Pp">Ver &quot;--match-db&quot;.</p>
+  </dd>
+  <dt id="ignore~3"><a class="permalink" href="#ignore~3">--ignore-host</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Ignora consultas cuyo Host coincide con esta regex de Perl.</p>
+    <p class="Pp">El valor Host a menudo incluye el puerto, como
+        &quot;host:puerto&quot;.</p>
+  </dd>
+  <dt id="ignore~4"><a class="permalink" href="#ignore~4">--ignore-info</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Ignora consultas cuya Info (consulta) coincide con esta regex
+        de Perl.</p>
+    <p class="Pp">Ver &quot;--match-info&quot;.</p>
+  </dd>
+  <dt>--[no]ignore-self</dt>
+  <dd>predeterminado: sí; grupo: Query Matches
+    <p class="Pp">No termina la propia conexión de pt-kill.</p>
+  </dd>
+  <dt id="ignore~5"><a class="permalink" href="#ignore~5">--ignore-state</a></dt>
+  <dd>tipo: string; grupo: Query Matches; predeterminado: Locked
+    <p class="Pp">Ignora consultas cuyo Estado coincide con esta regex de Perl. El
+        valor predeterminado es evitar que se terminen hilos si están bloqueados
+        esperando a otro hilo.</p>
+    <p class="Pp">Ver &quot;--match-state&quot;.</p>
+  </dd>
+  <dt id="ignore~6"><a class="permalink" href="#ignore~6">--ignore-user</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Ignora consultas cuyo usuario coincide con esta regex de Perl.</p>
+    <p class="Pp">Ver &quot;--match-user&quot;.</p>
+  </dd>
+  <dt id="match"><a class="permalink" href="#match">--match-all</a></dt>
+  <dd>grupo: Query Matches
+    <p class="Pp">Coincide con todas las consultas que no son ignoradas. Si no se
+        especifican opciones de ignorar, entonces todas las consultas coinciden
+        (excepto los hilos de replicación, a menos que también se especifique
+        &quot;--replication-threads&quot;). Esta opción le permite especificar
+        coincidencias negativas, es decir, &quot;coincidir con todas las
+        consultas *excepto*...&quot; donde las excepciones se definen
+        especificando varias opciones de <span class="Li">&quot;--ignore&quot;</span>.</p>
+    <p class="Pp">Esta opción *no* es lo mismo que &quot;--victims&quot;
+        <span class="Li">&quot;all&quot;</span>. Esta opción coincide con todas
+        las consultas dentro de una clase, mientras que &quot;--victims&quot;
+        <span class="Li">&quot;all&quot;</span> especifica que todas las consultas
+        coincidentes en una clase (sin importar cómo coincidieron) serán
+        terminadas. Normalmente, sin embargo, las dos se usan juntas porque si,
+        por ejemplo, especifica &quot;--victims&quot;
+        <span class="Li">&quot;oldest&quot;</span>, entonces aunque todas las
+        consultas puedan coincidir, solo la más antigua será terminada.</p>
+  </dd>
+  <dt id="match~2"><a class="permalink" href="#match~2">--match-command</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuyo Comando coincide con esta regex
+        de Perl.</p>
+    <p class="Pp">Los valores comunes de Comando son:</p>
+        <pre>Query
+Sleep
+Binlog Dump
+Connect
+Delayed insert
+Execute
+Fetch
+Init DB
+Kill
+Prepare
+Processlist
+Quit
+Reset stmt
+Table Dump
+</pre>
+    <p class="Pp">Ver
+        <a href='https://dev.mysql.com/doc/refman/en/general-thread-states.html'>https://dev.mysql.com/doc/refman/en/general-thread-states.html</a>
+        para una lista completa y descripción de los valores de Comando.</p>
+  </dd>
+  <dt id="match~3"><a class="permalink" href="#match~3">--match-db</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuya db (base de datos) coincide
+        con esta regex de Perl.</p>
+  </dd>
+  <dt id="match~4"><a class="permalink" href="#match~4">--match-host</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuyo Host coincide con esta regex
+        de Perl.</p>
+    <p class="Pp">El valor Host a menudo incluye el puerto, como
+        &quot;host:puerto&quot;.</p>
+  </dd>
+  <dt id="match~5"><a class="permalink" href="#match~5">--match-info</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuya Info (consulta) coincide con
+        esta regex de Perl.</p>
+    <p class="Pp">La columna Info de la lista de procesos muestra la consulta que
+        se está ejecutando o NULL si no se está ejecutando ninguna consulta.</p>
+  </dd>
+  <dt id="match~6"><a class="permalink" href="#match~6">--match-state</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuyo Estado coincide con esta regex
+        de Perl.</p>
+    <p class="Pp">Los valores comunes de Estado son:</p>
+        <pre>Locked
+login
+copy to tmp table
+Copying to tmp table
+Copying to tmp table on disk
+Creating tmp table
+executing
+Reading from net
+Sending data
+Sorting for order
+Sorting result
+Table lock
+Updating
+</pre>
+    <p class="Pp">Ver
+        <a href='http://dev.mysql.com/doc/refman/5.1/en/general-thread-states.html'>http://dev.mysql.com/doc/refman/5.1/en/general-thread-states.html</a>
+        para una lista completa y descripción de los valores de Estado.</p>
+  </dd>
+  <dt id="match~7"><a class="permalink" href="#match~7">--match-user</a></dt>
+  <dd>tipo: string; grupo: Query Matches
+    <p class="Pp">Coincide solo con consultas cuyo Usuario coincide con esta regex
+        de Perl.</p>
+  </dd>
+  <dt id="replication"><a class="permalink" href="#replication">--replication-threads</a></dt>
+  <dd>grupo: Query Matches
+    <p class="Pp">Permite la coincidencia y terminación de hilos de replicación.</p>
+  </dd>
+</dl>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Pp">pt-kill - kill MySQL queries automatically</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<pre>pt-kill --print --match-statement 'SELECT.*sleep' h=localhost,u=root,p=foobar
+pt-kill --kill --match-user ^repl h=db1,p=secret
+pt-kill --kill --interval 1 --busy-time 10 h=db1,p=secret</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp">pt-kill is a tool that monitors the MySQL process list and kills
+    queries based on arbitrary criteria. This can be used to automatically kill
+    long-running queries, lock-inducing queries, queries matching specific
+    patterns, and more. It is intended to be run as a daemon, periodically
+    checking the process list and taking action.</p>
+<p class="Pp">The tool is designed to be flexible and powerful. It can match
+    queries based on a wide variety of criteria, and take various actions,
+    including killing queries, killing connections, or executing arbitrary
+    commands.</p>
+<p class="Pp">See also &quot;GROUP, MATCH AND KILL&quot;.</p>
+<section class="Ss">
+<h2 class="Ss" id="GROUP,_MATCH_AND_KILL"><a class="permalink" href="#GROUP,_MATCH_AND_KILL">GROUP, MATCH AND KILL</a></h2>
+<p class="Pp">pt-kill works by matching queries against a set of criteria and
+    then taking actions. The matching and actions can be specified in a number
+    of ways:</p>
+<dl class="Bl-tag">
+  <dt>The <span class="Li">--match-*</span> options specify criteria for
+      individual queries.</dt>
+  <dt>The <span class="Li">--[no]all-databases</span> option enables/disables
+      matching across all databases.</dt>
+  <dt>The <span class="Li">--[no]grep-all-text</span> option enables/disables
+      grep-like matching on all text.</dt>
+  <dt>The <span class="Li">--[no]grep-wild-string</span> option enables/disables
+      matching on wild-string comparisons.</dt>
+  <dt>The <span class="Li">--[no]replication-threads</span> option matches
+      replication threads.</dt>
+  <dt>The <span class="Li">--test-matching</span> option tests matching
+      options.</dt>
+  <dt>The <span class="Li">--group-by</span> option groups queries into
+      classes.</dt>
+  <dt>The <span class="Li">--[no]ignore-self</span> option ignores self-matched
+      queries.</dt>
+  <dt>The <span class="Li">--run-time</span> and <span class="Li">--interval</span>
+      options control how often pt-kill runs.</dt>
+  <dt>The <span class="Li">--busy-time</span> option specifies the maximum
+      allowed running time for queries.</dt>
+  <dt>The <span class="Li">--kill-busy-commands</span> option specifies which
+      commands are watched/killed if they run for too long.</dt>
+  <dt>The <span class="Li">--print</span>, <span class="Li">--execute-command</span>,
+      <span class="Li">--kill</span>, and <span class="Li">--kill-query</span>
+      options specify the actions to take on matched queries.</dt>
+</dl>
+<p class="Pp">When <span class="Li">&quot;--group-by&quot;</span> is specified,
+    queries are grouped into classes. The class matches (e.g.
+    <span class="Li">&quot;--any-busy-time&quot;</span>,
+    <span class="Li">&quot;--each-busy-time&quot;</span>,
+    <span class="Li">&quot;--query-count&quot;</span>) are applied to these
+    classes. If no <span class="Li">&quot;--group-by&quot;</span> is specified,
+    all queries are in a single default class and the class matches apply to
+    the entire process list.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id="MATCHING_OPTIONS"><a class="permalink" href="#MATCHING_OPTIONS">MATCHING OPTIONS</a></h2>
+<p class="Pp">These options specify criteria for matching queries. Multiple
+    <span class="Li">&quot;--match-*&quot;</span> options are ANDed together.</p>
+<dl class="Bl-tag">
+  <dt id="all-databases"><a class="permalink" href="#all-databases">--[no]all-databases</a></dt>
+  <dd>default: no
+    <p class="Pp">When specified, queries from all databases are considered.
+        Otherwise, only queries from the default database are considered.</p>
+  </dd>
+  <dt id="busy-time"><a class="permalink" href="#busy-time">--busy-time</a></dt>
+  <dd>type: time; default: 0
+    <p class="Pp">Match queries that have been running longer than this value.
+        The default is 0 which means this match is disabled.</p>
+    <p class="Pp">See also &quot;--kill-busy-commands&quot;.</p>
+  </dd>
+  <dt id="grep-all-text"><a class="permalink" href="#grep-all-all-text">--[no]grep-all-text</a></dt>
+  <dd>default: no
+    <p class="Pp">When specified, pt-kill will grep all text fields in the
+        process list. This can be slower, but might catch some queries that
+        would otherwise be missed. This option is a shortcut for specifying
+        multiple <span class="Li">&quot;--match-regex&quot;</span> options.</p>
+  </dd>
+  <dt id="grep-wild-string"><a class="permalink" href="#grep-wild-string">--[no]grep-wild-string</a></dt>
+  <dd>default: no
+    <p class="Pp">When specified, pt-kill will match queries that contain
+        wild-string comparisons. This can be useful for finding queries that
+        use LIKE operators with wildcard characters.</p>
+  </dd>
+  <dt id="group-by"><a class="permalink" href="#group-by">--group-by</a></dt>
+  <dd>type: string
+    <p class="Pp">Group queries by the specified column. For example,
+        <span class="Li">&quot;--group-by User,Host&quot;</span> will group
+        queries by user and host. This option is useful for applying actions to
+        groups of queries rather than individual queries.</p>
+  </dd>
+  <dt id="ignore-self"><a class="permalink" href="#ignore-self">--[no]ignore-self</a></dt>
+  <dd>default: yes
+    <p class="Pp">When specified, pt-kill will ignore queries that it runs
+        itself. This is useful to prevent pt-kill from killing its own
+        queries.</p>
+  </dd>
+  <dt id="interval"><a class="permalink" href="#interval">--interval</a></dt>
+  <dd>type: time; default: 1
+    <p class="Pp">Check the process list every interval seconds. The default is
+        1 second.</p>
+  </dd>
+  <dt id="match-argument"><a class="permalink" href="#match-argument">--match-argument</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries where the argument matches the specified
+        string.</p>
+  </dd>
+  <dt id="match-command"><a class="permalink" href="#match-command">--match-command</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries where the command matches the specified
+        string.</p>
+  </dd>
+  <dt id="match-db"><a class="permalink" href="#match-db">--match-db</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries that are running against the specified
+        database.</p>
+  </dd>
+  <dt id="match-host"><a class="permalink" href="#match-host">--match-host</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries that are running from the specified host.</p>
+  </dd>
+  <dt id="match-info-regex"><a class="permalink" href="#match-info-regex">--match-info-regex</a></dt>
+  <dd>type: regex
+    <p class="Pp">Match queries where the info column matches the specified
+        regular expression.</p>
+  </dd>
+  <dt id="match-processlist-id"><a class="permalink" href="#match-processlist-id">--match-processlist-id</a></dt>
+  <dd>type: int
+    <p class="Pp">Match queries where the processlist id matches the specified
+        ID.</p>
+  </dd>
+  <dt id="match-query-regex"><a class="permalink" href="#match-query-regex">--match-query-regex</a></dt>
+  <dd>type: regex
+    <p class="Pp">Match queries where the query matches the specified regular
+        expression.</p>
+    <p class="Pp">Example: <span class="Li">&quot;--match-query-regex 'SELECT.*SLEEP\(10\)'&quot;</span> matches queries that contain
+        <span class="Li">&quot;SELECT ... SLEEP(10)&quot;</span>.</p>
+  </dd>
+  <dt id="match-state-regex"><a class="permalink" href="#match-state-regex">--match-state-regex</a></dt>
+  <dd>type: regex
+    <p class="Pp">Match queries where the state matches the specified regular
+        expression.</p>
+  </dd>
+  <dt id="match-user"><a class="permalink" href="#match-user">--match-user</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries that are running from the specified user.</p>
+  </dd>
+  <dt id="match-wild-status"><a class="permalink" href="#match-wild-status">--match-wild-status</a></dt>
+  <dd>type: string
+    <p class="Pp">Match queries that have a status matching the specified
+        wild-string.</p>
+  </dd>
+  <dt id="print-all-matched"><a class="permalink" href="#print-all-matched">--print-all-matched</a></dt>
+  <dd>
+    <p class="Pp">Print all matched queries to STDOUT. This is useful for
+        debugging and for seeing what would be killed.</p>
+  </dd>
+  <dt id="print-match-digest"><a class="permalink" href="#print-match-digest">--print-match-digest</a></dt>
+  <dd>
+    <p class="Pp">Print the query digest of all matched queries to STDOUT. This
+        is useful for identifying duplicate queries.</p>
+  </dd>
+  <dt id="run-time"><a class="permalink" href="#run-time">--run-time</a></dt>
+  <dd>type: time; default: 0
+    <p class="Pp">Run pt-kill only if at least one query has been running
+        longer than this value. The default is 0 which means this check is
+        disabled.</p>
+    <p class="Pp">This option is disabled if &quot;--test-matching&quot; is
+        specified.</p>
+  </dd>
+  <dt id="no-replication-threads"><a class="permalink" href="#no-replication-threads">--[no]replication-threads</a></dt>
+  <dd>default: no
+    <p class="Pp">By default, matches do not apply to replication threads; i.e.
+        replication threads are completely ignored. Specifying this option
+        allows matches to match (and potentially kill) replication threads on
+        replication sources and replicas.</p>
+  </dd>
+  <dt id="test-matching"><a class="permalink" href="#test-matching">--test-matching</a></dt>
+  <dd>type: array; group: Query Matches
+    <p class="Pp">Files with processlist snapshots to test matching options
+        against. Since the matching options can be complex, you can save
+        snapshots of processlist in files, then test matching options against
+        queries in those files.</p>
+    <p class="Pp">This option disables &quot;--run-time&quot;,
+        &quot;--interval&quot;, and &quot;--[no]ignore-self&quot;.</p>
+  </dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="CLASS_MATCHES"><a class="permalink" href="#CLASS_MATCHES">CLASS MATCHES</a></h2>
+<p class="Pp">These matches apply to entire query classes. Classes are created
+    by specifying the &quot;--group-by&quot; option, else all queries are
+    members of a single, default class.</p>
+<p class="Pp">See also &quot;GROUP, MATCH AND KILL&quot;.</p>
+<dl class="Bl-tag">
+  <dt id="any-busy-time"><a class="permalink" href="#any-busy-time">--any-busy-time</a></dt>
+  <dd>type: time; group: Class Matches
+    <p class="Pp">Match query class if any query has been running for longer
+        than this time. &quot;Longer than&quot; means that if you specify
+        <span class="Li">10</span>, for example, the class will only match if
+        there's at least one query that has been running for greater than 10
+        seconds.</p>
+    <p class="Pp">See &quot;--each-busy-time&quot; for more details.</p>
+  </dd>
+  <dt id="each-busy-time"><a class="permalink" href="#each-busy-time">--each-busy-time</a></dt>
+  <dd>type: time; group: Class Matches
+    <p class="Pp">Match query class if each query has been running for longer
+        than this time. &quot;Longer than&quot; means that if you specify
+        <span class="Li">10</span>, for example, the class will only match if
+        each and every query has been running for greater than 10 seconds.</p>
+    <p class="Pp">See also &quot;--any-busy-time&quot; (to match a class if ANY
+        query has been running longer than the specified time) and
+        &quot;--busy-time&quot;.</p>
+  </dd>
+  <dt id="query-count"><a class="permalink" href="#query~2">--query-count</a></dt>
+  <dd>type: int; group: Class Matches
+    <p class="Pp">Match query class if it has at least this many queries. When
+        queries are grouped into classes by specifying &quot;--group-by&quot;,
+        this option causes matches to apply only to classes with at least this
+        many queries. If &quot;--group-by&quot; is not specified then this
+        option causes matches to apply only if there are at least this many
+        queries in the entire SHOW PROCESSLIST.</p>
+  </dd>
+  <dt id="verbose"><a class="permalink" href="#verbose">--verbose</a></dt>
+  <dd>short form: -v
+    <p class="Pp">Print information to STDOUT about what is being done.</p>
+  </dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="ACTIONS"><a class="permalink" href="#ACTIONS">ACTIONS</a></h2>
+<p class="Pp">These actions are taken for every matching query from all classes.
+    The actions are taken in this order: &quot;--print&quot;,
+    &quot;--execute-command&quot;, &quot;--kill&quot; /
+    &quot;--kill-query&quot;. This order allows &quot;--execute-command&quot; to
+    see the output of &quot;--print&quot; and the query before
+    &quot;--kill&quot; / &quot;--kill-query&quot;. This may be helpful because
+    pt-kill does not pass any information to &quot;--execute-command&quot;.</p>
+<p class="Pp">See also &quot;GROUP, MATCH AND KILL&quot;.</p>
+<dl class="Bl-tag">
+  <dt id="execute-command"><a class="permalink" href="#execute">--execute-command</a></dt>
+  <dd>type: string; group: Actions
+    <p class="Pp">Execute this command when a query matches.</p>
+    <p class="Pp">After the command is executed, pt-kill has no control over it,
+        so the command is responsible for its own info gathering, logging,
+        interval, etc. The command is executed each time a query matches, so be
+        careful that the command behaves well when multiple instances are ran.
+        No information from pt-kill is passed to the command.</p>
+    <p class="Pp">See also &quot;--wait-before-kill&quot;.</p>
+  </dd>
+  <dt id="kill"><a class="permalink" href="#kill">--kill</a></dt>
+  <dd>group: Actions
+    <p class="Pp">Kill the connection for matching queries.</p>
+    <p class="Pp">This option makes pt-kill kill the connections (a.k.a.
+        processes, threads) that have matching queries. Use
+        &quot;--kill-query&quot; if you only want to kill individual queries and
+        not their connections.</p>
+    <p class="Pp">Unless &quot;--print&quot; is also given, no other information
+        is printed that shows that pt-kill matched and killed a query.</p>
+    <p class="Pp">See also &quot;--wait-before-kill&quot; and
+        &quot;--wait-after-kill&quot;.</p>
+  </dd>
+  <dt id="kill-busy-commands">--kill-busy-commands</dt>
+  <dd>type: string; default: Query
+    <p class="Pp">group: Actions</p>
+    <p class="Pp">Comma sepatated list of commands that will be watched/killed
+        if they ran for more than &quot;--busy-time&quot; seconds. Default:
+        <span class="Li">&quot;Query&quot;</span></p>
+    <p class="Pp">By default, &quot;--busy-time&quot; kills only
+        <span class="Li">&quot;Query&quot;</span> commands but in some cases, it
+        is needed to make &quot;--busy-time&quot; to watch and kill other
+        commands. For example, a prepared statement execution command is
+        <span class="Li">&quot;Execute&quot;</span> instead of
+        <span class="Li">&quot;Query&quot;</span>. In this case, specifying
+        <span class="Li">&quot;--kill-busy-commands=Query,Execute&quot;</span>
+        will also kill the prepared stamente execution.</p>
+  </dd>
+  <dt id="kill-query">--kill-query</dt>
+  <dd>group: Actions
+    <p class="Pp">Kill matching queries.</p>
+    <p class="Pp">This option makes pt-kill kill matching queries. This requires
+        MySQL 5.0 or newer. Unlike &quot;--kill&quot; which kills the connection
+        for matching queries, this option only kills the query, not its
+        connection.</p>
+  </dd>
+  <dt id="print"><a class="permalink" href="#print">--print</a></dt>
+  <dd>group: Actions
+    <p class="Pp">Print a KILL statement for matching queries; does not actually
+        kill queries.</p>
+    <p class="Pp">If you just want to see which queries match and would be
+        killed without actually killing them, specify &quot;--print&quot;. To
+        both kill and print matching queries, specify both &quot;--kill&quot;
+        and &quot;--print&quot;.</p>
+  </dd>
+  <dt id="fingerprint"><a class="permalink" href="#fingerprint">--fingerprint</a></dt>
+  <dd>group: Actions
+    <p class="Pp">Modifies the &quot;--print&quot; behaviour and forces the
+        query fingerprint to be displayed instead of an original query.</p>
+  </dd>
+</dl>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DSN_OPTIONS"><a class="permalink" href="#DSN_OPTIONS">DSN OPTIONS</a></h1>
+<p class="Pp">These DSN options are used to create a DSN. Each option is given
+    like <span class="Li">&quot;option=value&quot;</span>. The options are
+    case-sensitive, so P and p are not the same option. There cannot be
+    whitespace before or after the <span class="Li">&quot;=&quot;</span> and if
+    the value contains whitespace it must be quoted. DSN options are
+    comma-separated. See the percona-toolkit manpage for full details.</p>
+<ul class="Bl-bullet">
+  <li>A
+    <p class="Pp">dsn: charset; copy: yes</p>
+    <p class="Pp">Default character set.</p>
+  </li>
+  <li>D
+    <p class="Pp">dsn: database; copy: yes</p>
+    <p class="Pp">Default database.</p>
+  </li>
+  <li>F
+    <p class="Pp">dsn: mysql_read_default_file; copy: yes</p>
+    <p class="Pp">Only read default options from the given file</p>
+  </li>
+  <li>h
+    <p class="Pp">dsn: host; copy: yes</p>
+    <p class="Pp">Connect to host.</p>
+  </li>
+  <li>p
+    <p class="Pp">dsn: password; copy: yes</p>
+    <p class="Pp">Password to use when connecting. If password contains commas
+        they must be escaped with a backslash: &quot;exam\,ple&quot;</p>
+  </li>
+  <li>P
+    <p class="Pp">dsn: port; copy: yes</p>
+    <p class="Pp">Port number to use for connection.</p>
+  </li>
+  <li>S
+    <p class="Pp">dsn: mysql_socket; copy: yes</p>
+    <p class="Pp">Socket file to use for connection.</p>
+  </li>
+  <li>u
+    <p class="Pp">dsn: user; copy: yes</p>
+    <p class="Pp">User for login if not current user.</p>
+  </li>
+  <li>t
+    <p class="Pp">Table to log actions in, if passed through --log-dsn.</p>
+  </li>
+  <li>s
+    <p class="Pp">dsn: mysql_ssl; copy: yes</p>
+    <p class="Pp">Create SSL connection</p>
+  </li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ENVIRONMENT"><a class="permalink" href="#ENVIRONMENT">ENVIRONMENT</a></h1>
+<p class="Pp">The environment variable
+    <span class="Li">&quot;PTDEBUG&quot;</span> enables verbose debugging output
+    to STDERR. To enable debugging and capture all output to a file, run the
+    tool like:</p>
+<pre>PTDEBUG=1 pt-kill ... &gt; FILE 2&gt;&amp;1</pre>
+<p class="Pp">Be careful: debugging output is voluminous and can generate
+    several megabytes of output.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ATTENTION"><a class="permalink" href="#ATTENTION">ATTENTION</a></h1>
+<p class="Pp">Using &lt;PTDEBUG&gt; might expose passwords. When debug is
+    enabled, all command line parameters are shown in the output.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYSTEM_REQUIREMENTS"><a class="permalink" href="#SYSTEM_REQUIREMENTS">SYSTEM REQUIREMENTS</a></h1>
+<p class="Pp">You need Perl, DBI, DBD::mysql, and some core packages that ought
+    to be installed in any reasonably new version of Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="BUGS"><a class="permalink" href="#BUGS">BUGS</a></h1>
+<p class="Pp">For a list of known bugs, see
+    <a href="https://jira.percona.com/projects/PT/issues">https://jira.percona.com/projects/PT/issues</a>.</p>
+<p class="Pp">Please report bugs at
+    <a href="https://jira.percona.com/projects/PT">https://jira.percona.com/projects/PT</a>. Include the following
+    information in your bug report:</p>
+<ul class="Bl-bullet">
+  <li>Complete command-line used to run the tool</li>
+  <li>Tool &quot;--version&quot;</li>
+  <li>MySQL version of all servers involved</li>
+  <li>Output from the tool including STDERR</li>
+  <li>Input files (log/dump/config files, etc.)</li>
+</ul>
+<p class="Pp">If possible, include debugging output by running the tool with
+    <span class="Li">&quot;PTDEBUG&quot;</span>; see
+    &quot;ENVIRONMENT&quot;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DOWNLOADING"><a class="permalink" href="#DOWNLOADING">DOWNLOADING</a></h1>
+<p class="Pp">Visit <a href="http://www.percona.com/software/percona-toolkit/">http://www.percona.com/software/percona-toolkit/</a> to
+    download the latest release of Percona Toolkit. Or, get the latest release
+    from the command line:</p>
+<pre>wget percona.com/get/percona-toolkit.tar.gz
+wget percona.com/get/percona-toolkit.rpm
+wget percona.com/get/percona-toolkit.deb</pre>
+<p class="Pp">You can also get individual tools from the latest release:</p>
+<pre>wget percona.com/get/TOOL</pre>
+<p class="Pp">Replace <span class="Li">&quot;TOOL&quot;</span> with the name of
+    any tool.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHORS"><a class="permalink" href="#AUTHORS">AUTHORS</a></h1>
+<p class="Pp">Baron Schwartz and Daniel Nichter</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ABOUT_PERCONA_TOOLKIT"><a class="permalink" href="#ABOUT_PERCONA_TOOLKIT">ABOUT PERCONA TOOLKIT</a></h1>
+<p class="Pp">This tool is part of Percona Toolkit, a collection of advanced
+</p>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>pt-kill(1p) — Arch Linux manual pages</title>
+        <link rel="stylesheet" href="/style.css">
+        <link rel="stylesheet" href="/highlight.css">
+        <link rel="stylesheet" href="/codemirror.css">
+        <link rel="stylesheet" href="/theme.css">
+        <script src="/jquery-3.3.1.min.js"></script>
+        <script src="/highlight.js"></script>
+        <script src="/script.js"></script>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='ABOUT_PERCONA_TOOLKIT'><a class='permalink' href='#ABOUT_PERCONA_TOOLKIT'>ABOUT PERCONA TOOLKIT</a></h1>
+<p class="Pp">Percona Toolkit is a collection of advanced command-line tools for
+    MySQL developed by Percona. Percona Toolkit was forked from two projects in
+    June, 2011: Maatkit and Aspersa. Those projects were created by Baron Schwartz
+    and primarily developed by him and Daniel Nichter. Visit <a href='http://www.percona.com/software/'>http://www.percona.com/software/</a> to learn about other free, open-source software
+    from Percona.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT,_LICENSE,_AND_WARRANTY'><a class='permalink' href='#COPYRIGHT,_LICENSE,_AND_WARRANTY'>COPYRIGHT,   LICENSE, AND WARRANTY</a></h1>
+<p class="Pp">Este programa tiene copyright 2011-2024 Percona LLC y/o sus
+    afiliados, 2009-2011 Baron Schwartz.</p>
+<p class="Pp">ESTE PROGRAMA SE PROPORCIONA "TAL CUAL" Y SIN GARANTÍAS EXPRESAS O
+    IMPLÍCITAS, INCLUYENDO, SIN LIMITACIÓN, LAS GARANTÍAS IMPLÍCITAS DE COMERCIABILIDAD
+    Y ADECUACIÓN PARA UN PROPÓSITO PARTICULAR.</p>
+<p class="Pp">Este programa es software libre; puede redistribuirlo y/o modificarlo
+    bajo los términos de la GNU General Public License publicada por la Free
+    Software Foundation, versión 2; O la Perl Artistic License. En sistemas UNIX y
+    similares, puede emitir `man perlgpl' o `man perlartistic' para leer estas
+    licencias.</p>
+<p class="Pp">Debería haber recibido una copia de la GNU General Public License
+    junto con este programa; si no es así, escriba a la Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSION</a></h1>
+<p class="Pp">pt-kill 3.7.0</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='POD_ERRORS'><a class='permalink' href='#POD_ERRORS'>POD   ERRORS</a></h1>
+<p class="Pp">¡Oye! <b>El documento anterior tenía algunos errores de codificación, que
+    se explican a continuación:</b></p>
+<dl class="Bl-tag">
+  <dt id="Around"><a class="permalink" href="#Around">Alrededor de la línea 8355:</a></dt>
+  <dd>Carácter no ASCII visto antes de =encoding en 'Percona&#x2019;s'.
+      Asumiendo UTF-8.</dd>
+</dl>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-01-01</td>
+    <td class="foot-os">perl v5.40.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/percona-toolkit/">extra/percona-toolkit</a></dd>
+        <dt>Versión:</dt>
+        <dd>3.7.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.percona.com/software/database-tools/percona-toolkit">https://www.percona.com/software/database-tools/percona-toolkit</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/percona-toolkit/">/listing/extra/percona-toolkit/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#RISKS">RIESGOS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#GROUP,_MATCH_AND_KILL">GRUPO, COINCIDIR Y MATAR</a></li>
+        
+            <li><a href="#OUTPUT">SALIDA</a></li>
+        
+            <li><a href="#OPTIONS">OPCIONES</a></li>
+        
+            <li><a href="#DSN_OPTIONS">OPCIONES DSN</a></li>
+        
+            <li><a href="#ENVIRONMENT">ENTORNO</a></li>
+        
+            <li><a href="#ATTENTION">ATENCIÓN</a></li>
+        
+            <li><a href="#SYSTEM_REQUIREMENTS">REQUISITOS DEL SISTEMA</a></li>
+        
+            <li><a href="#BUGS">ERRORES</a></li>
+        
+            <li><a href="#DOWNLOADING">DESCARGANDO</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+            <li><a href="#ABOUT_PERCONA_TOOLKIT">SOBRE PERCONA TOOLKIT</a></li>
+        
+            <li><a href="#COPYRIGHT,_LICENSE,_AND_WARRANTY">COPYRIGHT, LICENCIA Y GARANTÍA</a></li>
+        
+            <li><a href="#VERSION">VERSIÓN</a></li>
+        
+            <li><a href="#POD_ERRORS">ERRORES POD</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pt-kill.1p.en.txt">txt</a>, 
+        
+            <a href="/man/pt-kill.1p.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

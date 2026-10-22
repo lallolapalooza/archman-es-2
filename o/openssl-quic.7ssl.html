@@ -1,0 +1,1158 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>openssl-quic(7ssl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">openssl-quic(7ssl)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">OPENSSL-QUIC(7ssl)</td>
+    <td class="head-vol">OpenSSL</td>
+    <td class="head-rtitle">OPENSSL-QUIC(7ssl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">openssl-quic - OpenSSL QUIC</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">OpenSSL 3.2 y versiones posteriores incluyen soporte para el protocolo de transporte QUIC. Puede utilizar las capacidades QUIC de OpenSSL tanto para aplicaciones cliente como servidor. Esta página del manual describe cómo permitir que las aplicaciones utilicen el protocolo QUIC utilizando la API de libssl.</p>
+<p class="Pp">El protocolo QUIC se mapea a la API SSL estándar. Una conexión QUIC se representa mediante un objeto SSL de la misma manera que una conexión TLS. Solo se necesitan cambios mínimos en las aplicaciones existentes que utilizan la API de libssl para incorporar el soporte del protocolo QUIC. Los clientes QUIC pueden usar <a href='/man/OSSL_QUIC_client_method.3.en'>OSSL_QUIC_client_method(3)</a> o <a href='/man/OSSL_QUIC_client_thread_method.3.en'>OSSL_QUIC_client_thread_method(3)</a> con <a href='/man/SSL_CTX_new.3.en'>SSL_CTX_new(3)</a>. Consulte a continuación para obtener más detalles sobre la diferencia entre los dos. Para los servidores, solo hay una opción: el método SSL <a href='/man/OSSL_QUIC_server_method.3.en'>OSSL_QUIC_server_method(3)</a> con <a href='/man/SSL_CTX_new.3.en'>SSL_CTX_new(3)</a>.</p>
+<p class="Pp">El resto de esta página del manual discute, en orden:</p>
+<ul class="Bl-bullet">
+  <li>Modo de transmisión predeterminado versus modo multransmisión para clientes;</li>
+  <li>Los cambios en las APIs existentes de libssl que son impulsados por los requisitos de implementación relacionados con QUIC, que las aplicaciones existentes deben tener en cuenta;</li>
+  <li>Aspectos que deben ser considerados por las aplicaciones existentes al adoptar QUIC, incluyendo posibles cambios que puedan ser necesarios.</li>
+  <li>Enfoques de uso recomendados para nuevas aplicaciones.</li>
+  <li>Nuevas APIs específicas de QUIC.</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MODOS_DE_OPERACIÓN_DEL_CLIENTE'><a class='permalink' href='#MODOS_DE_OPERACIÓN_DEL_CLIENTE'>MODOS   DE OPERACIÓN DEL CLIENTE</a></h1>
+<p class="Pp">Cuando un cliente crea una conexión QUIC, por defecto, opera en modo de transmisión predeterminada, que está diseñado para proporcionar compatibilidad con los patrones de uso de aplicaciones existentes que no son QUIC. En este modo, la conexión tiene una única transmisión asociada a ella. Las llamadas a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y <a href='/man/SSL_write.3.en'>SSL_write(3)</a> en el objeto SSL de la conexión QUIC leen y escriben desde esa transmisión. Si la transmisión es iniciada por el cliente o por el servidor desde la perspectiva de QUIC depende de si se llama primero a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> o <a href='/man/SSL_write.3.en'>SSL_write(3)</a>.</p>
+<p class="Pp">El modo de transmisión predeterminada está diseñado principalmente para la compatibilidad con aplicaciones existentes. Para nuevas aplicaciones que utilizan QUIC, se recomienda deshabilitar este modo y adoptar en su lugar la API multransmisión. Consulte la sección RECOMENDACIONES PARA NUEVAS APLICACIONES para obtener más detalles.</p>
+<section class="Ss">
+<h2 class="Ss" id='Modo_de_Transmisión_Predeterminado'><a class='permalink' href='#Modo_de_Transmisión_Predeterminado'>Modo   de Transmisión Predeterminada</a></h2>
+<p class="Pp">Una conexión cliente QUIC puede usarse en modo de transmisión predeterminada o en modo multransmisión. Por defecto, un objeto SSL de conexión QUIC recién creado utiliza el modo de transmisión predeterminada.</p>
+<p class="Pp">En el modo de transmisión predeterminada, se crea implícitamente una transmisión y se vincula al objeto SSL de la conexión QUIC; las llamadas a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y <a href='/man/SSL_write.3.en'>SSL_write(3)</a> en el objeto SSL de la conexión QUIC funcionan por defecto y se mapean a esa transmisión.</p>
+<p class="Pp">Cuando se utiliza el modo de transmisión predeterminada, cualquier función de API que se pueda llamar en un objeto SSL de transmisión QUIC también se puede llamar en un objeto SSL de conexión QUIC, en cuyo caso afecta a la transmisión predeterminada vinculada a la conexión.</p>
+<p class="Pp">La identidad de una transmisión QUIC, incluido su ID de transmisión, varía según si la transmisión es iniciada por el cliente o por el servidor. En el modo de transmisión predeterminada, si una aplicación cliente llama primero a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> antes de cualquier llamada a <a href='/man/SSL_write.3.en'>SSL_write(3)</a> en la conexión, se asume que el protocolo de la aplicación está utilizando una transmisión iniciada por el servidor, y la llamada a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> no se completará (ya sea bloqueando o fallando apropiadamente si el modo no bloqueante está configurado) hasta que el servidor inicie una transmisión. Por el contrario, si la aplicación cliente llama a <a href='/man/SSL_write.3.en'>SSL_write(3)</a> antes de cualquier llamada a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> en la conexión, se asume que se utilizará una transmisión iniciada por el cliente y se creará automáticamente dicha transmisión.</p>
+<p class="Pp">El modo de transmisión predeterminada está diseñado para ayudar a la compatibilidad con aplicaciones heredadas. Las nuevas aplicaciones que adopten QUIC deben usar el modo multransmisión, descrito a continuación, y evitar el uso de la funcionalidad de transmisión predeterminada.</p>
+<p class="Pp">Es posible utilizar transmisiones adicionales en el modo de transmisión predeterminada utilizando <a href='/man/SSL_new_stream.3.en'>SSL_new_stream(3)</a> y <a href='/man/SSL_accept_stream.3.en'>SSL_accept_stream(3)</a>; tenga en cuenta que la política de transmisión entrante predeterminada deberá cambiarse usando <a href='/man/SSL_set_incoming_stream_policy.3.en'>SSL_set_incoming_stream_policy(3)</a> para poder usar <a href='/man/SSL_accept_stream.3.en'>SSL_accept_stream(3)</a> en este caso. Sin embargo, se recomienda encarecidamente a las aplicaciones que utilizan transmisiones adicionales que utilicen el modo multransmisión en su lugar.</p>
+<p class="Pp">Llamar a <a href='/man/SSL_new_stream.3.en'>SSL_new_stream(3)</a> o <a href='/man/SSL_accept_stream.3.en'>SSL_accept_stream(3)</a> antes de que se haya asociado una transmisión predeterminada al objeto SSL de la conexión QUIC, impedirá la creación futura de una transmisión predeterminada.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Modo_Multransmisión'><a class='permalink' href='#Modo_Multransmisión'>Modo   Multransmisión</a></h2>
+<p class="Pp">El modo de uso recomendado para nuevas aplicaciones que adoptan QUIC es el modo multransmisión, en el que no hay ninguna transmisión predeterminada asociada al objeto SSL de la conexión QUIC y los intentos de llamar a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y <a href='/man/SSL_write.3.en'>SSL_write(3)</a> en el objeto SSL de la conexión QUIC fallan. En su lugar, una aplicación llama a <a href='/man/SSL_new_stream.3.en'>SSL_new_stream(3)</a> o <a href='/man/SSL_accept_stream.3.en'>SSL_accept_stream(3)</a> para crear objetos SSL de transmisión individuales para enviar y recibir datos de la aplicación utilizando <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y <a href='/man/SSL_write.3.en'>SSL_write(3)</a>.</p>
+<p class="Pp">Para usar el modo multransmisión, llame a <a href='/man/SSL_set_default_stream_mode.3.en'>SSL_set_default_stream_mode(3)</a> con un argumento de <b>SSL_DEFAULT_STREAM_MODE_NONE</b>; esta función debe llamarse antes de iniciar la conexión. El modo de transmisión predeterminado no se puede cambiar después de iniciar una conexión.</p>
+<p class="Pp">Cuando se utiliza el modo multransmisión, lo que significa que no hay ninguna transmisión predeterminada asociada a la conexión, las llamadas a funciones de API definidas para operar en una transmisión QUIC fallan si se llaman en el objeto SSL de la conexión QUIC. Por ejemplo, llamadas como <a href='/man/SSL_write.3.en'>SSL_write(3)</a> o <a href='/man/SSL_get_stream_id.3.en'>SSL_get_stream_id(3)</a> fallarán.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CAMBIOS_A_LAS_APIS_EXISTENTES'><a class='permalink' href='#CAMBIOS_A_LAS_APIS_EXISTENTES'>CAMBIOS   A LAS APIS EXISTENTES</a></h1>
+<p class="Pp">La mayoría de las API SSL, como <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y <a href='/man/SSL_write.3.en'>SSL_write(3)</a>,
+    funcionan como lo hacen para las conexiones TLS y no tienen semántica modificada, con algunas excepciones. Los cambios en la semántica de las API existentes son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Dado que QUIC usa UDP, <a href='/man/SSL_set_bio.3.en'>SSL_set_bio(3)</a>, <a href='/man/SSL_set0_rbio.3.en'>SSL_set0_rbio(3)</a> y
+      <a href='/man/SSL_set0_wbio.3.en'>SSL_set0_wbio(3)</a> funcionan como antes, pero ahora deben recibir un BIO
+      con semántica de datagrama. Hay cuatro opciones generales para que las aplicaciones las usen como BIO de red:</dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>, recomendado para la mayoría de las aplicaciones, reemplaza
+      a <a href='/man/BIO_s_socket.3.en'>BIO_s_socket(3)</a> y proporciona un socket UDP.</li>
+  <li><a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a> proporciona una funcionalidad similar a un par de BIO
+      pero con semántica de datagrama, y se recomienda para aplicaciones existentes que utilizan
+      un par de BIO o un BIO de memoria para gestionar la comunicación de libssl con la
+      red.</li>
+  <li><a href='/man/BIO_s_dgram_mem.3.en'>BIO_s_dgram_mem(3)</a> proporciona una interfaz simple similar a un BIO de memoria
+      pero con semántica de datagrama. A diferencia de <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a>, es
+      unidireccional.</li>
+  <li>Una aplicación también puede optar por implementar un BIO personalizado. Las nuevas
+      API <a href='/man/BIO_sendmmsg.3.en'>BIO_sendmmsg(3)</a> y <a href='/man/BIO_recvmmsg.3.en'>BIO_recvmmsg(3)</a> deben ser
+      soportadas.</li>
+</ul>
+</div>
+<ul class="Bl-bullet">
+  <li><a href='/man/SSL_set_fd.3.en'>SSL_set_fd(3)</a>, <a href='/man/SSL_set_rfd.3.en'>SSL_set_rfd(3)</a> y <a href='/man/SSL_set_wfd.3.en'>SSL_set_wfd(3)</a>
+      instancian tradicionalmente un <a href='/man/BIO_s_socket.3.en'>BIO_s_socket(3)</a>. Para QUIC, estas
+      funciones instancian en su lugar un <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>. Esto es
+      equivalente</li>
+</ul>
+</div>
+</section>
+                <hr/>
+                
+            </article>
+        </main>
+        <footer>
+            <p>Traducción al español realizada por la comunidad de Arch Linux.</p>
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='NOTES_ON_USING_LIBSSL_WITH_QUIC'><a class='permalink' href='#NOTES_ON_USING_LIBSSL_WITH_QUIC'>NOTES ON USING LIBSSL WITH QUIC</a></h1>
+<p class="Pp">The following are notes on using libssl with QUIC:</p>
+<ul class="Bl-bullet">
+  <li>The <a href='/man/SSL_set_cert_cb.3.en'>SSL_set_cert_cb(3)</a> API is used to set a callback that
+      will be invoked when the server needs to provide a certificate. This
+      callback should return a certificate that is compatible with the peer's
+      certificate identification. For more details on how certificate callbacks
+      work, see the description of the <a href='/man/SSL_CTX_set_cert_cb.3.en'>SSL_CTX_set_cert_cb(3)</a>
+      function.</li>
+  <li>The <a href='/man/SSL_set_server_hello_cb.3.en'>SSL_set_server_hello_cb(3)</a> API is used to set a
+      callback that will be invoked when the server needs to send its ServerHello
+      message. This callback should provide the server's chosen cipher suite and
+      other relevant information.</li>
+  <li>The <a href='/man/SSL_set_signature_algorithms.3.en'>SSL_set_signature_algorithms(3)</a> API has been
+      extended to support QUIC. You can now specify the signature algorithms that
+      the server is willing to use for the QUIC handshake.</li>
+  <li>The underlying network I/O must be performed using datagrams. This means that
+      any BIO passed to the SSL object must have datagram semantics. The
+      <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> BIO is suitable for this purpose. You may
+      need to modify your application to use this BIO instead of a socket BIO.
+      This involves instantiating a <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> and using
+      <a href='/man/SSL_set0_rbio.3.en'>SSL_set0_rbio(3)</a> and <a href='/man/SSL_set0_wbio.3.en'>SSL_set0_wbio(3)</a>.</li>
+  <li>Traditionally, whether the application-level I/O APIs (such as
+      <a href='/man/SSL_read.3.en'>SSL_read(3)</a> and <a href='/man/SSL_write.3.en'>SSL_write(3)</a> operated in a blocking fashion
+      was directly correlated with whether the underlying network socket was
+      configured in a blocking fashion. This is no longer the case; applications
+      must explicitly configure the desired application-level blocking mode
+      using <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>. See <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>
+      for details.</li>
+  <li>Network-level I/O must always be performed in a nonblocking manner. The
+      application can still enjoy blocking semantics for calls to
+      application-level I/O functions such as <a href='/man/SSL_read.3.en'>SSL_read(3)</a> and
+      <a href='/man/SSL_write.3.en'>SSL_write(3)</a>, but the underlying network BIO provided to QUIC (such
+      as a <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>) must be configured in nonblocking mode. For
+      application-level blocking functionality, see
+      <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>.</li>
+  <li><a href='/man/BIO_new_ssl_connect.3.en'>BIO_new_ssl_connect(3)</a> has been changed to automatically use a
+      <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> when used with QUIC, therefore applications which
+      use this do not need to change the BIO they use.</li>
+  <li><a href='/man/BIO_new_buffer_ssl_connect.3.en'>BIO_new_buffer_ssl_connect(3)</a> cannot be used with QUIC and
+      applications must change to use <a href='/man/BIO_new_ssl_connect.3.en'>BIO_new_ssl_connect(3)</a>
+    instead.</li>
+  <li><a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a> has significant changes in relation to how QUIC
+      connections must be shut down. In particular, applications should be
+      advised that the full RFC-conformant QUIC shutdown process may take an
+      extended amount of time. This may not be suitable for short-lived
+      processes which should exit immediately after their usage of a QUIC
+      connection is completed. A rapid shutdown mode is available for such
+      applications. For details, see <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a>.</li>
+  <li><a href='/man/SSL_want.3.en'>SSL_want(3)</a>, <a href='/man/SSL_want_read.3.en'>SSL_want_read(3)</a> and <a href='/man/SSL_want_write.3.en'>SSL_want_write(3)</a>
+      no longer reflect the I/O state of the network BIO passed to the QUIC SSL
+      object, but instead reflect the flow control state of the QUIC stream
+      associated with the SSL object.
+    <p class="Pp">When used in nonblocking mode, <b>SSL_ERROR_WANT_READ</b>
+        indicates that the receive part of a QUIC stream does not currently have
+        any more data available to be read, and <b>SSL_ERROR_WANT_WRITE</b>
+        indicates that the stream's internal buffer is full.</p>
+    <p class="Pp">To determine if the QUIC implementation currently wishes to be
+        informed of incoming network datagrams, use the new function
+        <a href='/man/SSL_net_read_desired.3.en'>SSL_net_read_desired(3)</a>; likewise, to determine if the QUIC
+        implementation currently wishes to be informed when it is possible to
+        transmit network datagrams, use the new function
+        <a href='/man/SSL_net_write_desired.3.en'>SSL_net_write_desired(3)</a>. Only applications which wish to manage
+        their own event loops need to use these functions; see
+        <b>APPLICATION-DRIVEN EVENT LOOPS</b> for further discussion.</p>
+  </li>
+  <li>The use of ALPN is mandatory when using QUIC. Attempts to connect without
+      configuring ALPN will fail. For information on how to configure ALPN, see
+      <a href='/man/SSL_set_alpn_protos.3.en'>SSL_set_alpn_protos(3)</a>.</li>
+  <li>Whether QUIC operates in a client or server mode is determined by the
+      <b>SSL_METHOD</b> used, rather than by calls to
+      <a href='/man/SSL_set_connect_state.3.en'>SSL_set_connect_state(3)</a> or <a href='/man/SSL_set_accept_state.3.en'>SSL_set_accept_state(3)</a>. It is
+      not necessary to call either of <a href='/man/SSL_set_connect_state.3.en'>SSL_set_connect_state(3)</a> or
+      <a href='/man/SSL_set_accept_state.3.en'>SSL_set_accept_state(3)</a> before connecting, but if either of these
+      are called, the function called must be congruent with the
+      <b>SSL_METHOD</b> being used.</li>
+  <li>The <a href='/man/SSL_set_min_proto_version.3.en'>SSL_set_min_proto_version(3)</a> and
+      <a href='/man/SSL_set_max_proto_version.3.en'>SSL_set_max_proto_version(3)</a> APIs are not used and the values
+      passed to them are ignored, as OpenSSL QUIC currently always uses TLS
+    1.3.</li>
+  <li>The following libssl functionality is not available when used with
+    QUIC.</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Async functionality</li>
+  <li><b>SSL_MODE_AUTO_RETRY</b></li>
+  <li>Record Padding and Fragmentation (<a href='/man/SSL_set_block_padding.3.en'>SSL_set_block_padding(3)</a>,
+    etc.)</li>
+  <li><a href='/man/SSL_stateless.3.en'>SSL_stateless(3)</a> support</li>
+  <li>SRTP functionality</li>
+  <li>TLSv1.3 Early Data</li>
+  <li>TLS Next Protocol Negotiation cannot be used and is superseded by ALPN,
+      which must be used instead. The use of ALPN is mandatory with QUIC.</li>
+  <li>Post-Handshake Client Authentication is not available as QUIC prohibits
+      its use.</li>
+  <li>QUIC requires the use of TLSv1.3 or later, therefore functionality only
+      relevant to older TLS versions is not available.</li>
+  <li>Some cipher suites which are generally available for TLSv1.3 are not
+      available for QUIC, such as <b>TLS_AES_128_CCM_8_SHA256</b>. Your
+      application may need to adjust the list of acceptable cipher suites it
+      passes to libssl.</li>
+  <li>CCM mode is not currently supported.</li>
+</ul>
+</div>
+<div class="Bd-indent">
+<p class="Pp">The following libssl functionality is also not available when used
+    with QUIC, but calls to the relevant functions are treated as no-ops:</p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Readahead (<a href='/man/SSL_set_read_ahead.3.en'>SSL_set_read_ahead(3)</a>, etc.)</dd>
+</dl>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONSIDERATIONS_FOR_EXISTING_APPLICATIONS'><a class='permalink' href='#CONSIDERATIONS_FOR_EXISTING_APPLICATIONS'>CONSIDERATIONS FOR EXISTING APPLICATIONS</a></h1>
+<p class="Pp">Existing applications seeking to adopt QUIC should apply the
+    following list to determine what changes they will need to make:</p>
+<ul class="Bl-bullet">
+  <li>A client application wishing to use QUIC must use
+      <a href='/man/OSSL_QUIC_client_method.3.en'>OSSL_QUIC_client_method(3)</a> or
+      <a href='/man/OSSL_QUIC_client_thread_method.3.en'>OSSL_QUIC_client_thread_method(3)</a> as its SSL method. For more
+      information on the differences between these two methods, see <b>THREAD
+      ASSISTED MODE</b>.</li>
+  <li>A server application wishing to use QUIC must use
+      <a href='/man/OSSL_QUIC_server_method.3.en'>OSSL_QUIC_server_method(3)</a>. The server can then accept new
+      connections with <a href='/man/SSL_accept_connection.3.en'>SSL_accept_connection(3)</a>.</li>
+  <li>Determine how to provide QUIC with network access. Determine which of the
+      below apply for your application:</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Your application uses <a href='/man/BIO_s_socket.3.en'>BIO_s_socket(3)</a> to construct a BIO which is
+      passed to the SSL object to provide it with network access.
+    <p class="Pp">Changes needed: Change your application to use
+        <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> instead when using QUIC. The socket must be
+        configured in nonblocking mode. You may or may not need to use
+        <a href='/man/SSL_set1_initial_peer_addr.3.en'>SSL_set1_initial_peer_addr(3)</a> to set the initial peer address;
+        see the <b>QUIC-SPECIFIC APIS</b> section for details.</p>
+  </li>
+  <li>Your application uses <a href='/man/BIO_new_ssl_connect.3.en'>BIO_new_ssl_connect(3)</a> to construct a BIO
+      which is passed to the SSL object to provide it with network access.
+    <p class="Pp">Changes needed: No changes needed. Use of QUIC is detected
+        automatically and a datagram socket is created instead of a normal TCP
+        socket.</p>
+  </li>
+  <li>Your application uses any other I/O strategy in this list but combines it
+      with a <a href='/man/BIO_f_buffer.3.en'>BIO_f_buffer(3)</a>, for example using <a href='/man/BIO_push.3.en'>BIO_push(3)</a>.
+    <p class="Pp">Changes needed: Disable the usage of <a href='/man/BIO_f_buffer.3.en'>BIO_f_buffer(3)</a>
+        when using QUIC. Usage of such a buffer is incompatible with QUIC as
+        QUIC requires datagram semantics in its interaction with the
+      network.</p>
+  </li>
+  <li>Your application uses a BIO pair to cause the SSL object to read and write
+      network traffic to a memory buffer. Your application manages the
+      transmission and reception of buffered data itself in a way unknown to
+      libssl.
+    <p class="Pp">Changes needed: Switch from using a conventional BIO pair to
+        using <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a> instead, which has the necessary
+        datagram semantics. You will need to modify your application to transmit
+        and receive using a UDP socket and to use datagram semantics when
+        interacting with the <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a> instance.</p>
+  </li>
+  <li>Your application uses a custom BIO method to provide the SSL object with
+      network access.
+    <p class="Pp">Changes needed: The custom BIO must be re-architected to have
+        datagram semantics. <a href='/man/BIO_sendmmsg.3.en'>BIO_sendmmsg(3)</a> and <a href='/man/BIO_recvmmsg.3.en'>BIO_recvmmsg(3)</a>
+        must be implemented. These calls must operate in a nonblocking fashion.
+        Optionally, implement the <a href='/man/BIO_get_rpoll_descriptor.3.en'>BIO_get_rpoll_descriptor(3)</a> and
+        <a href='/man/BIO_get_wpoll_descriptor.3.en'>BIO_get_wpoll_descriptor(3)</a> methods if desired. Implementing
+        these methods is required if blocking semantics at the SSL API level are
+        desired.</p>
+  </li>
+</ul>
+</div>
+<ul class="Bl-bullet">
+  <li>An application must explicitly configure whether it wishes to use the SSL
+      APIs in blocking mode or not. Traditionally, an SSL object has
+      automatically operated in blocking or nonblocking mode based on whether
+      the underlying network BIO operates in blocking or nonblocking mode. QUIC
+      requires the use of a nonblocking network BIO, therefore the blocking mode
+      at the application level can be explicitly configured by the application
+      using the new <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a> API. The default mode is
+      blocking. If an application wishes to use the SSL object APIs at
+      application level in a nonblocking manner, it must add a call to
+      <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a> to disable blocking mode.</li>
+  <li>If your client application does not choose to use thread assisted mode, it
+      must ensure that it calls an I/O function on the SSL object (for example,
+      <a href='/man/SSL_read.3.en'>SSL_read(3)</a> or <a href='/man/SSL_write.3.en'>SSL_write(3)</a>), or the new function
+      <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a>, regularly. If the SSL object is used in
+      blocking mode, an ongoing blocking call to an I/O function satisfies this
+      requirement. This is required to ensure that timer events required by QUIC
+      are handled in a timely fashion.
+    <p class="Pp">If the SSL object is used in nonblocking mode, then the
+        application must explicitly call <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a>. It is
+        recommended that an application calls this function whenever the underlying
+        network BIO indicates that it is possible to read or write data.</p>
+  </li>
+</ul>
+</section>
+<ul>
+  <li>La mayoría de las aplicaciones utilizarán el objeto SSL llamando
+      regularmente a <a href='/man/SSL_read.3.en'>SSL_read(3)</a> o <a href='/man/SSL_write.3.en'>SSL_write(3)</a>. Si una aplicación
+      no lo hace, debe asegurarse de que <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> se
+      llame regularmente.</li>
+  <li>Se puede utilizar <a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a> para determinar cuándo
+      debe llamarse a <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a>.</li>
+  <li>Si el objeto SSL se está utilizando con un BIO de red subyacente que se
+      puede sondear (como <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>), la aplicación puede usar
+      <a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a>,
+      <a href='/man/SSL_get_wpoll_descriptor.3.en'>SSL_get_wpoll_descriptor(3)</a> para obtener recursos que se pueden utilizar
+      para determinar cuándo se debe llamar a <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> debido a
+      E/S de red.</li>
+  <li>Las aplicaciones cliente que utilizan el modo asistido por hilos no deben
+      preocuparse por este requisito, ya que la implementación QUIC
+      garantiza que los eventos de tiempo de espera se manejen de manera oportuna.
+      Consulte <b>MODO ASISTIDO POR HILOS</b> para obtener más detalles.</li>
+  <li>Asegúrese de que su uso de <a href='/man/SSL_want.3.en'>SSL_want(3)</a>, <a href='/man/SSL_want_read.3.en'>SSL_want_read(3)</a> y
+      <a href='/man/SSL_want_write.3.en'>SSL_want_write(3)</a> refleje los cambios en la API descritos en <b>CAMBIOS EN LAS API EXISTENTES</b>.
+      En particular, debe utilizar estas API para determinar la capacidad de un
+      flujo QUIC para recibir o proporcionar datos de aplicación, no para
+      determinar si se requiere E/S de red.</li>
+  <li>Evalúe el uso de <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a> de su aplicación a la luz de los
+      cambios discutidos en <b>CAMBIOS EN LAS API EXISTENTES</b>. Dependiendo de si
+      su aplicación desea priorizar la conformidad con RFC o un cierre rápido,
+      considere usar la nueva API <a href='/man/SSL_shutdown_ex.3.en'>SSL_shutdown_ex(3)</a> en su lugar. Consulte
+      <b>API ESPECÍFICAS DE QUIC</b> para obtener más detalles.</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_RECOMENDADO_EN_NUEVAS_APLICACIONES'><a class='permalink' href='#USO_RECOMENDADO_EN_NUEVAS_APLICACIONES'>USO   RECOMENDADO EN NUEVAS APLICACIONES</a></h1>
+<p class="Pp">El uso recomendado en nuevas aplicaciones varía según tres
+    decisiones de diseño independientes:</p>
+<ul class="Bl-bullet">
+  <li>Si la aplicación utilizará E/S bloqueante o no bloqueante a nivel de
+      aplicación (configurado mediante <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>).
+    <p class="Pp">Si la aplicación realiza E/S no bloqueante a nivel de
+        aplicación, puede optar por gestionar su propio sondeo y bucle de
+        eventos; consulte <b>BUCLES IMPULSADOS POR LA APLICACIÓN</b>.</p>
+  </li>
+  <li>Si la aplicación tiene la intención de dar a la implementación QUIC acceso
+      directo a un socket de red (por ejemplo, a través de <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>) o si
+      tiene la intención de almacenar en búfer datagramas transmitidos y recibidos
+      a través de un <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a> o un BIO personalizado.
+    <p class="Pp">Se prefiere lo primero siempre que sea posible, ya que reduce la
+        latencia a la red, lo que permite a QUIC lograr un mayor rendimiento y una
+        estimación más precisa del tiempo de ida y vuelta (RTT) de la conexión.</p>
+  </li>
+  <li>Si se utilizará el modo asistido por hilos (consulte <b>MODO ASISTIDO POR
+      HILOS</b>).</li>
+</ul>
+<p class="Pp">Las demostraciones sencillas para el uso de QUIC en estos diversos
+    escenarios se pueden encontrar en
+    <a href='https://github.com/openssl/openssl/tree/master/doc/designs/ddd'>https://github.com/openssl/openssl/tree/master/doc/designs/ddd</a>.</p>
+<p class="Pp">Las aplicaciones que deseen implementar protocolos específicos de
+    QUIC deben tener en cuenta las API enumeradas en <b>API ESPECÍFICAS DE
+    QUIC</b>, que proporcionan acceso a la funcionalidad específica de QUIC. Por
+    ejemplo, <a href='/man/SSL_stream_conclude.3.en'>SSL_stream_conclude(3)</a> se puede utilizar para indicar el final de la
+    parte de envío de un flujo, y <a href='/man/SSL_shutdown_ex.3.en'>SSL_shutdown_ex(3)</a> se puede utilizar para
+    proporcionar un código de error de aplicación QUIC al cerrar una conexión.</p>
+<p class="Pp">Independientemente de las decisiones de diseño elegidas anteriormente,
+    se recomienda que las nuevas aplicaciones eviten el uso del modo de flujo
+    predeterminado y utilicen la API multi-flujo llamando a
+    <a href='/man/SSL_set_default_stream_mode.3.en'>SSL_set_default_stream_mode(3)</a>; consulte la sección MODOS DE
+    OPERACIÓN para obtener más detalles.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='API_ESPECÍFICAS_DE_QUIC'><a class='permalink' href='#API_ESPECÍFICAS_DE_QUIC'>API   ESPECÍFICAS DE QUIC</a></h1>
+<p class="Pp">Esta sección detalla las nuevas API que están directa o indirectamente
+    relacionadas con QUIC. Para obtener detalles sobre el funcionamiento de cada
+    API, consulte las páginas man referenciadas.</p>
+<p class="Pp">Las siguientes API SSL son nuevas pero relevantes tanto para QUIC
+    como para DTLS:</p>
+<dl class="Bl-tag">
+  <dt id="SSL_get_event_timeout"><a class="permalink" href="#SSL_get_event_timeout"><a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a></a></dt>
+  <dd>Determina cuándo se debe despertar la implementación QUIC la próxima vez a
+      través de una llamada a <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> (o
+      otra función de E/S como <a href='/man/SSL_read.3.en'>SSL_read(3)</a> o
+      <a href='/man/SSL_write.3.en'>SSL_write(3)</a>), si es que alguna vez.
+    <p class="Pp">Esto también se puede usar con DTLS y reemplaza
+        <a href='/man/DTLSv1_get_timeout.3.en'>DTLSv1_get_timeout(3)</a> para uso nuevo.</p>
+  </dd>
+  <dt id="SSL_handle_events"><a class="permalink" href="#SSL_handle_events"><a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a></a></dt>
+  <dd>Esta es una operación de E/S no específica que intenta hacer un mejor
+      esfuerzo para realizar cualquier E/S pendiente o procesamiento de tiempo de
+      espera. Se puede utilizar para avanzar la máquina de estados QUIC al procesar
+      tráfico de red entrante, generar tráfico de red saliente y manejar cualquier
+      evento de tiempo de espera expirado. La mayoría de las otras funciones de
+      E/S en un objeto SSL, como <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y
+      <a href='/man/SSL_write.3.en'>SSL_write(3)</a>, realizan implícitamente el manejo de
+      eventos en el objeto SSL, por lo que llamar a esta función solo es necesario
+      si no se va a llamar a ninguna otra función de E/S.
+    <p class="Pp">Esto también se puede usar con DTLS y reemplaza
+        <a href='/man/DTLSv1_handle_timeout.3.en'>DTLSv1_handle_timeout(3)</a> para uso nuevo.</p>
+  </dd>
+</dl>
+<p class="Pp">Las siguientes API SSL son específicas de QUIC:</p>
+<dl class="Bl-tag">
+  <dt id="SSL_new_listener"><a class="permalink" href="#SSL_new_listener"><a href='/man/SSL_new_listener.3.en'>SSL_new_listener(3)</a></a></dt>
+  <dd>Crea un objeto SSL de escucha, que difiere de un objeto SSL ordinario en
+      que se utiliza para proporcionar una abstracción para la aceptación de
+      conexiones de red de manera independiente del protocolo.
+    <p class="Pp">Actualmente, los objetos SSL de escucha solo se admiten para
+        uso de servidor QUIC o uso exclusivo de cliente. La interfaz de escucha
+        puede expandirse para admitir protocolos adicionales en el futuro.</p>
+  </dd>
+  <dt id="SSL_new_listener_from"><a class="permalink" href="#SSL_new_listener_from"><a href='/man/SSL_new_listener_from.3.en'>SSL_new_listener_from(3)</a></a></dt>
+  <dd>Crea un objeto SSL de escucha que está subordinado a un objeto SSL de
+      dominio QUIC <i>ssl</i>. Consulte <a href='/man/SSL_new_domain.3.en'>SSL_new_domain(3)</a> y
+      <a href='/man/openssl-quic-concurrency.7.en'>openssl-quic-concurrency(7)</a> para obtener detalles sobre los objetos SSL
+      de dominio QUIC.</dd>
+  <dt id="SSL_is_listener"><a class="permalink" href="#SSL_is_listener"><a href='/man/SSL_is_listener.3.en'>SSL_is_listener(3)</a></a></dt>
+  <dd>Devuelve 1 si y solo si un objeto SSL es un objeto SSL de escucha.</dd>
+  <dt id="SSL_get0_listener"><a class="permalink" href="#SSL_get0_listener"><a href='/man/SSL_get0_listener.3.en'>SSL_get0_listener(3)</a></a></dt>
+  <dd>Devuelve un puntero a un objeto SSL (potencialmente al mismo objeto en el
+      que se llama) o NULL.</dd>
+  <dt id="SSL_listen"><a class="permalink" href="#SSL_listen"><a href='/man/SSL_listen.3.en'>SSL_listen(3)</a></a></dt>
+  <dd>Comienza a escuchar después de que se ha creado un objeto de escucha.
+      Normalmente, no es necesario llamar a esto porque se llamará
+      automáticamente en la primera llamada a
+      <a href='/man/SSL_accept_connection.3.en'>SSL_accept_connection(3)</a>.</dd>
+  <dt id="SSL_accept_connection"><a class="permalink" href="#SSL_accept_connection"><a href='/man/SSL_accept_connection.3.en'>SSL_accept_connection(3)</a></a></dt>
+  <dd>Acepta una nueva conexión entrante para un objeto SSL de escucha. Se crea
+      un nuevo objeto SSL que representa la conexión aceptada y se devuelve en
+      caso de éxito. Si no hay ninguna conexión entrante disponible y el objeto
+      SSL de escucha está configurado en modo no bloqueante, se devuelve NULL.</dd>
+  <dt id="SSL_get_accept_connection_queue_len"><a class="permalink" href="#SSL_get_accept_connection_queue_len"><a href='/man/SSL_get_accept_connection_queue_len.3.en'>SSL_get_accept_connection_queue_len(3)</a></a></dt>
+  <dd>Devuelve un valor informativo que enumera el número de conexiones que esperan
+      ser extraídas de la cola mediante llamadas a
+      <b>SSL_accept_connection()</b>.</dd>
+  <dt id="SSL_new_from_listener"><a class="permalink" href="#SSL_new_from_listener"><a href='/man/SSL_new_from_listener.3.en'>SSL_new_from_listener(3)</a></a></dt>
+  <dd>Crea una conexión de cliente bajo un objeto SSL de escucha determinado. Para
+      QUIC, también es posible utilizar <b>SSL_new_from_listener()</b> en
+      conjunción con un objeto de escucha que acepte conexiones entrantes (es
+      decir, que no se creó utilizando
+      <b>SSL_LISTENER_FLAG_NO_ACCEPT</b>), lo que da lugar a un punto final de red UDP
+      que tiene tanto conexiones entrantes como salientes.</dd>
+  <dt id="SSL_new_domain"><a class="permalink" href="#SSL_new_domain"><a href='/man/SSL_new_domain.3.en'>SSL_new_domain(3)</a></a></dt>
+  <dd>Crea un nuevo dominio de eventos QUIC, representado como un objeto SSL.
+      Esto se conoce como un objeto SSL de dominio QUIC. El concepto de un dominio
+      de eventos QUIC se discute en detalle en
+      <a href='/man/openssl-quic-concurrency.7.en'>openssl-quic-concurrency(7)</a>.</dd>
+  <dt id="SSL_is_domain"><a class="permalink" href="#SSL_is_domain"><a href='/man/SSL_is_domain.3.en'>SSL_is_domain(3)</a></a></dt>
+  <dd>Devuelve 1 si un objeto SSL es un objeto SSL de dominio QUIC.</dd>
+  <dt id="SSL_get0_domain"><a class="permalink" href="#SSL_get0_domain"><a href='/man/SSL_get0_domain.3.en'>SSL_get0_domain(3)</a></a></dt>
+  <dd><b>SSL_get0_domain()</b> obtiene un puntero al objeto SSL de dominio QUIC
+      en una jerarquía de objetos SSL (si la hay).</dd>
+  <dt id="SSL_set_blocking_mode"><a class="permalink" href="#SSL_set_blocking_mode"><a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>,
+    <a href='/man/SSL_get_blocking_mode.3.en'>SSL_get_blocking_mode(3)</a></a></dt>
+  <dd>Configura si se utilizan semánticas de bloqueo a nivel de aplicación.
+      Esto determina si las llamadas a funciones como <a href='/man/SSL_read.3.en'>SSL_read(3)</a> y
+      <a href='/man/SSL_write.3.en'>SSL_write(3)</a> se bloquearán.</dd>
+  <dt id="SSL_get_rpoll_descriptor"><a class="permalink" href="#SSL_get_rpoll_descriptor"><a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a>,
+    <a href='/man/SSL_get_wpoll_descriptor.3.en'>SSL_get_wpoll_descriptor(3)</a></a></dt>
+  <dd>Estas funciones facilitan la operación en modo no bloqueante.
+    <p class="Pp">Cuando un objeto SSL se está utilizando con un BIO de lectura de
+        red subyacente que admite sondeo, <a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a>
+        genera un recurso del sistema operativo que se puede utilizar para sincronizar
+        la lectura de red</p>
+</dl>
+[
+  {
+    "type": "text",
+    "content": "eventos de habilidad que deberían resultar en una llamada a\n"
+  },
+  {
+    "type": "link",
+    "target": "/man/SSL_handle_events.3.en",
+    "content": "SSL_handle_events(3)"
+  },
+  {
+    "type": "text",
+    "content": ". "
+  },
+  {
+    "type": "link",
+    "target": "/man/SSL_get_wpoll_descriptor.3.en",
+    "content": "SSL_get_wpoll_descriptor(3)"
+  },
+  {
+    "type": "text",
+    "content": " funciona de manera análoga para el BIO de escritura de red subyacente.</p>\n"
+  },
+  {
+    "type": "paragraph",
+    "content": "Los descriptores de sondeo proporcionados por estas funciones solo deben usarse cuando\n"
+  },
+  {
+    "type": "link",
+    "target": "/man/SSL_net_read_desired.3.en",
+    "content": "SSL_net_read_desired(3)"
+  },
+  {
+    "type": "text",
+    "content": " y\n"
+  },
+  {
+    "type": "link",
+    "target": "/man/SSL_net_write_desired.3.en",
+    "content": "SSL_net_write_desired(3)"
+  },
+  {
+    "type": "text",
+    "content": " devuelven 1, respectivamente.</p>\n"
+  },
+  {
+    "type": "definition_list",
+    "items": [
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_net_read_desired.3.en",
+          "content": "SSL_net_read_desired(3), SSL_net_write_desired(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Estas funciones facilitan la operación en modo no bloqueante y se utilizan en\nconjunto con "
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_get_rpoll_descriptor.3.en",
+            "content": "SSL_get_rpoll_descriptor(3)"
+          },
+          {
+            "type": "text",
+            "content": " y\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_get_wpoll_descriptor.3.en",
+            "content": "SSL_get_wpoll_descriptor(3)"
+          },
+          {
+            "type": "text",
+            "content": " respectivamente. Determinan si\nel descriptor de sondeo respectivo es actualmente relevante para fines de sondeo.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_set1_initial_peer_addr.3.en",
+          "content": "SSL_set1_initial_peer_addr(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esta función se puede utilizar para establecer la dirección inicial del par para una conexión QUIC saliente. Esta función debe usarse en el caso general al crear una conexión QUIC saliente; sin embargo, la dirección inicial correcta del par se puede autodetectar en algunos casos. Consulte\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_set1_initial_peer_addr.3.en",
+            "content": "SSL_set1_initial_peer_addr(3)"
+          },
+          {
+            "type": "text",
+            "content": " para obtener detalles.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_shutdown_ex.3.en",
+          "content": "SSL_shutdown_ex(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto complementa "
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_shutdown.3.en",
+            "content": "SSL_shutdown(3)"
+          },
+          {
+            "type": "text",
+            "content": " al permitir especificar un código de error de la aplicación. También permite que una aplicación decida con qué rapidez desea que se realice un cierre, lo que podría implicar sacrificar el estricto cumplimiento de las RFC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_stream_conclude.3.en",
+          "content": "SSL_stream_conclude(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto permite a una aplicación indicar el final normal de la parte de envío de un flujo QUIC. Esto corresponde a la bandera FIN en la RFC de QUIC. La parte receptora de un flujo permanece utilizable.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_stream_reset.3.en",
+          "content": "SSL_stream_reset(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto permite a una aplicación indicar la terminación no normal de la parte de envío de un flujo. Esto corresponde al marco RESET_STREAM en la RFC de QUIC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_stream_write_state.3.en",
+          "content": "SSL_get_stream_write_state(3) y SSL_get_stream_read_state(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto permite a una aplicación determinar los estados actuales del flujo para las partes de envío y recepción de un flujo, respectivamente.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_stream_write_error_code.3.en",
+          "content": "SSL_get_stream_write_error_code(3) y SSL_get_stream_read_error_code(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto permite a una aplicación determinar el código de error de la aplicación que fue señalado por un par que ha realizado una terminación de flujo no normal de la parte de envío o recepción respectiva de un flujo, si lo hay.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_conn_close_info.3.en",
+          "content": "SSL_get_conn_close_info(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto permite a una aplicación determinar el código de error que se señaló cuando el punto final local o remoto terminó la conexión QUIC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get0_connection.3.en",
+          "content": "SSL_get0_connection(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Obtiene el objeto SSL de conexión QUIC a partir de un objeto SSL de flujo QUIC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_is_connection.3.en",
+          "content": "SSL_is_connection(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Devuelve 1 si un objeto SSL no es un objeto SSL de flujo QUIC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_stream_type.3.en",
+          "content": "SSL_get_stream_type(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Proporciona información sobre el tipo de flujo QUIC que está adjunto al objeto SSL.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_stream_id.3.en",
+          "content": "SSL_get_stream_id(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Devuelve el ID de flujo QUIC que el protocolo QUIC ha asociado con un flujo QUIC.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_new_stream.3.en",
+          "content": "SSL_new_stream(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Crea un nuevo objeto SSL de flujo QUIC que representa un nuevo flujo QUIC iniciado localmente.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_accept_stream.3.en",
+          "content": "SSL_accept_stream(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Potencialmente produce un nuevo objeto SSL de flujo QUIC que representa un nuevo flujo QUIC iniciado remotamente, bloqueando hasta que uno esté disponible si la conexión está configurada para hacerlo.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_get_accept_stream_queue_len.3.en",
+          "content": "SSL_get_accept_stream_queue_len(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Proporciona información sobre el número de flujos pendientes iniciados remotamente.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_set_incoming_stream_policy.3.en",
+          "content": "SSL_set_incoming_stream_policy(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Configura cómo se manejan los flujos entrantes iniciados remotamente. La política de flujo entrante se puede utilizar para rechazar automáticamente los flujos creados por el par, o permitir que se manejen usando\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_accept_stream.3.en",
+            "content": "SSL_accept_stream(3)"
+          },
+          {
+            "type": "text",
+            "content": ".</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/SSL_set_default_stream_mode.3.en",
+          "content": "SSL_set_default_stream_mode(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Se utiliza para configurar o deshabilitar el modo de flujo predeterminado; consulte la sección MODOS DE OPERACIÓN para obtener detalles.</p>\n"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "paragraph",
+    "content": "Las siguientes APIs de BIO no son específicas de QUIC, pero se han agregado para facilitar los requisitos específicos de QUIC y están estrechamente asociadas con su uso:</p>\n"
+  },
+  {
+    "type": "definition_list",
+    "class": "Bl-tag",
+    "items": [
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_s_dgram_pair.3.en",
+          "content": "BIO_s_dgram_pair(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Este es un nuevo método BIO que es similar a un par BIO convencional pero\nproporciona semántica de datagramas.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_get_rpoll_descriptor.3.en",
+          "content": "BIO_get_rpoll_descriptor(3), BIO_get_wpoll_descriptor(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esta es una nueva API BIO que permite a un BIO exponer un descriptor de sondeo. Esta\nAPI se utiliza para implementar las APIs SSL correspondientes\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_get_rpoll_descriptor.3.en",
+            "content": "SSL_get_rpoll_descriptor(3)"
+          },
+          {
+            "type": "text",
+            "content": " y\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/SSL_get_wpoll_descriptor.3.en",
+            "content": "SSL_get_wpoll_descriptor(3)"
+          },
+          {
+            "type": "text",
+            "content": ".</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_sendmmsg.3.en",
+          "content": "BIO_sendmmsg(3), BIO_recvmmsg(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esta es una nueva API BIO que puede ser implementada por BIOs que implementan\nsemántica de datagramas. Es implementada por "
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_s_datagram.3.en",
+            "content": "BIO_s_datagram(3)"
+          },
+          {
+            "type": "text",
+            "content": " y\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_s_dgram_pair.3.en",
+            "content": "BIO_s_dgram_pair(3)"
+          },
+          {
+            "type": "text",
+            "content": ". Es utilizada por la implementación QUIC para enviar\ny recibir datagramas UDP.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_dgram_set_no_trunc.3.en",
+          "content": "BIO_dgram_set_no_trunc(3), BIO_dgram_get_no_trunc(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Por defecto, "
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_s_dgram_pair.3.en",
+            "content": "BIO_s_dgram_pair(3)"
+          },
+          {
+            "type": "text",
+            "content": " tiene semántica comparable a la de los sockets Berkeley\nutilizados con semántica de datagramas. Esto permite habilitar un modo alternativo en el que los datagramas no se truncarán silenciosamente si son demasiado grandes.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_dgram_set_caps.3.en",
+          "content": "BIO_dgram_set_caps(3), BIO_dgram_get_caps(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Estas funciones se utilizan para permitir que el usuario de un extremo de un\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_s_dgram_pair.3.en",
+            "content": "BIO_s_dgram_pair(3)"
+          },
+          {
+            "type": "text",
+            "content": " indique sus capacidades al otro extremo de un\n"
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_s_dgram_pair.3.en",
+            "content": "BIO_s_dgram_pair(3)"
+          },
+          {
+            "type": "text",
+            "content": ". En particular, esto permite a una aplicación\ninformar a la implementación QUIC si está preparada para manejar\ndirecciones locales y/o del par en datagramas transmitidos y para proporcionar la\ninformación aplicable en datagramas recibidos.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_dgram_get_local_addr_cap.3.en",
+          "content": "BIO_dgram_get_local_addr_cap(3), BIO_dgram_set_local_addr_enable(3), BIO_dgram_get_local_addr_enable(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "El soporte de direccionamiento local se refiere a la capacidad de un BIO con semántica de datagramas\npara permitir la especificación de una dirección de origen en la transmisión y para\nreportar la dirección de destino en la recepción. Estas funciones se pueden utilizar\npara determinar si un BIO puede admitir el direccionamiento local y para habilitar el\nsoporte de direccionamiento local si es posible.</p>\n"
+          }
+        ]
+      },
+      {
+        "term": {
+          "type": "link",
+          "target": "/man/BIO_err_is_non_fatal.3.en",
+          "content": "BIO_err_is_non_fatal(3)"
+        },
+        "definition": [
+          {
+            "type": "text",
+            "content": "Esto se utiliza para determinar si un error al llamar a "
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_sendmmsg.3.en",
+            "content": "BIO_sendmmsg(3)"
+          },
+          {
+            "type": "text",
+            "content": "\no "
+          },
+          {
+            "type": "link",
+            "target": "/man/BIO_recvmmsg.3.en",
+            "content": "BIO_recvmmsg(3)"
+          },
+          {
+            "type": "text",
+            "content": " es efímero, como los errores de \"bloquearía\".</p>\n"
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "id": "THREAD_ASSISTED_MODE",
+    "heading": {
+      "type": "heading",
+      "level": 1,
+      "content": "MODO ASISTIDO POR HILO"
+    },
+    "content": [
+      {
+        "type": "paragraph",
+        "content": "El modo opcional de asistencia por hilo para clientes se puede utilizar con\n"
+      },
+      {
+        "type": "link",
+        "target": "/man/OSSL_QUIC_client_thread_method.3.en",
+        "content": "OSSL_QUIC_client_thread_method(3)"
+      },
+      {
+        "type": "text",
+        "content": ". En este modo, se crea automáticamente un hilo en segundo plano. La implementación QUIC de OpenSSL asume entonces la responsabilidad de garantizar que los eventos de tiempo de espera se manejen de manera oportuna, incluso si la aplicación no llama a ninguna función de E/S SSL, como\n"
+      },
+      {
+        "type": "link",
+        "target": "/man/SSL_read.3.en",
+        "content": "SSL_read(3)"
+      },
+      {
+        "type": "text",
+        "content": " o\n"
+      },
+      {
+        "type": "link",
+        "target": "/man/SSL_write.3.en",
+        "content": "SSL_write(3)"
+      },
+      {
+        "type": "text",
+        "content": ", durante mucho tiempo.</p>\n"
+      },
+      {
+        "type": "paragraph",
+        "content": "Todos los bloqueos necesarios se manejan automáticamente internamente, pero las garantías de seguridad de hilos para la API SSL pública no cambian. Por lo tanto, una aplicación aún debe realizar su propio bloqueo si desea realizar un uso concurrente de las APIs SSL públicas.</p>\n"
+      },
+      {
+        "type": "paragraph",
+        "content": "Dado que este método se basa en hilos, no está disponible en plataformas donde el soporte de hilos no está disponible o no es compatible con OpenSSL. Sin embargo, proporciona el modo de uso más simple para una aplicación.</p>\n"
+      },
+      {
+        "type": "paragraph",
+        "content": "La implementación puede o no utilizar un hilo común o un grupo de hilos para dar servicio a múltiples objetos SSL"
+      }
+    ]
+  }
+]
+<section class="Sh">
+<h1 class="Sh" id='LOS_BUCLES_DE_EVENTOS_IMPULSADOS_POR_LA_APLICACIÓN'><a class='permalink' href='#LOS_BUCLES_DE_EVENTOS_IMPULSADOS_POR_LA_APLICACIÓN'>LOS_BUCLES_DE_EVENTOS_IMPULSADOS_POR_LA_APLICACIÓN</a></h1>
+<p class="Pp">La implementación QUIC de OpenSSL está diseñada para facilitar
+    aplicaciones que deseen usar las API de SSL de forma bloqueante, pero también
+    está diseñada para facilitar aplicaciones que deseen usar las API de SSL de
+    forma no bloqueante y gestionar sus propios bucles de eventos y sondeos
+    directamente. Esto es útil cuando es deseable alojar la implementación QUIC
+    de OpenSSL sobre la infraestructura de E/S no bloqueante existente de una
+    aplicación.</p>
+<p class="Pp">Esto se admite a través del concepto de descriptores de sondeo;
+    consulte <a href='/man/BIO_get_rpoll_descriptor.3.en'>BIO_get_rpoll_descriptor(3)</a>
+    para obtener más detalles. En general, un <b>BIO_POLL_DESCRIPTOR</b> es una
+    estructura que expresa algún tipo de recurso del sistema operativo que puede
+    utilizarse para sincronizar eventos de E/S. La implementación QUIC
+    proporciona un <b>BIO_POLL_DESCRIPTOR</b> basado en el descriptor de sondeo
+    proporcionado por el BIO de red subyacente. Típicamente, es un manejador de
+    socket del sistema operativo, aunque los BIO personalizados podrían optar por
+    implementar su propio formato de descriptor de sondeo personalizado.</p>
+<p class="Pp">En general, una aplicación que desee gestionar su propio bucle de
+    eventos debería interactuar con el objeto SSL de la siguiente manera:</p>
+<ul class="Bl-bullet">
+  <li>Debería proporcionar BIOs de lectura y escritura con semántica de
+      datagramas no bloqueantes al objeto SSL utilizando <a href='/man/SSL_set0_rbio.3.en'>SSL_set0_rbio(3)</a>
+      y <a href='/man/SSL_set0_wbio.3.en'>SSL_set0_wbio(3)</a>. Esto podría ser un BIO que abstraiga un socket de
+      red como <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>, o un BIO que abstraiga algún tipo de
+      búfer de memoria como <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a>. El uso de un BIO
+      personalizado también es posible.</li>
+  <li>Debería configurar el objeto SSL en modo no bloqueante llamando a
+      <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>.</li>
+  <li>Debería configurar el objeto SSL según sea necesario, establecer un par
+      inicial según sea necesario utilizando <a href='/man/SSL_set1_initial_peer_addr.3.en'>SSL_set1_initial_peer_addr(3)</a>,
+      y activar el proceso de conexión llamando a <a href='/man/SSL_connect.3.en'>SSL_connect(3)</a>.</li>
+  <li>Si los BIOs de lectura y escritura de red proporcionados eran sondeables
+      (por ejemplo, un <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a>, o un BIO personalizado que implemente
+      <a href='/man/BIO_get_rpoll_descriptor.3.en'>BIO_get_rpoll_descriptor(3)</a> y <a href='/man/BIO_get_wpoll_descriptor.3.en'>BIO_get_wpoll_descriptor(3)</a>),
+      debe realizar los siguientes pasos repetidamente:</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>La aplicación debe llamar a <a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a> y
+      <a href='/man/SSL_get_wpoll_descriptor.3.en'>SSL_get_wpoll_descriptor(3)</a> para identificar los recursos del
+      sistema operativo que se pueden utilizar para la sincronización.</li>
+  <li>Debe llamar a <a href='/man/SSL_net_read_desired.3.en'>SSL_net_read_desired(3)</a> y
+      <a href='/man/SSL_net_write_desired.3.en'>SSL_net_write_desired(3)</a> para determinar si la implementación QUIC
+      está actualmente interesada en eventos de legibilidad y escriturabilidad en
+      el BIO de red subyacente que se proporcionó, y llamar a
+      <a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a> para determinar si algún evento de tiempo de
+      espera será aplicable en el futuro.</li>
+  <li>Debe esperar hasta que ocurra uno de los siguientes eventos:</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>El descriptor de sondeo devuelto por <a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a>
+      se vuelve legible (si <a href='/man/SSL_net_read_desired.3.en'>SSL_net_read_desired(3)</a> devolvió 1);</li>
+  <li>El descriptor de sondeo devuelto por <a href='/man/SSL_get_wpoll_descriptor.3.en'>SSL_get_wpoll_descriptor(3)</a>
+      se vuelve escribible (si <a href='/man/SSL_net_write_desired.3.en'>SSL_net_write_desired(3)</a> devolvió 1);</li>
+  <li>El tiempo de espera devuelto por <a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a>
+      (si existe) expira.</li>
+</ul>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Una vez que ocurra cualquiera de estos eventos, se debe llamar a
+    <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a>.</p>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si los BIOs de lectura y escritura de red proporcionados no eran
+      sondeables (por ejemplo, en el caso de <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a>),
+      la aplicación es responsable de gestionar y sincronizar la E/S de red.
+      Debería llamar a <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> después de escribir datos en un
+      <a href='/man/BIO_s_dgram_pair.3.en'>BIO_s_dgram_pair(3)</a> o tomar otra acción para que la implementación
+      QUIC pueda leer nuevos datagramas mediante una llamada a
+      <a href='/man/BIO_recvmmsg.3.en'>BIO_recvmmsg(3)</a> en el BIO de red subyacente. La implementación QUIC
+      puede generar datagramas mediante una llamada a
+      <a href='/man/BIO_sendmmsg.3.en'>BIO_sendmmsg(3)</a> y la aplicación es responsable de garantizar que se
+      transmitan.
+    <p class="Pp">La aplicación debe llamar a <a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a>
+        después de cada llamada a <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> (o a otra función de E/S
+        en el objeto SSL), y asegurarse de que se realiza una llamada a
+        <a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a> después de que expire el tiempo de espera
+        especificado (si existe).</p>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER_TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/SSL_handle_events.3.en'>SSL_handle_events(3)</a>,
+    <a href='/man/SSL_get_event_timeout.3.en'>SSL_get_event_timeout(3)</a>,
+    <a href='/man/SSL_net_read_desired.3.en'>SSL_net_read_desired(3)</a>,
+    <a href='/man/SSL_net_write_desired.3.en'>SSL_net_write_desired(3)</a>,
+    <a href='/man/SSL_get_rpoll_descriptor.3.en'>SSL_get_rpoll_descriptor(3)</a>,
+    <a href='/man/SSL_get_wpoll_descriptor.3.en'>SSL_get_wpoll_descriptor(3)</a>,
+    <a href='/man/SSL_set_blocking_mode.3.en'>SSL_set_blocking_mode(3)</a>,
+    <a href='/man/SSL_shutdown_ex.3.en'>SSL_shutdown_ex(3)</a>,
+    <a href='/man/SSL_set1_initial_peer_addr.3.en'>SSL_set1_initial_peer_addr(3)</a>,
+    <a href='/man/SSL_stream_conclude.3.en'>SSL_stream_conclude(3)</a>,
+    <a href='/man/SSL_stream_reset.3.en'>SSL_stream_reset(3)</a>,
+    <a href='/man/SSL_get_stream_read_state.3.en'>SSL_get_stream_read_state(3)</a>,
+    <a href='/man/SSL_get_stream_read_error_code.3.en'>SSL_get_stream_read_error_code(3)</a>,
+    <a href='/man/SSL_get_conn_close_info.3.en'>SSL_get_conn_close_info(3)</a>,
+    <a href='/man/SSL_get0_connection.3.en'>SSL_get0_connection(3)</a>,
+    <a href='/man/SSL_get_stream_type.3.en'>SSL_get_stream_type(3)</a>,
+    <a href='/man/SSL_get_stream_id.3.en'>SSL_get_stream_id(3)</a>,
+    <a href='/man/SSL_new_stream.3.en'>SSL_new_stream(3)</a>,
+    <a href='/man/SSL_accept_stream.3.en'>SSL_accept_stream(3)</a>,
+    <a href='/man/SSL_set_incoming_stream_policy.3.en'>SSL_set_incoming_stream_policy(3)</a>,
+    <a href='/man/SSL_set_default_stream_mode.3.en'>SSL_set_default_stream_mode(3)</a>,
+    <a href='/man/SSL_new_listener.3.en'>SSL_new_listener(3)</a>,
+    <a href='/man/SSL_new_listener_from.3.en'>SSL_new_listener_from(3)</a>,
+    <a href='/man/SSL_is_listener.3.en'>SSL_is_listener(3)</a>,
+    <a href='/man/SSL_get0_listener.3.en'>SSL_get0_listener(3)</a>,
+    <a href='/man/SSL_listen.3.en'>SSL_listen(3)</a>,
+    <a href='/man/SSL_accept_connection.3.en'>SSL_accept_connection(3)</a>,
+    <a href='/man/SSL_get_accept_connection_queue_len.3.en'>SSL_get_accept_connection_queue_len(3)</a>,
+    <a href='/man/SSL_new_domain.3.en'>SSL_new_domain(3)</a>,
+    <a href='/man/SSL_is_domain.3.en'>SSL_is_domain(3)</a>,
+    <a href='/man/SSL_get0_domain.3.en'>SSL_get0_domain(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright 2022-2025 The OpenSSL Project Authors. All Rights
+    Reserved.</p>
+<p class="Pp">Licenciado bajo la Apache License 2.0 (la &quot;Licencia&quot;).
+    No puede usar este archivo excepto en cumplimiento con la Licencia. Puede
+    obtener una copia en el archivo LICENSE en la distribución fuente o en
+    <a href='https://www.openssl.org/source/license.html'>https://www.openssl.org/source/license.html</a>.</p>
+</section>

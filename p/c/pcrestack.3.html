@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pcrestack(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pcrestack(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/pcre/">pcre</a></p>
+<p class="lic">Licencias: BSD</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PCRESTACK(3)</td>
+    <td class="head-vol">Manual de funciones de biblioteca</td>
+    <td class="head-rtitle">PCRESTACK(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">PCRE - expresiones regulares compatibles con Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DISCUSIÓN_SOBRE_EL_USO_DE_LA_PILa_EN_PCRE'><a class='permalink' href='#DISCUSIÓN_SOBRE_EL_USO_DE_LA_PILa_EN_PCRE'>DISCUSIÓN SOBRE EL USO DE LA PILA EN PCRE</a></h1>
+<p class="Pp">Cuando se llama a <b>pcre[16|32]_exec()</b>, se utiliza una función
+    interna llamada <b>match()</b>. Esta se llama a sí misma recursivamente en los
+    puntos de ramificación del patrón, para recordar el estado de la coincidencia
+    y poder retroceder y probar una alternativa diferente si la primera falla. A
+    medida que la coincidencia avanza más y más profundamente en el árbol de
+    posibilidades, la profundidad de la recursión aumenta. La función <b>match()</b>
+    también se llama en otras circunstancias, por ejemplo, cada vez que se entra
+    en un subpatrón entre paréntesis, y en ciertos casos de repetición.</p>
+<p class="Pp">No todas las llamadas a <b>match()</b> aumentan la profundidad de
+    la recursión; para un elemento como a* puede ser llamada varias veces al
+    mismo nivel, después de coincidir con diferentes cantidades de a. Además, en
+    varios casos en los que el resultado de la llamada recursiva se pasaría
+    inmediatamente como resultado de la llamada actual (una "recursión de cola"),
+    la función simplemente se reinicia.</p>
+<p class="Pp">Los comentarios anteriores se aplican cuando
+    <b>pcre[16|32]_exec()</b> se ejecuta en su modo interpretativo normal. Si el
+    patrón se estudió con la opción PCRE_STUDY_JIT_COMPILE, y la compilación
+    just-in-time fue exitosa, y las opciones pasadas a <b>pcre[16|32]_exec()</b>
+    no eran incompatibles, el proceso de coincidencia utiliza el código
+    compilado JIT en lugar de la función <b>match()</b>. En este caso, los
+    requisitos de memoria se manejan de manera completamente diferente. Consulte
+    la documentación de <b>pcrejit</b> para obtener detalles.</p>
+<p class="Pp">La función <b>pcre[16|32]_dfa_exec()</b> opera de manera
+    completamente diferente y utiliza la recursión solo cuando hay una recursión
+    de expresión regular o una llamada a subrutina en el patrón. Esto incluye el
+    procesamiento de subpatrones de aserción y "solo una vez", que se manejan
+    como llamadas a subrutinas. Normalmente, estas nunca son muy profundas, y el
+    límite de la complejidad de <b>pcre[16|32]_dfa_exec()</b> está controlado por
+    la cantidad de espacio de trabajo que se le proporciona. Sin embargo, es
+    posible escribir patrones con recursiones infinitas descontroladas; tales
+    patrones harán que <b>pcre[16|32]_dfa_exec()</b> se quede sin pila.
+    Actualmente, no hay protección contra esto.</p>
+<p class="Pp">Los comentarios que siguen NO se aplican a
+    <b>pcre[16|32]_dfa_exec()</b>; solo son relevantes para
+    <b>pcre[16|32]_exec()</b> sin la optimización JIT.</p>
+<section class="Ss">
+<h2 class="Ss" id='Reducción_del_uso_de_pila_de_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'><a class='permalink' href='#Reducción_del_uso_de_pila_de_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'>Reducción del uso de pila de <b>pcre[16|32]_exec()</b></a></h2>
+<p class="Pp">Cada vez que <b>match()</b> se llama realmente de forma
+    recursiva, utiliza memoria de la pila del proceso. Para ciertos tipos de
+    patrones y datos, se pueden necesitar cantidades muy grandes de pila, a
+    pesar del reconocimiento de la "recursión de cola". A menudo, puede reducir
+    la cantidad de recursión y, por lo tanto, la cantidad de pila utilizada,
+    modificando el patrón que se está comparando. Considere, por ejemplo, este
+    patrón:</p>
+<p class="Pp">
+  <br/>
+   ([^&lt;]|&lt;(?!inet))+</p>
+<p class="Pp">Coincide desde donde sea que empiece hasta que encuentra
+    &quot;&lt;inet&quot; o el final de los datos, y es el tipo de patrón que podría
+    usarse al procesar un archivo XML. Cada iteración de los paréntesis externos
+    coincide con un carácter que no es &quot;&lt;&quot; o un &quot;&lt;&quot;
+    que no va seguido de &quot;inet&quot;. Sin embargo, cada vez que se procesa
+    un paréntesis, ocurre una recursión, por lo que esta formulación utiliza un
+    marco de pila por cada carácter coincidente. Para una cadena larga, se
+    requiere mucha pila. Considere ahora este patrón reescrito, que coincide
+    exactamente con las mismas cadenas:</p>
+<p class="Pp">
+  <br/>
+   ([^&lt;]++|&lt;(?!inet))+</p>
+<p class="Pp">Esto utiliza mucha menos pila, porque las secuencias de
+    caracteres que no contienen &quot;&lt;&quot; son "tragadas" en un solo elemento
+    dentro de los paréntesis. La recursión ocurre solo cuando se encuentra un
+    carácter &quot;&lt;&quot; que no va seguido de &quot;inet&quot; (y asumimos
+    que esto es relativamente raro). Se utiliza un cuantificador posesivo para
+    detener cualquier retroceso en las secuencias de caracteres que no son
+    &quot;&lt;&quot;, pero eso no está relacionado con el uso de la pila.</p>
+<p class="Pp">Este ejemplo muestra que una forma de evitar problemas de pila al
+    coincidir cadenas de sujeto largas es escribir patrones de subexpresiones
+    entre paréntesis repetidos para que coincidan con más de un carácter siempre
+    que sea posible.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Compilación_de_PCRE_para_usar_el_montón_en_lugar_de_la_pila_para_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'><a class='permalink' href='#Compilación_de_PCRE_para_usar_el_montón_en_lugar_de_la_pila_para_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'>Compilación de PCRE para usar el montón en lugar de la pila para <b>pcre[16|32]_exec()</b></a></h2>
+<p class="Pp">En entornos donde la memoria de la pila es limitada, es posible que
+    desee compilar PCRE para que utilice memoria del montón en lugar de la pila
+    para recordar los puntos de retroceso cuando se ejecuta <b>pcre[16|32]_exec()</b>.
+    Sin embargo, esto lo hace ejecutarse mucho más lentamente. Los detalles sobre
+    cómo hacer esto se dan en la documentación de <b>pcrebuild</b>. Cuando se
+    compila de esta manera, en lugar de usar la pila, PCRE obtiene y libera
+    memoria llamando a las funciones a las que apuntan las variables
+    <b>pcre[16|32]_stack_malloc</b> y <b>pcre[16|32]_stack_free</b>. Por
+    defecto, estas apuntan a <b>malloc()</b> y <b>free()</b>, pero puede
+    reemplazar los punteros para que PCRE utilice sus propias funciones. Dado
+    que los tamaños de los bloques son siempre los mismos y siempre se liberan en
+    orden inverso, es posible implementar manejadores de memoria personalizados
+    que sean más eficientes que las funciones estándar.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Limitación_del_uso_de_pila_de_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'><a class='permalink' href='#Limitación_del_uso_de_pila_de_&lt;b&gt;pcre%5B16%7C32%5D_exec()&lt;/b&gt;'>Limitación del uso de pila de <b>pcre[16|32]_exec()</b></a></h2>
+<p class="Pp">Puede establecer límites en el número de veces que se llama a
+    <b>match()</b>, tanto en total como de forma recursiva. Si se supera un
+    límite, <b>pcre[16|32]_exec()</b> devuelve un código de error. Establecer
+    límites adecuados debería evitar que se quede sin pila. Los valores por
+    defecto de los límites son muy grandes y es poco probable que se activen
+    alguna vez. Se pueden cambiar cuando se compila PCRE y también se pueden
+    establecer cuando se llama a <b>pcre[16|32]_exec()</b>. Para obtener detalles
+    sobre estas interfaces, consulte la documentación de <b>pcrebuild</b> y la
+    sección sobre datos adicionales para <b>pcre[16|32]_exec()</b> en la
+    documentación de <b>pcreapi</b>.</p>
+<p class="Pp">Como regla general muy aproximada, debe calcular unos 500 bytes
+    por recursión. Por lo tanto, si desea limitar el uso de su pila a 8 MB,
+    debería establecer el límite en 16000 recursiones. Una pila de 64 MB, por
+    otro lado, puede soportar alrededor de 128000 recursiones.</p>
+<p class="Pp">En entornos similares a Unix, el programa de prueba
+    <b>pcretest</b> tiene una opción de línea de comandos (<b>-S</b>) que se puede
+    usar para aumentar el tamaño de su pila. Mientras la pila sea lo
+    suficientemente grande, se puede usar otra opción (<b>-M</b>) para encontrar
+    los límites más pequeños que permiten que un patrón particular coincida con
+    una cadena de sujeto dada. Esto se hace llamando a <b>pcre[16|32]_exec()</b>
+    repetidamente con diferentes límites.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Obtención_de_una_estimación_del_uso_de_pila'><a class='permalink' href='#Obtención_de_una_estimación_del_uso_de_pila'>Obtención de una estimación del uso de pila</a></h2>
+<p class="Pp">La cantidad real de pila utilizada por recursión puede variar
+    considerablemente, dependiendo del compilador que se utilizó para compilar
+    PCRE y las opciones de optimización o depuración que se configuraron para
+    él. El valor de regla general de 500 bytes mencionado anteriormente puede ser
+    mayor o menor que lo que realmente se necesita. Se puede obtener una mejor
+    aproximación ejecutando este comando:</p>
+<p class="Pp">
+  <br/>
+   pcretest -m -C</p>
+<p class="Pp">La opción <b>-C</b> hace que <b>pcretest</b> muestre información
+    sobre las opciones con las que se compiló PCRE. Cuando también se proporciona
+    <b>-m</b> (antes de <b>-C</b>), se muestra información sobre el uso de la pila
+    en una línea como esta:</p>
+<p class="Pp">
+  <br/>
+   Match recursion uses stack: approximate frame size = 640 bytes</p>
+<p class="Pp">El valor es aproximado porque algunas recursiones necesitan un poco
+    más (hasta quizás 16 bytes más).</p>
+<p class="Pp">Si se da el comando anterior cuando PCRE se compila para usar el
+    montón en lugar de la pila para la recursión, el valor que se muestra es el
+    tamaño de cada bloque que se obtiene del montón.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Cambio_del_tamaño_de_la_pila_en_sistemas_tipo_Unix'><a class='permalink' href='#Cambio_del_tamaño_de_la_pila_en_sistemas_tipo_Unix'>Cambio del tamaño de la pila en sistemas tipo Unix</a></h2>
+<p class="Pp">En entornos similares a Unix, no suele haber problemas con la pila
+    a menos que se involucren cadenas muy largas, aunque el límite por defecto
+    para el tamaño de la pila varía de un sistema a otro. Son comunes valores de
+    8 MB a 64 MB. Puede encontrar su límite por defecto ejecutando el comando:</p>
+<p class="Pp">
+  <br/>
+   ulimit -s</p>
+<p class="Pp">Desafortunadamente, el efecto de quedarse sin pila suele ser
+    SIGSEGV, aunque a veces un mensaje de error más explícito</p>
+</div>
+</section>
+
+            </article>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+se proporciona. Normalmente puedes aumentar el límite del tamaño de la pila con código como este:
+
+<p class="Pp">
+  <br/>
+   struct rlimit rlim;
+  <br/>
+   getrlimit(RLIMIT_STACK, &amp;rlim);
+  <br/>
+   rlim.rlim_cur = 100*1024*1024;
+  <br/>
+   setrlimit(RLIMIT_STACK, &amp;rlim);</p>
+<p class="Pp">Esto lee los límites actuales (blandos y duros) usando
+    <b>getrlimit()</b>, luego intenta aumentar el límite blando a 100 MB usando
+    <b>setrlimit()</b>. Debes hacer esto antes de llamar a
+    <b>pcre[16|32]_exec()</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Cambiar_el_tamaño_de_la_pila_en_Mac_OS_X'><a class='permalink' href='#Cambiar_el_tamaño_de_la_pila_en_Mac_OS_X'>Cambiar el tamaño de la pila en Mac OS X</a></h2>
+<p class="Pp">Usar <b>setrlimit()</b>, como se describe arriba, también debería funcionar en
+    Mac OS X. También es posible establecer un tamaño de pila al enlazar un programa.
+    Hay una discusión sobre los tamaños de pila en Mac OS X en este sitio web:
+    <a href='http://developer.apple.com/qa/qa2005/qa1419.html'>http://developer.apple.com/qa/qa2005/qa1419.html</a>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<pre>Philip Hazel
+University Computing Service
+Cambridge CB2 3QH, Inglaterra.</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REVISIÓN'><a class='permalink' href='#REVISIÓN'>REVISIÓN</a></h1>
+<pre>Última actualización: 24 de junio de 2012
+Copyright (c) 1997-2012 Universidad de Cambridge.</pre>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">24 de junio de 2012</td>
+    <td class="foot-os">PCRE 8.30</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/pcre/">core/pcre</a></dd>
+        <dt>Versión:</dt>
+        <dd>8.45-4</dd>
+        <dt>Principal:</dt>
+        <dd><a href="https://www.pcre.org/">https://www.pcre.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/pcre/">/listing/core/pcre/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DISCUSIÓN_DEL_USO_DE_LA_PILAS_DE_PCRE">DISCUSIÓN DEL USO DE LA PILAS DE PCRE</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#REVISIÓN">REVISIÓN</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pcrestack.3.en.txt">txt</a>, 
+        
+            <a href="/man/pcrestack.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

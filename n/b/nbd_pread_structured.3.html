@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>nbd_pread_structured(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">nbd_pread_structured(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libnbd/">libnbd</a></p>
+<p class="lic">Licencias: LGPL-2.1-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">nbd_pread_structured(3)</td>
+    <td class="head-vol">LIBNBD</td>
+    <td class="head-rtitle">nbd_pread_structured(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">nbd_pread_structured - leer desde el servidor NBD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre>#include &lt;libnbd.h&gt;
+typedef struct {
+  int (*callback) (void *user_data, const void *subbuf,
+                   size_t count, uint64_t offset,
+                   unsigned status, int *error);
+  void *user_data;
+  void (*free) (void *user_data);
+} nbd_chunk_callback;
+int nbd_pread_structured (
+      struct nbd_handle *h, void *buf, size_t count,
+      uint64_t offset, nbd_chunk_callback chunk_callback,
+      uint32_t flags
+    );</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Emite un comando de lectura al servidor NBD para el rango que
+    comienza en <span class="Li">&quot;offset&quot;</span> y termina en
+    <span class="Li">&quot;offset&quot;</span> + <span class="Li">&quot;count&quot;</span>
+    - 1. La respuesta del servidor puede subdividirse en fragmentos que pueden
+    llegar desordenados antes de reensamblarse en el búfer original; la función
+    de devolución de llamada (callback) de <span class="Li">&quot;chunk&quot;</span>
+    se utiliza para notificar después de que llega cada fragmento, y puede
+    realizar verificaciones adicionales en la respuesta del servidor. La función
+    de devolución de llamada no puede llamar a las APIs de <span class="Li">&quot;nbd_*&quot;</span>
+    en el mismo manejador (handle) ya que este tiene el bloqueo del manejador y
+    causará un interbloqueo (deadlock). Si la función de devolución de llamada
+    devuelve <span class="Li">-1</span>, y no se ha detectado ningún error
+    anterior, el comando de lectura general fallará con cualquier valor distinto
+    de cero almacenado en el parámetro <span class="Li">&quot;error&quot;</span>
+    de la función de devolución de llamada (con un valor predeterminado de
+    <span class="Li">&quot;EPROTO&quot;</span>); pero los fragmentos posteriores
+    seguirán invocando la función de devolución de llamada.</p>
+<p class="Pp">La función <span class="Li">&quot;chunk&quot;</span> se llama una
+    vez por fragmento de datos recibido, con el
+    <span class="Li">&quot;user_data&quot;</span> pasado a esta función. Los
+    parámetros <span class="Li">&quot;subbuf&quot;</span> y
+    <span class="Li">&quot;count&quot;</span> representan el subconjunto del
+    búfer original que acaba de ser poblado con resultados del servidor (en C,
+    <span class="Li">&quot;subbuf&quot;</span> siempre apunta dentro del
+    <span class="Li">&quot;buf&quot;</span> original; pero esta garantía puede no
+    extenderse a otros enlaces de lenguaje). El parámetro
+    <span class="Li">&quot;offset&quot;</span> representa el desplazamiento absoluto
+    en el que <span class="Li">&quot;subbuf&quot;</span> comienza dentro de la
+    imagen (tenga en cuenta que este no es el desplazamiento relativo de
+    <span class="Li">&quot;subbuf&quot;</span> dentro del búfer original
+    <span class="Li">&quot;buf&quot;</span>). Los cambios en
+    <span class="Li">&quot;error&quot;</span> en la salida se ignoran a menos que
+    la función de devolución de llamada falle. El significado de entrada del
+    parámetro <span class="Li">&quot;error&quot;</span> está controlado por el
+    parámetro <span class="Li">&quot;status&quot;</span>, que es uno de:</p>
+<dl class="Bl-tag">
+  <dt>&quot;LIBNBD_READ_DATA&quot; = 1</dt>
+  <dd><span class="Li">&quot;subbuf&quot;</span> se pobló con
+      <span class="Li">&quot;count&quot;</span> bytes de datos. En la entrada,
+      <span class="Li">&quot;error&quot;</span> contiene el valor errno de cualquier
+      error detectado previamente, o cero.</dd>
+  <dt>&quot;LIBNBD_READ_HOLE&quot; = 2</dt>
+  <dd><span class="Li">&quot;subbuf&quot;</span> representa un agujero (hole), y
+      contiene <span class="Li">&quot;count&quot;</span> bytes NUL. En la entrada,
+      <span class="Li">&quot;error&quot;</span> contiene el valor errno de cualquier
+      error detectado previamente, o cero.</dd>
+  <dt>&quot;LIBNBD_READ_ERROR&quot; = 3</dt>
+  <dd><span class="Li">&quot;count&quot;</span> es 0, por lo que
+      <span class="Li">&quot;subbuf&quot;</span> no se puede utilizar. En la
+      entrada, <span class="Li">&quot;error&quot;</span> contiene el valor errno
+      reportado por el servidor como ocurrido al leer ese
+      <span class="Li">&quot;offset&quot;</span>, independientemente de si se ha
+      detectado algún error anterior.</dd>
+</dl>
+<p class="Pp">Las futuras extensiones de NBD pueden permitir otros valores para
+    <span class="Li">&quot;status&quot;</span>, pero esos no se devolverán a un
+    cliente que no haya optado por solicitar dichas extensiones. Si el servidor
+    no cumple con las especificaciones, es posible que la función
+    <span class="Li">&quot;chunk&quot;</span> se llame más veces de las que espera
+    o con <span class="Li">&quot;count&quot;</span> 0 para
+    <span class="Li">&quot;LIBNBD_READ_DATA&quot;</span> o
+    <span class="Li">&quot;LIBNBD_READ_HOLE&quot;</span>. También es posible que la
+    función <span class="Li">&quot;chunk&quot;</span> no se llame en absoluto
+    (en particular, <span class="Li">&quot;LIBNBD_READ_ERROR&quot;</span> se usa
+    solo cuando un error está asociado con un desplazamiento particular, y no
+    cuando el servidor informa un error genérico), pero se garantiza que la
+    función de devolución de llamada se llamó al menos una vez si la lectura
+    general tuvo éxito. Libnbd no valida que el servidor haya obedecido el
+    requisito de que una llamada de lectura no debe tener fragmentos superpuestos
+    y no debe tener éxito sin suficientes fragmentos para cubrir toda la solicitud.</p>
+<p class="Pp">Tenga en cuenta que libnbd actualmente impone un tamaño máximo de
+    búfer de lectura de 64MiB, incluso si el servidor permitiera un búfer más
+    grande en una sola transacción; los intentos de exceder esto resultarán en un
+    error <span class="Li">&quot;ERANGE&quot;</span>. El servidor puede imponer un
+    límite menor, que se puede obtener con <a href='/man/nbd_get_block_size.3.en'>nbd_get_block_size(3)</a>.</p>
+<p class="Pp">El parámetro <span class="Li">&quot;flags&quot;</span> puede ser
+    <span class="Li">0</span> para ninguna bandera, o puede contener
+    <span class="Li">&quot;LIBNBD_CMD_FLAG_DF&quot;</span> significando que el
+    servidor no debe responder con más de un fragmento (si eso es compatible -
+    algunos servidores no pueden hacer esto, ver <a href='/man/nbd_can_df.3.en'>nbd_can_df(3)</a>). Libnbd no
+    valida que el servidor realmente obedezca la bandera.</p>
+<p class="Pp">Tenga en cuenta que si este comando falla, y
+    <a href='/man/nbd_get_pread_initialize.3.en'>nbd_get_pread_initialize(3)</a> devuelve verdadero, entonces libnbd sanitizó
+    <span class="Li">&quot;buf&quot;</span>, pero no se especifica si el contenido de
+    <span class="Li">&quot;buf&quot;</span> se leerá como cero o como resultados
+    parciales del servidor. Si <a href='/man/nbd_get_pread_initialize.3.en'>nbd_get_pread_initialize(3)</a>
+    devuelve falso, entonces libnbd no sanitizó
+    <span class="Li">&quot;buf&quot;</span>, y los contenidos son indefinidos en
+    caso de fallo.</p>
+<p class="Pp">Por defecto, libnbd rechazará los intentos de usar esta función con
+    parámetros que probablemente resulten en un fallo del servidor, como solicitar
+    una bandera de comando desconocida. La función <a href='/man/nbd_set_strict_mode.3.en'>nbd_set_strict_mode(3)</a>
+    puede usarse para alterar qué escenarios deben esperar una respuesta del
+    servidor en lugar de fallar rápidamente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Si la llamada es exitosa, la función devuelve
+    <span class="Li">0</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ERRORS'><a class='permalink' href='#ERRORS'>ERRORES</a></h1>
+<p class="Pp">En caso de error, se devuelve <span class="Li">-1</span>.</p>
+<p class="Pp">Consulte &quot;MANEJO DE ERRORES&quot; en <a href='/man/libnbd.3.en'>libnbd(3)</a> para obtener más detalles sobre el
+    error.</p>
+<p class="Pp">Los siguientes parámetros no deben ser NULL:
+    <span class="Li">&quot;h&quot;</span>,
+    <span class="Li">&quot;buf&quot;</span>. Para más información vea
+    &quot;Parámetros que no deben ser NULL&quot; en <a href='/man/libnbd.3.en'>libnbd(3)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HANDLE_STATE'><a class='permalink' href='#HANDLE_STATE'>ESTADO DEL MANEJADOR</a></h1>
+<p class="Pp">nbd_pread_structured puede llamarse cuando el manejador se encuentra
+    en el siguiente estado:</p>
+<pre>&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502; Manejador creado, antes de conectar &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectando                          &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectando y handshake (opt_mode) &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectado al servidor             &#x2502; &#x2705; permitido            &#x2502;
+&#x2502; Conexión cerrada                 &#x2502; &#x274C; error                &#x2502;
+&#x2502; Manejador muerto                  &#x2502; &#x274C; error                &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</pre>
+</section>
+<sectio
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSIÓN</a></h1>
+<p class="Pp">Esta función apareció por primera vez en libnbd 1.0.</p>
+<p class="Pp">Si necesita probar si esta función está disponible en tiempo de compilación, compruebe si la siguiente macro está definida:</p>
+<pre>#define LIBNBD_HAVE_NBD_PREAD_STRUCTURED 1</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/nbd_aio_pread_structured.3.en'>nbd_aio_pread_structured(3)</a>, <a href='/man/nbd_can_df.3.en'>nbd_can_df(3)</a>,
+    <a href='/man/nbd_create.3.en'>nbd_create(3)</a>, <a href='/man/nbd_get_block_size.3.en'>nbd_get_block_size(3)</a>,
+    <a href='/man/nbd_get_pread_initialize.3.en'>nbd_get_pread_initialize(3)</a>, <a href='/man/nbd_pread.3.en'>nbd_pread(3)</a>,
+    <a href='/man/nbd_set_pread_initialize.3.en'>nbd_set_pread_initialize(3)</a>, <a href='/man/nbd_set_request_block_size.3.en'>nbd_set_request_block_size(3)</a>,
+    <a href='/man/nbd_set_strict_mode.3.en'>nbd_set_strict_mode(3)</a>, <a href='/man/libnbd.3.en'>libnbd(3)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORES</a></h1>
+<p class="Pp">Eric Blake</p>
+<p class="Pp">Richard W.M. Jones</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright Red Hat</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCIA</a></h1>
+<p class="Pp">Esta biblioteca es software libre; puede redistribuirla y/o modificarla bajo los términos de la Licencia Pública General Reducida de GNU tal como fue publicada por la Free Software Foundation; ya sea la versión 2 de la Licencia, o (a su elección) cualquier versión posterior.</p>
+<p class="Pp">Esta biblioteca se distribuye con la esperanza de que sea útil, pero SIN NINGUNA GARANTÍA; sin la garantía implícita de COMERCIABILIDAD o IDONEIDAD PARA UN PROPÓSITO PARTICULAR. Consulte la Licencia Pública General Reducida de GNU para obtener más detalles.</p>
+<p class="Pp">Debería haber recibido una copia de la Licencia Pública General Reducida de GNU junto con esta biblioteca; si no es así, escriba a la Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-11-01</td>
+    <td class="foot-os">libnbd-1.22.5</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libnbd/">extra/libnbd</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.22.5-2</dd>
+        <dt>Desarrollador:</dt>
+        <dd><a href="https://gitlab.com/nbdkit/libnbd">https://gitlab.com/nbdkit/libnbd</a></dd>
+        <dt>Licencias:</dt>
+        <dd>LGPL-2.1-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libnbd/">/listing/extra/libnbd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#ERRORS">ERRORES</a></li>
+        
+            <li><a href="#HANDLE_STATE">ESTADO DEL MANEJADOR</a></li>
+        
+            <li><a href="#VERSION">VERSIÓN</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/nbd_pread_structured.3.en.txt">txt</a>, 
+        
+            <a href="/man/nbd_pread_structured.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

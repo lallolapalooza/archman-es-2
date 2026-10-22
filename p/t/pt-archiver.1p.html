@@ -1,0 +1,1353 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-archiver(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-archiver(1p)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/percona-toolkit/">percona-toolkit</a></p>
+<p class="lic">Licencias: GPL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-ARCHIVER(1p)</td>
+    <td class="head-vol">Documentación de Perl contribuida por el usuario</td>
+    <td class="head-rtitle">PT-ARCHIVER(1p)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pt-archiver - Archiva filas de una tabla MySQL en otra tabla o en un archivo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-archiver [OPCIONES] --source DSN --where WHERE</p>
+<p class="Pp">pt-archiver consume registros de una tabla MySQL. Los argumentos --source y --dest utilizan sintaxis DSN; si COPY es sí, --dest por defecto es el valor de la clave de --source.</p>
+<p class="Pp">Ejemplos:</p>
+<p class="Pp">Archivar todas las filas de oltp_server a olap_server y a un archivo:</p>
+<pre>pt-archiver --source h=oltp_server,D=test,t=tbl --dest h=olap_server \
+  --file '/var/log/archive/%Y-%m-%d-%D.%t'                           \
+  --where "1=1" --limit 1000 --commit-each</pre>
+<p class="Pp">Purgar (eliminar) filas huérfanas de una tabla hija:</p>
+<pre>pt-archiver --source h=host,D=db,t=child --purge \
+  --where 'NOT EXISTS(SELECT * FROM parent WHERE col=child.col)'</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RIESGOS'><a class='permalink' href='#RIESGOS'>RIESGOS</a></h1>
+<p class="Pp">Percona Toolkit es maduro, probado en el mundo real y bien testeado, pero todas las herramientas de bases de datos pueden suponer un riesgo para el sistema y el servidor de bases de datos. Antes de usar esta herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lea la documentación de la herramienta</li>
+  <li>Revise los "BUGS" conocidos de la herramienta</li>
+  <li>Pruebe la herramienta en un servidor no productivo</li>
+  <li>Haga una copia de seguridad de su servidor de producción y verifique las copias de seguridad</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">pt-archiver es la herramienta para archivar tablas como se describe en
+    <a href='https://web.archive.org/web/20071014031743/http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql'>https://web.archive.org/web/20071014031743/http://www.xaprb.com/blog/2006/05/02/how-to-write-efficient-archiving-and-purging-jobs-in-sql</a>.
+    El objetivo es un trabajo de bajo impacto, hacia adelante, para consumir datos antiguos de la tabla sin afectar mucho las consultas OLTP. Puede insertar los datos en otra tabla, que no tiene por qué estar en el mismo servidor. También puede escribirlos en un archivo en un formato adecuado para LOAD DATA INFILE. O puede no hacer ninguna de las dos cosas, en cuyo caso es solo un DELETE incremental.</p>
+<p class="Pp">pt-archiver es extensible a través de un mecanismo de plugins. Puede inyectar su propio código para agregar lógica de archivo avanzada que podría ser útil para archivar datos dependientes, aplicar reglas de negocio complejas o construir un almacén de datos durante el proceso de archivo.</p>
+<p class="Pp">Debe elegir cuidadosamente los valores para algunas opciones. Las más importantes son "--limit", "--retries" y "--txn-size".</p>
+<p class="Pp">La estrategia es encontrar las primeras filas, luego escanear un índice de avance para encontrar más filas de manera eficiente. Cada consulta subsiguiente no debe escanear toda la tabla; debe buscar en el índice, luego escanear hasta que encuentre más filas archivables. Especificar el índice con la parte 'i' del argumento "--source" puede ser crucial para esto; use "--dry-run" para examinar las consultas generadas y asegúrese de EXPLAIN para ver si son eficientes (la mayoría de las veces probablemente querrá escanear la clave PRIMARIA, que es la predeterminada). Mejor aún, examine la diferencia en los contadores de estado del Manejador antes y después de ejecutar la consulta, y asegúrese de que no esté escaneando toda la tabla en cada consulta.</p>
+<p class="Pp">Puede deshabilitar las optimizaciones de búsqueda-luego-escaneo parcial o totalmente con "--no-ascend" y "--ascend-first". A veces, esto puede ser más eficiente para claves multicolumna. Tenga en cuenta que pt-archiver está diseñado para comenzar al principio del índice que elige y escanearlo solo hacia adelante. Esto podría resultar en largos escaneos de tabla si está intentando consumir desde el final de la tabla por un índice que no sea el que prefiere. Vea "--source" y lea la documentación sobre la parte de
+    <span class="Li">&quot;i&quot;</span> si esto se aplica a usted.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Percona_XtraDB_Cluster'><a class='permalink' href='#Percona_XtraDB_Cluster'>Percona   XtraDB Cluster</a></h1>
+<p class="Pp">pt-archiver funciona con Percona XtraDB Cluster (PXC) 5.5.28-23.7 y versiones posteriores, pero hay tres limitaciones que debe considerar antes de archivar en un clúster:</p>
+<dl class="Bl-tag">
+  <dt id="Error"><a class="permalink" href="#Error">Error en el commit</a></dt>
+  <dd>pt-archiver no verifica si hay errores al confirmar transacciones. Los commits en PXC pueden fallar, pero la herramienta aún no verifica ni reintenta la transacción cuando esto sucede. Si sucede, la herramienta morirá.</dd>
+  <dt id="MyISAM"><a class="permalink" href="#MyISAM">Tablas MyISAM</a></dt>
+  <dd>Archivar tablas MyISAM funciona, pero el soporte de MyISAM en PXC todavía es experimental en el momento de esta versión. Hay varios errores conocidos con PXC, tablas MyISAM y columnas
+      <span class="Li">&quot;AUTO_INCREMENT&quot;</span>. Por lo tanto, debe asegurarse de que el archivo no resulte directa o indirectamente en el uso de valores predeterminados de
+      <span class="Li">&quot;AUTO_INCREMENT&quot;</span> para una tabla MyISAM. Por ejemplo, esto sucede con "--dest" si se usa "--columns" y la columna
+      <span class="Li">&quot;AUTO_INCREMENT&quot;</span> no está incluida. ¡La herramienta no verifica esto!</dd>
+  <dt id="Non-cluster"><a class="permalink" href="#Non-cluster">Opciones no de clúster</a></dt>
+  <dd>Ciertas opciones pueden o no funcionar. Por ejemplo, si un nodo de clúster no es también una réplica, entonces "--check-replica-lag" no funciona. Y dado que las tablas PXC suelen ser InnoDB, pero InnoDB no soporta
+      <span class="Li">&quot;INSERT DELAYED&quot;</span>, entonces "--delayed-insert" no funciona. Otras opciones también pueden no funcionar, pero la herramienta no las verifica, por lo tanto, debe probar el archivo en un clúster de prueba antes de archivar en su clúster real.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SALIDA'><a class='permalink' href='#SALIDA'>SALIDA</a></h1>
+<p class="Pp">Si especifica "--progress", la salida es una fila de encabezado, más una salida de estado a intervalos. Cada fila en la salida de estado lista la fecha y hora actuales, cuántos segundos ha estado ejecutándose pt-archiver y cuántas filas ha archivado.</p>
+<p class="Pp">Si especifica "--statistics",
+    <span class="Li">&quot;pt-archiver&quot;</span> genera información de tiempo y
+    otra información para ayudarle a identificar qué parte de su proceso de
+    archivo consume más tiempo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MANEJO-DE-ERRORES'><a class='permalink' href='#MANEJO-DE-ERRORES'>MANEJO DE ERRORES</a></h1>
+<p class="Pp">pt-archiver intenta capturar señales y salir limpiamente; por ejemplo, si le envía SIGTERM (Ctrl-C en sistemas tipo UNIX), capturará la señal, imprimirá un mensaje sobre la señal y saldrá de manera bastante normal. No ejecutará "--analyze" u "--optimize", ya que estos pueden tardar mucho en finalizar. Ejecutará todo el demás código de forma normal, incluida la llamada a <b>after_finish()</b> en cualquier plugin (ver "EXTENSIÓN").</p>
+<p class="Pp">En otras palabras, una señal, si se captura, saldrá del bucle principal de archivo y omitirá la optimización/análisis.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES'><a class='permalink' href='#OPCIONES'>OPCIONES</a></h1>
+<p class="Pp">Especifique al menos una de las opciones "--dest", "--file" o "--purge".</p>
+<p class="Pp">"--ignore" y "--replace" son mutuamente excluyentes.</p>
+<p class="Pp">"--txn-size" y "--commit-each" son mutuamente excluyentes.</p>
+<p class="Pp">"--low-priority-insert" y "--delayed-insert" son mutuamente excluyentes.</p>
+<p class="Pp">"--share-lock" y "--for-update" son mutuamente excluyentes.</p>
+<p class="Pp">"--analyze" y "--optimize" son mutuamente excluyentes.</p>
+<p class="Pp">"--no-ascend" y "--no-delete" son mutuamente excluyentes.</p>
+<p class="Pp">Los valores DSN en "--dest" por defecto son los valores de "--source" si COPY es sí.</p>
+<dl class="Bl-tag">
+  <dt id="analyze"><a class="permalink" href="#analyze">--analyze</a></dt>
+  <dd>tipo: cadena
+    <p class="Pp">Ejecuta ANALYZE TABLE después en "--source" y/o "--dest".</p>
+    <p class="Pp">Ejecuta ANALYZE TABLE después de terminar. El argumento es una cadena arbitraria. Si contiene la letra 's', se analizará la fuente. Si contiene 'd', se analizará el destino. Puede especificar uno o ambos. Por ejemplo, lo siguiente analizará ambos:</p>
+        <pre>--analyze=ds
+</pre>
+    <p class="Pp">Ver <a href='http://dev.mysql.com/doc/en/analyze-table.html'>http://dev.mysql.com/doc/en/analyze-table.html</a> para
+        detalles sobre ANALYZE TABLE.</p>
+  </dd>
+  <dt id="ascend"><a class="permalink" href="#ascend">--ascend-first</a></dt>
+  <dd>Asciende solo la primera columna del índice.
+    <p class="Pp">Si desea utilizar la optimización del índice ascendente (ver
+        "--no-ascend"), pero no desea incurrir en la sobrecarga de ascender un
+        índice multicolumna grande, puede usar esta opción para indicarle a
+        pt-archiver que ascienda solo la columna más a la izquierda del índice.
+        Esto puede proporcionar una signific</dd>
+</dl>
+</section>
+</div>
+</section>
+            </article>
+        </main>
+    </body>
+</html>
+<dl>
+<dt id="all"><a name="all"></a><a class="permalink" href="#all">--all</a></dt>
+<dd>
+<p class="Pp">Archive all rows. This option is used to perform the archiving
+        of all rows from the source table. It is equivalent to specifying a
+        LIMIT clause that covers all rows in the table. This can be useful
+        when you want to ensure that every row is considered for archiving,
+        regardless of its current status or any other filtering criteria.</p>
+<p class="Pp"><b>Note</b>: Using this option might lead to significant
+        performance implications, especially on large tables, as it requires
+        processing every single row. Ensure that your system can handle the
+        load before proceeding.</p>
+</dd>
+<dt id="analyze"><a name="analyze"></a><a class="permalink" href="#analyze">--analyze</a></dt>
+<dd>
+<p class="Pp">Analyze the table after archiving.</p>
+<p class="Pp">After the archiving process is complete, this option triggers an
+        `ANALYZE TABLE` command on the source table. This helps update table
+        statistics, which can improve the performance of subsequent queries
+        against the table. This is particularly useful if archiving removes a
+        significant number of rows, as it can help the query optimizer make
+        better decisions.</p>
+</dd>
+<dt id="archive"><a name="archive"></a><a class="permalink" href="#archive">--archive</a></dt>
+<dd>
+<p class="Pp">Archive rows to a different table.</p>
+<p class="Pp">This option designates the destination table where the archived
+        rows will be stored. You must specify a DSN (Data Source Name) for the
+        destination table using the <code class="Nm">--dest</code> option.
+        The <code class="Nm">--archive</code> option implies <code class="Nm">--dest</code>
+        and sets the destination table to the one specified.</p>
+<p class="Pp">Example:</p>
+<pre class="Li">pt-archiver --source h=source_host,D=db1,t=table1 --archive h=dest_host,D=db2,t=archived_table1
+</pre>
+<p class="Pp">This command archives rows from <code class="Nm">db1.table1</code>
+        to <code class="Nm">db2.archived_table1</code>.</p>
+</dd>
+<dt id="ascend-index"><a name="ascend-index"></a><a class="permalink" href="#ascend-index">--ascend-index</a></dt>
+<dd>
+<p class="Pp">Archive rows in ascending order of the specified index.</p>
+<p class="Pp">By default, pt-archiver selects rows in the order they are found
+        in the table. This can lead to inefficient disk I/O if the rows are
+        scattered across the disk. Using <code class="Nm">--ascend-index</code>
+        allows you to specify an index (typically the primary key) by which the
+        rows should be selected. This ensures that rows are processed in a more
+        sequential order, improving disk performance.</p>
+<p class="Pp">When specifying <code class="Nm">--ascend-index</code>, pt-archiver
+        selects rows in chunks. For each chunk, it finds the minimum and maximum
+        values of the index column(s) within that chunk. It then uses these
+        values to select the next chunk of rows. This strategy provides a
+        performance boost over not ascending the index at all, while avoiding the
+        cost of ascending the whole index.</p>
+<p class="Pp">See &quot;EXTENDING&quot; for a discussion of how this
+        interacts with plugins.</p>
+</dd>
+<dt id="ask"><a name="ask"></a><a class="permalink" href="#ask">--ask-pass</a></dt>
+<dd>
+<p class="Pp">Prompt for a password when connecting to MySQL.</p>
+<p class="Pp">If the connection to the MySQL server requires a password, this
+        option will cause pt-archiver to prompt the user to enter the password
+        interactively. This is a more secure way to handle passwords than
+        hardcoding them in scripts or configuration files.</p>
+</dd>
+<dt id="buffer"><a name="buffer"></a><a class="permalink" href="#buffer">--buffer</a></dt>
+<dd>
+<p class="Pp">Buffer output to &quot;--file&quot; and flush at commit.</p>
+<p class="Pp">Disables autoflushing to &quot;--file&quot; and flushes
+        &quot;--file&quot; to disk only when a transaction commits. This
+        typically means the file is block-flushed by the operating system, so
+        there may be some implicit flushes to disk between commits as well. The
+        default is to flush &quot;--file&quot; to disk after every row.</p>
+<p class="Pp">The danger is that a crash might cause lost data.</p>
+<p class="Pp">The performance increase I have seen from using
+        &quot;--buffer&quot; is around 5 to 15 percent. Your mileage may
+        vary.</p>
+</dd>
+<dt id="bulk"><a name="bulk"></a><a class="permalink" href="#bulk">--bulk-delete</a></dt>
+<dd>
+<p class="Pp">Delete each chunk with a single statement (implies
+        &quot;--commit-each&quot;).</p>
+<p class="Pp">Delete each chunk of rows in bulk with a single
+        <span class="Li">&quot;DELETE&quot;</span> statement. The statement
+        deletes every row between the first and last row of the chunk,
+        inclusive. It implies &quot;--commit-each&quot;, since it would be a bad
+        idea to <span class="Li">&quot;INSERT&quot;</span> rows one at a time
+        and commit them before the bulk
+        <span class="Li">&quot;DELETE&quot;</span>.</p>
+<p class="Pp">The normal method is to delete every row by its primary key.
+        Bulk deletes might be a lot faster. <b>They also might not be faster</b>
+        if you have a complex <span class="Li">&quot;WHERE&quot;</span>
+      clause.</p>
+<p class="Pp">This option completely defers all
+        <span class="Li">&quot;DELETE&quot;</span> processing until the chunk of
+        rows is finished. If you have a plugin on the source, its
+        <span class="Li">&quot;before_delete&quot;</span> method will not be
+        called. Instead, its
+        <span class="Li">&quot;before_bulk_delete&quot;</span> method is called
+        later.</p>
+<p class="Pp"><b>WARNING</b>: if you have a plugin on the source that
+        sometimes doesn't return true from
+        <span class="Li">is_archivable()</span>, you should use this option only
+        if you understand what it does. If the plugin instructs
+        <span class="Li">&quot;pt-archiver&quot;</span> not to archive a row, it
+        will still be deleted by the bulk delete!</p>
+</dd>
+<dt>--[no]bulk-delete-limit</dt>
+<dd>
+<p class="Pp">default: yes</p>
+<p class="Pp">Add &quot;--limit&quot; to &quot;--bulk-delete&quot;
+        statement.</p>
+<p class="Pp">This is an advanced option and you should not disable it
+        unless you know what you are doing and why! By default,
+        &quot;--bulk-delete&quot; appends a &quot;--limit&quot; clause to the
+        bulk delete SQL statement. In certain cases, this clause can be omitted
+        by specifying
+        <span class="Li">&quot;--no-bulk-delete-limit&quot;</span>.
+        &quot;--limit&quot; must still be specified.</p>
+</dd>
+<dt id="bulk~2"><a name="bulk~2"></a><a class="permalink" href="#bulk~2">--bulk-insert</a></dt>
+<dd>
+<p class="Pp">Insert each chunk with LOAD DATA INFILE (implies &quot;--bulk-delete&quot;
+        &quot;--commit-each&quot;).</p>
+<p class="Pp">Insert each chunk of rows with <span class="Li">&quot;LOAD
+        DATA LOCAL INFILE&quot;</span>. This may be much faster than inserting a
+        row at a time with <span class="Li">&quot;INSERT&quot;</span>
+        statements. It is implemented by creating a temporary file for each
+        chunk of rows, and writing the rows to this file instead of inserting
+        them. When the chunk is finished, it uploads the rows.</p>
+<p class="Pp">To protect the safety of your data, this option forces bulk
+        deletes to be used. It would be unsafe to delete each row as it is
+        found, before inserting the rows into the destination first. Forcing
+        bulk deletes guarantees that the deletion waits until the insertion is
+        successful.</p>
+<p class="Pp">The &quot;--low-priority-insert&quot;, &quot;--replace&quot;,
+        and &quot;--ignore&quot; options work with this option, but
+        &quot;--delayed-insert&quot; does not.</p>
+<p class="Pp">If <span class="Li">&quot;LOAD DATA LOCAL INFILE&quot;</span>
+        throws an error in the lines of <span class="Li">&quot;The used</span>
+        <span class="Li">command is not allowed with this MySQL
+        version&quot;</span>, refer to the documentation for the
+        <span class="Li">&quot;L&quot;</span> DSN option.</p>
+</dd>
+<dt id="channel"><a name="channel"></a><a class="permalink" href="#channel">--channel</a></dt>
+<dd>
+<p class="Pp">type: string</p>
+<p class="Pp">Channel name used when connected to a server using replication
+        channels. Suppose you have two sources, source_a at port 12345, source_b
+        at port 1236 and a replica connected to both sources using channels
+        chan_source_a and chan_source_b. If you want to run pt-archiver to
+        synchronize the replica against source_a, pt-archiver won't be able to
+        determine what's the correct source since SHOW REPLICA STATUS will
+        return 2 rows. In this case, you can use --channel=chan_source_a to
+        specify the channel name to use in the SHOW REPLICA STATUS command.</p>
+</dd>
+<dt id="charset"><a name="charset"></a><a class="permalink" href="#charset">--charset</a></dt>
+<dd>
+<p class="Pp">short form: -A; type: string</p>
+<p class="Pp">Default character set. If the value is utf8, sets Perl's
+        binmode on STDOUT to utf8, passes the mysql_enable_utf8 option to
+        DBD::mysql, and runs SET NAMES UTF8 after connecting to MySQL. Any other
+        value sets binmode on STDOUT without the utf8 layer, and runs SET NAMES
+        after connecting to MySQL.</p>
+<p class="Pp">Note that only charsets as known by MySQL are recognized; So
+        for example, &quot;UTF8&quot; will work, but &quot;UTF-8&quot; will
+      not.</p>
+<p class="Pp">See also &quot;--[no]check-charset&quot;.</p>
+</dd>
+<dt>--[no]check-charset</dt>
+<dd>
+<p class="Pp">default: yes</p>
+<p class="Pp">Ensure connection and table character sets are the same.
+        Disabling this check may cause text to be erroneously converted from one
+        character set to another (usually from utf8 to latin1) which may cause
+        data loss or mojibake. Disabling this check may be useful or necessary
+        when character set conversions are intended.</p>
+</dd>
+<dt>--[no]check-columns</dt>
+<dd>
+<p class="Pp">default: yes</p>
+<p class="Pp">Ensure &quot;--source&quot; and &quot;--dest&quot; have same
+        columns.</p>
+<p class="Pp">Enabled by default; causes pt-archiver to check that the
+        source and destination tables have the same columns. It does not check
+        column order, data type, etc. It just checks that all columns in the
+        source exist in the destination and vice versa. If there are any
+        differences, pt-archiver will exit with an error.</p>
+<p class="Pp">To disable this check, specify --no-check-columns.</p>
+</dd>
+<dt id="check"><a name="check"></a><a class="permalink" href="#check">--check-interval</a></dt>
+<dd>
+<p class="Pp">type: time; default: 1s</p>
+<p class="Pp">If &quot;--check-replica-lag&quot; is given, this defines how
+        long the tool pauses each
+      <br/>
+       time it discovers that a replica is lagging.
+      <br/>
+       This check is performed every 100 rows.</p>
+</dd>
+<dt id="check~2"><a name="check~2"></a><a class="permalink" href="#check~2">--check-replica-lag</a></dt>
+<dd>
+<p class="Pp">type: string; repeatable: yes</p>
+<p class="Pp">Pause archiving until the specified DSN's replica lag is less
+        than &quot;--max-lag&quot;. This option can be specified multiple times
+        for checking more than one replica.</p>
+</dd>
+<dt id="check~3"><a name="check~3"></a><a class="permalink" href="#check~3">--check-slave-lag</a></dt>
+<dd>
+<p class="Pp">type: string; repeatable: yes</p>
+<p class="Pp">This option is deprecated and will be removed in future
+        releases. Use &quot;--check-replica-lag&quot; instead.</p>
+</dd>
+<dt id="columns"><a name="columns"></a><a class="permalink" href="#columns">--columns</a></dt>
+<dd>
+<p class="Pp">short form: -c; type: array</p>
+<p class="Pp">Comma-separated list of columns to archive.</p>
+<p class="Pp">Specify a comma-separated list of columns to fetch, write to
+        the file, and insert into the destination table. If specified,
+        pt-archiver ignores other columns unless it needs to add them to the
+        <span class="Li">&quot;SELECT&quot;</span> statement for ascending an
+        index or deleting rows. It fetches and uses these extra columns
+        internally, but does not write them to the file or to the destination
+        table. It <i>does</i> pass them to plugins.</p>
+<p class="Pp">See also &quot;--primary-key-only&quot;.</p>
+</dd>
+<dt id="commit"><a name="commit"></a><a class="permalink" href="#commit">--commit-each</a></dt>
+<dd>
+<p class="Pp">Commit each set of fetched and archived rows (disables
+        &quot;--txn-size&quot;).</p>
+<p class="Pp">Commits transactions and flushes &quot;--file&quot; after each
+        set of rows has been archived, before fetching the next set of rows, and
+        before sleeping if &quot;--sleep&quot; is specified. Disables
+        &quot;--txn-size&quot;; use &quot;--limit&quot; to control the
+        transaction size with &quot;--commit-each&quot;.</p>
+<p class="Pp">This option is useful as a shortcut to make
+        &quot;--limit&quot; and &quot;--txn-size&quot; the same value, but more
+        importantly it avoids transactions being held open while searching for
+        more rows. For example, imagine you are archiving old rows from the
+        beginning of a very large table, with &quot;--limit&quot; 1000 and
+        &quot;--txn-size&quot; 1000. After some period of finding and archiving
+        1000 rows at a time, pt-archiver finds the last 999 rows and archives
+        them, then executes the next SELECT to find more rows. This scans the
+        rest of the table, but never finds any more rows. It has held open a
+        transaction for a very long time, only to determine it is finished
+        anyway. You can use &quot;--commit-each&quot; to avoid this.</p>
+</dd>
+<dt id="config"><a name="config"></a><a class="permalink" href="#config">--config</a></dt>
+<dd>
+<p class="Pp">type: Array</p>
+<p class="Pp">Read this comma-separated list of config files; if specified,
+        this must be the first option on the command line.</p>
+</dd>
+<dt id="database"><a name="database"></a><a class="permalink" href="#database">--database</a></dt>
+<dd>
+<p class="Pp">short form: -D; type: string</p>
+<p class="Pp">Connect to this database.</p>
+</dd>
+<dt id="delayed"><a name="delayed"></a><a class="permalink" href="#delayed">--delayed-insert</a></dt>
+<dd>
+<p class="Pp">Add the DELAYED modifier to INSERT statements.</p>
+<p class="Pp">Adds the DELAYED modifier to INSERT or REPLACE statements. See
+        <a href="http://dev.mysql.com/doc/en/insert.html">http://dev.mysql.com/doc/en/insert.html</a> for details.</p>
+</dd>
+<dt id="dest"><a name="dest"></a><a class="permalink" href="#dest">--dest</a></dt>
+<dd>
+<p class="Pp">type: DSN</p>
+<p class="Pp">DSN specifying the table to archive to.</p>
+<p class="Pp">This item specifies a table into which pt-archiver will insert
+        rows archived from &quot;--source&quot;. It uses the same key=val
+        argument format as &quot;--source&quot;. Most missing values default to
+        the same values as &quot;--source&quot;, so you don't have to repeat
+        options that are the same in &quot;--source&quot; and
+        &quot;--dest&quot;. Use the &quot;--help&quot; option to see which
+        values are copied from &quot;--source&quot;.</p>
+<p class="Pp"><b>WARNING</b>: Using a default options file (F) DSN option
+        that defines a socket for &quot;--source&quot; causes pt-archiver to
+        connect to &quot;--dest&quot; usi</p>
+</dd>
+</dl>
+que el socket, a menos que se especifique otro socket
+        con "--dest". Esto significa que pt-archiver puede
+        conectarse incorrectamente a "--source" al conectarse a
+        "--dest". Por ejemplo:</p>
+        <pre>--source F=host1.cnf,D=db,t=tbl --dest h=host2
+</pre>
+    <p class="Pp">Cuando pt-archiver se conecte a "--dest", host2, lo hará a través del socket de
+        "--source", host1, definido en
+        host1.cnf.</p>
+  </dd>
+  <dt id="dry"><a class="permalink" href="#dry">--dry-run</a></dt>
+  <dd>Imprime las consultas y sale sin hacer nada.
+    <p class="Pp">Hace que pt-archiver salga después de imprimir el nombre del archivo y las sentencias SQL
+        que utilizará.</p>
+  </dd>
+  <dt id="file"><a class="permalink" href="#file">--file</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Archivo al que archivar, con formato similar a
+      <b>DATE_FORMAT()</b>.</p>
+    <p class="Pp">Nombre del archivo donde se escribirán las filas archivadas. Se permite un subconjunto de los códigos de formato
+        de <b>DATE_FORMAT()</b> de MySQL en el nombre del archivo, como los siguientes:</p>
+        <pre>%d    Día del mes, numérico (01..31)
+%H    Hora (00..23)
+%i    Minutos, numéricos (00..59)
+%m    Mes, numérico (01..12)
+%s    Segundos (00..59)
+%Y    Año, numérico, cuatro dígitos
+</pre>
+    <p class="Pp">También puede utilizar los siguientes códigos de formato adicionales:</p>
+        <pre>%D    Nombre de la base de datos
+%t    Nombre de la tabla
+</pre>
+    <p class="Pp">Ejemplo:</p>
+        <pre>--file '/var/log/archive/%Y-%m-%d-%D.%t'
+</pre>
+    <p class="Pp">El contenido del archivo tiene el mismo formato que el utilizado por SELECT INTO
+        OUTFILE, como se documenta en el manual de MySQL: las filas terminan con saltos de línea,
+        las columnas terminan con tabulaciones, los caracteres NULL se representan como
+        <span class="Li">&quot;\N&quot;</span> y los caracteres especiales se escapan con
+        <span class="Li">&quot;\&quot;</span>. Esto le permite recargar un archivo con los ajustes predeterminados de LOAD DATA INFILE.</p>
+    <p class="Pp">Si desea una cabecera de columna al principio del archivo, consulte
+        "--header". El archivo se vacía automáticamente por defecto; consulte
+        "--buffer".</p>
+  </dd>
+  <dt id="for"><a class="permalink" href="#for">--for-update</a></dt>
+  <dd>Añade el modificador FOR UPDATE a las sentencias SELECT.
+    <p class="Pp">Para más detalles, consulte
+        <a href='http://dev.mysql.com/doc/en/innodb-locking-reads.html'>http://dev.mysql.com/doc/en/innodb-locking-reads.html</a>.</p>
+  </dd>
+  <dt id="header"><a class="permalink" href="#header">--header</a></dt>
+  <dd>Imprime la cabecera de la columna al principio de "--file".
+    <p class="Pp">Escribe los nombres de las columnas como la primera línea en el archivo especificado por
+        "--file". Si el archivo existe, no escribe cabeceras; esto mantiene el archivo cargable con LOAD DATA INFILE en caso de que le añada más salida.</p>
+  </dd>
+  <dt id="help"><a class="permalink" href="#help">--help</a></dt>
+  <dd>Muestra la ayuda y sale.</dd>
+  <dt id="high"><a class="permalink" href="#high">--high-priority-select</a></dt>
+  <dd>Añade el modificador HIGH_PRIORITY a las sentencias SELECT.
+    <p class="Pp">Para más detalles, consulte <a href='http://dev.mysql.com/doc/en/select.html'>http://dev.mysql.com/doc/en/select.html</a>.</p>
+  </dd>
+  <dt id="host"><a class="permalink" href="#host">--host</a></dt>
+  <dd>forma corta: -h; tipo: string
+    <p class="Pp">Conectar al host.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore</a></dt>
+  <dd>Usa IGNORE para las sentencias INSERT.
+    <p class="Pp">Hace que los INSERT en "--dest" sean INSERT
+      IGNORE.</p>
+  </dd>
+  <dt id="limit"><a class="permalink" href="#limit">--limit</a></dt>
+  <dd>tipo: int; por defecto: 1
+    <p class="Pp">Número de filas a obtener y archivar por sentencia.</p>
+    <p class="Pp">Limita el número de filas devueltas por las sentencias SELECT
+        que recuperan filas para archivar. El valor por defecto es una fila. Puede ser más
+        eficiente aumentar el límite, pero tenga cuidado si está archivando de forma dispersa, saltándose muchas filas; esto puede causar potencialmente más contención con otras consultas, dependiendo del motor de almacenamiento, el nivel de aislamiento de la transacción y opciones como
+        "--for-update".</p>
+  </dd>
+  <dt id="local"><a class="permalink" href="#local">--local</a></dt>
+  <dd>No escribir consultas OPTIMIZE o ANALYZE en el binlog.
+    <p class="Pp">Añade el modificador NO_WRITE_TO_BINLOG a las consultas ANALYZE y OPTIMIZE.
+        Consulte "--analyze" para más detalles.</p>
+  </dd>
+  <dt id="low"><a class="permalink" href="#low">--low-priority-delete</a></dt>
+  <dd>Añade el modificador LOW_PRIORITY a las sentencias DELETE.
+    <p class="Pp">Para más detalles, consulte <a href='http://dev.mysql.com/doc/en/delete.html'>http://dev.mysql.com/doc/en/delete.html</a>.</p>
+  </dd>
+  <dt id="low~2"><a class="permalink" href="#low~2">--low-priority-insert</a></dt>
+  <dd>Añade el modificador LOW_PRIORITY a las sentencias INSERT o REPLACE.
+    <p class="Pp">Para más detalles, consulte <a href='http://dev.mysql.com/doc/en/insert.html'>http://dev.mysql.com/doc/en/insert.html</a>.</p>
+  </dd>
+  <dt id="max"><a class="permalink" href="#max">--max-flow-ctl</a></dt>
+  <dd>tipo: float
+    <p class="Pp">Algo similar a --max-lag pero para clústeres PXC. Comprueba el tiempo promedio que el clúster pasó pausado para el Control de Flujo y hace que la herramienta pause si supera el porcentaje indicado en la opción. Por defecto, no hay comprobación de Control de Flujo. Esta opción está disponible para PXC versiones 5.6 o superiores.</p>
+  </dd>
+  <dt id="max~2"><a class="permalink" href="#max~2">--max-lag</a></dt>
+  <dd>tipo: time; por defecto: 1s
+    <p class="Pp">Pausa el archivado si la réplica dada por "--check-replica-lag" se retrasa.</p>
+    <p class="Pp">Esta opción hace que pt-archiver mire la réplica cada vez que está a punto de obtener otra fila. Si el retraso de la réplica es mayor que el valor de la opción, o si la réplica no se está ejecutando (por lo que su retraso es NULL), pt-archiver duerme durante "check-interval" segundos y luego vuelve a mirar el retraso. Repite hasta que la réplica se ponga al día, y luego procede a obtener y archivar la fila.</p>
+    <p class="Pp">Esta opción puede eliminar la necesidad de "--sleep" o "--sleep-coef".</p>
+  </dd>
+  <dt id="no"><a class="permalink" href="#no">--no-ascend</a></dt>
+  <dd>No usar optimización de índice ascendente.
+    <p class="Pp">La optimización por defecto de índice ascendente hace que
+        <span class="Li">&quot;pt-archiver&quot;</span> optimice las consultas
+        <span class="Li">&quot;SELECT&quot;</span> repetidas para que busquen en el índice donde terminó la consulta anterior, y luego escaneen a lo largo de él, en lugar de escanear desde el principio de la tabla cada vez. Esto está habilitado por defecto porque generalmente es una buena estrategia para accesos repetidos.</p>
+    <p class="Pp">Los índices grandes y de múltiples columnas pueden hacer que la cláusula WHERE sea lo suficientemente compleja como para que esto sea menos eficiente. Considere, por ejemplo, una clave PRIMARIA de cuatro columnas en (a, b, c, d). La cláusula WHERE para empezar donde terminó la última consulta es la siguiente:</p>
+        <pre>WHERE (a &gt; ?)
+   OR (a = ? AND b &gt; ?)
+   OR (a = ? AND b = ? AND c &gt; ?)
+   OR (a = ? AND b = ? AND c = ? AND d &gt;= ?)
+</pre>
+    <p class="Pp">Poblar los marcadores de posición con valores consume memoria y CPU, añade tráfico de red y sobrecarga de análisis, y puede dificultar la optimización de la consulta por parte de MySQL. Una clave de cuatro columnas no es un gran problema, pero una clave de diez columnas en la que cada columna permite
+        <span class="Li">&quot;NULL&quot;</span> podría serlo.</p>
+    <p class="Pp">Ascender el índice podría no ser necesario si sabe que simplemente está eliminando filas del principio de la tabla en bloques, pero sin dejar huecos, por lo que empezar desde el principio de la tabla es en realidad lo más eficiente.</p>
+    <p class="Pp">Ver también "--ascend-first". Ver "EXTENDING"
+        para una discusión sobre cómo esto interactúa con los plugins.</p>
+  </dd>
+  <dt id="no~2"><a class="permalink" href="#no~2">--no-delete</a></dt>
+  <dd>No eliminar filas archivadas.
+    <p class="Pp">Hace que <span class="Li">&quot;pt-archiver&quot;</span> no
+        elimine las filas después de procesarlas. Esto deshabilita
+        "--no-ascend", ya que habilitar ambos causaría un bucle infinito.</p>
+    <p class="Pp">Si hay un plugin en el DSN de origen, su método
+        <span class="Li">&quot;before_delete&quot;</span> se llama de todos modos, aunque
+        <span class="Li">&quot;pt-archiver&quot;</span> no ejecute la eliminación. Ver "EXTENDING"
+        para más información sobre plugins.</p>
+  </dd>
+  <dt id="optimize"><a class="permalink" href="#optimize">--optimize</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Ejecuta OPTIMIZE TABLE después en "--source" y/o
+        "--dest".</p>
+    <p class="Pp">Ejecuta OPTIMIZE TABLE al finalizar. Consulte "--analyze"
+        para la sintaxis de la opción y
+        <a href='http://dev.mysql.com/doc/en/optimize-table.html'>http://dev.mysql.com/doc/en/optimize-table.html</a> para detalles sobre
+        OPTIMIZE TABLE.</p>
+  </dd>
+  <dt id="output"><a class="permalink" href="#output">--output-format</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Se utiliza con "--file" para especificar el formato de salida.</p>
+    <p class="Pp">Los formatos válidos son:</p>
+    <p class="Pp">- dump: Formato de volcado de MySQL usando tabulaciones como separador de campos
+        (por defecto)</p>
+    <p class="Pp">- csv : Vuelca filas usando ',' como separador y opcionalmente encerrando campos por '&quot;'.
+      <br/>
+       Este formato es equivalente a FIELDS TERMINATED BY ',' OPTIONALLY ENCLOSED
+        BY '&quot;'.</p>
+  </dd>
+  <dt id="password"><a class="permalink" href="#password">--password</a></dt>
+  <dd>forma corta: -p; tipo: string
+    <p class="Pp">Contraseña a usar al conectar. Si la contraseña contiene comas, deben escaparse con una barra invertida: "exam\,ple"</p>
+  </dd>
+  <dt id="pid"><a class="permalink" href="#pid">--pid</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Crea el archivo PID especificado. La herramienta no se iniciará si el archivo PID ya existe y el PID que contiene es diferente del PID actual. Sin embargo, si el archivo PID existe y el PID que contiene ya no se está ejecutando, la herramienta sobrescribirá el archivo PID con el PID actual. El archivo PID se elimina automáticamente cuando la herramienta sale.</p>
+  </dd>
+  <dt id="plugin"><a class="permalink" href="#plugin">--plugin</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Nombre del módulo Perl a usar como plugin genérico.</p>
+    <p class="Pp">Especifica el nombre del módulo Perl de un plugin de propósito general. Actualmente solo se utiliza para estadísticas (ver "--statistics") y debe tener los métodos
+        <span class="Li">new()</span> y
+        <span class="Li">statistics()</span>.</p>
+    <p class="Pp">El método <span class="Li">&quot;new( src =&gt; $src, dst =&gt;
+        $dst, opts =&gt; $o )&quot;</span> recibe los DSN de origen y destino, y sus conexiones a la base de datos, al igual que los plugins específicos de conexión. También recibe un objeto OptionParser
+        (<span class="Li">$o</span>) para acceder a las opciones de la línea de comandos (ejemplo:
+        <span class="Li">&quot;$o-&gt;get('purge');&quot;</span>).</p>
+    <p class="Pp">El método <span class="Li">&quot;statistics(\%stats,
+        $time)&quot;</span> recibe un hashref de las estadísticas recopiladas por el trabajo de archivado, y la hora en que comenzó todo el trabajo.</p>
+  </dd>
+  <dt id="port"><a class="permalink" href="#port">--port</a></dt>
+  <dd>forma corta: -P; tipo: int
+    <p class="Pp">Número de puerto a utilizar para la conexión.</p>
+  </dd>
+  <dt id="primary"><a class="permalink" href="#primary">--primary-key-only</a></dt>
+  <dd>Solo columnas de clave primaria.
+    <p class="Pp">Un atajo para especificar "--columns" con las columnas de clave primaria. Th</p>
+  </dd>
+</dl>[
+  {
+    "title": "--primary-key-only",
+    "content": "Es una opción eficiente si solo quieres purgar filas; evita recuperar la fila completa cuando solo se necesitan las columnas de la clave principal para las sentencias \"DELETE\". Ver también \"--purge\"."
+  },
+  {
+    "title": "--progress",
+    "content": "tipo: int\nImprime información de progreso cada X filas.\nImprime la hora actual, el tiempo transcurrido y las filas archivadas cada X filas."
+  },
+  {
+    "title": "--purge",
+    "content": "Pura en lugar de archivar; permite omitir \"--file\" y \"--dest\".\nPermite archivar sin un argumento \"--file\" o \"--dest\", lo que efectivamente es una purga ya que las filas simplemente se eliminan.\nSi solo deseas purgar filas, considera especificar las columnas de la clave principal de la tabla con \"--primary-key-only\". Esto evitará recuperar todas las columnas del servidor sin motivo."
+  },
+  {
+    "title": "--quick-delete",
+    "content": "Añade el modificador QUICK a las sentencias DELETE.\nVer http://dev.mysql.com/doc/en/delete.html para más detalles. Como se indica en la documentación, en algunos casos puede ser más rápido usar DELETE QUICK seguido de OPTIMIZE TABLE. Puedes usar \"--optimize\" para esto."
+  },
+  {
+    "title": "--quiet",
+    "content": "forma corta: -q\nNo imprimas ninguna salida, como por ejemplo para \"--statistics\".\nSuprime la salida normal, incluida la salida de \"--statistics\", pero no suprime la salida de \"--why-quit\"."
+  },
+  {
+    "title": "--replace",
+    "content": "Hace que los INSERT en \"--dest\" se escriban como REPLACE."
+  },
+  {
+    "title": "--retries",
+    "content": "tipo: int; predeterminado: 1\nNúmero de reintentos por timeout o deadlock.\nEspecifica el número de veces que pt-archiver debe reintentar cuando hay un tiempo de espera de bloqueo de InnoDB o un deadlock. Cuando se agotan los reintentos, pt-archiver saldrá con un error.\nConsidera cuidadosamente qué quieres que suceda cuando estés archivando entre una mezcla de motores de almacenamiento transaccionales y no transaccionales. El INSERT a \"--dest\" y el DELETE desde \"--source\" están en conexiones separadas, por lo que en realidad no participan en la misma transacción, incluso si están en el mismo servidor. Sin embargo, pt-archiver implementa transacciones distribuidas simples en código, por lo que los commits y rollbacks deberían ocurrir según lo deseado en ambas conexiones.\nPor el momento, la herramienta no maneja errores con motores de almacenamiento transaccionales que no sean InnoDB. Solicita esa función si la necesitas."
+  },
+  {
+    "title": "--run-time",
+    "content": "tipo: tiempo\nTiempo para ejecutarse antes de salir.\nSufijo opcional s=segundos, m=minutos, h=horas, d=días; si no hay sufijo, se usan segundos."
+  },
+  {
+    "title": "--[no]safe-auto-increment",
+    "content": "predeterminado: sí\nNo archivar la fila con AUTO_INCREMENT máximo.\nAñade una cláusula WHERE adicional para evitar que pt-archiver elimine la fila más reciente al ascender una clave AUTO_INCREMENT de una sola columna. Esto protege contra la reutilización de valores AUTO_INCREMENT si el servidor se reinicia y está habilitado por defecto.\nLa cláusula WHERE adicional contiene el valor máximo de la columna de auto-incremento al comienzo del trabajo de archivo o purga. Si se insertan nuevas filas mientras pt-archiver se está ejecutando, no las verá."
+  },
+  {
+    "title": "--sentinel",
+    "content": "tipo: string; predeterminado: /tmp/pt-archiver-sentinel\nSalir si este archivo existe.\nLa presencia del archivo especificado por \"--sentinel\" hará que pt-archiver detenga el archivado y salga. El valor predeterminado es /tmp/pt-archiver-sentinel. Podrías encontrar esto útil para detener trabajos cron de manera elegante si es necesario. Ver también \"--stop\"."
+  },
+  {
+    "title": "--set-vars",
+    "content": "tipo: Array\nEstablece las variables de MySQL en esta lista separada por comas de pares de \"variable=valor\".\nPor defecto, la herramienta establece:\nwait_timeout=10000\nLas variables especificadas en la línea de comandos anulan estos valores predeterminados. Por ejemplo, especificar \"--set-vars wait_timeout=500\" anula el valor predeterminado de 10000.\nLa herramienta imprime una advertencia y continúa si una variable no se puede establecer."
+  },
+  {
+    "title": "--share-lock",
+    "content": "Añade el modificador LOCK IN SHARE MODE a las sentencias SELECT.\nVer http://dev.mysql.com/doc/en/innodb-locking-reads.html."
+  },
+  {
+    "title": "--skip-foreign-key-checks",
+    "content": "Deshabilita las comprobaciones de claves externas con SET FOREIGN_KEY_CHECKS=0."
+  },
+  {
+    "title": "--sleep",
+    "content": "tipo: int\nTiempo de espera entre recuperaciones.\nEspecifica cuánto tiempo esperar entre sentencias SELECT. El valor predeterminado es no esperar en absoluto. Las transacciones NO se confirman, y el archivo \"--file\" NO se vacía, antes de dormir. Ver \"--txn-size\" para controlar eso.\nSi se especifica \"--commit-each\", la confirmación y el vaciado ocurren antes de dormir."
+  },
+  {
+    "title": "--sleep-coef",
+    "content": "tipo: float\nCalcula \"--sleep\" como un múltiplo del tiempo de la última SELECT.\nSi se especifica esta opción, pt-archiver dormirá durante el tiempo de consulta de la última SELECT multiplicado por el coeficiente especificado.\nEsta es una forma un poco más sofisticada de limitar las SELECT: dormir una cantidad variable de tiempo entre cada SELECT, dependiendo de cuánto tarden las SELECT."
+  },
+  {
+    "title": "--socket",
+    "content": "forma corta: -S; tipo: string\nArchivo de socket a usar para la conexión."
+  },
+  {
+    "title": "--source",
+    "content": "tipo: DSN\nDSN que especifica la tabla a archivar (requerido). Este argumento es un DSN. Ver \"OPCIONES DE DSN\" para la sintaxis. La mayoría de las opciones controlan cómo pt-archiver se conecta a MySQL, pero hay algunas opciones de DSN extendidas en la sintaxis de esta herramienta. Las opciones D, t e i seleccionan una tabla para archivar:\n--source h=my_server,D=my_database,t=my_tbl\nLa opción a especifica la base de datos a establecer como predeterminada de la conexión con USE. Si la opción b es verdadera, deshabilita el registro binario con SQL_LOG_BIN. La opción m especifica acciones enchufables, que un módulo Perl externo puede proporcionar. La única parte requerida es la tabla; otras partes pueden leerse de varios lugares en el entorno (como archivos de opciones).\nLa parte 'i' merece una mención especial. Esto le dice a pt-archiver qué índice debe escanear para archivar. Aparece en una sugerencia FORCE INDEX o USE INDEX en las sentencias SELECT utilizadas para recuperar filas archivables. Si no especificas nada, pt-archiver descubrirá automáticamente un buen índice, prefiriendo una \"PRIMARY KEY\" si existe. Según mi experiencia, esto suele funcionar bien, por lo que la mayoría de las veces probablemente puedas omitir la parte 'i'.\nEl índice se utiliza para optimizar accesos repetidos a la tabla; pt-archiver recuerda la última fila que recupera de cada sentencia SELECT, y la utiliza para construir una cláusula WHERE, utilizando las columnas del índice especificado, que debería permitir a MySQL comenzar la siguiente SELECT donde terminó la última, en lugar de escanear potencialmente desde el principio de la tabla con cada SELECT sucesiva. Si estás utilizando plugins externos, por favor consulta \"EXTENSIÓN\" para una discusión sobre cómo interactúan con índices ascendentes.\nLas opciones 'a' y 'b' te permiten controlar cómo fluyen las sentencias a través del registro binario. Si especificas la opción 'b', el registro binario se deshabilitará en la conexión especificada. Si especificas la opción 'a', la conexión usará \"USE\" la base de datos especificada, que puedes usar para evitar que las réplicas ejecuten los eventos del registro binario con las opciones \"--replicate-ignore-db\". Estas dos opciones se pueden usar como métodos diferentes para lograr el mismo objetivo: archivar datos de la fuente de replicación, pero dejarlos en la réplica. Por ejemplo, puedes ejecutar un trabajo de purga en la fuente de replicación y evitar que ocurra en la réplica usando el método de tu elección.\nADVERTENCIA: Usar una opción de DSN de archivo de opciones predeterminado (F) que define un socket para \"--source\" hace que pt-archiver se conecte a \"--dest\" usando ese socket a menos que se especifique otro socket para \"--dest\". Esto significa que pt-archiver puede conectarse incorrectamente a \"--source\" cuando se pretende conectar a \"--dest\". Por ejemplo:\n--source F=host1.cnf,D=db,t=tbl --dest h=host2\nCuando pt-archiver se conecta a \"--dest\", host2, se conectará a través del socket de \"--source\", host1, definido en host1.cnf."
+  },
+  {
+    "title": "--statistics",
+    "content": "Recopila e imprime estadísticas de tiempo.\nHace que pt-archiver recopile estadísticas de tiempo sobre lo que hace. Estas estadísticas están disponibles para el plugin especificado por \"--plugin\".\nA menos que especifiques \"--quiet\", \"pt-archiver\" imprimirá las estadísticas cuando salga. Las estadísticas se ven así:\nStarted at 2008-07-18T07:18:53, ended at 2008-07-18T07:18:53\nSource: D=db,t=table\nSELECT 4\nINSERT 4\nDELETE 4\nAction         Count       Time        Pct\ncommit            10     0.1079      88.27\nselect             5     0.0047       3.87\ndeleting           4     0.0028       2.29\ninserting          4     0.0028       2.28\nother              0     0.0040       3.29\n\nLas dos (o tres) primeras líneas muestran tiempos y las tablas de origen y destino. Las siguientes tres líneas muestran cuántas filas se recuperaron, insertaron y eliminaron.\nLas líneas restantes muestran recuentos y tiempos. Las columnas son la acción, el número total de veces que se cronometró esa acción, el tiempo total que tomó y el porcentaje del tiempo total de ejecución del programa. Las filas se ordenan en orden de tiempo total descendente. La última fila es el resto del tiempo no atribuido explícitamente a nada. Las acciones variarán dependiendo de la confirmación"
+  }
+]
+opciones de línea de comandos.</p>
+    <p class="Pp">Si se proporciona "--why-quit", su comportamiento se modifica
+        ligeramente. Esta opción hace que imprima la razón de la salida incluso
+        cuando es solo porque no hay más filas.</p>
+    <p class="Pp">Esta opción requiere el módulo estándar Time::HiRes, que es
+        parte del núcleo de Perl en lanzamientos de Perl razonablemente nuevos.</p>
+  </dd>
+  <dt id="stop"><a class="permalink" href="#stop">--stop</a></dt>
+  <dd>Detiene las instancias en ejecución creando el archivo centinela.
+    <p class="Pp">Hace que pt-archiver cree el archivo centinela especificado
+        por "--sentinel" y salga. Esto debería tener el efecto de detener todas
+        las instancias en ejecución que están vigilando el mismo archivo
+        centinela. Ver también "--unstop".</p>
+  </dd>
+  <dt id="txn"><a class="permalink" href="#txn">--txn-size</a></dt>
+  <dd>tipo: entero; predeterminado: 1
+    <p class="Pp">Número de filas por transacción.</p>
+    <p class="Pp">Especifica el tamaño, en número de filas, de cada transacción.
+        Cero deshabilita las transacciones por completo. Después de que pt-archiver
+        procesa esta cantidad de filas, confirma tanto el "--source" como el
+        "--dest" si se proporcionan, y vacía el archivo dado por "--file".</p>
+    <p class="Pp">Este parámetro es crítico para el rendimiento. Si está
+        archivanndo desde un servidor en vivo, que por ejemplo está realizando
+        un trabajo intensivo de OLTP, necesita elegir un buen equilibrio entre el
+        tamaño de la transacción y el sobrecoste de la confirmación. Transacciones
+        más grandes crean la posibilidad de más contención de bloqueo y puntos
+        muertos, pero transacciones más pequeñas causan un sobrecoste de confirmación
+        más frecuente, que puede ser significativo. Para dar una idea, en un pequeño
+        conjunto de prueba trabajado mientras se escribía pt-archiver, un valor de
+        500 hizo que el archivado tomara aproximadamente 2 segundos por cada 1000
+        filas en una instancia de MySQL de lo contrario silenciosa en una máquina de
+        escritorio, archivando en disco y a otra tabla. Deshabilitar transacciones
+        con un valor de cero, que activa el autocommit, redujo el rendimiento a
+        38 segundos por mil filas.</p>
+    <p class="Pp">Si no está archivando desde o hacia un motor de almacenamiento
+        transaccional, es posible que desee deshabilitar las transacciones para
+        que pt-archiver no intente confirmar.</p>
+  </dd>
+  <dt id="unstop"><a class="permalink" href="#unstop">--unstop</a></dt>
+  <dd>Eliminar archivo centinela
+    <p class="Pp">Hace que pt-archiver elimine el archivo centinela especificado
+        por "--sentinel" y continúe. Ver también "--stop".</p>
+  </dd>
+  <dt id="user"><a class="permalink" href="#user">--user</a></dt>
+  <dd>forma corta: -u; tipo: cadena
+    <p class="Pp">Usuario para iniciar sesión si no es el usuario actual.</p>
+  </dd>
+  <dt id="version"><a class="permalink" href="#version">--version</a></dt>
+  <dd>Muestra la versión y sale.</dd>
+  <dt>--[no]version-check</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Comprueba la última versión de Percona Toolkit, MySQL y otros
+        programas.</p>
+    <p class="Pp">Esta es una función estándar de "comprobar actualizaciones
+        automáticamente", con dos características adicionales. Primero, la
+        herramienta comprueba su propia versión y también las versiones del
+        siguiente software: sistema operativo, Percona Monitoring and Management
+        (PMM), MySQL, Perl, controlador de MySQL para Perl (DBD::mysql) y Percona
+        Toolkit. Segundo, busca y advierte sobre versiones con problemas conocidos.
+        Por ejemplo, MySQL 5.5.25 tenía un error crítico y se relanzó como
+        5.5.25a.</p>
+    <p class="Pp">Se realiza una conexión segura al servidor de base de datos de
+        Verificación de Versiones de Percona para realizar estas comprobaciones.
+        Cada solicitud es registrada por el servidor, incluyendo los números de
+        versión del software y el ID único del sistema verificado. El ID es
+        generado por el script de instalación de Percona Toolkit o cuando se
+        realiza la llamada a la base de datos de Verificación de Versiones por
+        primera vez.</p>
+    <p class="Pp">Cualquier actualización o problema conocido se imprime en STDOUT
+        antes de la salida normal de la herramienta. Esta función nunca debería
+        interferir con el funcionamiento normal de la herramienta.</p>
+    <p class="Pp">Para más información, visite
+        <a href='https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html'>https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html</a>.</p>
+  </dd>
+  <dt id="where"><a class="permalink" href="#where">--where</a></dt>
+  <dd>tipo: cadena
+    <p class="Pp">Cláusula WHERE para limitar qué filas archivar (requerido).</p>
+    <p class="Pp">Especifica una cláusula WHERE para limitar qué filas se archivan.
+        No incluya la palabra WHERE. Es posible que necesite entrecomillar el
+        argumento para evitar que su shell lo interprete. Por ejemplo:</p>
+        <pre>--where 'ts &lt; current_date - interval 90 day'
+</pre>
+    <p class="Pp">Por seguridad, "--where" es obligatorio. Si no necesita una
+        cláusula WHERE, use "--where" 1=1.</p>
+  </dd>
+  <dt id="why"><a class="permalink" href="#why">--why-quit</a></dt>
+  <dd>Imprime la razón de la salida a menos que se agoten las filas.
+    <p class="Pp">Hace que pt-archiver imprima un mensaje si sale por cualquier
+        razón que no sea quedarse sin filas para archivar. Esto puede ser útil si
+        tiene un trabajo cron con "--run-time" especificado, por ejemplo, y desea
+        asegurarse de que pt-archiver está terminando antes de quedarse sin
+        tiempo.</p>
+    <p class="Pp">Si se proporciona "--statistics", el comportamiento se modifica
+        ligeramente. Imprimirá la razón de la salida incluso cuando sea solo porque
+        no hay más filas.</p>
+    <p class="Pp">Esta salida se imprime incluso si se proporciona "--quiet".
+        Eso es para que pueda poner <span class="Li">&quot;pt-archiver&quot;</span>
+        en un trabajo de <span class="Li">&quot;cron&quot;</span> y recibir un correo
+        electrónico si hay una salida anormal.</p>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DSN_OPTIONS'><a class='permalink' href='#DSN_OPTIONS'>OPCIONES DSN</a></h1>
+<p class="Pp">Estas opciones DSN se utilizan para crear un DSN. Cada opción se da
+    como <span class="Li">&quot;opcion=valor&quot;</span>. Las opciones distinguen
+    entre mayúsculas y minúsculas, por lo que P y p no son la misma opción. No puede
+    haber espacios en blanco antes o después del <span class="Li">&quot;=&quot;</span>
+    y si el valor contiene espacios en blanco debe entrecomillarse. Las opciones DSN
+    están separadas por comas. Consulte la página man de percona-toolkit para
+    obtener detalles completos.</p>
+<ul class="Bl-bullet">
+  <li>a
+    <p class="Pp">copia: no</p>
+    <p class="Pp">Base de datos a utilizar al ejecutar consultas.</p>
+  </li>
+  <li>A
+    <p class="Pp">dsn: charset; copia: sí</p>
+    <p class="Pp">Juego de caracteres predeterminado.</p>
+  </li>
+  <li>b
+    <p class="Pp">copia: no</p>
+    <p class="Pp">Si es verdadero, deshabilita el binlog con SQL_LOG_BIN.</p>
+  </li>
+  <li>D
+    <p class="Pp">dsn: database; copia: sí</p>
+    <p class="Pp">Base de datos que contiene la tabla.</p>
+  </li>
+  <li>F
+    <p class="Pp">dsn: mysql_read_default_file; copia: sí</p>
+    <p class="Pp">Solo lee opciones predeterminadas del archivo dado</p>
+  </li>
+  <li>h
+    <p class="Pp">dsn: host; copia: sí</p>
+    <p class="Pp">Conectarse al host.</p>
+  </li>
+  <li>i
+    <p class="Pp">copia: sí</p>
+    <p class="Pp">Índice a utilizar.</p>
+  </li>
+  <li>L
+    <p class="Pp">copia: sí</p>
+    <p class="Pp">Habilita explícitamente LOAD DATA LOCAL INFILE.</p>
+    <p class="Pp">Por alguna razón, algunos proveedores compilan libmysql sin la
+        opción --enable-local-infile, lo que deshabilita la declaración. Esto
+        puede llevar a situaciones extrañas, como que el servidor permita LOCAL
+        INFILE, pero el cliente lance excepciones si se utiliza.</p>
+    <p class="Pp">Sin embargo, mientras el servidor permita LOAD DATA, los
+        clientes pueden volver a habilitarlo fácilmente; Ver
+        <a href='https://dev.mysql.com/doc/refman/en/load-data-local-security.html'>https://dev.mysql.com/doc/refman/en/load-data-local-security.html</a>
+        y
+        <a href='http://search.cpan.org/~capttofu/DBD-mysql/lib/DBD/mysql.pm'>http://search.cpan.org/~capttofu/DBD-mysql/lib/DBD/mysql.pm</a>.
+        Esta opción hace exactamente eso.</p>
+    <p class="Pp">Aunque no hemos encontrado ningún caso en el que activar esta
+        opción genere errores o comportamientos diferentes, para estar seguro,
+        esta opción no está activada por defecto.</p>
+  </li>
+  <li>m
+    <p class="Pp">copia: no</p>
+    <p class="Pp">Nombre del módulo del plugin.</p>
+  </li>
+  <li>p
+    <p class="Pp">dsn: password; copia: sí</p>
+    <p class="Pp">Contraseña a utilizar al conectarse. Si la contraseña contiene
+        comas, deben escaparse con una barra invertida: "exam\,ple"</p>
+  </li>
+  <li>P
+    <p class="Pp">dsn: port; copia: sí</p>
+    <p class="Pp">Número de puerto a utilizar para la conexión.</p>
+  </li>
+  <li>S
+    <p class="Pp">dsn: mysql_socket; copia: sí</p>
+    <p class="Pp">Archivo de socket a utilizar para la conexión.</p>
+  </li>
+  <li>t
+    <p class="Pp">copia: sí</p>
+    <p class="Pp">Tabla desde/hacia la que archivar.</p>
+  </li>
+  <li>u
+    <p class="Pp">dsn: user; copia: sí</p>
+    <p class="Pp">Usuario para iniciar sesión si no es el usuario actual.</p>
+  </li>
+  <li>s
+    <p class="Pp">dsn: mysql_ssl; copia: sí</p>
+    <p class="Pp">Crear conexión SSL</p>
+  </li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXTENDING'><a class='permalink' href='#EXTENDING'>EXTENSIÓN</a></h1>
+<p class="Pp">pt-archiver es extensible mediante la conexión de módulos Perl
+    externos para manejar parte de la lógica y/o acciones. Puede especificar un
+    módulo tanto para "--source" como para "--dest", con la parte 'm' de la
+    especificación. Por ejemplo:</p>
+<pre>--source D=test,t=test1,m=My::Module1 --dest m=My::Module2,t=test2</pre>
+<p class="Pp">Esto hará que pt-archiver cargue los paquetes My::Module1 y
+    My::Module2, cree instancias de ellos y luego los llame durante el proceso de
+    archivado.</p>
+<p class="Pp">También puede especificar un plugin con "--plugin".</p>
+<p class="Pp">El módulo debe proporcionar esta interfaz:</p>
+<dl class="Bl-tag">
+  <dt id="new(dbh"><a class="permalink" href="#new(dbh">new(dbh =&gt; $dbh, db
+    =&gt; $db_name, tbl =&gt; $tbl_name)</a></dt>
+  <dd>Al constructor del plugin se le pasa una referencia al manejador de base de
+      datos, el nombre de la base de datos y el nombre de la tabla. El plugin se
+      crea justo después de que pt-archiver abre la conexión, y antes de que
+      examine la tabla dada en los argumentos. Esto le da al plugin la
+      oportunidad de crear y poblar tablas temporales, o realizar otro trabajo
+      de configuración.</dd>
+  <dt id="before_begin(cols"><a class="permalink" href="#before_begin(cols">before_begin(cols
+    =&gt; \@cols, allcols =&gt; \@allcols)</a></dt>
+  <dd>Este método se llama justo antes de que pt-archiver comience a iterar
+      sobre las filas y archivarlas, pero después de que realiza todo el demás
+      trabajo de configuración (examinar estructuras de tablas, diseñar consultas
+      SQL, etc.). Este es el único momento en que pt-archiver informa al plugin
+      los nombres de las columnas para las filas que pasará al plugin durante el
+      archivado.
+    <p class="Pp">El argumento <span class="Li">&quot;cols&quot;</span> son los
+        nombres de las columnas que el usuario solicitó archivar, ya sea por
+        defecto o mediante la opción "--columns". El argumento
+        <span class="Li">&quot;allcols&quot;</span> es la lista de nombres de
+        columnas para cada fila que pt-archiver obtendrá de la tabla de origen.
+        Puede obtener más columnas de las que el usuario solicitó, porque necesita
+        algunas columnas para su propio uso. Cuando las funciones de plugin
+        posteriores reciben una fila, es la fila completa que contiene todas las
+        columnas adicionales, si las hay, añadidas al final.</p>
+  </dd>
+  <dt id="is_archivable(row"><a class="permalink" href="#is_archivable(row">is_archivable(row
+    =&gt; \@row)</a></dt>
+  <dd>Este método se llama para cada fila para determinar si es archivada. Esto
+      se aplica solo a "--source". El argumento es la fila en sí, como un arrayref.
+      Si el método devuelve verdadero, la fila se archivará; de lo contrario, se
+      omitirá.
+    <p class="Pp">Omitir una fila añade complicaciones para los no</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="índices_únicos">índices únicos</h1>
+<p class="Pp">Normalmente, <span class="Li">pt-archiver</span> utiliza una cláusula <code class="Li">WHERE</code> diseñada para apuntar a la última fila procesada como punto de inicio para el siguiente comando <code class="Li">SELECT</code>. Si ha omitido la fila devolviendo <code class="Li">false</code> desde <a href="#is_archivable(row"><b>is_archivable()</b></a>, <span class="Li">pt-archiver</span> podría entrar en un bucle infinito porque la fila todavía existe. Por lo tanto, cuando especifica un plugin para el argumento <code class="Li">&quot;--source&quot;</code>, <span class="Li">pt-archiver</span> modificará ligeramente su cláusula <code class="Li">WHERE</code>. En lugar de comenzar en <code class="Li">&quot;mayor o igual que&quot;</code> la última fila procesada, comenzará en <code class="Li">&quot;estrictamente mayor que&quot;</code>. Esto funcionará bien en índices únicos como las claves primarias, pero puede omitir filas (dejar huecos) en índices no únicos o al ordenar solo la primera columna de un índice.</p>
+<p class="Pp"><span class="Li">«pt-archiver»</span> modificará la cláusula de la misma manera si especifica <code class="Li">&quot;--no-delete&quot;</code>, porque nuevamente es posible un bucle infinito.</p>
+<p class="Pp">Si especifica la opción <code class="Li">&quot;--bulk-delete&quot;</code> y devuelve <code class="Li">false</code> desde este método, <span class="Li">«pt-archiver»</span> puede no hacer lo que espera. La fila no se archivará, pero se eliminará, ya que las eliminaciones masivas operan sobre rangos de filas y no saben qué filas seleccionó el plugin para conservar.</p>
+<p class="Pp">Si especifica la opción <code class="Li">&quot;--bulk-insert&quot;</code>, el valor de retorno de este método influirá en si la fila se escribe en el archivo temporal para la inserción masiva, por lo que las inserciones masivas funcionarán según lo esperado. Sin embargo, las inserciones masivas requieren eliminaciones masivas.</p>
+</section>
+<dl class="Bl-tag">
+  <dt id="before_delete(row"><a class="permalink" href="#before_delete(row"><b>before_delete(row</b> =&gt; \@row)</a></dt>
+  <dd>Este método se llama para cada fila justo antes de que se elimine. Esto se aplica solo a <code class="Li">&quot;--source&quot;</code>. Este es un buen lugar para manejar dependencias, como eliminar elementos que tienen claves externas a la fila que está a punto de eliminar. También podría usar esto para archivar recursivamente todas las tablas dependientes.
+    <p class="Pp">Este método de plugin se llama incluso si se proporciona <code class="Li">&quot;--no-delete&quot;</code>, pero no si se proporciona <code class="Li">&quot;--bulk-delete&quot;</code>.</p>
+  </dd>
+  <dt id="before_bulk_delete(first_row"><a class="permalink" href="#before_bulk_delete(first_row"><b>before_bulk_delete(first_row</b> =&gt; \@row, last_row =&gt; \@row)</a></dt>
+  <dd>Este método se llama justo antes de que se ejecute una eliminación masiva. Es similar al método <span class="Li">«before_delete»</span>, excepto que sus argumentos son la primera y la última fila del rango que se eliminará. Se llama incluso si se proporciona <code class="Li">&quot;--no-delete&quot;</code>.</dd>
+  <dt id="before_insert(row"><a class="permalink" href="#before_insert(row"><b>before_insert(row</b> =&gt; \@row)</a></dt>
+  <dd>Este método se llama para cada fila justo antes de que se inserte. Esto se aplica solo a <code class="Li">&quot;--dest&quot;</code>. Podría usar esto para insertar la fila en varias tablas, quizás con una cláusula <code class="Li">ON DUPLICATE KEY UPDATE</code> para crear tablas de resumen en un almacén de datos.
+    <p class="Pp">Este método no se llama si se proporciona <code class="Li">&quot;--bulk-insert&quot;</code>.</p>
+  </dd>
+  <dt id="before_bulk_insert(first_row"><a class="permalink" href="#before_bulk_insert(first_row"><b>before_bulk_insert(first_row</b> =&gt; \@row, last_row =&gt; \@row, filename =&gt; bulk_insert_filename)</a></dt>
+  <dd>Este método se llama justo antes de que se ejecute una inserción masiva. Es similar al método <span class="Li">«before_insert»</span>, excepto que sus argumentos son la primera y la última fila del rango que se eliminará.</dd>
+  <dt id="custom_sth(row"><a class="permalink" href="#custom_sth(row"><b>custom_sth(row</b> =&gt; \@row, sql =&gt; $sql)</a></dt>
+  <dd>Este método se llama justo antes de insertar la fila, pero después de <a href="#before_insert(row"><b>before_insert()</b></a>. Permite al plugin especificar una sentencia <code class="Li">INSERT</code> diferente si se desea. El valor de retorno (si lo hay) debe ser un manejador de sentencias DBI. El parámetro <code class="Li">sql</code> es el texto SQL utilizado para preparar la sentencia <code class="Li">INSERT</code> predeterminada. Este método no se llama si especifica <code class="Li">&quot;--bulk-insert&quot;</code>.
+    <p class="Pp">Si no se devuelve ningún valor, se utiliza el manejador de sentencias <code class="Li">INSERT</code> predeterminado.</p>
+    <p class="Pp">Este método se aplica solo al plugin especificado para <code class="Li">&quot;--dest&quot;</code>, por lo que si su plugin no hace lo que espera, verifique que lo haya especificado para el destino y no para el origen.</p>
+  </dd>
+  <dt id="custom_sth_bulk(first_row"><a class="permalink" href="#custom_sth_bulk(first_row"><b>custom_sth_bulk(first_row</b> =&gt; \@row, last_row =&gt; \@row, sql =&gt; $sql, filename =&gt; $bulk_insert_filename)</a></dt>
+  <dd>Si ha especificado <code class="Li">&quot;--bulk-insert&quot;</code>, este método se llama justo antes de la inserción masiva, pero después de <a href="#before_bulk_insert(first_row"><b>before_bulk_insert()</b></a>, y los argumentos son diferentes.
+    <p class="Pp">El valor de retorno de este método, etc., es similar al método <span class="Li">«custom_sth()»</span>.</p>
+  </dd>
+  <dt id="after_finish()"><a class="permalink" href="#after_finish()"><b>after_finish()</b></a></dt>
+  <dd>Este método se llama después de que <span class="Li">pt-archiver</span> sale del bucle de archivado, confirma todos los manejadores de bases de datos, cierra <code class="Li">&quot;--file&quot;</code> e imprime las estadísticas finales, pero antes de que <span class="Li">pt-archiver</span> ejecute <code class="Li">ANALYZE</code> u <code class="Li">OPTIMIZE</code> (ver <code class="Li">&quot;--analyze&quot;</code> y <code class="Li">&quot;--optimize&quot;</code>).</dd>
+</dl>
+<p class="Pp">Si especifica un plugin tanto para <code class="Li">&quot;--source&quot;</code> como para <code class="Li">&quot;--dest&quot;</code>, <span class="Li">pt-archiver</span> construye, llama a <a href="#before_begin(row"><b>before_begin()</b></a> y llama a <a href="#after_finish()"><b>after_finish()</b></a> en los dos plugins en el orden <code class="Li">&quot;--source&quot;</code>, <code class="Li">&quot;--dest&quot;</code>.</p>
+<p class="Pp"><span class="Li">pt-archiver</span> asume que controla las transacciones y que el plugin NO confirmará ni revertirá el manejador de la base de datos. El manejador de la base de datos que se pasa al constructor del plugin es el mismo manejador que utiliza el propio <span class="Li">pt-archiver</span>. Recuerde que <code class="Li">&quot;--source&quot;</code> y <code class="Li">&quot;--dest&quot;</code> son manejadores separados.</p>
+<p class="Pp">Un módulo de ejemplo podría verse así:</p>
+<pre>package My::Module;
+sub new {
+   my ( $class, %args ) = @_;
+   return bless(\%args, $class);
+}
+sub before_begin {
+   my ( $self, %args ) = @_;
+   # Guarda los nombres de las columnas para más tarde
+   $self-&gt;{cols} = $args{cols};
+}
+sub is_archivable {
+   my ( $self, %args ) = @_;
+   # Realiza alguna lógica avanzada con $args{row}
+   return 1;
+}
+sub before_delete {} # No realiza ninguna acción
+sub before_insert {} # No realiza ninguna acción
+sub custom_sth    {} # No realiza ninguna acción
+sub after_finish  {} # No realiza ninguna acción
+1;</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="MEDIO_AMBIENTE">MEDIO AMBIENTE</h1>
+<p class="Pp">La variable de entorno <span class="Li">PTDEBUG</span> habilita la salida detallada de depuración en STDERR. Para habilitar la depuración y capturar toda la salida en un archivo, ejecute la herramienta así:</p>
+<pre>PTDEBUG=1 pt-archiver ... &gt; ARCHIVO 2&gt;&amp;1</pre>
+<p class="Pp">Tenga cuidado: la salida de depuración es voluminosa y puede generar varios megabytes de salida.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ATENCIÓN">ATENCIÓN</h1>
+<p class="Pp">Usar &lt;PTDEBUG&gt; podría exponer contraseñas. Cuando la depuración está habilitada, todos los parámetros de la línea de comandos se muestran en la salida.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="REQUISITOS_DEL_SISTEMA">REQUISITOS DEL SISTEMA</h1>
+<p class="Pp">Necesita Perl, DBI, DBD::mysql y algunos paquetes centrales que deberían estar instalados en cualquier versión razonablemente nueva de Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ERRORES">ERRORES</h1>
+<p class="Pp">Para obtener una lista de errores conocidos, consulte <a href="https://jira.percona.com/projects/PT/issues">https://jira.percona.com/projects/PT/issues</a>.</p>
+<p class="Pp">Por favor, informe de los errores en <a href="https://jira.percona.com/projects/PT">https://jira.percona.com/projects/PT</a>. Incluya la siguiente información en su informe de errores:</p>
+<ul class="Bl-bullet">
+  <li>Comando completo utilizado para ejecutar la herramienta</li>
+  <li>Herramienta «--version»</li>
+  <li>Versión de MySQL de todos los servidores involucrados</li>
+  <li>Salida de la herramienta, incluido STDERR</li>
+  <li>Archivos de entrada (archivos de registro/volcado/configuración, etc.)</li>
+</ul>
+<p class="Pp">Si es posible, incluya la salida de depuración ejecutando la herramienta con <span class="Li">PTDEBUG</span>; consulte «MEDIO AMBIENTE».</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCARGA">DESCARGA</h1>
+<p class="Pp">Visite <a href="http://www.percona.com/software/percona-toolkit/">http://www.percona.com/software/percona-toolkit/</a> para descargar la última versión de Percona Toolkit. O bien, obtenga la última versión desde la línea de comandos:</p>
+<pre>wget percona.com/get/percona-toolkit.tar.gz
+wget percona.com/get/percona-toolkit.rpm
+wget percona.com/get/percona-toolkit.deb</pre>
+<p class="Pp">También puede obtener herramientas individuales de la última versión:</p>
+<pre>wget percona.com/get/TOOL</pre>
+<p class="Pp">Reemplace <span class="Li">«TOOL»</span> con el nombre de cualquier herramienta.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTORES">AUTORES</h1>
+<p class="Pp">Baron Schwartz</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AGRADECIMIENTOS">AGRADECIMIENTOS</h1>
+<p class="Pp">Andrew O'Brien</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SOBRE_PERCONA_TOOLKIT">SOBRE PERCONA TOOLKIT</h1>
+<p class="Pp">Esta herramienta es parte de Percona Toolkit, una colección de herramientas de línea de comandos avanzadas para MySQL desarrolladas por Percona. Percona Toolkit se derivó de dos proyectos en junio de 2011: Maatkit y Aspersa. Esos proyectos fueron creados por Baron Schwartz y desarrollados principalmente por él y Daniel Nichter. Visite <a href="http://www.percona.com/software/">http://www.percona.com/software/</a> para obtener información sobre otro software gratuito y de código abierto de Percona.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DERECHOS_DE_AUTOR,_LICENCIA_Y_GARANTÍA">DERECHOS DE AUTOR, LICENCIA Y GARANTÍA</h1>
+<p class="Pp">Este programa tiene derechos de autor 2011-2024 Percona LLC y/o sus afiliados, 2007-2011 Baron Schwartz.</p>
+<p class="Pp">ESTE PROGRAMA SE PROPORCIONA &quot;TAL CUAL&quot; Y SIN GARANTÍAS EXPRESAS O IMPLÍCITAS, INCLUIDAS, ENTRE OTRAS, LAS GARANTÍAS IMPLÍCITAS DE COMERCIABILIDAD Y ADECUACIÓN PARA UN PROPÓSITO PARTICULAR.</p>
+<p class="Pp">Este programa es software libre; puede redistribuirlo y/o modificarlo bajo los términos de la Licencia Pública General de GNU publicada por la Free Software Foundation, versión 2; O la Licencia Artística de Perl. En sistemas UNIX y similares, puede emitir `man perlgpl` o `man perlartistic` para leer estas licencias.</p>
+<p class="Pp">Debería haber recibido una copia de la Licencia Pública General de GNU junto con este programa; si no es así, escriba a la Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VERSIÓN">VERSIÓN</h1>
+<p class="Pp">pt-archiver 3.7.0</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-01-01</td>
+    <td class="foot-os">perl v5.40.0</td>
+  </tr>
+</table>
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/css/style.css">
+        <link rel="stylesheet" href="/css/man.css">
+        <title>pt-archiver(1p) — Percona Toolkit Documentation</title>
+    </head>
+    <body>
+        
+        <main class="container">
+            <aside class="toc-container">
+                <div class="search-box">
+                    <form action="/search/" method="get" role="search">
+                        <input type="search" placeholder="Search manual page" name="q" value=""
+                        />
+                        <input type="submit" name="go" value="Go" />
+                    </form>
+                </div>
+
+                <section class="package-info">
+                    <p>Package information:</p>
+                    <dl>
+                        <dt>Package name:</dt>
+                        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/percona-toolkit/">extra/percona-toolkit</a></dd>
+                        <dt>Version:</dt>
+                        <dd>3.7.0-1</dd>
+                        <dt>Upstream:</dt>
+                        <dd><a href="https://www.percona.com/software/database-tools/percona-toolkit">https://www.percona.com/software/database-tools/percona-toolkit</a></dd>
+                        <dt>Licenses:</dt>
+                        <dd>GPL</dd>
+                        <dt>Manuals:</dt>
+                        <dd><a href="/listing/extra/percona-toolkit/">/listing/extra/percona-toolkit/</a></dd>
+                    </dl>
+                </section>
+
+                <details>
+                    <summary>Table of contents</summary>
+                    <nav class="toc">
+                        <ul>
+                            <li><a href="#NAME">NAME</a></li>
+                            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+                            <li><a href="#RISKS">RISKS</a></li>
+                            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+                            <li><a href="#Percona_XtraDB_Cluster">Percona XtraDB Cluster</a></li>
+                            <li><a href="#OUTPUT">OUTPUT</a></li>
+                            <li><a href="#ERROR-HANDLING">ERROR-HANDLING</a></li>
+                            <li><a href="#OPTIONS">OPTIONS</a></li>
+                            <li><a href="#DSN_OPTIONS">DSN OPTIONS</a></li>
+                            <li><a href="#EXTENDING">EXTENDING</a></li>
+                            <li><a href="#ENVIRONMENT">ENVIRONMENT</a></li>
+                            <li><a href="#ATTENTION">ATTENTION</a></li>
+                            <li><a href="#SYSTEM_REQUIREMENTS">SYSTEM REQUIREMENTS</a></li>
+                            <li><a href="#BUGS">BUGS</a></li>
+                            <li><a href="#DOWNLOADING">DOWNLOADING</a></li>
+                            <li><a href="#AUTHORS">AUTHORS</a></li>
+                            <li><a href="#ACKNOWLEDGMENTS">ACKNOWLEDGMENTS</a></li>
+                            <li><a href="#ABOUT_PERCONA_TOOLKIT">ABOUT PERCONA TOOLKIT</a></li>
+                            <li><a href="#COPYRIGHT,_LICENSE,_AND_WARRANTY">COPYRIGHT, LICENSE, AND WARRANTY</a></li>
+                            <li><a href="#VERSION">VERSION</a></li>
+                        </ul>
+                    </nav>
+                </details>
+
+                <nav class="other-formats">
+                    <p>Other formats:
+                        <a href="/man/pt-archiver.1p.en.txt">txt</a>,
+                        <a href="/man/pt-archiver.1p.en.raw">raw</a>
+                    </p>
+                </nav>
+            </aside>
+            <article>
+                <h1>pt-archiver(1p) — Percona Toolkit Documentation</h1>
+                <section id="NAME">
+                    <h2>NAME</h2>
+                    <p>pt-archiver — archives or deletes rows from MySQL tables</p>
+                </section>
+                <section id="SYNOPSIS">
+                    <h2>SYNOPSIS</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        [
+                        <code>--source</code> DSN
+                        ]
+                        [
+                        <code>--where</code> “WHERE clause”
+                        ]
+                        [
+                        <code>--limit</code> N
+                        ]
+                        [
+                        <code>--txn-size</code> N
+                        ]
+                        [
+                        <code>--purge</code> ]
+                        [
+                        <code>--statistics</code> ]
+                        [
+                        <code>--dry-run</code> ]
+                        [
+                        <code>--progress</code> N
+                        ]
+                        [
+                        <code>--set-vars</code> var=value,...
+                        ]
+                        [
+                        <code>--help</code> ]
+                        [
+                        <code>--version</code> ]
+                    </p>
+                </section>
+                <section id="RISKS">
+                    <h2>RISKS</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        deletes rows from tables. This is a dangerous operation that can lead to data loss if used incorrectly. Always
+                        back up your data before using
+                        <code>pt-archiver</code>
+                        . Test
+                        <code>pt-archiver</code>
+                        on a staging environment before using it on a production server.
+                    </p>
+                    <p>
+                        <code>pt-archiver</code>
+                        can consume significant resources and can impact the performance of your MySQL server. Use the
+                        <code>--progress</code>
+                        option to monitor its progress and the
+                        <code>--txn-size</code>
+                        option to control the transaction size.
+                    </p>
+                </section>
+                <section id="DESCRIPTION">
+                    <h2>DESCRIPTION</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        is a tool for archiving or deleting rows from MySQL tables. It is designed to be used with large tables where deleting rows can be slow and resource-intensive.
+                    </p>
+                    <p>
+                        <code>pt-archiver</code>
+                        works by selecting rows based on a
+                        <code>WHERE</code>
+                        clause and then either archiving them to another table or deleting them. It does this in batches to minimize the impact on the server.
+                    </p>
+                </section>
+                <section id="Percona_XtraDB_Cluster">
+                    <h2>Percona XtraDB Cluster</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        is compatible with Percona XtraDB Cluster.
+                    </p>
+                </section>
+                <section id="OUTPUT">
+                    <h2>OUTPUT</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        prints information about its progress, including the number of rows processed, the time taken, and any errors encountered.
+                    </p>
+                </section>
+                <section id="ERROR-HANDLING">
+                    <h2>ERROR-HANDLING</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        provides detailed error messages to help diagnose problems.
+                    </p>
+                </section>
+                <section id="OPTIONS">
+                    <h2>OPTIONS</h2>
+                    <p>
+                        <code>--source</code> DSN: The DSN for the MySQL server.
+                    </p>
+                    <p>
+                        <code>--where</code> “WHERE clause”: The WHERE clause to select rows to archive or delete.
+                    </p>
+                    <p>
+                        <code>--limit</code> N: The maximum number of rows to process.
+                    </p>
+                    <p>
+                        <code>--txn-size</code> N: The number of rows to include in each transaction.
+                    </p>
+                    <p>
+                        <code>--purge</code>: Delete the rows instead of archiving them.
+                    </p>
+                    <p>
+                        <code>--statistics</code>: Print statistics about the operation.
+                    </p>
+                    <p>
+                        <code>--dry-run</code>: Do not actually delete or archive any rows; just print what would be done.
+                    </p>
+                    <p>
+                        <code>--progress</code> N: Print progress information every N rows.
+                    </p>
+                    <p>
+                        <code>--set-vars</code> var=value,...: Set MySQL variables.
+                    </p>
+                    <p>
+                        <code>--help</code>: Show help message.
+                    </p>
+                    <p>
+                        <code>--version</code>: Show version information.
+                    </p>
+                </section>
+                <section id="DSN_OPTIONS">
+                    <h2>DSN OPTIONS</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        supports DSN options for connecting to MySQL. These include:
+                    </p>
+                    <ul>
+                        <li>
+                            <code>h</code>: hostname
+                        </li>
+                        <li>
+                            <code>P</code>: port
+                        </li>
+                        <li>
+                            <code>u</code>: username
+                        </li>
+                        <li>
+                            <code>p</code>: password
+                        </li>
+                        <li>
+                            <code>D</code>: database
+                        </li>
+                    </ul>
+                    <p>
+                        Example:
+                        <code>--source h=localhost,u=root,p=secret,D=test</code>
+                    </p>
+                </section>
+                <section id="EXTENDING">
+                    <h2>EXTENDING</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        can be extended by creating custom scripts that use its functionality.
+                    </p>
+                </section>
+                <section id="ENVIRONMENT">
+                    <h2>ENVIRONMENT</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        uses the following environment variables:
+                    </p>
+                    <ul>
+                        <li>
+                            <code>PT_CONFIG_DIR</code>: Directory for configuration files.
+                        </li>
+                    </ul>
+                </section>
+                <section id="ATTENTION">
+                    <h2>ATTENTION</h2>
+                    <p>
+                        <code>pt-archiver</code>
+                        is a powerful tool that can be dangerous if used incorrectly. Always back up your data before using this tool.
+                    </p>
+                </section>
+                <section id="SYSTEM_REQUIREMENTS">
+                    <h2>SYSTEM REQUIREMENTS</h2>
+                    <p>
+                        Perl, MySQL client libraries, and other prerequisites are listed in the Percona Toolkit documentation.
+                    </p>
+                </section>
+                <section id="BUGS">
+                    <h2>BUGS</h2>
+                    <p>
+                        Please report bugs to the Percona Toolkit bug tracker at
+                        <a href="https://jira.percona.com/projects/PT">https://jira.percona.com/projects/PT</a>
+                        .
+                    </p>
+                </section>
+                <section id="DOWNLOADING">
+                    <h2>DOWNLOADING</h2>
+                    <p>
+                        You can download Percona Toolkit from
+                        <a href="https://www.percona.com/downloads/percona-toolkit/">https://www.percona.com/downloads/percona-toolkit/</a>
+                        .
+                    </p>
+                </section>
+                <section id="AUTHORS">
+                    <h2>AUTHORS</h2>
+                    <p>
+                        Baron Schwartz, Jay Pipes, Daniel Nichter, and others.
+                    </p>
+                </section>
+                <section id="ACKNOWLEDGMENTS">
+                    <h2>ACKNOWLEDGMENTS</h2>
+                    <p>
+                        This tool is based on work by the MySQL community and Percona engineers.
+                    </p>
+                </section>
+                <section id="ABOUT_PERCONA_TOOLKIT">
+                    <h2>ABOUT PERCONA TOOLKIT</h2>
+                    <p>
+                        Percona Toolkit is a collection of advanced command-line tools for MySQL and Percona XtraDB Cluster. It is developed and supported by Percona.
+                    </p>
+                </section>
+                <section id="COPYRIGHT,_LICENSE,_AND_WARRANTY">
+                    <h2>COPYRIGHT, LICENSE, AND WARRANTY</h2>
+                    <p>
+                        Copyright © 2006–2023 Percona LLC and/or its affiliates.
+                    </p>
+                    <p>
+                        Percona Toolkit is distributed under the terms of the GNU General Public License, version 2.
+                    </p>
+                    <p>
+                        This program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation.
+                    </p>
+                    <p>
+                        This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+                    </p>
+                </section>
+                <section id="VERSION">
+                    <h2>VERSION</h2>
+                    <p>
+                        3.7.0
+                    </p>
+                </section>
+            </article>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

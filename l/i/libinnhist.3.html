@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>libinnhist(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">libinnhist(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/inn/">inn</a></p>
+<p class="lic">Licencias: custom:INN</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">libinnhist(3)</td>
+    <td class="head-vol">Documentación de InterNetNews</td>
+    <td class="head-rtitle">libinnhist(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">his - rutinas para la gestión del historial de INN</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>#include &lt;inn/history.h&gt;
+struct history;
+struct token;
+struct histstats {
+    int hitpos;
+    int hitneg;
+    int misses;
+    int dne;
+};
+#define HIS_RDONLY ...
+#define HIS_RDWR ...
+#define HIS_CREAT ...
+#define HIS_ONDISK ...
+#define HIS_INCORE ...
+#define HIS_MMAP ...
+enum {
+    HISCTLG_PATH,
+    HISCTLS_PATH,
+    HISCTLS_SYNCCOUNT,
+    HISCTLS_NPAIRS,
+    HISCTLS_IGNOREOLD,
+    HISCTLS_STATINTERVAL
+};
+struct history *HISopen(const char *path, const char *method,
+                        int flags);
+bool HISclose(struct history *history);
+bool HISsync(struct history *history);
+void HISsetcache(struct history *history, size_t size);
+bool HISlookup(struct history *history, const char *key,
+               time_t *arrived, time_t *posted, time_t *expires,
+               TOKEN *token);
+bool HIScheck(struct history *history, const char *key);
+bool HISwrite(struct history *history, const char *key,
+              time_t arrived, time_t posted, time_t expires,
+              const TOKEN *token);
+bool HISremember(struct history *history, const char *key,
+                 time_t arrived, time_t posted);
+bool HISreplace(struct history *history, const char *key,
+                time_t arrived, time_t posted, time_t expires,
+                const TOKEN *token);
+bool HISexpire(struct history *history, const char *path,
+               const char *reason, bool writing, void *cookie,
+               time_t threshold,
+               bool (*exists)(void *cookie, time_t arrived,
+                              time_t posted, time_t expires,
+                              const TOKEN *token));
+bool HISwalk(struct history *history, const char *reason,
+             void *cookie,
+             bool (*callback)(void *cookie, time_t arrived,
+                              time_t posted, time_t expires,
+                              const TOKEN *token));
+struct histstats HISstats(struct history *history);
+const char *HISerror(struct history *history);
+bool HISctl(struct history *history, int request, void *val);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Estas funciones proporcionan acceso a la base de datos de historial de
+    INN. Mantienen pares clave/valor en una base de datos opaca, al tiempo que
+    proporcionan caducidad de la información obsoleta.</p>
+<p class="Pp">La estructura de historial es un manejador opaco devuelto por
+    <b>HISopen</b>.</p>
+<p class="Pp">La función <b>HISopen</b> abre el archivo de historial designado
+    por <i>path</i> utilizando el modo <i>flags</i> y el método especificado
+    <i>method</i>. <i>flags</i> puede ser <b>HIS_RDONLY</b> para indicar que se
+    desea acceso de solo lectura a la base de datos de historial, o
+    <b>HIS_RDWR</b> para acceso de lectura/escritura. Los métodos de historial se
+    definen en el momento de la compilación; el método de historial actualmente
+    disponible es &quot;hisv6&quot;. En caso de éxito, se devuelve un manejador de
+    historial recién inicializado, o <b>NULL</b> en caso de fallo.</p>
+<p class="Pp"><b>HIS_ONDISK</b>, <b>HIS_INCORE</b> y <b>HIS_MMAP</b> se pueden
+    combinar lógicamente mediante OR (`|`) en <i>flags</i> para proporcionar una
+    pista al gestor de historial subyacente sobre cómo debe manejar sus archivos
+    de datos; <b>HIS_ONDISK</b> indica que el llamador desea que la mayor parte
+    de los datos se mantengan en disco (y fuera de la memoria), <b>HIS_INCORE</b>
+    indica que los archivos de datos deben mantenerse en memoria principal siempre
+    que sea posible y <b>HIS_MMAP</b> que los archivos deben ser mapeados
+    (&quot;mmap()&quot;) en el espacio de direcciones del proceso.
+    <b>HIS_INCORE</b> se usa típicamente donde se está realizando una reconstrucción
+    masiva de la base de datos de historial; el gestor de historial subyacente
+    puede asumir que el llamador invocará <b>HISsync</b>() para sincronizar los
+    archivos de datos con el disco.</p>
+<p class="Pp">El flag <b>HIS_CREAT</b> indica que la base de datos de historial
+    debe ser inicializada como nueva; si se necesitan establecer opciones que
+    afecten la creación de la base de datos, se debe crear un manejador de
+    historial anónimo llamando a <b>HISopen</b> con <i>path</i> establecido a
+    <b>NULL</b>, cualquier opción establecida usando <b>HISctl</b>, y luego abrir
+    la base de datos llamando a <b>HISctl</b> con <b>HISCTLS_PATH</b>.</p>
+<p class="Pp">La función <b>HISclose</b> cierra el manejador <i>history</i> y
+    desasigna cualquier recurso asociado a él. Devuelve <b>false</b> en caso de
+    fallo o <b>true</b> en caso de éxito.</p>
+<p class="Pp">La función <b>HISsync</b> sincroniza cualquier transacción
+    pendiente asociada con <i>history</i> al disco.</p>
+<p class="Pp"><b>HISsetcache</b> asocia una caché utilizada para acelerar
+    HIScheck con <i>history</i>. La caché ocupará aproximadamente
+    <i>size</i> bytes.</p>
+<p class="Pp"><b>HISlookup</b> recupera un token del historial <i>history</i>
+    basado en la <i>key</i> proporcionada (normalmente el Message-ID). Si no se
+    encuentra ninguna entrada con un token asociado, <b>HISlookup</b> devolverá
+    <b>false</b>. Si se encuentra un token, se rellenan <i>arrived</i>,
+    <i>expires</i> y <i>posted</i> con las horas de llegada, caducidad y envío
+    del mensaje respectivamente (o cero, si el componente temporal no está
+    disponible), además de que <i>token</i> se establece al token recuperado y
+    el valor de retorno de la función es <b>true</b>. Cualquiera de arrived,
+    expires, posted o token puede ser <b>NULL</b>, en cuyo caso ese componente no
+    se devuelve al llamador, sin afectar el valor de retorno.</p>
+<p class="Pp"><b>HIScheck</b> verifica la base de datos <i>history</i> para
+    la <i>key</i> (normalmente el Message-ID); si <i>key</i> ha sido previamente
+    establecida mediante <b>HISwrite</b>, <b>HIScheck</b> devuelve
+    <b>true</b>, de lo contrario devuelve <b>false</b>.</p>
+<p class="Pp"><b>HISwrite</b> escribe una nueva entrada en la base de datos
+    <i>history</i> asociada con <i>key</i>. <i>arrived</i>, <i>posted</i> y
+    <i>expired</i> especifican las horas de llegada, envío y caducidad
+    respectivamente; <i>posted</i> y <i>expired</i> pueden especificarse como
+    &lt;= 0, en cuyo caso ese componente se tratará como ausente en la base de
+    datos. <i>token</i> se asocia con la <i>key</i> especificada.
+    <b>HISwrite</b> devuelve <b>true</b> en caso de éxito, o <b>false</b> en caso
+    de fallo. El comportamiento cuando <i>key</i> no es única con respecto a las
+    entradas existentes en <i>history</i> no está especificado.</p>
+<p class="Pp"><b>HISremember</b> escribe una nueva entrada en la base de datos
+    <i>history</i> asociada con <i>key</i>, simplemente recordando que esta
+    <i>key</i> ha sido vista, junto con su hora de llegada <i>arrived</i> y
+    también su hora de envío <i>posted</i>, si se conoce. (De lo contrario, su
+    hora de envío puede especificarse como &lt;= 0 en caso de que esté ausente.)
+    <b>HISremember</b> devuelve <b>true</b> en caso de éxito, o <b>false</b> en
+    caso de fallo. El comportamiento cuando <i>key</i> no es única con respecto a
+    las entradas existentes en <i>history</i> no está especificado.</p>
+<p class="Pp"><b>HISreplace</b> reemplaza una entrada existente en la base de
+    datos <i>history</i>, asociada con <i>key</i>. <i>arrived</i>,
+    <i>posted</i>, <i>expired</i> especifican las horas de llegada, envío y
+    caducidad respectivamente; <i>posted</i> y <i>expired</i> pueden especificarse
+    como &lt;= 0, en cuyo caso ese componente se tratará como ausente en la base
+    de datos. <i>token</i> se asocia con la <i>key</i> especificada; si es
+    <b>NULL</b>, la base de datos de historial simplemente recuerda que esta
+    <i>key</i> ha sido vista, junto con su hora de llegada. <b>HISreplace</b>
+    devuelve <b>true</b> en caso de éxito, o <b>false</b> en caso de fallo.</p>
+<p class="Pp"><b>HISexpire</b> caduca la base de datos de historial asociada con
+    <i>history</i>, creando una nueva base de datos de reemplazo en la misma
+    ubicación si <i>path</i> es <b>NULL</b>, o en <i>path</i> si no es
+    <b>NULL</b>; si <i>path</i> no es <b>NULL</b>, se asume que el llamador
+    realizará la sustitución de la antigua base de datos de historial por la
+    nueva fuera de banda. El flag <i>writing</i> se pasa normalmente como
+    <b>true</b>; si desea inhibir la escritura de la nueva base de datos (y solo
+    ver las devoluciones de llamada), <i>writing</i> puede establecerse en
+    <b>false</b>.</p>
+<p class="Pp">Si el mecanismo de historial subyacente necesita pausar el
+    servidor, la cadena <i>reason</i> se utiliza como argumento para el comando
+    `ctlinnd pause`, y como tal, el servidor debe ser reservado por el llamador
+    antes de llamar a <b>HISexpire</b>; si el llamador desea inhibir la pausa
+    del servidor, pasar <b>NULL</b> logrará esto. Si <i>reason</i> no es
+    <b>NULL</b>, entonces tras el retorno exitoso de <b>HISexpire</b>, el servidor
+    permanecerá pausado y el llamador deberá reanudarlo.</p>
+<p class="Pp">Se escanea la base de datos de historial y las entradas con un token
+    de almacenamiento asociado se pasan a la función de discriminación
+    <i>exists</i>.</p>
+<p class="Pp">Si <i>exists</i>() devuelve <b>false</b>, indica que la entidad
+    almacenada asociada con el token ya no está disponible (o ya no se requiere),
+    y por lo tanto la entrada de historial asociada puede caducar una vez que
+    cumpla la restricción de <i>threshold</i>. Si <i>exists</i>() devuelve
+    <b>true</b>, la entrada se mantiene tal cual en la base de datos de historial
+    recién caducada.</p>
+<p class="Pp">La función <i>exists</i> recibe las horas de llegada, envío y
+    caducidad, además del token asociado con la entrada. Tenga en cuenta que el
+    envío y/o la caducidad pueden ser cero, pero el token nunca será
+    <b>NULL</b> (dichas entradas se manejan únicamente a través del mecanismo de
+    umbral). El token de almacenamiento pasado a la función de discriminación
+    puede actualizarse si es necesario (por ejemplo, como podría ser necesario
+    por una implementación de gestión jerárquica de almacenamiento).</p>
+<p clas="Pp">
+<p class="Pp">La función <b>HISwalk</b> recorre la base de datos de historial
+    y llama a la función <i>callback</i> para cada entrada, pasando <i>cookie</i>
+    para su uso posterior. Si <i>callback</i> devuelve <b>false</b>, el recorrido
+    se detiene.</p>
+<p class="Pp"><b>HISstats</b> devuelve un struct <i>histstats</i> que contiene
+    las estadísticas de la operación de historial actual; <i>hitpos</i> es el
+    número de veces que se encontró una entrada con un token positivo,
+    <i>hitneg</i> es el número de veces que se encontró una entrada con un token
+    negativo, <i>misses</i> es el número de veces que no se encontró una entrada
+    pero el token era válido y <i>dne</i> es el número de veces que no se
+    encontró una entrada y el token no era válido.</p>
+<p class="Pp"><b>HISerror</b> devuelve una cadena de texto que describe el
+    último error ocurrido en la operación de historial. Si no ha ocurrido ningún
+    error, devuelve <b>NULL</b>.</p>
+<p class="Pp"><b>HISctl</b> se utiliza para consultar o establecer parámetros
+    relacionados con el manejador de historial <i>history</i>. Los valores para
+    <i>request</i> incluyen:</p>
+<ul>
+    <li><b>HISCTLG_PATH</b>: devuelve la ruta actual del archivo de historial
+    (el valor devuelto debe ser liberado por <b>free</b>(3)).</li>
+    <li><b>HISCTLS_PATH</b>: establece la ruta del archivo de historial (el
+    valor pasado en <i>val</i> es una cadena de caracteres que no debe ser
+    liberada).</li>
+    <li><b>HISCTLS_SYNCCOUNT</b>: establece el número de escrituras en disco
+    antes de realizar una sincronización.</li>
+    <li><b>HISCTLS_NPAIRS</b>: establece el número de pares clave/valor que
+    se almacenarán.</li>
+    <li><b>HISCTLS_IGNOREOLD</b>: establece un flag que indica si las entradas
+    antiguas deben ser ignoradas durante la lectura.</li>
+    <li><b>HISCTLS_STATINTERVAL</b>: establece el intervalo en segundos para
+    la recolección de estadísticas.</li>
+</ul>
+</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"></b><a href="news.html">news(7)</a></b>,
+    </b><a href="inn.html">inn(8)</a></b></p>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+        </footer>
+    </body>
+</html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>libinnhist(3) - Arch manual pages</title>
+<link rel="stylesheet" type="text/css" href="/css/main.css">
+<link rel="stylesheet" type="text/css" href="/css/syntax.css">
+</head>
+<body>
+<article>
+
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp"><code class="Nm">libinnhist</code> &#x2013; history cache management library</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Pp"><code class="Nd">#include &lt;inn/libinnhist.h&gt;</code></p>
+<p class="Pp"><code class="Nd">void HISclose(HIST *)</code></p>
+<p class="Pp"><code class="Nd">HIST *HISopen(const char *path, char *(*discriminator)(void *,
+      const char *), void *cookie)</code></p>
+<p class="Pp"><code class="Nd">bool HIScheck(HIST *, const char *token)</code></p>
+<p class="Pp"><code class="Nd">bool HISremember(HIST *, const char *token, time_t
+      arrival, time_t posting, time_t expiry)</code></p>
+<p class="Pp"><code class="Nd">bool HISreplace(HIST *, const char *token, time_t
+      arrival, time_t posting, time_t expiry)</code></p>
+<p class="Pp"><code class="Nd">bool HIScancel(HIST *, const char *token)</code></p>
+<p class="Pp"><code class="Nd">bool HISexpire(HIST *, time_t threshold, char
+      *(*discriminator)(void *, const char *), void *cookie)</code></p>
+<p class="Pp"><code class="Nd">bool HISwalk(HIST *, bool (*callback)(void *,
+      const char *, time_t, time_t, time_t, const char *), void *cookie,
+      const char *reason)</code></p>
+<p class="Pp"><code class="Nd">struct histstats HISstats(HIST *)</code></p>
+<p class="Pp"><code class="Nd">const char *HISerror(HIST *)</code></p>
+<p class="Pp"><code class="Nd">bool HISctl(HIST *, int request, void *val)</code></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The history cache is used to track articles that have been
+    processed by the server, and therefore do not need to be re-processed if they
+    are received again. The history cache is managed by a history manager, and
+    the library provides an interface to it.</p>
+<p class="Pp"><b>HISopen</b> opens a history cache associated with the given
+    <i>path</i>. If <i>path</i> is <b>NULL</b>, an anonymous history cache is
+    opened. The <i>discriminator</i> function is a callback used by the history
+    manager to determine if an article is to be considered expired or not. It is
+    passed the <i>cookie</i> supplied to <b>HISopen</b>, and the token of the
+    article being considered. If the token is considered expired, the function
+    should return <b>true</b>, otherwise <b>false</b>. If the <i>discriminator</i>
+    is <b>NULL</b>, then no articles are considered expired.</p>
+<p class="Pp"><b>HISclose</b> closes a history cache, freeing any associated
+    resources.</p>
+<p class="Pp"><b>HIScheck</b> checks if an article with the given <i>token</i>
+    is present in the history cache. It returns <b>true</b> if the article is
+    present, and <b>false</b> otherwise.</p>
+<p class="Pp"><b>HISremember</b> adds an article with the given <i>token</i> to
+    the history cache. The <i>arrival</i>, <i>posting</i>, and <i>expiry</i>
+    times are stored along with the token. The times are in seconds since the
+    epoch.</p>
+<p class="Pp"><b>HISreplace</b> is similar to <b>HISremember</b>, but if an
+    article with the given <i>token</i> already exists in the history cache, its
+    times are updated.</p>
+<p class="Pp"><b>HIScancel</b> removes an article with the given <i>token</i>
+    from the history cache.</p>
+<p class="Pp"><b>HISexpire</b> iterates through the history cache and removes
+    any entries whose posting time is less than <i>threshold</i> and which are
+    not considered to exist by the <i>discriminator</i> function. If the posting
+    time is unknown, the arrival time is used instead. The <i>cookie</i> is
+    passed to the <i>discriminator</i> function.</p>
+<p class="Pp">Entries in the database with a posting time less than
+    <i>threshold</i> with no token associated with them are deleted from the
+    database. In case the posting time is unknown, the arrival time is used
+    instead.</p>
+<p class="Pp">The parameter <i>cookie</i> is passed to the discrimination
+    function, and may be used for any purpose required by the caller.</p>
+<p class="Pp">If the discrimination function attempts to access the underlying
+    database (for read or write) during the callback, the behaviour is
+    unspecified.</p>
+<p class="Pp"><b>HISwalk</b> provides an iteration function for the specified
+    <i>history</i> database. For every entry in the history database,
+    <i>callback</i> is invoked, passing the <i>cookie</i>, arrival, posting, and
+    expiry times, in addition to the token associated with the entry. If the
+    <i>callback</i>() returns <b>false</b> the iteration is aborted and
+    <b>HISwalk</b> returns <b>false</b> to the caller.</p>
+<p class="Pp">To process the entire database in the presence of a running
+    server, <i>reason</i> may be passed; if this argument is not <b>NULL</b>, it
+    is used as an an argument to the `ctlinnd (reserve|pause|go)' commands. If
+    <i>reason</i> is <b>NULL</b> and the server is running, the behaviour of
+    <b>HISwalk</b> is undefined.</p>
+<p class="Pp">If the callback function attempts to access the underlying
+    database during the callback, the behaviour is unspecified.</p>
+<p class="Pp"><b>HISstats</b> returns statistics on the history cache mechanism;
+    given a handle <i>history</i>, the return value is a <i>struct histstats</i>
+    detailing:</p>
+<dl class="Bl-tag">
+  <dt>"hitpos"</dt>
+  <dd>The number of times an item was found directly in the cache and known to
+      exist in the underlying history manager.</dd>
+  <dt>"hitneg"</dt>
+  <dd>The number of times an item was found directly in the cache and known not
+      to exist in the underlying history manager.</dd>
+  <dt>"misses"</dt>
+  <dd>The number of times an item was not found directly in the cache, but on
+      retrieval from the underlying history manager was found to exist.</dd>
+  <dt>"dne"</dt>
+  <dd>The number of times an item was not found directly in the cache, but on
+      retrieval from the underlying history manager was found not to exist.</dd>
+</dl>
+<p class="Pp">Note that the history cache is only checked by <b>HIScheck</b> and
+    only affected by <b>HIScheck</b>, <b>HISwrite</b>, <b>HISremember</b> and
+    <b>HISreplace</b>. Following a call to <b>HISstats</b> the history
+    statistics associated with <i>history</i> are cleared.</p>
+<p class="Pp"><b>HISerror</b> returns a string describing the most recent error
+    associated with <i>history</i>; the format and content of these strings is
+    history manager dependent. Note that on setting an error, the history API
+    will call the <b>warn</b> function from <a href='/man/libinn.3.en'>libinn(3)</a>.</p>
+<p class="Pp"><b>HISctl</b> provides a control interface to the underlying
+    history manager. The <i>request</i> argument determines the type of the
+    request and the meaning of the <i>val</i> argument. The values for
+    <i>request</i> are:</p>
+<dl class="Bl-tag">
+  <dt>"HISCTLG_PATH" (const char **)</dt>
+  <dd>Get the base file path which the history handle represents. <i>val</i>
+      should be a pointer to a location of type <b>const char *</b>. The result
+      must not later be passed to <a href='/man/free.3.en'>free(3)</a>.</dd>
+  <dt>"HISCTLS_PATH" (const char *)</dt>
+  <dd>Set the base file path which this history handle should use; typically
+      this is used after an anonymous handle has been created using
+      <b>HISopen(NULL, ...)</b>. <i>val</i> should be a value of type <b>const
+      char</b> <b>*</b> and will be copied before being stored internally.</dd>
+  <dt>"HISCTLS_SYNCCOUNT" (size_t *)</dt>
+  <dd>Set an upper bound on how many history operations may be pending in core
+      before being synced to permanent storage; <b>0</b> indicates unlimited.
+      <i>val</i> should be a pointer to a value of type <b>size_t</b> and will
+      not be modified by the call.</dd>
+  <dt>"HISCTLS_NPAIRS" (size_t *)</dt>
+  <dd>Set a hint to the to the underlying history manager as to how many entries
+      there are expected to be in the history database; <b>0</b> indicates that
+      an automatic or default sizing should be made. <i>val</i> should be a
+      pointer to a value of type <b>size_t</b> and will not be modified by the
+      call.</dd>
+  <dt>"HISCTLS_IGNOREOLD" (bool *)</dt>
+  <dd>Instruct the underlying history manager to ignore existing database when
+      creating new ones; typically this option may be set to <b>true</b> if the
+      administrator believes that the existing history database is corrupt and
+      that ignoring it may help. <i>val</i> should be a pointer to a value of
+      type <b>bool</b> and will not be modified by the call.</dd>
+  <dt>"HISCTLS_STATINTERVAL" (time_t *)</dt>
+  <dd>For the history v6 and tagged hash managers, set the interval, in seconds,
+      between <a href='/man/stat.2.en'>stat(2)</a>s of the history files checking for replaced files
+      (as happens during expire); this option is typically used by
+      <a href='/man/nnrpd.8.en'>nnrpd(8)</a> like applications. <i>val</i> should be a pointer to a
+      value of type <b>time_t</b> and will not be modified by the call.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORY'><a class='permalink' href='#HISTORY'>HISTORY</a></h1>
+<p class="Pp">Written by Alex Kiernan &lt;alexk@demon.net&gt; for
+    InterNetNews&#x00A0;2.4.0.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2023-03-07</td>
+    <td class="foot-os">INN 2.7.3</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/inn/">extra/inn</a></dd>
+        <dt>Version:</dt>
+        <dd>2.7.3-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.isc.org/othersoftware/">https://www.isc.org/othersoftware/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>custom:INN</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/inn/">/listing/extra/inn/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#HISTORY">HISTORY</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/libinnhist.3.en.txt">txt</a>, 
+        
+            <a href="/man/libinnhist.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

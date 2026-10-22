@@ -1,0 +1,1026 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlinterp(1perl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlinterp.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLINTERP(1perl)</td>
+    <td class="head-vol">Guía de Referencia para Programadores de Perl</td>
+    <td class="head-rtitle">PERLINTERP(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlinterp - Una visión general del intérprete de Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este documento proporciona una visión general de cómo funciona el intérprete de Perl a nivel de código C, junto con enlaces a los archivos de código fuente C relevantes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ELEMENTOS_DEL_INTÉRPRETE'><a class='permalink' href='#ELEMENTOS_DEL_INTÉRPRETE'>ELEMENTOS DEL INTÉRPRETE</a></h1>
+<p class="Pp">El trabajo del intérprete tiene dos etapas principales: compilar el código en la representación interna, o bytecode, y luego ejecutarlo. El "código compilado" en perlguts explica exactamente cómo ocurre la etapa de compilación.</p>
+<p class="Pp">Aquí hay un breve desglose de la operación de Perl:</p>
+<section class="Ss">
+<h2 class="Ss" id='Inicio'><a class='permalink' href='#Inicio'>Inicio</a></h2>
+<p class="Pp">La acción comienza en <i>perlmain.c</i>. (o <i>miniperlmain.c</i> para miniperl) Este es código de muy alto nivel, suficiente para caber en una sola pantalla, y se parece al código que se encuentra en perlembed; la mayor parte de la acción real tiene lugar en <i>perl.c</i></p>
+<p class="Pp"><i>perlmain.c</i> es generado por
+    <span class="Li">&quot;ExtUtils::Miniperl&quot;</span> desde
+    <i>miniperlmain.c</i> en tiempo de compilación (make time), así que deberías compilar Perl para seguir esto.</p>
+<p class="Pp">Primero, <i>perlmain.c</i> asigna algo de memoria y construye un intérprete de Perl, más o menos así:</p>
+<pre>1 PERL_SYS_INIT3(&amp;argc,&amp;argv,&amp;env);
+2
+3 if (!PL_do_undump) {
+4     my_perl = perl_alloc();
+5     if (!my_perl)
+6         exit(1);
+7     perl_construct(my_perl);
+8     PL_perl_destruct_level = 0;
+9 }</pre>
+<p class="Pp">La línea 1 es una macro, y su definición depende de tu sistema operativo. La línea 3 hace referencia a
+    <span class="Li">&quot;PL_do_undump&quot;</span>, una variable global - todas las variables globales en Perl comienzan con <span class="Li">&quot;PL_&quot;</span>. Esto te dice si el programa en ejecución actual fue creado con la opción
+    <span class="Li">&quot;-u&quot;</span> para Perl y luego <i>undump</i>, lo que significa que será falso en cualquier contexto sensato.</p>
+<p class="Pp">La línea 4 llama a una función en <i>perl.c</i> para asignar memoria para un intérprete de Perl. Es una función bastante simple, y su contenido se ve así:</p>
+<pre>my_perl = (PerlInterpreter*)PerlMem_malloc(sizeof(PerlInterpreter));</pre>
+<p class="Pp">Aquí ves un ejemplo de la abstracción del sistema de Perl, que veremos más adelante: <span class="Li">&quot;PerlMem_malloc&quot;</span> es el <span class="Li">&quot;malloc&quot;</span> de tu sistema, o el propio <span class="Li">&quot;malloc&quot;</span> de Perl tal como se define en <i>malloc.c</i> si seleccionaste esa opción en el momento de la configuración.</p>
+<p class="Pp">A continuación, en la línea 7, construimos el intérprete usando
+    perl_construct, también en <i>perl.c</i>; esto configura todas las variables especiales que Perl necesita, las pilas, etc.</p>
+<p class="Pp">Ahora le pasamos las opciones de línea de comandos a Perl y le decimos que empiece:</p>
+<pre>if (!perl_parse(my_perl, xs_init, argc, argv, (char **)NULL))
+    perl_run(my_perl);
+exitstatus = perl_destruct(my_perl);
+perl_free(my_perl);</pre>
+<p class="Pp"><span class="Li">&quot;perl_parse&quot;</span> es en realidad un
+    envoltorio alrededor de <span class="Li">&quot;S_parse_body&quot;</span>, tal como se define en
+    <i>perl.c</i>, que procesa las opciones de línea de comandos, configura cualquier módulo XS enlazado estáticamente, abre el programa y llama a
+    <span class="Li">&quot;yyparse&quot;</span> para analizarlo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Análisis'><a class='permalink' href='#Análisis'>Análisis</a></h2>
+<p class="Pp">El objetivo de esta etapa es tomar el código fuente de Perl y convertirlo en un árbol de operaciones (op tree). Veremos cómo es uno de ellos más adelante. Estrictamente hablando, hay tres cosas sucediendo aquí.</p>
+<p class="Pp"><span class="Li">&quot;yyparse&quot;</span>, el analizador sintáctico, reside en
+    <i>perly.c</i>, aunque es mejor leer la entrada original de YACC en
+    <i>perly.y</i>. (¡Sí, Virginia, SÍ hay una gramática YACC para Perl!)
+    El trabajo del analizador sintáctico es tomar tu código y "entenderlo", dividiéndolo en frases, decidiendo qué operandos van con qué operadores, y así sucesivamente.</p>
+<p class="Pp">El analizador sintáctico es noblemente asistido por el lexer (analizador léxico), que divide tu entrada en tokens y decide qué tipo de cosa es cada token: un nombre de variable, un operador, una palabra clave, una subrutina, una función principal, etc. El punto principal de entrada al lexer es
+    <span class="Li">&quot;yylex&quot;</span>, y esa y sus rutinas asociadas se encuentran en
+    <i>toke.c</i>. Perl no se parece mucho a otros lenguajes de computadora; a veces es muy sensible al contexto, puede ser difícil averiguar qué tipo de token es algo, o dónde termina un token. Como tal, hay mucha interacción entre el tokenizador y el analizador sintáctico, lo que puede ser bastante aterrador si no estás acostumbrado.</p>
+<p class="Pp">A medida que el analizador sintáctico comprende un programa Perl, construye un árbol de operaciones para que el intérprete lo realice durante la ejecución. Las rutinas que construyen y enlazan las diversas operaciones se encuentran en
+    <i>op.c</i>, y se examinarán más adelante.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Optimización'><a class='permalink' href='#Optimización'>Optimización</a></h2>
+<p class="Pp">Ahora la etapa de análisis está completa, y el árbol finalizado representa las operaciones que el intérprete de Perl necesita realizar para ejecutar nuestro programa. A continuación, Perl realiza una ejecución en seco sobre el árbol buscando optimizaciones: las expresiones constantes como <span class="Li">&quot;3 +
+    4&quot;</span> se computarán ahora, y el optimizador también verá si múltiples operaciones pueden ser reemplazadas por una sola. Por ejemplo, para obtener la variable <span class="Li">$foo</span>, en lugar de agarrar el glob
+    <span class="Li">*foo</span> y mirar el componente escalar, el optimizador modifica el árbol de operaciones para usar una función que busca directamente el escalar en cuestión. El optimizador principal es
+    <span class="Li">&quot;peep&quot;</span> en
+    <i>op.c</i>, y muchas operaciones tienen sus propias funciones de optimización.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejecución'><a class='permalink' href='#Ejecución'>Ejecución</a></h2>
+<p class="Pp">Ahora finalmente estamos listos para empezar: hemos compilado el bytecode de Perl, y todo lo que queda es ejecutarlo. La ejecución real la realiza la función
+    <span class="Li">&quot;runops_standard&quot;</span> en
+    <i>run.c</i>; más específicamente, la realizan estas tres líneas de aspecto inocente:</p>
+<pre>while ((PL_op = PL_op-&gt;op_ppaddr(aTHX))) {
+    PERL_ASYNC_CHECK();
+}</pre>
+<p class="Pp">Puede que te sientas más cómodo con la versión de Perl de eso:</p>
+<pre>PERL_ASYNC_CHECK() while $Perl::op = &amp;{$Perl::op-&gt;{function}};</pre>
+<p class="Pp">Bueno, quizás no. De todos modos, cada operación contiene un puntero de función, que especifica la función que realmente llevará a cabo la operación. Esta función devolverá la siguiente operación en la secuencia - esto permite cosas como
+    <span class="Li">&quot;if&quot;</span> que eligen la siguiente operación dinámicamente en tiempo de ejecución. El
+    <span class="Li">&quot;PERL_ASYNC_CHECK&quot;</span> se asegura de que cosas como las señales interrumpan la ejecución si es necesario.</p>
+<p class="Pp">Las funciones reales llamadas se conocen como código PP, y están repartidas entre cuatro archivos: <i>pp_hot.c</i> contiene el código "hot" (caliente), que es el más utilizado y altamente optimizado, <i>pp_sys.c</i> contiene todas las funciones específicas del sistema, <i>pp_ctl.c</i> contiene las funciones que implementan estructuras de control
+    (<span class="Li">&quot;if&quot;</span>,
+    <span class="Li">&quot;while&quot;</span> y similares) y <i>pp.c</i>
+    contiene todo lo demás. Estas son, si quieres, el código C para las funciones y operadores integrados de Perl.</p>
+<p class="Pp">Tenga en cuenta que cada función <span class="Li">&quot;pp_&quot;</span> se espera que devuelva un puntero a la siguiente operación. Las llamadas a subrutinas de Perl (y bloques eval) se manejan dentro del mismo bucle runops, y no consumen espacio adicional en la pila C. Por ejemplo,
+    <span class="Li">&quot;pp_entersub&quot;</span> y
+    <span class="Li">&quot;pp_entertry&quot;</span> simplemente empujan una estructura de bloque
+    <span class="Li">&quot;CXt_SUB&quot;</span> o
+    <span class="Li">&quot;CXt_EVAL&quot;</span> a la pila de contexto, que contiene la dirección de la operación siguiente a la llamada a la subrutina o eval. Luego devuelven la primera operación de esa subrutina o bloque eval, y así la ejecución continúa de esa subrutina o bloque. Más tarde, una operación
+    <span class="Li">&quot;pp_leavesub&quot;</span> o
+    <span class="Li">&quot;pp_leavetry&quot;</span> saca el
+    <span class="Li">&quot;CXt_SUB&quot;</span> o
+    <span class="Li">&quot;CXt_EVAL&quot;</span>, recupera la operación de retorno de él, y la devuelve.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Manejo_de_excepciones'><a class='permalink' href='#Manejo_de_excepciones'>Manejo de excepciones</a></h2>
+<p class="Pp">El manejo de excepciones de Perl (es decir,
+    <span class="Li">&quot;die&quot;</span> etc.) se basa en las funciones de bajo nivel
+    <span class="Li">setjmp()</span>/<span class="Li">longjmp()</span> de la biblioteca C. Estas básicamente proporcionan una forma de capturar los registros PC y SP actuales de la CPU y restaurarlos más tarde: es decir, un
+    <span class="Li">longjmp()</span> continúa en el punto del código donde un
+    <span class="Li">setjmp()</p>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='longjump-and-setjmp'><a class='permalink' href='#longjump-and-setjmp'>longjump and setjmp</a></h1>
+<p class="Pp">Perl uses <span class="Li">setjmp()</span> and <span class="Li">longjmp()</span>
+    to implement its exception handling and multi-level exits. This is an
+    explanation of how they are used, and why.</p>
+<p class="Pp"><span class="Li">setjmp()</span> and <span class="Li">longjmp()</span>
+    are standard C functions. <span class="Li">setjmp()</span> saves the current
+    CPU state (registers, stack pointer, etc.) into a <span class="Li">jmp_buf</span>
+    structure, and returns 0. <span class="Li">longjmp()</span> restores the CPU
+    state from a saved <span class="Li">jmp_buf</span>, and then returns a value
+    (passed as an argument) as if <span class="Li">setjmp()</span> had returned
+    that value. This means that <span class="Li">longjmp()</span> can cause
+    <span class="Li">setjmp()</span> to return *again*, this time with a non-zero
+    value. All stack frames between the <span class="Li">setjmp()</span> and the
+    <span class="Li">longjmp()</span> are unwound, with anything further up
+    on the C stack being lost. (This is why code should always save values using
+    <span class="Li">&quot;SAVE_</span><span class="Li"><i>FOO</i></span><span class="Li">&quot;</span>
+    rather than in auto variables.)</p>
+<p class="Pp">The perl core wraps <span class="Li">setjmp()</span> and
+    <span class="Li">longjmp()</span> in the macros
+    <span class="Li">&quot;JMPENV_PUSH&quot;</span> and
+    <span class="Li">&quot;JMPENV_JUMP&quot;</span>. The push operation, as well
+    as setting a <span class="Li">setjump()</span>, stores some temporary state
+    in a struct local to the current function (allocated by
+    <span class="Li">&quot;dJMPENV&quot;</span>). In particular, it stores a
+    pointer to the previous <span class="Li">&quot;JMPENV&quot;</span> struct,
+    and updates <span class="Li">&quot;PL_top_env&quot;</span> to point to the
+    newest one, forming a chain of <span class="Li">&quot;JMPENV&quot;</span>
+    states. Both the push and jump can output debugging information under
+    <span class="Li">&quot;perl -Dl&quot;</span>.</p>
+<p class="Pp">A basic rule of the perl internals is that all interpreter exits
+    are achieved via a <span class="Li">JMPENV_JUMP()</span>. In particular:</p>
+<ul class="Bl-bullet">
+  <li>level 2: perl-level <b>exit()</b> and internals <b>my_exit()</b>
+    <p class="Pp">These unwind all stacks, then perform a
+      <a href='/man/JMPENV_JUMP.2.en'>JMPENV_JUMP(2)</a>.</p>
+  </li>
+  <li>level 3: perl-level <b>die()</b> and internals <b>croak()</b>
+    <p class="Pp">If currently within an eval, these pop the context stack back
+        to the nearest <span class="Li">&quot;CXt_EVAL&quot;</span> frame, set
+        <span class="Li">$@</span> as appropriate, set
+        <span class="Li">&quot;PL_restartop&quot;</span> to the op which follows
+        the eval associated with that frame, then perform a
+        <a href='/man/JMPENV_JUMP.3.en'>JMPENV_JUMP(3)</a>.</p>
+    <p class="Pp">Otherwise, the error message is printed to
+        <span class="Li">&quot;STDERR&quot;</span>, then it is treated as an
+        exit: unwind all stacks and perform a <a href='/man/JMPENV_JUMP.2.en'>JMPENV_JUMP(2)</a>.</p>
+  </li>
+  <li>level 1: unused
+    <p class="Pp"><a href='/man/JMPENV_JUMP.1.en'>JMPENV_JUMP(1)</a> is currently unused except in
+        <b>perl_run()</b>.</p>
+  </li>
+  <li>level 0: normal return.
+    <p class="Pp">The zero value is for a normal return from
+        <b>JMPENV_PUSH()</b></p>
+  </li>
+</ul>
+<p class="Pp">So the perl interpreter expects that, at all times, there is a
+    suitable <span class="Li">&quot;JMPENV_PUSH&quot;</span> set up (and at a
+    suitable location within the CPU call stack) that can catch and process a 2-
+    or 3-valued jump; and in the case of a 3, start a new runops loop to execute
+    <span class="Li">&quot;PL_restartop&quot;</span> and all remaining ops (as
+    will be explained shortly).</p>
+<p class="Pp">The entry points to the perl interpreter all provide such a
+    facility. For example, <b>perl_parse()</b>, <b>perl_run()</b> and
+    <span class="Li">&quot;call_sv(cv, G_EVAL)&quot;</span> all contain
+    something similar in outline to:</p>
+<pre>dJMPENV;
+JMPENV_PUSH(ret);
+switch (ret) {
+case 0:                     /* normal return from JMPENV_PUSH() */
+  redo_body:
+    CALLRUNOPS(aTHX);
+    break;
+case 2:                     /* caught longjmp(2) - exit / die */
+    break;
+case 3:                     /* caught longjmp(3) - eval { die } */
+    PL_op = PL_restartop;
+    goto redo_body;
+}
+JMPENV_POP;</pre>
+<p class="Pp">A runops loop such as <b>Perl_runops_standard()</b> (as set up by
+    <b>CALLRUNOPS()</b>) is, at its heart, just a simple:</p>
+<pre>while ((PL_op = PL_op-&gt;op_ppaddr(aTHX))) { 1; }</pre>
+<p class="Pp">which calls the <b>pp()</b> function associated with each op,
+    relying on that to return a pointer to the next op to be executed.</p>
+<p class="Pp">As well as setting catches at the entry points to the perl
+    interpreter, you might expect perl to also do a <b>JMPENV_PUSH()</b> in
+    places like <b>pp_entertry()</b>, just before some trappable ops are
+    executed. In fact perl doesn't normally do this. The drawback with doing it
+    is that with nested or recursive code such as:</p>
+<pre>sub foo { my ($i) = @_; return if $i &lt; 0; eval { foo(--$i) } }</pre>
+<p class="Pp">Then the C stack would quickly overflow with pairs of entries
+    like</p>
+<pre>...
+#N+3 Perl_runops()
+#N+2 Perl_pp_entertry()
+#N+1 Perl_runops()
+#N   Perl_pp_entertry()
+...</pre>
+<p class="Pp">Instead, perl puts its guards at the <i>callers</i> of runops
+    loops. Then as many nested subroutine calls and evals may be called as you
+    like, all within the one runops loop. If an exception occurs, control passes
+    back to the caller of the loop, which just immediately restarts a new loop
+    with <span class="Li">&quot;PL_restartop&quot;</span> being the next op to
+    call.</p>
+<p class="Pp">So in normal operation where there are several nested evals, there
+    will be multiple <span class="Li">&quot;CXt_EVAL&quot;</span> context stack
+    entries, but only a single runops loop, guarded by a single
+    <span class="Li">&quot;JMPENV_PUSH&quot;</span>. Each caught eval will pop
+    the next <span class="Li">&quot;CXt_EVAL&quot;</span> off the stack, set
+    <span class="Li">&quot;PL_restartop&quot;</span>, then <b>longjmp()</b> back
+    to <b>perl_run()</b> and continue.</p>
+<p class="Pp">However, ops are sometimes executed within an inner runops loop,
+    such as in a tie, sort, or overload code. In this case, something like</p>
+<pre>sub FETCH { eval { die }; .... }</pre>
+<p class="Pp">would, unless handled specially, cause a <b>longjmp()</b> right
+    back to the guard in <b>perl_run()</b>, popping <i>both</i> the runops loops
+    - which is clearly incorrect. One way to avoid this is for the tie code to
+    do a <span class="Li">&quot;JMPENV_PUSH&quot;</span> before executing
+    <span class="Li">&quot;FETCH&quot;</span> in the inner runops loop, but for
+    efficiency reasons, perl in fact just temporarily sets a flag using
+    <span class="Li">CATCH_SET(TRUE)</span>. This flag warns any subsequent
+    <span class="Li">&quot;require&quot;</span>,
+    <span class="Li">&quot;entereval&quot;</span> or
+    <span class="Li">&quot;entertry&quot;</span> ops that the caller is no
+    longer promising to catch any raised exceptions on their behalf.</p>
+<p class="Pp">These ops check this flag, and if true, they (via
+    <b>docatch()</b>) do a <span class="Li">&quot;JMPENV_PUSH&quot;</span> and
+    start a new runops loop to execute the code, rather than doing it with the
+    current loop.</p>
+<p class="Pp">As a consequence, on exit from the eval block in the
+    <span class="Li">&quot;FETCH&quot;</span> above, execution of the code
+    following the block is still carried on in the inner loop (i.e. the one
+    established by the <b>pp_entertry()</b>). To avoid confusion, if a further
+    exception is then raised, <b>docatch()</b> compares the
+    <span class="Li">&quot;JMPENV&quot;</span> level of the
+    <span class="Li">&quot;CXt_EVAL&quot;</span> with
+    <span class="Li">&quot;PL_top_env&quot;</span> and if they differ, just
+    re-throws the exception. In this way any inner loops get popped, and the
+    exception will be dealt with properly by the level which is expecting
+    it.</p>
+<p class="Pp">Here's an example.</p>
+<pre>1: eval { tie @a, 'A' };
+2: sub A::TIEARRAY {
+3:     eval { die };
+4:     die;
+5: }</pre>
+<p class="Pp">To run this code, <b>perl_run()</b> is called, which does a
+    <b>JMPENV_PUSH()</b>, then enters a runops loop. This loop executes the
+    <span class="Li">&quot;entereval&quot;</span> and
+    <span class="Li">&quot;tie&quot;</span> ops on line 1, with the
+    <span class="Li">&quot;entereval&quot;</span> pushing a
+    <span class="Li">&quot;CXt_EVAL&quot;</span> onto the context stack.</p>
+<p class="Pp">The <b>pp_tie()</b> does a
+    <span class="Li">CATCH_SET(TRUE)</span>, then starts a second runops loop to
+    execute the body of <b>TIEARRAY()</b>. When the loop executes the
+    <span class="Li">&quot;entertry&quot;</span> op on line 3,
+    <b>CATCH_GET()</b> is true, so <b>pp_entertry()</b> calls <b>docatch()</b>
+    which does a <span class="Li">&quot;JMPENV_PUSH&quot;</span> and starts a
+    third runops loop, which restarts the <b>pp_entertry()</b>, then executes
+    the <span class="Li">&quot;die&quot;</span> op. At this point the C call
+    stack looks like this:</p>
+<pre>#10 Perl_pp_die()
+#9  Perl_runops()      # runops loop 3
+#8  S_docatch()        # JMPENV level 2
+#7  Perl_pp_entertry()
+#6  Perl_runops()      # runops loop 2
+#5  Perl_call_sv()
+#4  Perl_pp_tie()
+#3  Perl_runops()      # runops loop 1
+#2  S_run_body()
+#1  perl_run()         # JMPENV level 1
+#0  main()</pre>
+<p class="Pp">and the context and data stacks, as shown by
+    <span class="Li">&quot;perl -Dstv&quot;</span>, look like:</p>
+<pre>STACK 0: MAIN
+  CX 0: BLOCK  =&gt;
+  CX 1: EVAL   =&gt; AV()  PV(&quot;A&quot;\0)
+  retop=leave
+STACK 1: MAGIC
+  CX 0: SUB    =&gt;
+  retop=(null)
+  CX 1: EVAL   =&gt; *
+retop=nextstate</pre>
+<p class="Pp">The <b>die()</b> pops the first
+    <span class="Li">&quot;CXt_EVAL&quot;</span> off the context stack, sets
+    <span class="Li">&quot;PL_restartop&quot;</span> from it, does a
+    <span class="Li">JMPENV_JUMP(3)</span>, and control returns to the
+    <span class="Li">&quot;JMPENV&quot;</span> level set in <b>docatch()</b>.
+    This then starts another third-level runops level, which executes the
+    <span class="Li">&quot;nextstate&quot;</span>,
+    <span class="Li">&quot;pushmark&quot;</span> and
+    <span class="Li">&quot;die&quot;</span> ops from line 4. At the point that
+    the second <b>pp_die()</b> is called, the C call stack looks exactly like
+    that above, even though we are no longer within an inner eval. However, the
+    context stack now looks like this, i.e. with the top CXt_EVAL popped:</p>
+<pre>STACK 0: MAIN
+  CX 0: BLOCK  =&gt;
+  CX 1: EVAL   =&gt; AV()  PV(&quot;A&quot;\0)
+  retop=leave
+STACK 1: MAGIC
+  CX 0: SUB    =&gt;
+  retop=(null)</pre>
+<p class="Pp">The <b>die()</b> on line 4 pops the context stack back down to the
+    <span class="Li">&quot;CXt_EVAL&quot;</span>, leaving it as:</p>
+<pre>STACK 0: MAIN
+  CX 0: BLOCK  =&gt;</pre>
+<p class="Pp">As usual, <span class="Li">&quot;PL_restartop&quot;</span> is
+    extracted from the <span class="Li">&quot;CXt_EVAL&quot;</span>, and a
+    <a href='/man/JMPENV_JUMP.3.en'>JMPENV_JUMP(3)</a> done, which pops the C stack back to the
+    <b>docatch()</b>:</p>
+<pre>#8  S_docatch()        # JMPENV level 2
+#7  Perl_pp_entertry()
+#6  Perl_runops()      # runops loop 2
+#5  Perl_call_sv()
+#4  Perl_pp_tie()
+#3  Perl_runops()      # runops loop 1
+#2  S_run_body()
+#1  perl_run()         # JMPENV level 1
+#0  main()</pre>
+<p class="Pp">In this case, because the
+    <span class="Li">&quot;JMPENV&quot;</span> level recorded in the
+    <span class="Li">&quot;CXt_EVAL&quot;</span> differs from the current one,
+    <b>docatch()</b> just does a <a href='/man/JMPENV_JUMP.3.en'>JMPENV_JUMP(3)</a> to re-throw the
+    exception, and the C stack unwinds to:</p>
+<pre>#1  perl_run()         # JMPENV level 1
+#0  main()</pre>
+<p class="Pp">Because <span class="Li">&quot;PL_restartop&quot;</span> is
+    non-null, <b>run_body()</b> starts a new runops loop, and execution
+    continues.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='internal-variable-types'><a class='permalink' href='#internal-variable-types'>INTERNAL   VARIABLE TYPES</a></h2>
+<p class="Pp">You should by now have had a look at perlguts, which tells you
+    about Perl's internal variable types: SVs, HVs, AVs and the rest. If not, do
+    that now.</p>
+<p class="Pp">These variables are used not only to represent Perl-space
+    variables, but also any constants in the code, as well as some structures
+    completely internal to Perl. The</p>
+</section>
+tabla de símbolos, por ejemplo, es una
+    hash de Perl normal. Tu código está representado por un SV a medida que se lee en el analizador;
+    cualquier archivo de programa que llames se abre a través de manejadores de archivos de Perl normales, y así sucesivamente.</p>
+<p class="Pp">El módulo principal Devel::Peek nos permite examinar los SV de un programa Perl.
+    Veamos, por ejemplo, cómo Perl trata la constante
+    <span class="Li">&quot;hello&quot;</span>.</p>
+<pre>  % perl -MDevel::Peek -e 'Dump(&quot;hello&quot;)'
+1 SV = PV(0xa041450) en 0xa04ecbc
+2   REFCNT = 1
+3   FLAGS = (POK,READONLY,pPOK)
+4   PV = 0xa0484e0 &quot;hello&quot;\0
+5   CUR = 5
+6   LEN = 6</pre>
+<p class="Pp">Leer la salida de <span class="Li">&quot;Devel::Peek&quot;</span>
+    requiere algo de práctica, así que vamos a repasarlo línea por línea.</p>
+<p class="Pp">La línea 1 nos dice que estamos mirando un SV que reside en
+    <span class="Li">0xa04ecbc</span> en memoria. Los SV en sí mismos son estructuras
+    muy simples, pero contienen un puntero a una estructura más compleja. En este
+    caso, es un PV, una estructura que contiene un valor de cadena, en la ubicación
+    <span class="Li">0xa041450</span>. La línea 2 es el contador de referencias; no
+    hay otras referencias a estos datos, por lo que es 1.</p>
+<p class="Pp">La línea 3 son las banderas para este SV: está bien usarlo como PV,
+    es un SV de solo lectura (porque es una constante) y los datos son un PV
+    internamente. A continuación, tenemos el contenido de la cadena, comenzando en la
+    ubicación <span class="Li">0xa0484e0</span>.</p>
+<p class="Pp">La línea 5 nos da la longitud actual de la cadena; ten en cuenta que
+    esto **no** incluye el terminador nulo. La línea 6 no es la longitud de la
+    cadena, sino la longitud del búfer asignado actualmente; a medida que la cadena
+    crece, Perl extiende automáticamente el espacio disponible a través de una rutina
+    llamada <span class="Li">&quot;SvGROW&quot;</span>.</p>
+<p class="Pp">Puedes acceder a cualquiera de estas cantidades desde C muy fácilmente;
+    simplemente añade <span class="Li">&quot;Sv&quot;</span> al nombre del campo que
+    se muestra en el fragmento, y tendrás una macro que devolverá el valor:
+    <span class="Li">SvCUR(sv)</span> devuelve la longitud actual de la cadena,
+    <span class="Li">SvREFCOUNT(sv)</span> devuelve el contador de referencias,
+    <span class="Li">&quot;SvPV(sv, len)&quot;</span> devuelve la cadena en sí con
+    su longitud, y así sucesivamente. Se pueden encontrar más macros para manipular
+    estas propiedades en perlguts.</p>
+<p class="Pp">Tomemos un ejemplo de manipulación de un PV, de
+    <span class="Li">&quot;sv_catpvn&quot;</span>, en <i>sv.c</i></p>
+<pre> 1  void
+ 2  Perl_sv_catpvn(pTHX_ SV *sv, const char *ptr, STRLEN len)
+ 3  {
+ 4      STRLEN tlen;
+ 5      char *junk;
+ 6      junk = SvPV_force(sv, tlen);
+ 7      SvGROW(sv, tlen + len + 1);
+ 8      if (ptr == junk)
+ 9          ptr = SvPVX(sv);
+10      Move(ptr,SvPVX(sv)+tlen,len,char);
+11      SvCUR(sv) += len;
+12      *SvEND(sv) = '\0';
+13      (void)SvPOK_only_UTF8(sv);          /* validar puntero */
+14      SvTAINT(sv);
+15  }</pre>
+<p class="Pp">Esta es una función que añade una cadena,
+    <span class="Li">&quot;ptr&quot;</span>, de longitud
+    <span class="Li">&quot;len&quot;</span> al final del PV almacenado en
+    <span class="Li">&quot;sv&quot;</span>. Lo primero que hacemos en la línea 6
+    es asegurarnos de que el SV **tenga** un PV válido, llamando a la macro
+    <span class="Li">&quot;SvPV_force&quot;</span> para forzar un PV. Como efecto
+    secundario, <span class="Li">&quot;tlen&quot;</span> se establece al valor
+    actual del PV, y el PV en sí se devuelve a
+    <span class="Li">&quot;junk&quot;</span>.</p>
+<p class="Pp">En la línea 7, nos aseguramos de que el SV tenga suficiente espacio
+    para acomodar la cadena antigua, la cadena nueva y el terminador nulo. Si
+    <span class="Li">&quot;LEN&quot;</span> no es lo suficientemente grande,
+    <span class="Li">&quot;SvGROW&quot;</span> reasignará espacio para nosotros.</p>
+<p class="Pp">Ahora, si <span class="Li">&quot;junk&quot;</span> es lo mismo que
+    la cadena que intentamos añadir, podemos tomar la cadena directamente del SV;
+    <span class="Li">&quot;SvPVX&quot;</span> es la dirección del PV en el SV.</p>
+<p class="Pp">La línea 10 realiza la concatenación real: la macro
+    <span class="Li">&quot;Move&quot;</span> mueve un bloque de memoria: movemos la
+    cadena <span class="Li">&quot;ptr&quot;</span> al final del PV, que es el
+    inicio del PV más su longitud actual. Estamos moviendo
+    <span class="Li">&quot;len&quot;</span> bytes de tipo
+    <span class="Li">&quot;char&quot;</span>. Después de hacerlo, necesitamos
+    informar a Perl que hemos extendido la cadena, alterando
+    <span class="Li">&quot;CUR&quot;</span> para reflejar la nueva longitud.
+    <span class="Li">&quot;SvEND&quot;</span> es una macro que nos da el final de
+    la cadena, por lo que debe ser un
+  <span class="Li">&quot;\0&quot;</span>.</p>
+<p class="Pp">La línea 13 manipula las banderas; como hemos cambiado el PV, cualquier
+    valor IV o NV ya no será válido: si tenemos
+    <span class="Li">&quot;$x=10; $x.=&quot;6&quot;;&quot;</span> no queremos usar el IV
+    antiguo de 10. <span class="Li">&quot;SvPOK_only_utf8&quot;</span> es una
+    versión especial consciente de UTF-8 de
+    <span class="Li">&quot;SvPOK_only&quot;</span>, una macro que desactiva las
+    banderas IOK y NOK y activa POK. El final
+    <span class="Li">&quot;SvTAINT&quot;</span> es una macro que blanquea datos
+    contaminados si el modo de contaminación está activado.</p>
+<p class="Pp">Los AV y HV son más complicados, pero los SV son, con mucho, el tipo
+    de variable más común que se maneja. Habiendo visto algo de cómo los
+    manipulamos, sigamos y veamos cómo se construye el árbol de ops.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ARBOLES_DE_OPS'><a class='permalink' href='#ARBOLES_DE_OPS'>ÁRBOLES DE OPS</a></h1>
+<p class="Pp">Primero, ¿qué es el árbol de ops, de todos modos? El árbol de ops es
+    la representación analizada de tu programa, como vimos en nuestra sección sobre
+    análisis, y es la secuencia de operaciones que Perl realiza para ejecutar tu
+    programa, como vimos en "Ejecución".</p>
+<p class="Pp">Un op es una operación fundamental que Perl puede realizar: todas las
+    funciones y operadores integrados son ops, y hay una serie de ops que tratan
+    conceptos que el intérprete necesita internamente: entrar y salir de un bloque,
+    terminar una declaración, obtener una variable, y así sucesivamente.</p>
+<p class="Pp">El árbol de ops está conectado de dos maneras: puedes imaginar que
+    hay dos "rutas" a través de él, dos órdenes en las que puedes recorrer el
+    árbol. Primero, el orden de análisis refleja cómo el analizador entendió el
+    código, y en segundo lugar, el orden de ejecución indica a Perl en qué orden
+    realizar las operaciones.</p>
+<p class="Pp">La forma más fácil de examinar el árbol de ops es detener Perl
+    después de que haya terminado de analizar y hacer que muestre el árbol. Esto es
+    exactamente lo que hacen los backends del compilador B::Terse, B::Concise y el
+    módulo CPAN &lt;B::Debug.</p>
+<p class="Pp">Echemos un vistazo a cómo Perl ve <span class="Li">&quot;$x = $y
+    + $z&quot;</span>:</p>
+<pre> % perl -MO=Terse -e '$x=$y+$z'
+ 1  LISTOP (0x8179888) leave
+ 2      OP (0x81798b0) enter
+ 3      COP (0x8179850) nextstate
+ 4      BINOP (0x8179828) sassign
+ 5          BINOP (0x8179800) add [1]
+ 6              UNOP (0x81796e0) null [15]
+ 7                  SVOP (0x80fafe0) gvsv  GV (0x80fa4cc) *y
+ 8              UNOP (0x81797e0) null [15]
+ 9                  SVOP (0x8179700) gvsv  GV (0x80efeb0) *z
+10          UNOP (0x816b4f0) null [15]
+11              SVOP (0x816dcf0) gvsv  GV (0x80fa460) *x</pre>
+<p class="Pp">Comencemos en el medio, en la línea 4. Este es un BINOP, un operador
+    binario, que se encuentra en la ubicación <span class="Li">0x8179828</span>. El
+    operador específico en cuestión es <span class="Li">&quot;sassign&quot;</span>
+    - asignación escalar - y puedes encontrar el código que lo implementa en la
+    función <span class="Li">&quot;pp_sassign&quot;</span> en
+    <i>pp_hot.c</i>. Como operador binario, tiene dos hijos: el operador de suma,
+    que proporciona el resultado de <span class="Li">&quot;$y+$z&quot;</span>,
+    está en la parte superior en la línea 5, y el lado izquierdo está en la línea
+    10.</p>
+<p class="Pp">La línea 10 es el op nulo: no hace absolutamente nada. ¿Qué hace ahí?
+    Si ves el op nulo, es una señal de que algo se ha optimizado después del
+    análisis. Como mencionamos en "Optimización", la etapa de optimización a
+    veces convierte dos operaciones en una, por ejemplo, al obtener una variable
+    escalar. Cuando esto sucede, en lugar de reescribir el árbol de ops y
+    limpiar los punteros colgantes, es más fácil simplemente reemplazar la
+    operación redundante con el op nulo. Originalmente, el árbol habría parecido
+    esto:</p>
+<pre>10          SVOP (0x816b4f0) rv2sv [15]
+11              SVOP (0x816dcf0) gv  GV (0x80fa460) *x</pre>
+<p class="Pp">Es decir, obtener la entrada <span class="Li">&quot;a&quot;</span>
+    de la tabla de símbolos principal, y luego mirar el componente escalar de
+    ella: <span class="Li">&quot;gvsv&quot;</span>
+    (<span class="Li">&quot;pp_gvsv&quot;</span> en <i>pp_hot.c</i>) hace ambas
+    cosas.</p>
+<p class="Pp">El lado derecho, comenzando en la línea 5, es similar a lo que acabamos
+    de ver: tenemos el op <span class="Li">&quot;add&quot;</span>
+    (<span class="Li">&quot;pp_add&quot;</span>, también en <i>pp_hot.c</i>) sumando
+    dos <span class="Li">&quot;gvsv&quot;</span>.</p>
+<p class="Pp">Ahora, ¿qué es esto?</p>
+<pre>1  LISTOP (0x8179888) leave
+2      OP (0x81798b0) enter
+3      COP (0x8179850) nextstate</pre>
+<p class="Pp"><span class="Li">&quot;enter&quot;</span> y
+    <span class="Li">&quot;leave&quot;</span> son ops de alcance, y su trabajo es
+    realizar cualquier tarea de mantenimiento cada vez que entras y sales de un
+    bloque: las variables léxicas se ordenan, las variables no referenciadas se
+    destruyen, y así sucesivamente. Cada programa tendrá estas tres primeras
+    líneas: <span class="Li">&quot;leave&quot;</span> es una lista, y sus hijos
+    son todas las declaraciones en el bloque. Las declaraciones están delimitadas por
+    <span class="Li">&quot;nextstate&quot;</span>, por lo que un bloque es una
+    colección de ops <span class="Li">&quot;nextstate&quot;</span>, con los ops
+    que se realizarán para cada declaración siendo los hijos de
+    <span class="Li">&quot;nextstate&quot;</span>.
+    <span class="Li">&quot;enter&quot;</span> es un único op que funciona como
+    marcador.</p>
+<p class="Pp">Así es como Perl analizó el programa, de arriba a abajo:</p>
+<pre> Programa
+    |
+Declaración
+    |
+    =
+   / \
+  /   \
+ $x   +
+     / \
+   $y   $z</pre>
+<p class="Pp">Sin embargo, es imposible **realizar** las operaciones en este
+    orden: tienes que encontrar los valores de <span class="Li">$y</span> y
+    <span class="Li">$z</span> antes de sumarlos, por ejemplo. Por lo tanto, el
+    otro hilo que atraviesa el árbol de ops es el orden de ejecución: cada op
+    tiene un campo <span class="Li">&quot;op_next&quot;</span> que apunta al
+    siguiente op a ejecutar, por lo que seguir estos punteros nos dice cómo Perl
+    ejecuta el código. Podemos recorrer el árbol en este orden utilizando la
+    opción <span class="Li">&quot;exec&quot;</span> de
+    <span class="Li">&quot;B::Terse&quot;</span>:</p>
+<pre>% perl -MO=Terse,exec -e '$x=$y+$z'
+1  OP (0x8179928) enter
+2  COP (0x81798c8) nextstate
+3  SVOP (0x81796c8) gvsv  GV (0x80fa4d4) *y
+4  SVOP (0x8179798) gvsv  GV (0x80efeb0) *z
+5  BINOP (0x8179878) add [1]
+6  SVOP (0x816dd38) gvsv  GV (0x80fa468) *x
+7  BINOP (0x81798a0) sassign
+8  LISTOP (0x8179900) leave</pre>
+<p class="Pp">Esto probablemente tiene más sentido para un humano: entrar en un
+    bloque, comenzar una declaración. Obtener los valores de <span class="Li">$y</span>
+    y <span class="Li">$z</span>, y sumarlos. Buscar <span class="Li">$x</span>, y
+    asignar uno al otro. Luego salir.</p>
+<p class="Pp">La forma en que Perl construye estos árboles de ops en el proceso de
+    análisis se puede desentrañar examinando <i>toke.c</i>, el analizador léxico,
+    y <i>perly.y</i>, la gramática YACC. Veamos el código que construye el
+    análisis</p>
+<section class="Sh">
+<h1 class="Sh" id="PRELIMINARIES"><a class='permalink' href='#PRELIMINARIES'>PRELIMINARIES</a></h1>
+<p class="Pp">We'll be looking at the code that constructs the op-tree for
+    the following statement:</p>
+<pre>$x = $y + $z.</pre>
+<p class="Pp">First, we'll look at the <span class="Li">&quot;Perl_yylex&quot;</span>
+    function in the lexer. We want to look for <span class="Li">&quot;case 'x'&quot;</span>,
+    where x is the first character of the operator. (Incidentally, when looking
+    for the code that handles a keyword, you'll want to search for
+    <span class="Li">&quot;KEY_foo&quot;</span> where &quot;foo&quot; is the
+    keyword.) Here is the code that handles assignment (there are quite a few
+    operators beginning with <span class="Li">&quot;=&quot;</span>, so most of
+    it is omitted for brevity):</p>
+<pre>1    case '=':
+2        s++;
+         ... code that handles == =&gt; etc. and pod ...
+3        pl_yylval.ival = 0;
+4        OPERATOR(ASSIGNOP);</pre>
+<p class="Pp">We can see on line 4 that our token type is
+    <span class="Li">&quot;ASSIGNOP&quot;</span>
+    (<span class="Li">&quot;OPERATOR&quot;</span> is a macro, defined in
+    <i>toke.c</i>, that returns the token type, among other things). And
+    <span class="Li">&quot;+&quot;</span>:</p>
+<pre>1     case '+':
+2         {
+3             const char tmp = *s++;
+              ... code for ++ ...
+4             if (PL_expect == XOPERATOR) {
+                  ...
+5                 Aop(OP_ADD);
+6             }
+              ...
+7         }</pre>
+<p class="Pp">Line 4 checks what type of token we are expecting.
+    <span class="Li">&quot;Aop&quot;</span> returns a token. If you search for
+    <span class="Li">&quot;Aop&quot;</span> elsewhere in <i>toke.c</i>, you will
+    see that it returns an <span class="Li">&quot;ADDOP&quot;</span> token.</p>
+<p class="Pp">Now that we know the two token types we want to look for in the
+    parser, let's take the piece of <i>perly.y</i> we need to construct the tree
+    for <span class="Li">&quot;$x = $y + $z&quot;</span></p>
+<pre>1 term    :   term ASSIGNOP term
+2                { $$ = newASSIGNOP(OPf_STACKED, $1, $2, $3); }
+3         |   term ADDOP term
+4                { $$ = newBINOP($2, 0, scalar($1), scalar($3)); }</pre>
+<p class="Pp">If you're not used to reading BNF grammars, this is how it works:
+    You're fed certain things by the tokeniser, which generally end up in upper
+    case. <span class="Li">&quot;ADDOP&quot;</span> and
+    <span class="Li">&quot;ASSIGNOP&quot;</span> are examples of &quot;terminal
+    symbols&quot;, because you can't get any simpler than them.</p>
+<p class="Pp">The grammar, lines one and three of the snippet above, tells you
+    how to build up more complex forms. These complex forms, &quot;non-terminal
+    symbols&quot; are generally placed in lower case.
+    <span class="Li">&quot;term&quot;</span> here is a non-terminal symbol,
+    representing a single expression.</p>
+<p class="Pp">The grammar gives you the following rule: you can make the thing
+    on the left of the colon if you see all the things on the right in sequence.
+    This is called a &quot;reduction&quot;, and the aim of parsing is to
+    completely reduce the input. There are several different ways you can
+    perform a reduction, separated by vertical bars: so,
+    <span class="Li">&quot;term&quot;</span> followed by
+    <span class="Li">&quot;=&quot;</span> followed by
+    <span class="Li">&quot;term&quot;</span> makes a
+    <span class="Li">&quot;term&quot;</span>, and
+    <span class="Li">&quot;term&quot;</span> followed by
+    <span class="Li">&quot;+&quot;</span> followed by
+    <span class="Li">&quot;term&quot;</span> can also make a
+    <span class="Li">&quot;term&quot;</span>.</p>
+<p class="Pp">So, if you see two terms with an
+    <span class="Li">&quot;=&quot;</span> or
+    <span class="Li">&quot;+&quot;</span>, between them, you can turn them into
+    a single expression. When you do this, you execute the code in the block on
+    the next line: if you see <span class="Li">&quot;=&quot;</span>, you'll do
+    the code in line 2. If you see <span class="Li">&quot;+&quot;</span>, you'll
+    do the code in line 4. It's this code which contributes to the op tree.</p>
+<pre>|   term ADDOP term
+{ $$ = newBINOP($2, 0, scalar($1), scalar($3)); }</pre>
+<p class="Pp">What this does is creates a new binary op, and feeds it a number
+    of variables. The variables refer to the tokens: <span class="Li">$1</span>
+    is the first token in the input, <span class="Li">$2</span> the second, and
+    so on - think regular expression backreferences. <span class="Li">$$</span>
+    is the op returned from this reduction. So, we call
+    <span class="Li">&quot;newBINOP&quot;</span> to create a new binary
+    operator. The first parameter to
+    <span class="Li">&quot;newBINOP&quot;</span>, a function in <i>op.c</i>, is
+    the op type. It's an addition operator, so we want the type to be
+    <span class="Li">&quot;ADDOP&quot;</span>. We could specify this directly,
+    but it's right there as the second token in the input, so we use
+    <span class="Li">$2</span>. The second parameter is the op's flags: 0 means
+    &quot;nothing special&quot;. Then the things to add: the left and right hand
+    side of our expression, in scalar context.</p>
+<p class="Pp">The functions that create ops, which have names like
+    <span class="Li">&quot;newUNOP&quot;</span> and
+    <span class="Li">&quot;newBINOP&quot;</span>, call a &quot;check&quot;
+    function associated with each op type, before returning the op. The check
+    functions can mangle the op as they see fit, and even replace it with an
+    entirely new one. These functions are defined in <i>op.c</i>, and have a
+    <span class="Li">&quot;Perl_ck_&quot;</span> prefix. You can find out which
+    check function is used for a particular op type by looking in
+    <i>regen/opcodes</i>. Take <span class="Li">&quot;OP_ADD&quot;</span>, for
+    example. (<span class="Li">&quot;OP_ADD&quot;</span> is the token value from
+    the <span class="Li">Aop(OP_ADD)</span> in <i>toke.c</i> which the parser
+    passes to <span class="Li">&quot;newBINOP&quot;</span> as its first
+    argument.) Here is the relevant line:</p>
+<pre>add             addition (+)            ck_null         IfsT2   S S</pre>
+<p class="Pp">The check function in this case is
+    <span class="Li">&quot;Perl_ck_null&quot;</span>, which does nothing. Let's
+    look at a more interesting case:</p>
+<pre>readline        &lt;HANDLE&gt;                ck_readline     t%      F?</pre>
+<p class="Pp">And here is the function from <i>op.c</i>:</p>
+<pre> 1 OP *
+ 2 Perl_ck_readline(pTHX_ OP *o)
+ 3 {
+ 4     PERL_ARGS_ASSERT_CK_READLINE;
+ 5 
+ 6     if (o-&gt;op_flags &amp; OPf_KIDS) {
+ 7          OP *kid = cLISTOPo-&gt;op_first;
+ 8          if (kid-&gt;op_type == OP_RV2GV)
+ 9              kid-&gt;op_private |= OPpALLOW_FAKE;
+10     }
+11     else {
+12         OP * const newop
+13             = newUNOP(OP_READLINE, 0, newGVOP(OP_GV, 0,
+14                                               PL_argvgv));
+15         op_free(o);
+16         return newop;
+17     }
+18     return o;
+19 }</pre>
+<p class="Pp">One particularly interesting aspect is that if the op has no kids
+    (i.e., <span class="Li">readline()</span> or
+    <span class="Li">&quot;&lt;&gt;&quot;</span>) the op is freed and replaced
+    with an entirely new one that references <span class="Li">*ARGV</span>
+    (lines 12-16).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='STACKS'><a class='permalink' href='#STACKS'>STACKS</a></h1>
+<p class="Pp">When perl executes something like
+    <span class="Li">&quot;addop&quot;</span>, how does it pass on its results
+    to the next op? The answer is, through the use of stacks. Perl has a number
+    of stacks to store things it's currently working on, and we'll look at the
+    three most important ones here.</p>
+<section class="Ss">
+<h2 class="Ss" id='Argument_stack'><a class='permalink' href='#Argument_stack'>Argument   stack</a></h2>
+<p class="Pp">Arguments are passed to PP code and returned from PP code using
+    the argument stack, <span class="Li">&quot;ST&quot;</span>. The typical way
+    to handle arguments is to pop them off the stack, deal with them how you
+    wish, and then push the result back onto the stack. This is how, for
+    instance, the cosine operator works:</p>
+<pre>NV value;
+value = POPn;
+value = Perl_cos(value);
+XPUSHn(value);</pre>
+<p class="Pp">We'll see a more tricky example of this when we consider Perl's
+    macros below. <span class="Li">&quot;POPn&quot;</span> gives you the NV
+    (floating point value) of the top SV on the stack: the
+    <span class="Li">$x</span> in <span class="Li">cos($x)</span>. Then we
+    compute the cosine, and push the result back as an NV. The
+    <span class="Li">&quot;X&quot;</span> in
+    <span class="Li">&quot;XPUSHn&quot;</span> means that the stack should be
+    extended if necessary - it can't be necessary here, because we know there's
+    room for one more item on the stack, since we've just removed one! The
+    <span class="Li">&quot;XPUSH*&quot;</span> macros at least guarantee
+  safety.</p>
+<p class="Pp">Alternatively, you can fiddle with the stack directly:
+    <span class="Li">&quot;SP&quot;</span> gives you the first element in your
+    portion of the stack, and <span class="Li">&quot;TOP*&quot;</span> gives you
+    the top SV/IV/NV/etc. on the stack. So, for instance, to do unary negation
+    of an integer:</p>
+<pre>SETi(-TOPi);</pre>
+<p class="Pp">Just set the integer value of the top stack entry to its
+  negation.</p>
+<p class="Pp">Argument stack manipulation in the core is exactly the same as it
+    is in XSUBs - see perlxstut, perlxs and perlguts for a longer description of
+    the macros used in stack manipulation.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Mark_stack'><a class='permalink' href='#Mark_stack'>Mark   stack</a></h2>
+<p class="Pp">I say &quot;your portion of the stack&quot; above because PP code
+    doesn't necessarily get the whole stack to itself: if your function calls
+    another function, you'll only want to expose the arguments aimed for the
+    called function, and not (necessarily) let it get at your own data. The way
+    we do this is to have a &quot;virtual&quot; bottom-of-stack, exposed to each
+    function. The mark stack keeps bookmarks to locations in the argument stack
+    usable by each function. For instance, when dealing with a tied variable,
+    (internally, something with &quot;P&quot; magic) Perl has to call methods
+    for accesses to the tied variables. However, we need to separate the
+    arguments exposed to the method to the argument exposed to the original
+    function - the store or fetch or whatever it may be. Here's roughly how the
+    tied <span class="Li">&quot;push&quot;</span> is implemented; see
+    <span class="Li">&quot;av_push&quot;</span> in <i>av.c</i>:</p>
+<pre>1  PUSHMARK(SP);
+2  EXTEND(SP,2);
+3  PUSHs(SvTIED_obj((SV*)av, mg));
+4  PUSHs(val);
+5  PUTBACK;
+6  ENTER;
+7  call_method(&quot;PUSH&quot;, G_SCALAR|G_DISCARD);
+8  LEAVE;</pre>
+<p class="Pp">Let's examine the whole implementation, for practice:</p>
+<pre>1  PUSHMARK(SP);</pre>
+<p class="Pp">Push the current state of the stack pointer onto the mark stack.
+    This is so that when we've finished adding items to the argument stack, Perl
+    knows how many things we've added recently.</p>
+<pre>2  EXTEND(SP,2);
+3  PUSHs(SvTIED_obj((SV*)av, mg));
+4  PUSHs(val);</pre>
+<p class="Pp">We're going to add two more items onto the argument stack: when
+    you have a tied array, the <span class="Li">&quot;PUSH&quot;</span>
+    subroutine receives the object and the value to be pushed, and that's
+    exactly what we have here - the tied object, retrieved with
+    <span class="Li">&quot;SvTIED_obj&quot;</span>, and the value, the SV
+    <span class="Li">&quot;val&quot;</span>.</p>
+<pre>5  PUTBACK;</pre>
+<p class="Pp">Next we tell Perl to update the global stack pointer from our
+    internal variable: <span class="Li">&quot;dSP&quot;</span> only gave us a
+    local copy, not a reference to the global.</p>
+<pre>6  ENTER;
+7  call_method(&quot;PUSH&quot;</pre>
+</section>
+</section>
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>perlinterp - Perl interna</title>
+        <link rel="stylesheet" href="/css/styles.css" />
+    </head>
+    <body>
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Pp">perlinterp - interno de Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp">Este documento describe los aspectos internos del intérprete Perl.
+    No está destinado a ser una descripción completa, sino más bien una
+    introducción a los conceptos clave y los mecanismos utilizados internamente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ELEMENTS_OF_THE_INTERPRETER"><a class="permalink" href="#ELEMENTS_OF_THE_INTERPRETER">ELEMENTS OF THE INTERPRETER</a></h1>
+<p class="Pp">El intérprete Perl consta de varios componentes clave:</p>
+<dl class="Bl-tag">
+<dt><b>Lexer</b></dt>
+<dd>Analiza el código fuente de Perl y lo divide en tokens.</dd>
+<dt><b>Parser</b></dt>
+<dd>Toma los tokens del lexer y construye un árbol de sintaxis abstracta (AST)
+        que representa la estructura del programa.</dd>
+<dt><b>Interpreter/Compiler</b></dt>
+<dd>Recorre el AST y lo compila en código de bytes o lo ejecuta directamente.</dd>
+<dt><b>Virtual Machine (VM)</b></dt>
+<dd>Ejecuta el código de bytes generado por el compilador.</dd>
+<dt><b>Memory Manager</b></dt>
+<dd>Gestiona la asignación y desasignación de memoria para las estructuras de
+        datos de Perl.</dd>
+</dl>
+<section class="Ss">
+<h2 class="Ss" id="OP_TREES"><a class="permalink" href="#OP_TREES">OP TREES</a></h2>
+<p class="Pp">Una de las estructuras de datos centrales en Perl es el árbol de
+    operaciones (op tree). Representa la estructura de control y las operaciones
+    dentro de un programa Perl. Cada nodo en el árbol de operaciones corresponde
+    a una operación o una estructura de control (como un bucle, una condición o
+    una llamada a una subrutina).</p>
+<p class="Pp">Por ejemplo, el código Perl:</p>
+<pre>    my $x = 1 + 2;</pre>
+<p class="Pp">puede ser representado internamente por un árbol de operaciones que
+    incluye nodos para la asignación (<span class="Li">OP_ASSIGN</span>), la
+    suma (<span class="Li">OP_ADD</span>), una constante numérica (1) y otra
+    constante numérica (2).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="STACKS"><a class="permalink" href="#STACKS">STACKS</a></h2>
+<p class="Pp">Perl utiliza varias pilas para gestionar el estado de ejecución,
+    incluyendo la pila de evaluación y la pila de llamadas. La pila de
+    evaluación se utiliza para almacenar operandos y resultados intermedios
+    durante la evaluación de expresiones. La pila de llamadas rastrea las
+    llamadas a subrutinas y sus contextos.</p>
+<p class="Pp">Los siguientes fragmentos de código ilustran el uso de las
+    directivas <span class="Li">&quot;ENTER&quot;</span> y
+    <span class="Li">&quot;LEAVE&quot;</span>:</p>
+<pre> 1  PP(pp_add)
+ 2  {
+ 3      dSP; dTARGET;
+ 4      tryAMAGICbin_MG(add_amg, AMGf_assign|AMGf_numeric);
+ 5      ENTER;
+ 6      {
+ 7        dPOPTOPnnrl_ul;
+ 8        SETn( left + right );
+ 9        LEAVE;
+10        RETURN;
+11     }
+12 }</pre>
+<p class="Pp"><span class="Li">&quot;ENTER&quot;</span> y
+    <span class="Li">&quot;LEAVE&quot;</span> delimitan un bloque de código; se
+    aseguran de que todas las variables se limpien, que todo lo que se ha
+    localizado recupere su valor anterior, etc. Piense en ellas como las
+    <span class="Li">&quot;{&quot;</span> y
+    <span class="Li">&quot;}&quot;</span> de un bloque de Perl.</p>
+<p class="Pp">Para realizar la llamada mágica al método, debemos llamar a una
+    subrutina en el espacio de Perl: <span class="Li">&quot;call_method&quot;</span>
+    se encarga de eso, y se describe en perlcall. Llamamos al método
+    <span class="Li">&quot;PUSH&quot;</span> en contexto escalar, y vamos a
+    descartar su valor de retorno. La función
+    <b>call_method()</b> elimina el elemento superior de la pila de marcas,
+    por lo que no hay nada que el llamador deba limpiar.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Save_stack"><a class="permalink" href="#Save_stack">Save
+    stack</a></h2>
+<p class="Pp">C no tiene un concepto de ámbito local, por lo que Perl proporciona
+    uno. Hemos visto que <span class="Li">&quot;ENTER&quot;</span> y
+    <span class="Li">&quot;LEAVE&quot;</span> se utilizan como llaves de ámbito;
+    la pila de guardado implementa el equivalente en C de, por ejemplo:</p>
+<pre>{
+    local $foo = 42;
+    ...
+}</pre>
+<p class="Pp">Vea &quot;Localizing changes&quot; en perlguts para saber cómo usar
+    la pila de guardado.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="MILLIONS_OF_MACROS"><a class="permalink" href="#MILLIONS_OF_MACROS">MILLIONS
+    OF MACROS</a></h1>
+<p class="Pp">Una cosa que notará sobre el código fuente de Perl es que está lleno
+    de macros. Algunos han llamado al uso generalizado de macros lo más difícil
+    de entender, otros encuentran que añade claridad. Tomemos un ejemplo, una
+    versión simplificada del código que implementa el operador de suma:</p>
+<pre> 1  PP(pp_add)
+ 2  {
+ 3      dSP; dATARGET;
+ 4      tryAMAGICbin_MG(add_amg, AMGf_assign|AMGf_numeric);
+ 5      {
+ 6        dPOPTOPnnrl_ul;
+ 7        SETn( left + right );
+ 8        RETURN;
+ 9      }
+10  }</pre>
+<p class="Pp">Cada línea aquí (aparte de las llaves, por supuesto) contiene una
+    macro. La primera línea configura la declaración de la función tal como Perl
+    la espera para el código PP; la línea 3 configura las declaraciones de
+    variables para la pila de argumentos y el objetivo, el valor de retorno de
+    la operación. La línea 4 intenta ver si la operación de suma está
+    sobrecargada; si es así, se llama a la subrutina apropiada.</p>
+<p class="Pp">La línea 6 es otra declaración de variable - todas las declaraciones
+    de variables comienzan con <span class="Li">&quot;d&quot;</span> - que extrae
+    de la cima de la pila de argumentos dos NV (de ahí
+    <span class="Li">&quot;nn&quot;</span>) y los pone en las variables
+    <span class="Li">&quot;right&quot;</span> y <span class="Li">&quot;left&quot;</span>,
+    de ahí el <span class="Li">&quot;rl&quot;</span>. Estos son los dos operandos
+    del operador de suma. A continuación, llamamos a
+    <span class="Li">&quot;SETn&quot;</span> para establecer el NV del valor de
+    retorno en el resultado de sumar los dos valores. Hecho esto, regresamos -
+    la macro <span class="Li">&quot;RETURN&quot;</span> se asegura de que nuestro
+    valor de retorno se maneje correctamente, y pasamos el siguiente operador
+    a ejecutar de vuelta al bucle de ejecución principal.</p>
+<p class="Pp">La mayoría de estas macros se explican en perlapi, y algunas de las
+    más importantes también se explican en perlxs. Preste especial atención a
+    &quot;Background and MULTIPLICITY&quot; en perlguts para obtener
+    información sobre las macros <span class="Li">&quot;[pad]THX_?&quot;</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="FURTHER_READING"><a class="permalink" href="#FURTHER_READING">FURTHER
+    READING</a></h1>
+<p class="Pp">Para más información sobre los internos de Perl, por favor vea los
+    documentos listados en &quot;Internals and C Language Interface&quot; en
+    perl.</p>
+</section>
+</article>
+<aside id="sidebar">
+<section class="search">
+<form action="/search" class="search direct-search" role="search">
+<input type="search" placeholder="Buscar página de manual" name="q" value="" />
+<input type="submit" name="go" value="Ir" />
+</form>
+</section>
+<section class="package-info">
+<p>Información del paquete:</p>
+<dl>
+<dt>Nombre del paquete:</dt>
+<dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+<dt>Versión:</dt>
+<dd>5.42.0-1</dd>
+<dt>Upstream:</dt>
+<dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+<dt>Licencias:</dt>
+<dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+<dt>Manuales:</dt>
+<dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+</dl>
+</section>
+<details>
+<summary>Tabla de contenido</summary>
+<nav class="toc">
+<ul>
+<li><a href="#NAME">NAME</a></li>
+<li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+<li><a href="#ELEMENTS_OF_THE_INTERPRETER">ELEMENTS OF THE INTERPRETER</a></li>
+<li><a href="#OP_TREES">OP TREES</a></li>
+<li><a href="#STACKS">STACKS</a></li>
+<li><a href="#MILLIONS_OF_MACROS">MILLIONS OF MACROS</a></li>
+<li><a href="#FURTHER_READING">FURTHER READING</a></li>
+</ul>
+</nav>
+</details>
+<nav class="other-formats">
+<p>Otros formatos:
+<a href="/man/perlinterp.1perl.es.txt">txt</a>,
+<a href="/man/perlinterp.1perl.es.raw">raw</a>
+</p>
+</nav>
+</aside>
+</main>
+<footer>
+
+<p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+excepto por el contenido de las páginas de manual, que tienen su propia licencia
+especificada en el paquete correspondiente de Arch Linux.
+</p>
+</footer>
+</body>
+</html>

@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlxstut(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlxstut.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLXSTUT(1perl)</td>
+    <td class="head-vol">Guía de Referencia para Programadores de Perl</td>
+    <td class="head-rtitle">PERLXSTUT(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">perlxstut - Tutorial para escribir XSUBs</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este tutorial educará al lector sobre los pasos involucrados en la
+    creación de una extensión de Perl. Se asume que el lector tiene acceso a
+    perlguts, perlclib, perlapi y perlxs.</p>
+<p class="Pp">Este tutorial comienza con ejemplos muy simples y se vuelve más
+    complejo, y cada nuevo ejemplo agrega nuevas características. Ciertos
+    conceptos pueden no explicarse completamente hasta más adelante en el
+    tutorial, para facilitar gradualmente al lector la creación de extensiones.</p>
+<p class="Pp">Este tutorial fue escrito desde una perspectiva de Unix. Donde sé
+    que son diferentes para otras plataformas (por ejemplo, Win32), los
+    mencionaré. Si encuentra algo que se omitió, por favor hágame saber.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SPECIAL_NOTES'><a class='permalink' href='#SPECIAL_NOTES'>NOTAS ESPECIALES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='make'><a class='permalink' href='#make'>make</a></h2>
+<p class="Pp">Este tutorial asume que el programa make al que está configurado
+    Perl se llama <span class="Li">&quot;make&quot;</span>. En lugar de ejecutar
+    &quot;make&quot; en los ejemplos que siguen, es posible que deba sustituir
+    cualquier programa make para el que Perl se haya configurado. Ejecutar
+    <b>perl -V:make</b> debería indicarle cuál es.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Version_caveat'><a class='permalink' href='#Version_caveat'>Advertencia de versión</a></h2>
+<p class="Pp">Al escribir una extensión de Perl para consumo general, se debe
+    esperar que la extensión se utilice con versiones de Perl diferentes a la
+    versión disponible en su máquina. Dado que está leyendo este documento, la
+    versión de Perl en su máquina es probablemente 5.005 o posterior, pero los
+    usuarios de su extensión pueden tener versiones más antiguas.</p>
+<p class="Pp">Para comprender qué tipos de incompatibilidades se pueden esperar,
+    y en el raro caso de que la versión de Perl en su máquina sea anterior a
+    este documento, consulte la sección sobre &quot;Solución de problemas de
+    estos ejemplos&quot; para obtener más información.</p>
+<p class="Pp">Si su extensión utiliza algunas características de Perl que no
+    están disponibles en versiones anteriores de Perl, sus usuarios agradecerán
+    una advertencia temprana y significativa. Probablemente pondría esta
+    información en el archivo <i>README</i>, pero hoy en día la instalación de
+    extensiones puede realizarse automáticamente, guiada por el módulo
+    <i>CPAN.pm</i> u otras herramientas.</p>
+<p class="Pp">En las instalaciones basadas en MakeMaker, <i>Makefile.PL</i>
+    proporciona la primera oportunidad para realizar verificaciones de
+    versión. Se puede poner algo como esto en <i>Makefile.PL</i> para este
+    propósito:</p>
+<pre>eval { require 5.007 }
+    or die &lt;&lt;EOD;
+############
+### Este módulo utiliza el framework de frobnication que no está disponible
+### antes de la versión 5.007 de Perl. Actualice su Perl antes de
+### instalar Kara::Mba.
+############
+EOD</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Dynamic_Loading_versus_Static_Loading'><a class='permalink' href='#Dynamic_Loading_versus_Static_Loading'>Carga Dinámica versus Carga Estática</a></h2>
+<p class="Pp">Se piensa comúnmente que si un sistema no tiene la capacidad de
+    cargar una biblioteca dinámicamente, no se pueden construir XSUBs. Esto es
+    incorrecto. Se *pueden* construir, pero debe enlazar las subrutinas XSUB
+    con el resto de Perl, creando un nuevo ejecutable. Esta situación es similar
+    a Perl 4.</p>
+<p class="Pp">Este tutorial aún se puede usar en un sistema de este tipo. El
+    mecanismo de compilación de XSUB verificará el sistema y construirá una
+    biblioteca cargable dinámicamente si es posible, o de lo contrario, una
+    biblioteca estática y luego, opcionalmente, un nuevo ejecutable enlazado
+    estáticamente con esa biblioteca estática enlazada.</p>
+<p class="Pp">Si desea compilar un ejecutable enlazado estáticamente en un
+    sistema que puede cargar bibliotecas dinámicamente, puede, en todos los
+    ejemplos siguientes, donde se ejecuta el comando
+    &quot;<span class="Li">&quot;make&quot;</span>&quot; sin argumentos, ejecutar
+    en su lugar el comando &quot;<span class="Li">&quot;make
+    perl&quot;</span>&quot;.</p>
+<p class="Pp">Si ha generado un ejecutable enlazado estáticamente de esta
+    manera por elección, entonces en lugar de decir &quot;<span
+    class="Li">&quot;make test&quot;</span>&quot;, debería decir
+    &quot;<span class="Li">&quot;make test_static&quot;</span>&quot;. En los
+    sistemas que no pueden compilar bibliotecas cargables dinámicamente en
+    absoluto, simplemente decir &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot; es suficiente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Threads_and_PERL_NO_GET_CONTEXT'><a class='permalink' href='#Threads_and_PERL_NO_GET_CONTEXT'>Hilos y PERL_NO_GET_CONTEXT</a></h2>
+<p class="Pp">Para compilaciones con hilos, perl requiere el puntero de contexto
+    para el hilo actual, sin
+    <span class="Li">&quot;PERL_NO_GET_CONTEXT&quot;</span>, perl llamará a una
+    función para recuperar el contexto.</p>
+<p class="Pp">Para mejorar el rendimiento, incluya:</p>
+<pre>#define PERL_NO_GET_CONTEXT</pre>
+<p class="Pp">como se muestra a continuación.</p>
+<p class="Pp">Para más detalles, vea perlguts.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TUTORIAL'><a class='permalink' href='#TUTORIAL'>TUTORIAL</a></h1>
+<p class="Pp">¡Ahora sigamos con el espectáculo!</p>
+<section class="Ss">
+<h2 class="Ss" id='EXAMPLE_1'><a class='permalink' href='#EXAMPLE_1'>EJEMPLO 1</a></h2>
+<p class="Pp">Nuestra primera extensión será muy simple. Cuando llamemos a la
+    rutina en la extensión, imprimirá un mensaje bien conocido y regresará.</p>
+<p class="Pp">Ejecute &quot;<span class="Li">&quot;h2xs -A -n
+    Mytest&quot;</span>&quot;. Esto crea un directorio llamado Mytest,
+    posiblemente bajo ext/ si ese directorio existe en el directorio de trabajo
+    actual. Se crearán varios archivos bajo el directorio Mytest, incluyendo
+    MANIFEST, Makefile.PL, lib/Mytest.pm, Mytest.xs, t/Mytest.t y Changes.</p>
+<p class="Pp">El archivo MANIFEST contiene los nombres de todos los archivos
+    creados recientemente en el directorio Mytest.</p>
+<p class="Pp">El archivo Makefile.PL debería verse algo así:</p>
+<pre>use ExtUtils::MakeMaker;
+# See lib/ExtUtils/MakeMaker.pm for details of how to influence
+# the contents of the Makefile that is written.
+WriteMakefile(
+    NAME         =&gt; 'Mytest',
+    VERSION_FROM =&gt; 'Mytest.pm', # finds $VERSION
+    LIBS         =&gt; [''],        # e.g., '-lm'
+    DEFINE       =&gt; '',          # e.g., '-DHAVE_SOMETHING'
+    INC          =&gt; '-I',        # e.g., '-I. -I/usr/include/other'
+);</pre>
+<p class="Pp">El archivo Mytest.pm debería comenzar con algo como esto:</p>
+<pre>package Mytest;
+use 5.008008;
+use strict;
+use warnings;
+require Exporter;
+our @ISA = qw(Exporter);
+our %EXPORT_TAGS = ( 'all' =&gt; [ qw(
+) ] );
+our @EXPORT_OK = ( @{ $EXPORT_TAGS{'all'} } );
+our @EXPORT = qw(
+);
+our $VERSION = '0.01';
+require XSLoader;
+XSLoader::load('Mytest', $VERSION);
+# Preloaded methods go here.
+1;
+__END__
+# Below is the stub of documentation for your module. You better
+# edit it!</pre>
+<p class="Pp">El resto del archivo .pm contiene código de ejemplo para
+    proporcionar documentación para la extensión.</p>
+<p class="Pp">Finalmente, el archivo Mytest.xs debería verse algo así:</p>
+<pre>#define PERL_NO_GET_CONTEXT
+#include &quot;EXTERN.h&quot;
+#include &quot;perl.h&quot;
+#include &quot;XSUB.h&quot;
+#include &quot;ppport.h&quot;
+MODULE = Mytest             PACKAGE = Mytest</pre>
+<p class="Pp">Editaremos el archivo .xs agregando esto al final del archivo:</p>
+<pre>void
+hello()
+    CODE:
+        printf(&quot;Hello, world!\n&quot;);</pre>
+<p class="Pp">Está bien que las líneas que comienzan en la línea &quot;CODE:&quot;
+    no estén indentadas. Sin embargo, por razones de legibilidad, se sugiere que
+    indente CODE: un nivel y las líneas siguientes un nivel más.</p>
+<p class="Pp">Ahora ejecutaremos &quot;<span class="Li">&quot;perl
+    Makefile.PL&quot;</span>&quot;. Esto creará un Makefile real, que make
+    necesita. Su salida se ve algo así:</p>
+<pre>% perl Makefile.PL
+Checking if your kit is complete...
+Looks good
+Writing Makefile for Mytest
+%</pre>
+<p class="Pp">Ahora, ejecutar make producirá una salida que se ve algo así (algunas
+    líneas largas se han acortado para mayor claridad y se han eliminado algunas
+    líneas superfluas):</p>
+<pre>% make
+cp lib/Mytest.pm blib/lib/Mytest.pm
+perl xsubpp  -typemap typemap  Mytest.xs &gt; Mytest.xsc &amp;&amp; \
+mv Mytest.xsc Mytest.c
+Please specify prototyping behavior for Mytest.xs (see perlxs manual)
+cc -c     Mytest.c
+Running Mkbootstrap for Mytest ()
+chmod 644 Mytest.bs
+rm -f blib/arch/auto/Mytest/Mytest.so
+cc -shared -L/usr/local/lib Mytest.o -o blib/arch/auto/Mytest/Mytest.so
+chmod 755 blib/arch/auto/Mytest/Mytest.so
+cp Mytest.bs blib/arch/auto/Mytest/Mytest.bs
+chmod 644 blib/arch/auto/Mytest/Mytest.bs
+Manifying blib/man3/Mytest.3pm
+%</pre>
+<p class="Pp">Puede ignorar de forma segura la línea sobre &quot;comportamiento
+    de prototipado&quot;; se explica en &quot;La palabra clave PROTOTYPES:&quot;
+    en perlxs.</p>
+<p class="Pp">Perl tiene su propia forma especial de escribir fácilmente scripts
+    de prueba, pero solo para este ejemplo, crearemos nuestro propio script de
+    prueba. Cree un archivo llamado hello que se vea así:</p>
+<pre>#! /opt/perl5/bin/perl
+use ExtUtils::testlib;
+use Mytest;
+Mytest::hello();</pre>
+<p class="Pp">Ahora hacemos que el script sea ejecutable (<span
+    class="Li">&quot;chmod +x hello&quot;</span>), ejecutamos el script y
+    deberíamos ver la siguiente salida:</p>
+<pre>% ./hello
+Hello, world!
+%</pre>
+</section>
+<sect
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_2'><a class='permalink' href='#EJEMPLO_2'>EJEMPLO   2</a></h2>
+<p class="Pp">Ahora agregaremos a nuestra extensión una subrutina que tomará un
+    único argumento numérico como entrada y devolverá 1 si el número es par o 0 si
+    es impar.</p>
+<p class="Pp">Agrega lo siguiente al final de Mytest.xs:</p>
+<pre>int
+is_even(input)
+        int input
+    CODE:
+        RETVAL = (input % 2 == 0);
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">No es necesario que haya espacios al principio de la línea
+    &quot;<span class="Li">&quot;int input&quot;</span>&quot;, pero es útil para mejorar la legibilidad. Poner un punto y coma al final de esa línea también es opcional. Cualquier cantidad y tipo de espacio en blanco se puede colocar entre &quot;<span class="Li">&quot;int&quot;</span>&quot; y &quot;<span class="Li">&quot;input&quot;</span>&quot;.</p>
+<p class="Pp">Ahora vuelve a ejecutar `make` para reconstruir nuestra nueva biblioteca compartida.</p>
+<p class="Pp">Ahora realiza los mismos pasos que antes, generando un Makefile a partir del archivo Makefile.PL y ejecutando `make`.</p>
+<p class="Pp">Para probar que nuestra extensión funciona, ahora necesitamos mirar el archivo Mytest.t. Este archivo está configurado para imitar el mismo tipo de estructura de prueba que tiene el propio Perl. Dentro del script de prueba, realizas una serie de pruebas para confirmar el comportamiento de la extensión, imprimiendo &quot;ok&quot; cuando la prueba es correcta, &quot;not ok&quot; cuando no lo es.</p>
+<pre>use Test::More tests =&gt; 4;
+BEGIN { use_ok('Mytest') };
+#########################
+# Inserta tu código de prueba a continuación, el módulo Test::More está en use() aquí
+# así que lee su página man (perldoc Test::More) para obtener ayuda para escribir este
+# script de prueba.
+is( Mytest::is_even(0), 1 );
+is( Mytest::is_even(1), 0 );
+is( Mytest::is_even(2), 1 );</pre>
+<p class="Pp">Llamaremos al script de prueba a través del comando
+    &quot;<span class="Li">&quot;make test&quot;</span>&quot;. Deberías ver una salida que se parezca a esto:</p>
+<pre>%make test
+PERL_DL_NONLAZY=1 /usr/bin/perl &quot;-MExtUtils::Command::MM&quot; &quot;-e&quot;
+&quot;test_harness(0, 'blib/lib', 'blib/arch')&quot; t/*.t
+t/Mytest....ok
+All tests successful.
+Files=1, Tests=4, 0 wallclock secs ( 0.03 cusr + 0.00 csys = 0.03 CPU)
+%</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='¿Qué_ha_pasado?'><a class='permalink' href='#¿Qué_ha_pasado?'>¿Qué   ha pasado?</a></h2>
+<p class="Pp">El programa h2xs es el punto de partida para crear extensiones. En
+    ejemplos posteriores veremos cómo podemos usar h2xs para leer archivos de cabecera y
+    generar plantillas para conectar con rutinas C.</p>
+<p class="Pp">h2xs crea una serie de archivos en el directorio de la extensión. El
+    archivo Makefile.PL es un script de perl que generará un Makefile real para
+    compilar la extensión. Le echaremos un vistazo más de cerca más adelante.</p>
+<p class="Pp">Los archivos .pm y .xs contienen la médula de la extensión. El archivo
+    .xs contiene las rutinas C que componen la extensión. El archivo .pm contiene
+    rutinas que le dicen a Perl cómo cargar tu extensión.</p>
+<p class="Pp">Generar el Makefile y ejecutar
+    <span class="Li">&quot;make&quot;</span> creó un directorio llamado blib
+    (que significa &quot;build library&quot;) en el directorio de trabajo actual.
+    Este directorio contendrá la biblioteca compartida que construiremos. Una vez que
+    la hayamos probado, podremos instalarla en su ubicación final.</p>
+<p class="Pp">Invocar el script de prueba a través de &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot; hizo algo muy importante. Invocó perl con todos esos
+    argumentos <span class="Li">&quot;-I&quot;</span> para que pudiera encontrar
+    los diversos archivos que forman parte de la extensión. Es *muy* importante
+    que mientras sigas probando extensiones uses
+    &quot;<span class="Li">&quot;make test&quot;</span>&quot;. Si intentas ejecutar
+    el script de prueba por sí solo, obtendrás un error fatal. Otra razón por la
+    que es importante usar &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot; para ejecutar tu script de prueba es que si estás
+    probando una actualización de una versión ya existente, usar
+    &quot;<span class="Li">&quot;make test&quot;</span>&quot; asegura que
+    probarás tu nueva extensión, no la versión ya existente.</p>
+<p class="Pp">Cuando Perl ve un <span class="Li">&quot;use
+    extension;&quot;</span>, busca un archivo con el mismo nombre que la extensión
+    en <span class="Li">&quot;use&quot;</span>d que tenga el sufijo .pm.
+    Si no se puede encontrar ese archivo, Perl muere con un error fatal. La ruta de
+    búsqueda predeterminada está contenida en el array
+    <span class="Li">@INC</span>.</p>
+<p class="Pp">En nuestro caso, Mytest.pm le dice a perl que necesitará las extensiones
+    Exporter y Dynamic Loader. Luego establece los arrays
+    <span class="Li">@ISA</span> y <span class="Li">@EXPORT</span> y el
+    escalar <span class="Li">$VERSION</span>; finalmente, le dice a perl que
+    inicie el módulo. Perl llamará a su rutina de cargador dinámico (si la hay) y
+    cargará la biblioteca compartida.</p>
+<p class="Pp">Los dos arrays <span class="Li">@ISA</span> y
+    <span class="Li">@EXPORT</span> son muy importantes. El array
+    <span class="Li">@ISA</span> contiene una lista de otros paquetes en los
+    que buscar métodos (o subrutinas) que no existen en el paquete actual. Esto
+    generalmente solo es importante para extensiones orientadas a objetos (de las que
+    hablaremos mucho más adelante), y por lo tanto, generalmente no necesita ser
+    modificado.</p>
+<p class="Pp">El array <span class="Li">@EXPORT</span> le dice a Perl cuáles de las
+    variables y subrutinas de la extensión deben colocarse en el espacio de nombres
+    del paquete que llama. Dado que no sabes si el usuario ya ha utilizado los
+    nombres de tus variables y subrutinas, es de vital importancia seleccionar
+    cuidadosamente qué exportar. No exportes nombres de métodos o variables *por
+    defecto* sin una buena razón.</p>
+<p class="Pp">Como regla general, si el módulo intenta ser orientado a objetos, no
+    exportes nada. Si es solo una colección de funciones y variables, puedes
+    exportarlas a través de otro array, llamado <span class="Li">@EXPORT_OK</span>.
+    Este array no coloca automáticamente sus nombres de subrutinas y variables en el
+    espacio de nombres a menos que el usuario solicite específicamente que se haga.</p>
+<p class="Pp">Ver perlmod para más información.</p>
+<p class="Pp">La variable <span class="Li">$VERSION</span> se utiliza para asegurar
+    que el archivo .pm y la biblioteca compartida estén "sincronizados" entre
+    sí. Cada vez que realices cambios en los archivos .pm o .xs, debes incrementar
+    el valor de esta variable.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Escribiendo_buenos_scripts_de_prueba'><a class='permalink' href='#Escribiendo_buenos_scripts_de_prueba'>Escribiendo   buenos scripts de prueba</a></h2>
+<p class="Pp">La importancia de escribir buenos scripts de prueba no se puede
+    enfatizar lo suficiente. Debes seguir de cerca el estilo "ok/not ok" que utiliza
+    el propio Perl, para que sea muy fácil y sin ambigüedades determinar el resultado
+    de cada caso de prueba. Cuando encuentres y corrijas un error, asegúrate de
+    agregar un caso de prueba para él.</p>
+<p class="Pp">Al ejecutar &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot;, te aseguras de que tu script Mytest.t se ejecute y
+    utilice la versión correcta de tu extensión. Si tienes muchos casos de prueba,
+    guarda tus archivos de prueba en el directorio &quot;t&quot; y usa el sufijo
+    &quot;.t&quot;. Cuando ejecutes &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot;, se ejecutarán todos estos archivos de prueba.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_3'><a class='permalink' href='#EJEMPLO_3'>EJEMPLO   3</a></h2>
+<p class="Pp">Nuestra tercera extensión tomará un argumento como entrada, redondeará
+    ese valor y establecerá el *argumento* al valor redondeado.</p>
+<p class="Pp">Agrega lo siguiente al final de Mytest.xs:</p>
+<pre>void
+round(arg)
+        double  arg
+    CODE:
+        if (arg &gt; 0.0) {
+                arg = floor(arg + 0.5);
+        } else if (arg &lt; 0.0) {
+                arg = ceil(arg - 0.5);
+        } else {
+                arg = 0.0;
+        }
+    OUTPUT:
+        arg</pre>
+<p class="Pp">Edita el archivo Makefile.PL para que la línea correspondiente se
+    vea así:</p>
+<pre>LIBS      =&gt; ['-lm'],   # e.g., '-lm'</pre>
+<p class="Pp">Genera el Makefile y ejecuta `make`. Cambia el número de prueba en
+    Mytest.t a &quot;9&quot; y agrega las siguientes pruebas:</p>
+<pre>my $i;
+$i = -1.5;
+Mytest::round($i);
+is( $i, -2.0, 'Rounding -1.5 to -2.0' );
+$i = -1.1;
+Mytest::round($i);
+is( $i, -1.0, 'Rounding -1.1 to -1.0' );
+$i = 0.0;
+Mytest::round($i);
+is( $i, 0.0, 'Rounding 0.0 to 0.0' );
+$i = 0.5;
+Mytest::round($i);
+is( $i, 1.0, 'Rounding 0.5 to 1.0' );
+$i = 1.2;
+Mytest::round($i);
+is( $i, 1.0, 'Rounding 1.2 to 1.0' );</pre>
+<p class="Pp">Ejecutar &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot; ahora debería imprimir que las nueve pruebas están bien.</p>
+<p class="Pp">Observa que en estos nuevos casos de prueba, el argumento pasado a round
+    era una variable escalar. Quizás te preguntes si puedes redondear una constante o
+    literal. Para ver qué sucede, agrega temporalmente la siguiente línea a
+    Mytest.t:</p>
+<pre>Mytest::round(3);</pre>
+<p class="Pp">Ejecuta &quot;<span class="Li">&quot;make
+    test&quot;</span>&quot; y observa que Perl muere con un error fatal. ¡Perl no te
+    permitirá cambiar el valor de las constantes!</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='¿Qué_hay_de_nuevo_aquí?'><a class='permalink' href='#¿Qué_hay_de_nuevo_aquí?'>¿Qué's   nuevo aquí?</a></h2>
+<ul class="Bl-bullet">
+  <li>Hemos realizado algunos cambios en Makefile.PL. En este caso, hemos especificado
+      una biblioteca adicional para enlazar en la biblioteca compartida de la extensión,
+      la biblioteca matemática libm en este caso. Hablaremos más adelante sobre cómo
+      escribir XSUBs que puedan llamar a todas las rutinas de una biblioteca.</li>
+  <li>El valor de la función no se devuelve como valor de retorno de la función,
+      sino cambiando el valor de la variable que se pasó a la función. Podrías
+      haberlo adivinado al ver que el valor de retorno de `round` es de tipo
+      &quot;void&quot;.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Parámetros_de_entrada_y_salida'><a class='permalink' href='#Parámetros_de_entrada_y_salida'>Parámetros   de entrada y salida</a></h2>
+<p class="Pp">Especificas los parámetros que se pasarán a la XSUB en la(s) línea(s)
+    después de declarar el valor de retorno y el nombre de la función. Cada línea
+    de parámetro de entrada comienza con un espacio opcional y puede tener un punto y
+    coma final opcional.</p>
+<p class="Pp">La lista de parámetros de salida se encuentra al final de la
+    función, justo después de la directiva OUTPUT:. El uso de RETVAL le dice a
+    Perl que deseas enviar este valor como el valor de retorno de la función XSUB.
+    En el Ejemplo 3, queríamos que el &quot;valor de retorno&quot; se colocara en
+    la variable original que pasamos, por lo que la listamos (y no RETVAL) en la
+    sección OUTPUT:.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='El_Programa_XSUBPP'><a class='permalink' href='#El_Programa_XSUBPP'>El   Programa XSUBPP</a></h2>
+<p class="Pp">El programa <b>xsubpp</b> toma el código XS en el archivo .xs y lo
+    traduce a código C, colocándolo en un archivo cuyo sufijo es .c. El código C
+    creado hace un uso intensivo de las funciones C dentro de Perl.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='El_archivo_TYPEMAP'><a class='permalink' href='#El_archivo_TYPEMAP'>El   Archivo TYPEMAP</a></h2>
+<p class="Pp">El programa <b>xsubpp</b> utiliza reglas para convertir de los tipos
+    de datos de Perl (escalar, array, etc.) a los tipos de datos de C (int, char,
+    etc.). Estas reglas se almacenan en el archivo typemap ($PERLLIB/ExtUtils/typemap).
+    Hay una breve discusión a continuación, pero todos los detalles se pueden encontrar
+    en perlxstypemap. Si tienes una versión de perl lo suficientemente nueva (5.16 y
+    posteriores) o un XS actualizado</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Typemaps'><a class='permalink' href='#Typemaps'>Typemaps</a></h1>
+<p class="Pp">Si tiene el compilador (<span class="Li">&quot;ExtUtils::ParseXS&quot;</span> 3.13_01 o mejor), puede incrustar typemaps en su XS en lugar de escribir archivos separados. De cualquier manera, esta cosa de typemap se divide en tres partes:</p>
+<p class="Pp">La primera sección mapea varios tipos de datos C a un nombre, que se corresponde en cierta medida con los diversos tipos de Perl. La segunda sección contiene código C que <b>xsubpp</b> utiliza para manejar los parámetros de entrada. La tercera sección contiene código C que <b>xsubpp</b> utiliza para manejar los parámetros de salida.</p>
+<p class="Pp">Echemos un vistazo a una parte del archivo .c creado para nuestra extensión. El nombre del archivo es Mytest.c:</p>
+<pre>XS(XS_Mytest_round)
+{
+    dXSARGS;
+    if (items != 1)
+        Perl_croak(aTHX_ &quot;Usage: Mytest::round(arg)&quot;);
+    PERL_UNUSED_VAR(cv); /* -W */
+    {
+        double  arg = (double)SvNV(ST(0));      /* XXXXX */
+        if (arg &gt; 0.0) {
+                arg = floor(arg + 0.5);
+        } else if (arg &lt; 0.0) {
+                arg = ceil(arg - 0.5);
+        } else {
+                arg = 0.0;
+        }
+        sv_setnv(ST(0), (double)arg);   /* XXXXX */
+        SvSETMAGIC(ST(0));
+    }
+    XSRETURN_EMPTY;
+}</pre>
+<p class="Pp">Observe las dos líneas comentadas con &quot;XXXXX&quot;. Si revisa la primera parte del archivo typemap (o sección), verá que los dobles son del tipo T_DOUBLE. En la parte INPUT del typemap, a un argumento que es T_DOUBLE se le asigna la variable arg llamando a la rutina SvNV sobre algo, luego convirtiéndolo a double, luego asignándolo a la variable arg. De manera similar, en la sección OUTPUT, una vez que arg tiene su valor final, se pasa a la función sv_setnv para ser devuelto a la subrutina que llama. Estas dos funciones se explican en perlguts; hablaremos más adelante sobre lo que significa &quot;<a href='/man/ST.0.en'>ST(0)</a>&quot; en la sección de la pila de argumentos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Warning_about_Output_Arguments'><a class='permalink' href='#Warning_about_Output_Arguments'>Advertencia   sobre Argumentos de Salida</a></h2>
+<p class="Pp">En general, no es una buena idea escribir extensiones que modifiquen sus parámetros de entrada, como en el Ejemplo 3. En su lugar, debería devolver varios valores en un array y dejar que el llamador los maneje (lo haremos en un ejemplo posterior). Sin embargo, para acomodar mejor la llamada a rutinas C preexistentes, que a menudo modifican sus parámetros de entrada, este comportamiento se tolera.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EXAMPLE_4'><a class='permalink' href='#EXAMPLE_4'>EJEMPLO   4</a></h2>
+<p class="Pp">En este ejemplo, comenzaremos a escribir XSUBs que interactuarán con bibliotecas C predefinidas. Para empezar, construiremos una pequeña biblioteca propia, luego dejaremos que h2xs escriba nuestros archivos .pm y .xs por nosotros.</p>
+<p class="Pp">Cree un nuevo directorio llamado Mytest2 al mismo nivel que el directorio Mytest. En el directorio Mytest2, cree otro directorio llamado mylib y navegue hasta ese directorio.</p>
+<p class="Pp">Aquí crearemos algunos archivos que generarán una biblioteca de prueba. Estos incluirán un archivo fuente C y un archivo de encabezado. También crearemos un Makefile.PL en este directorio. Luego nos aseguraremos de que la ejecución de make en el nivel Mytest2 ejecute automáticamente este archivo Makefile.PL y el Makefile resultante.</p>
+<p class="Pp">En el directorio mylib, cree un archivo mylib.h que se vea así:</p>
+<pre>#define TESTVAL 4
+extern double   foo(int, long, const char*);</pre>
+<p class="Pp">También cree un archivo mylib.c que se vea así:</p>
+<pre>#include &lt;stdlib.h&gt;
+#include &quot;mylib.h&quot;
+double
+foo(int a, long b, const char *c)
+{
+        return (a + b + atof(c) + TESTVAL);
+}</pre>
+<p class="Pp">Y finalmente cree un archivo Makefile.PL que se vea así:</p>
+<pre>use ExtUtils::MakeMaker;
+$Verbose = 1;
+WriteMakefile(
+    NAME  =&gt; 'Mytest2::mylib',
+    SKIP  =&gt; [qw(all static static_lib dynamic dynamic_lib)],
+    clean =&gt; {'FILES' =&gt; 'libmylib$(LIB_EXT)'},
+);
+sub MY::top_targets {
+        '
+all :: static
+pure_all :: static
+static ::       libmylib$(LIB_EXT)
+libmylib$(LIB_EXT): $(O_FILES)
+        $(AR) cr libmylib$(LIB_EXT) $(O_FILES)
+        $(RANLIB) libmylib$(LIB_EXT)
+';
+}</pre>
+<p class="Pp">Asegúrese de usar una tabulación y no espacios en las líneas que comienzan con &quot;$(AR)&quot; y &quot;$(RANLIB)&quot;. Make no funcionará correctamente si utiliza espacios. También se ha informado que el argumento &quot;cr&quot; para $(AR) no es necesario en sistemas Win32.</p>
+<p class="Pp">Ahora crearemos los archivos principales del nivel superior de Mytest2. Cambie al directorio anterior a Mytest2 y ejecute el siguiente comando:</p>
+<pre>% h2xs -O -n Mytest2 Mytest2/mylib/mylib.h</pre>
+<p class="Pp">Esto imprimirá una advertencia sobre la sobrescritura de Mytest2, pero está bien. Nuestros archivos están almacenados en Mytest2/mylib y no se verán afectados.</p>
+<p class="Pp">El Makefile.PL normal que genera h2xs no conoce el directorio mylib. Necesitamos decirle que hay un subdirectorio y que generaremos una biblioteca en él. Agreguemos el argumento MYEXTLIB a la llamada WriteMakefile para que se vea así:</p>
+<pre>WriteMakefile(
+    NAME         =&gt; 'Mytest2',
+    VERSION_FROM =&gt; 'Mytest2.pm', # encuentra $VERSION
+    LIBS         =&gt; [''],   # ej., '-lm'
+    DEFINE       =&gt; '',     # ej., '-DHAVE_SOMETHING'
+    INC          =&gt; '',     # ej., '-I/usr/include/other'
+    MYEXTLIB     =&gt; 'mylib/libmylib$(LIB_EXT)',
+);</pre>
+<p class="Pp">y luego al final agregue una subrutina (que reemplazará la subrutina preexistente). ¡Recuerde usar un carácter de tabulación para indentar la línea que comienza con &quot;cd&quot;!</p>
+<pre>sub MY::postamble {
+'
+$(MYEXTLIB): mylib/Makefile
+        cd mylib &amp;&amp; $(MAKE) $(PASSTHRU)
+';
+}</pre>
+<p class="Pp">También corrijamos el archivo MANIFEST agregando las siguientes tres líneas:</p>
+<pre>mylib/Makefile.PL
+mylib/mylib.c
+mylib/mylib.h</pre>
+<p class="Pp">Para mantener nuestro espacio de nombres agradable y sin contaminar, edite el archivo .pm y cambie la variable <span class="Li">@EXPORT</span> a <span class="Li">@EXPORT_OK</span>. Finalmente, en el archivo .xs, edite la línea #include para que diga:</p>
+<pre>#include &quot;mylib/mylib.h&quot;</pre>
+<p class="Pp">Y también agregue la siguiente definición de función al final del archivo .xs:</p>
+<pre>double
+foo(a,b,c)
+        int             a
+        long            b
+        const char *    c
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Ahora también necesitamos crear un typemap porque el Perl predeterminado actualmente no admite el tipo <span class="Li">&quot;const char *&quot;</span>. Incluya una nueva sección TYPEMAP en su código XS antes de la función anterior:</p>
+<pre>TYPEMAP: &lt;&lt;END
+const char *    T_PV
+END</pre>
+<p class="Pp">Ahora ejecute perl en el Makefile.PL de nivel superior. Observe que también creó un Makefile en el directorio mylib. Ejecute make y observe que navega al directorio mylib y ejecuta make allí también.</p>
+<p class="Pp">Ahora edite el script Mytest2.t y cambie el número de pruebas a &quot;5&quot;, y agregue las siguientes líneas al final del script:</p>
+<pre>is( Mytest2::foo( 1, 2, &quot;Hello, world!&quot; ), 7 );
+is( Mytest2::foo( 1, 2, &quot;0.0&quot; ),           7 );
+ok( abs( Mytest2::foo( 0, 0, &quot;-3.4&quot; ) - 0.6 ) &lt;= 0.01 );</pre>
+<p class="Pp">(Al tratar con comparaciones de punto flotante, es mejor no verificar la igualdad, sino que la diferencia entre el resultado esperado y el real esté por debajo de una cierta cantidad (llamada épsilon) que en este caso es 0.01)</p>
+<p class="Pp">Ejecute &quot;<span class="Li">&quot;make test&quot;</span>&quot; y todo debería estar bien. Hay algunas advertencias sobre pruebas faltantes para la extensión Mytest2::mylib, pero puede ignorarlas.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='What_has_happened_here?'><a class='permalink' href='#What_has_happened_here?'>¿Qué   ha pasado aquí?</a></h2>
+<p class="Pp">A diferencia de ejemplos anteriores, hemos ejecutado h2xs en un archivo de inclusión real. Esto ha provocado que aparezcan algunas mejoras adicionales tanto en los archivos .pm como en los .xs.</p>
+<ul class="Bl-bullet">
+  <li>En el archivo .xs, ahora hay una directiva #include con la ruta absoluta al archivo de encabezado mylib.h. Cambiamos esto a una ruta relativa para poder mover el directorio de extensión si quisiéramos.</li>
+  <li>Ahora hay algo de código C nuevo que se ha agregado al archivo .xs. El propósito de la rutina <span class="Li">&quot;constant&quot;</span> es hacer que los valores que están #define'd en el archivo de encabezado sean accesibles por el script Perl (llamando a <span class="Li">&quot;TESTVAL&quot;</span> o <span class="Li">&amp;Mytest2::TESTVAL</span>). También hay código XS para permitir llamadas a la rutina <span class="Li">&quot;constant&quot;</span>.</li>
+  <li>El archivo .pm originalmente exportó el nombre <span class="Li">&quot;TESTVAL&quot;</span> en el array <span class="Li">@EXPORT</span>. Esto podría generar conflictos de nombres. Una buena regla general es que si el #define solo será utilizado por las propias rutinas C, y no por el usuario, deben eliminarse del array <span class="Li">@EXPORT</span>. Alternativamente, si no le importa usar el &quot;nombre completamente calificado&quot; de una variable, podría mover la mayoría o todos los elementos del array <span class="Li">@EXPORT</span> al array <span class="Li">@EXPORT_OK</span>.</li>
+  <li>Si nuestro archivo de inclusión hubiera contenido directivas #include, estas no habrían sido procesadas por h2xs. No hay una buena solución para esto en este momento.</li>
+  <li>También le hemos informado a Perl sobre la biblioteca que construimos en el subdirectorio mylib. Eso solo requirió la adición de la variable <span class="Li">&quot;MYEXTLIB&quot;</span> a la llamada WriteMakefile y el reemplazo de la subrutina postamble para navegar al subdirectorio y ejecutar make. El Makefile.PL para la biblioteca es un poco más complicado, pero no excesivamente. Nuevamente reemplazamos la subrutina postamble para insertar nuestro propio código. Este código simplemente especificó que la biblioteca que se creará aquí era una biblioteca de archivo estática (en contraposición a una biblioteca cargable dinámicamente) y proporcionó los comandos para construirla.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Anatomy_of_.xs_file'><a class='permalink' href='#Anatomy_of_.xs_file'>Anatomía   del archivo .xs</a></h2>
+<p class="Pp">El archivo .xs del &quot;EJEMPLO 4&quot; contenía algunos elementos nuevos. Para comprender el significado de estos elementos, preste atención a la línea que dice</p>
+<pre>MODULE = Mytest2                PACKAGE = Mytest2</pre>
+<p class="Pp">Cualquier cosa antes de esta línea es código C simple que describe qué encabezados incluir y define algunas funciones de conveniencia. No se realizan traducciones en esta parte, aparte de omitir la documentación POD incrustada (ver perlpod), va tal cual al archivo C de salida generado.</p>
+<p class="Pp">Cualquier cosa después de esta línea es la descripción de las funciones XSUB. Estas descripciones son traducidas por <b>xsubpp</b> a código C que implementa estas funciones utilizando convenciones de llamada de Perl, y que hace que estas funciones sean visibles desde el intérprete de Perl.</p>
+<p class="Pp">Preste especial atención a la función <span class="Li">&quot;constant&quot;</span>. Este nombre aparece dos veces en el archivo .xs generado: una vez en la primera parte, como una función C estática, y luego otra vez en la segunda parte, cuando se define una interfaz XSUB para esta función C estática.</p>
+<p class="Pp">Esto es bastante típico para los archivos .xs: por lo general, el archivo .xs proporciona una interfaz a una función C existente. Luego, esta función C se define en algún lugar (ya sea en una biblioteca externa, o en la primera parte de .xs f</p>
+ile),
+    y una interfaz Perl para esta función (es decir, "pegamento Perl") se
+    describe en la segunda parte del archivo .xs. La situación en el "EJEMPLO
+    1", "EJEMPLO 2" y "EJEMPLO 3", cuando todo el trabajo
+    se realiza dentro del "pegamento Perl", es más bien una excepción
+    que la regla.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Sacando_la_grasa_de_los_XSUBs'><a class='permalink' href='#Sacando_la_grasa_de_los_XSUBs'>Sacando
+    la grasa de los XSUBs</a></h2>
+<p class="Pp">En el "EJEMPLO 4", la segunda parte del archivo .xs contenía la
+    siguiente descripción de un XSUB:</p>
+<pre>double
+foo(a,b,c)
+        int             a
+        long            b
+        const char *    c
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Nótese que, en contraste con el "EJEMPLO 1", el "EJEMPLO
+    2" y el "EJEMPLO 3", esta descripción no contiene el *código* real
+    de lo que se hace durante una llamada a la función Perl
+    <b>foo()</b>. Para entender lo que sucede aquí, se puede añadir una sección
+    CODE a este XSUB:</p>
+<pre>double
+foo(a,b,c)
+        int             a
+        long            b
+        const char *    c
+    CODE:
+        RETVAL = foo(a,b,c);
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Sin embargo, estos dos XSUBs proporcionan código C generado casi
+    idéntico: el compilador <b>xsubpp</b> es lo suficientemente inteligente como
+    para deducir la sección <span class="Li">"CODE:"</span> de las dos primeras
+    líneas de la descripción del XSUB. ¿Y qué hay de la sección <span class="Li">"OUTPUT:"</span>?
+    ¡De hecho, es absolutamente lo mismo! La sección <span class="Li">"OUTPUT:"</span>
+    también se puede eliminar, *siempre y cuando* no se especifique una sección
+    <span class="Li">"CODE:"</span> o <span class="Li">"PPCODE:"</span>: <b>xsubpp</b>
+    puede ver que necesita generar una sección de llamada a función y también generará
+    automáticamente la sección OUTPUT. Por lo tanto, se puede acortar el
+    XSUB a:</p>
+<pre>double
+foo(a,b,c)
+        int             a
+        long            b
+        const char *    c</pre>
+<p class="Pp">¿Podemos hacer lo mismo con un XSUB?</p>
+<pre>int
+is_even(input)
+        int     input
+    CODE:
+        RETVAL = (input % 2 == 0);
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">del "EJEMPLO 2"? Para hacer esto, se necesita definir una función C
+    <span class="Li">"int is_even(int input)"</span>. Como vimos en "Anatomía de
+    un archivo .xs", un lugar adecuado para esta definición está en la primera
+    parte del archivo .xs. De hecho, una función C</p>
+<pre>int
+is_even(int arg)
+{
+        return (arg % 2 == 0);
+}</pre>
+<p class="Pp">es probablemente excesiva para esto. Algo tan simple como una
+    <span class="Li">"#define"</span> también servirá:</p>
+<pre>#define is_even(arg)    ((arg) % 2 == 0)</pre>
+<p class="Pp">Después de tener esto en la primera parte del archivo .xs, la parte
+    del "pegamento Perl" se simplifica a:</p>
+<pre>int
+is_even(input)
+        int     input</pre>
+<p class="Pp">Esta técnica de separar la parte del pegamento de la parte del
+    caballo de batalla tiene evidentes compensaciones: si desea cambiar una
+    interfaz Perl, necesita cambiar dos lugares en su código. Sin embargo, elimina
+    mucha suciedad y hace que la parte del caballo de batalla sea independiente
+    de las idiosincrasias de la convención de llamadas de Perl. (De hecho, no hay
+    nada específico de Perl en la descripción anterior; una versión diferente de
+    <b>xsubpp</b> podría haberlo traducido también a pegamento TCL o pegamento
+    Python).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Más_sobre_argumentos_de_XSUB'><a class='permalink' href='#Más_sobre_argumentos_de_XSUB'>Más
+    sobre argumentos de XSUB</a></h2>
+<p class="Pp">Con la finalización del Ejemplo 4, ahora tenemos una forma fácil de
+    simular algunas bibliotecas de la vida real cuyas interfaces pueden no ser
+    las más limpias del mundo. Ahora continuaremos con una discusión de los
+    argumentos pasados al compilador <b>xsubpp</b>.</p>
+<p class="Pp">Cuando especifica argumentos para las rutinas en el archivo .xs,
+    está realmente pasando tres piezas de información por cada argumento listado.
+    La primera pieza es el orden de ese argumento en relación con los demás
+    (primero, segundo, etc.). La segunda es el tipo de argumento y consiste en la
+    declaración del tipo del argumento (por ejemplo, int, char*, etc.). La tercera
+    pieza es la convención de llamada para el argumento en la llamada a la función
+    de la biblioteca.</p>
+<p class="Pp">Mientras que Perl pasa argumentos a funciones por referencia, C
+    pasa argumentos por valor; para implementar una función C que modifica los
+    datos de uno de los "argumentos", el argumento real de esta función C sería un
+    puntero a los datos. Por lo tanto, dos funciones C con las declaraciones</p>
+<pre>int string_length(char *s);
+int upper_case_char(char *cp);</pre>
+<p class="Pp">pueden tener semánticas completamente diferentes: la primera puede
+    inspeccionar un array de caracteres apuntado por s, y la segunda puede
+    desreferenciar inmediatamente <span class="Li">"cp"</span> y manipular solo
+    <span class="Li">*cp</span> (usando el valor de retorno como, por ejemplo, un
+    indicador de éxito). Desde Perl se usarían estas funciones de manera
+    completamente diferente.</p>
+<p class="Pp">Uno transmite esta información a <b>xsubpp</b> reemplazando el
+    <span class="Li">"*"</span> antes del argumento por <span class="Li">"&amp;"</span>.
+    <span class="Li">"&amp;"</span> significa que el argumento debe pasarse a una
+    función de biblioteca por su dirección. Las dos funciones anteriores se pueden
+    convertir a XSUB como:</p>
+<pre>int
+string_length(s)
+        char *  s
+int
+upper_case_char(cp)
+        char    &amp;cp</pre>
+<p class="Pp">Por ejemplo, considere:</p>
+<pre>int
+foo(a,b)
+        char    &amp;a
+        char *  b</pre>
+<p class="Pp">El primer argumento Perl a esta función se trataría como un char y
+    se asignaría a la variable a, y su dirección se pasaría a la función foo. El
+    segundo argumento Perl se trataría como un puntero a cadena y se asignaría a
+    la variable b. El *valor* de b se pasaría a la función foo. La llamada real a
+    la función foo que <b>xsubpp</b> genera se vería así:</p>
+<pre>foo(&amp;a, b);</pre>
+<p class="Pp"><b>xsubpp</b> analizará las siguientes listas de argumentos de función
+    de manera idéntica:</p>
+<pre>char    &amp;a
+char&amp;a
+char    &amp; a</pre>
+<p class="Pp">Sin embargo, para ayudar a facilitar la comprensión, se sugiere que
+    coloque un "&amp;" junto al nombre de la variable y alejado del tipo de
+    variable, y coloque un "*" cerca del tipo de variable, pero alejado del
+    nombre de la variable (como en la llamada a foo anterior). Al hacerlo, es
+    fácil entender exactamente qué se pasará a la función C; será lo que sea que
+    esté en la "última columna".</p>
+<p class="Pp">Debe hacer grandes esfuerzos para intentar pasar a la función el tipo
+    de variable que desea, cuando sea posible. Le ahorrará muchos problemas a
+    largo plazo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='La_Pila_de_Argumentos'><a class='permalink' href='#La_Pila_de_Argumentos'>La
+    Pila de Argumentos</a></h2>
+<p class="Pp">Si observamos cualquier código C generado por cualquiera de los
+    ejemplos, excepto el ejemplo 1, notará una serie de referencias a ST(n), donde
+    n suele ser 0. "ST" es en realidad una macro que apunta al n-ésimo argumento
+    en la pila de argumentos. <a href='/man/ST.0.en'>ST(0)</a> es, por lo tanto, el primer
+    argumento en la pila y, por lo tanto, el primer argumento pasado al XSUB,
+    <a href='/man/ST.1.en'>ST(1)</a> es el segundo argumento, y así sucesivamente.</p>
+<p class="Pp">Cuando enumera los argumentos para el XSUB en el archivo .xs, eso le
+    dice a <b>xsubpp</b> qué argumento corresponde a cuál de la pila de argumentos
+    (es decir, el primero listado es el primer argumento, y así sucesivamente).
+    Invita al desastre si no los enumera en el mismo orden en que la función los
+    espera.</p>
+<p class="Pp">Los valores reales en la pila de argumentos son punteros a los valores
+    pasados. Cuando se lista un argumento como valor de SALIDA, su valor correspondiente
+    en la pila (es decir, <a href='/man/ST.0.en'>ST(0)</a> si fue el primer argumento) se
+    modifica. Puede verificar esto mirando el código C generado para el Ejemplo
+    3. El código para la rutina XSUB <b>round()</b> contiene líneas que se ven
+    así:</p>
+<pre>double  arg = (double)SvNV(ST(0));
+/* Redondea el contenido de la variable arg */
+sv_setnv(ST(0), (double)arg);</pre>
+<p class="Pp">La variable arg se inicializa tomando el valor de <a href='/man/ST.0.en'>ST(0)</a>,
+    luego se almacena de nuevo en <a href='/man/ST.0.en'>ST(0)</a> al final de la
+    rutina.</p>
+<p class="Pp">Los XSUBs también pueden devolver listas, no solo escalares. Esto
+    debe hacerse manipulando los valores de la pila <a href='/man/ST.0.en'>ST(0)</a>,
+    <a href='/man/ST.1.en'>ST(1)</a>, etc., de una manera sutilmente diferente. Consulte
+    perlxs para obtener detalles.</p>
+<p class="Pp">Los XSUBs también pueden evitar la conversión automática de
+    argumentos de función Perl a argumentos de función C. Consulte perlxs para
+    obtener detalles. Algunas personas prefieren la conversión manual inspeccionando
+    <span class="Li">ST(i)</span> incluso en los casos en que la conversión
+    automática funciona, argumentando que esto aclara la lógica de una llamada
+    XSUB. Compare con "Sacando la grasa de los XSUBs" para una compensación similar
+    de una separación completa de las partes de "pegamento Perl" y "caballo de
+    batalla" de un XSUB.</p>
+<p class="Pp">Si bien los expertos pueden discutir sobre estos modismos, un novato
+    en las entrañas de Perl puede preferir una forma que sea lo menos específica
+    posible de las entrañas de Perl, lo que significa conversión automática y
+    generación de llamadas automática, como en "Sacando la grasa de los
+    XSUBs". Este enfoque tiene el beneficio adicional de proteger al escritor del
+    XSUB de futuros cambios en la API de Perl.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Extender_tu_Extensión'><a class='permalink' href='#Extender_tu_Extensión'>Extender
+    tu Extensión</a></h2>
+<p class="Pp">A veces, es posible que desee proporcionar métodos o subrutinas
+    adicionales para ayudar a simplificar o hacer que la interfaz entre Perl y
+    su extensión sea más fácil de entender. Estas rutinas deben residir en el
+    archivo .pm. Si se cargan automáticamente cuando se carga la extensión misma o
+    solo se cargan cuando se llaman depende de dónde se coloque la definición de
+    la subrutina en el archivo .pm. También puede consultar AutoLoader para
+    conocer una forma alternativa de almacenar y cargar sus subrutinas
+    adicionales.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Documentar_tu_Extensión'><a class='permalink' href='#Documentar_tu_Extensión'>Documentar
+    tu Extensión</a></h2>
+<p class="Pp">No hay ninguna excusa para no documentar tu extensión. La
+    documentación pertenece al archivo .pm. Este archivo se alimentará a pod2man,
+    y la documentación incrustada se convertirá al formato de página man, y luego
+    se colocará en el directorio blib. Se copiará al directorio de páginas man de
+    Perl cuando se instale la extensión.</p>
+<p class="Pp">Puede intercalar documentación y código Perl dentro del archivo
+    .pm. De hecho, si desea utilizar la carga automática de métodos, debe hacerlo,
+    como explica el comentario dentro del archivo .pm.</p>
+<p class="Pp">Consulte perlpod para obtener más información sobre el formato pod.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Instalar_tu_Extensión'><a class='permalink' href='#Instalar_tu_Extensión'>Instalar
+    tu Extensión</a></h2>
+<p class="Pp">Una vez que tu extensión esté completa y pase todas sus pruebas,
+    instalarla es muy simple: simplemente ejecuta "make install". Necesitarás tener
+    permiso de escritura en los directorios donde está instalado Perl, o pedirle a tu
+    administrador del sistema que ejecute make por ti.</p>
+<p class="Pp">Alternativamente, puedes especificar el directorio exacto para colocar
+    el extension's files colocando un &quot;PREFIX=/directorio/destino&quot;
+    después de make install (o entre make e install si tienes una
+    versión de make obsoleta). Esto puede ser muy útil si estás compilando una
+    extensión que eventualmente se distribuirá a múltiples sistemas. Puedes
+    archivar los archivos en el directorio de destino y distribuirlos
+    a tus sistemas de destino.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_5'><a class='permalink' href='#EJEMPLO_5'>EJEMPLO 5</a></h2>
+<p class="Pp">En este ejemplo, haremos más trabajo con la pila de argumentos.
+    Los ejemplos anteriores solo han devuelto un único valor. Ahora crearemos una
+    extensión que devuelva un array.</p>
+<p class="Pp">Esta extensión está muy orientada a Unix (struct statfs y la llamada
+    al sistema statfs). Si no estás ejecutando en un sistema Unix, puedes sustituir
+    statfs por cualquier otra función que devuelva múltiples valores, puedes
+    codificar valores para que sean devueltos al llamante (aunque esto será un
+    poco más difícil de probar el caso de error), o puedes simplemente no hacer
+    este ejemplo. Si cambias el XSUB, asegúrate de arreglar los casos de prueba
+    para que coincidan con los cambios.</p>
+<p class="Pp">Regresa al directorio Mytest y agrega el siguiente código al final
+    de Mytest.xs:</p>
+<pre>void
+statfs(path)
+        char *  path
+    INIT:
+        int i;
+        struct statfs buf;
+    PPCODE:
+        i = statfs(path, &amp;buf);
+        if (i == 0) {
+                XPUSHs(sv_2mortal(newSVnv(buf.f_bavail)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_bfree)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_blocks)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_bsize)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_ffree)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_files)));
+                XPUSHs(sv_2mortal(newSVnv(buf.f_type)));
+        } else {
+                XPUSHs(sv_2mortal(newSVnv(errno)));
+        }</pre>
+<p class="Pp">También necesitarás agregar el siguiente código al principio del
+    archivo .xs, justo después de la inclusión de &quot;XSUB.h&quot;:</p>
+<pre>#include &lt;sys/vfs.h&gt;</pre>
+<p class="Pp">Agrega también el siguiente segmento de código a Mytest.t mientras
+    incrementas las pruebas &quot;9&quot; a &quot;11&quot;:</p>
+<pre>my @a;
+    @a = Mytest::statfs(&quot;/blech&quot;);
+    ok( scalar(@a) == 1 &amp;&amp; $a[0] == 2 );
+    @a = Mytest::statfs(&quot;/&quot;);
+    is( scalar(@a), 7 );</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">Novedades en este ejemplo</h2>
+<p class="Pp">Este ejemplo añadió bastantes conceptos nuevos. Los veremos uno por
+    uno.</p>
+<ul class="Bl-bullet">
+  <li>La directiva INIT: contiene código que se colocará inmediatamente después
+      de que la pila de argumentos sea decodificada. C no permite declaraciones de
+      variables en ubicaciones arbitrarias dentro de una función, por lo que esta
+      es generalmente la mejor manera de declarar variables locales necesarias
+      para el XSUB. (Alternativamente, se podría poner toda la sección
+      <span class="Li">&quot;PPCODE:&quot;</span> entre llaves, y poner estas
+      declaraciones en la parte superior.)</li>
+  <li>Esta rutina también devuelve un número diferente de argumentos dependiendo
+      del éxito o fracaso de la llamada a statfs. Si hay un error, el número de
+      error se devuelve como un array de un solo elemento. Si la llamada es
+      exitosa, se devuelve un array de 7 elementos. Dado que solo se pasa un
+      argumento a esta función, necesitamos espacio en la pila para contener los
+      7 valores que pueden ser devueltos.
+    <p class="Pp">Hacemos esto usando la directiva PPCODE:, en lugar de la
+        directiva CODE:. Esto le dice a <b>xsubpp</b> que gestionaremos
+        nosotros mismos los valores de retorno que se colocarán en la pila de
+        argumentos.</p>
+  </li>
+  <li>Cuando queremos colocar valores a devolver al llamante en la pila, usamos
+      la serie de macros que comienzan con &quot;XPUSH&quot;. Hay cinco
+      versiones diferentes, para colocar enteros, enteros sin signo, doubles,
+      cadenas y escalares de Perl en la pila. En nuestro ejemplo, colocamos un
+      escalar de Perl en la pila. (De hecho, esta es la única macro que se puede
+      usar para devolver múltiples valores.)
+    <p class="Pp">Las macros XPUSH* extenderán automáticamente la pila de retorno
+        para evitar que se desborde. Empujas valores a la pila en el orden en que
+        deseas que sean vistos por el programa llamante.</p>
+  </li>
+  <li>Los valores que se empujan en la pila de retorno del XSUB son en realidad
+      SV's mortales. Se hacen mortales para que una vez que los valores sean
+      copiados por el programa llamante, los SV's que contenían los valores de
+      retorno puedan ser desasignados. Si no fueran mortales, continuarían
+      existiendo después de que la rutina XSUB regresara, pero no serían
+      accesibles. Esto es una fuga de memoria.</li>
+  <li>Si estuviéramos interesados en el rendimiento, no en la compacidad del
+      código, en la rama de éxito no usaríamos las macros
+      <span class="Li">&quot;XPUSHs&quot;</span>, sino las macros
+      <span class="Li">&quot;PUSHs&quot;</span>, y pre-extenderíamos la pila
+      antes de empujar los valores de retorno:
+        <pre>EXTEND(SP, 7);
+</pre>
+    <p class="Pp">La contrapartida es que uno necesita calcular el número de
+        valores de retorno por adelantado (aunque extender demasiado la pila
+        típicamente no perjudicará nada más que el consumo de memoria).</p>
+    <p class="Pp">Del mismo modo, en la rama de fallo podríamos usar
+        <span class="Li">&quot;PUSHs&quot;</span> *sin* extender la pila: la
+        referencia a la función de Perl llega a un XSUB en la pila, por lo tanto
+        la pila es *siempre* lo suficientemente grande como para tomar un valor
+        de retorno.</p>
+  </li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_6'><a class='permalink' href='#EJEMPLO_6'>EJEMPLO 6</a></h2>
+<p class="Pp">En este ejemplo, aceptaremos una referencia a un array como
+    parámetro de entrada y devolveremos una referencia a un array de hashes. Esto
+    demostrará la manipulación de tipos de datos complejos de Perl desde un
+    XSUB.</p>
+<p class="Pp">Esta extensión es algo artificial. Se basa en el código del ejemplo
+    anterior. Llama a la función statfs múltiples veces, aceptando una referencia
+    a un array de nombres de archivo como entrada, y devolviendo una referencia a
+    un array de hashes que contiene los datos para cada uno de los sistemas de
+    archivos.</p>
+<p class="Pp">Regresa al directorio Mytest y agrega el siguiente código al final
+    de Mytest.xs:</p>
+<pre>SV *
+multi_statfs(paths)
+        SV * paths
+    INIT:
+        AV * results;
+        SSize_t numpaths = 0, n;
+        int i;
+        struct statfs buf;
+        SvGETMAGIC(paths);
+        if ((!SvROK(paths))
+            || (SvTYPE(SvRV(paths)) != SVt_PVAV)
+            || ((numpaths = av_top_index((AV *)SvRV(paths))) &lt; 0))
+        {
+            XSRETURN_UNDEF;
+        }
+        results = (AV *)sv_2mortal((SV *)newAV());
+    CODE:
+        for (n = 0; n &lt;= numpaths; n++) {
+            HV * rh;
+            STRLEN l;
+            SV * path = *av_fetch((AV *)SvRV(paths), n, 0);
+            char * fn = SvPVbyte(path, l);
+            i = statfs(fn, &amp;buf);
+            if (i != 0) {
+                av_push(results, newSVnv(errno));
+                continue;
+            }
+            rh = (HV *)sv_2mortal((SV *)newHV());
+            hv_store(rh, &quot;f_bavail&quot;, 8, newSVnv(buf.f_bavail), 0);
+            hv_store(rh, &quot;f_bfree&quot;,  7, newSVnv(buf.f_bfree),  0);
+            hv_store(rh, &quot;f_blocks&quot;, 8, newSVnv(buf.f_blocks), 0);
+            hv_store(rh, &quot;f_bsize&quot;,  7, newSVnv(buf.f_bsize),  0);
+            hv_store(rh, &quot;f_ffree&quot;,  7, newSVnv(buf.f_ffree),  0);
+            hv_store(rh, &quot;f_files&quot;,  7, newSVnv(buf.f_files),  0);
+            hv_store(rh, &quot;f_type&quot;,   6, newSVnv(buf.f_type),   0);
+            av_push(results, newRV_inc((SV *)rh));
+        }
+        RETVAL = newRV_inc((SV *)results);
+    OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Y agrega el siguiente código a Mytest.t, mientras incrementas las
+    pruebas &quot;11&quot; a &quot;13&quot;:</p>
+<pre>my $results = Mytest::multi_statfs([ '/', '/blech' ]);
+ok( ref $results-&gt;[0] );
+ok( ! ref $results-&gt;[1] );</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">Novedades en este ejemplo</h2>
+<p class="Pp">Aquí se introducen una serie de nuevos conceptos, descritos a
+    continuación:</p>
+<ul class="Bl-bullet">
+  <li>Esta función no utiliza un typemap. En su lugar, la declaramos como que
+      acepta un parámetro SV* (escalar) y devuelve un valor SV*, y nos
+      encargamos de poblar estos escalares dentro del código. Dado que solo
+      devolvemos un valor, no necesitamos una directiva
+      <span class="Li">&quot;PPCODE:&quot;</span>; en su lugar, usamos las
+      directivas <span class="Li">&quot;CODE:&quot;</span> y
+      <span class="Li">&quot;OUTPUT:&quot;</span>.</li>
+  <li>Al tratar con referencias, es importante manejarlas con precaución. El
+      bloque <span class="Li">&quot;INIT:&quot;</span> primero llama a
+      SvGETMAGIC(paths), en caso de que paths sea una variable enlazada. Luego
+      verifica que <span class="Li">&quot;SvROK&quot;</span> devuelva verdadero,
+      lo que indica que paths es una referencia válida. (Simplemente verificar
+      <span class="Li">&quot;SvROK&quot;</span> no activará FETCH en una variable
+      enlazada.) Luego verifica que el objeto referenciado por paths sea un array,
+      usando <span class="Li">&quot;SvRV&quot;</span> para desenlazar paths, y
+      <span class="Li">&quot;SvTYPE&quot;</span> para descubrir su tipo. Como prueba
+      adicional, verifica que el array referenciado por paths no esté vacío,
+      usando la función <span class="Li">&quot;av_top_index&quot;</span> (que
+      devuelve -1 si el array está vacío). La macro XSRETURN_UNDEF se usa para
+      abortar el XSUB y devolver el valor indefinido siempre que no se cumplan
+      las tres condiciones.</li>
+  <li>Manipulamos varios arrays en este XSUB. Ten en cuenta que un array se
+      representa internamente mediante un puntero AV*. Las funciones y macros para
+      manipular arrays son similares a las funciones de Perl:
+      <span class="Li">&quot;av_top_index&quot;</span> devuelve el índice más alto
+      en un AV*, muy parecido a $#array; <span class="Li">&quot;av_fetch&quot;</span>
+      recupera un único valor escalar de un array, dado su índice;
+      <span class="Li">&quot;av_push&quot;</span> empuja un valor escalar al final
+      del array, extendiendo automáticamente el array según sea necesario.
+    <p class="Pp">Específicamente, leemos nombres de ruta uno por uno del array
+        de entrada y almacenamos los resultados en un array de salida (results)
+        en el mismo orden. Si statfs falla, el elemento empujado al array de
+        retorno es el valor de errno después del fallo. Si statfs tiene éxito, el
+        valor empujado al array de retorno es una referencia a un hash que
+        contiene parte de la información en la estructura statfs.</p>
+    <p class="Pp">Al igual que con la pila de retorno, sería posible (y una
+        pequeña ganancia de rendimiento) pre-extender el array de retorno antes
+        de empujar datos en él, ya que sabemos cuántos elementos devolveremos:</p>
+        <pre>av_extend(results, numpaths);
+</pre>
+  </li>
+  <li>Realizamos solo una operación de hash en esta función, que es almacenar un
+      nuevo escalar bajo una clave usando <span class="Li">&quot;hv_store&quot;</span>.
+      Un hash se representa mediante un puntero HV*. Al igual que los arrays, las
+      funciones para manipular hashes desde un XSUB reflejan la funcionalidad
+      disponible desde Perl. Consulte perlguts y perlapi para obtener detalles.</li>
+  <li>Para crear una referencia, usamos la función
+      <span class="Li">&quot;newRV_inc&quot;</span>. Tenga en cuenta que puede
+      convertir un AV* o un HV* al tipo SV* en este caso (y en muchos otros). Esto
+      le permite tomar referencias a arrays, hashes y escalares con la misma
+      función. A la inversa, la función <span class="Li">&quot;SvRV&quot;</span>
+      siempre devuelve un SV*, que puede necesitar ser convertido al tipo
+      apropiado si</li>
+</ul>
+</section>es algo distinto de un escalar (compruébalo con
+      <span class="Li">&quot;SvTYPE&quot;</span>).</li>
+  <li>En este punto, xsubpp realiza muy poco trabajo: las diferencias entre
+      Mytest.xs y Mytest.c son mínimas.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_7_(Próximamente)'><a class='permalink' href='#EJEMPLO_7_(Próximamente)'>EJEMPLO   7 (Próximamente)</a></h2>
+<p class="Pp">Argumentos XPUSH Y establece RETVAL Y asigna el valor de retorno a un array</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_8_(Próximamente)'><a class='permalink' href='#EJEMPLO_8_(Próximamente)'>EJEMPLO   8 (Próximamente)</a></h2>
+<p class="Pp">Estableciendo $!</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='EJEMPLO_9_Pasando_archivos_abiertos_a_XSes'><a class='permalink' href='#EJEMPLO_9_Pasando_archivos_abiertos_a_XSes'>EJEMPLO   9 Pasando archivos abiertos a XSes</a></h2>
+<p class="Pp">Podrías pensar que pasar archivos a un XS es difícil, con todos los
+    typeglobs y esas cosas. Bueno, no lo es.</p>
+<p class="Pp">Supongamos que por alguna extraña razón necesitamos una envoltura
+    alrededor de la función estándar de la biblioteca C <span class="Li">fputs()</span>.
+    Esto es todo lo que necesitamos:</p>
+<pre>#define PERLIO_NOT_STDIO 0  /* Para coexistencia con stdio solamente */
+#define PERL_NO_GET_CONTEXT /* Esto es más eficiente */
+#include &quot;EXTERN.h&quot;
+#include &quot;perl.h&quot;
+#include &quot;XSUB.h&quot;
+#include &lt;stdio.h&gt;
+int
+fputs(s, stream)
+  char *          s
+  FILE *          stream</pre>
+<p class="Pp">El trabajo real lo realiza el typemap estándar.</p>
+<p class="Pp">Para más detalles, véase &quot;Coexistencia con stdio&quot; en
+    perlapio.</p>
+<p class="Pp"><b>Pero</b> pierdes toda la funcionalidad fina realizada por las
+    capas perlio. Esto llama a la función stdio <span class="Li">fputs()</span>,
+    que no sabe nada de ellas.</p>
+<p class="Pp">El typemap estándar ofrece tres variantes de PerlIO *:
+    <span class="Li">&quot;InputStream&quot;</span> (T_IN),
+    <span class="Li">&quot;InOutStream&quot;</span> (T_INOUT) y
+    <span class="Li">&quot;OutputStream&quot;</span> (T_OUT). Un
+    <span class="Li">&quot;PerlIO *&quot;</span> desnudo se considera un T_INOUT.
+    Si es importante en tu código (ver más abajo por qué podría serlo) #define o
+    typedef uno de los nombres específicos y úsalo como argumento o tipo de
+    resultado en tu archivo XS.</p>
+<p class="Pp">El typemap estándar no contiene PerlIO * antes de perl 5.7,
+    pero tiene las tres variantes de stream. Usar un PerlIO * directamente no es
+    compatible con versiones anteriores a menos que proporciones tu propio
+    typemap.</p>
+<p class="Pp">Para streams que vienen *desde* perl, la principal diferencia es
+    que <span class="Li">&quot;OutputStream&quot;</span> obtendrá el PerlIO * de
+    salida, lo que puede marcar la diferencia en un socket. Como en nuestro
+    ejemplo...</p>
+<p class="Pp">Para streams que se entregan *a* perl, se crea un nuevo manejador
+    de archivo (es decir, una referencia a un nuevo glob) y se asocia con el
+    PerlIO * proporcionado. Si el estado de lectura/escritura del PerlIO * no es
+    correcto, podrías obtener errores o advertencias cuando se utilice el
+    manejador de archivo. Así que si abriste el PerlIO * como &quot;w&quot;,
+    realmente debería ser un <span class="Li">&quot;OutputStream&quot;</span>; si
+    se abrió como &quot;r&quot;, debería ser un
+    <span class="Li">&quot;InputStream&quot;</span>.</p>
+<p class="Pp">Ahora, supongamos que quieres usar capas perlio en tu XS. Usaremos
+    la función perlio <span class="Li">PerlIO_puts()</span> como ejemplo.</p>
+<p class="Pp">En la parte C del archivo XS (antes de la primera línea MODULE) tienes</p>
+<pre>    #define OutputStream    PerlIO *
+o
+    typedef PerlIO *        OutputStream;</pre>
+<p class="Pp">Y este es el código XS:</p>
+<pre>int
+perlioputs(s, stream)
+        char *          s
+        OutputStream    stream
+CODE:
+        RETVAL = PerlIO_puts(stream, s);
+OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Tenemos que usar una sección <span class="Li">&quot;CODE&quot;</span>
+    porque <span class="Li">PerlIO_puts()</span> tiene los argumentos invertidos
+    en comparación con <span class="Li">fputs()</span>, y queremos mantener los
+    argumentos iguales.</p>
+<p class="Pp">Queriendo explorar esto a fondo, queremos usar el stdio
+    <span class="Li">fputs()</span> en un PerlIO *. Esto significa que tenemos que
+    pedirle al sistema perlio un stdio <span class="Li">&quot;FILE *&quot;</span>:</p>
+<pre>int
+perliofputs(s, stream)
+        char *          s
+        OutputStream    stream
+PREINIT:
+        FILE *fp = PerlIO_findFILE(stream);
+CODE:
+        if (fp != (FILE*) 0) {
+                RETVAL = fputs(s, fp);
+        } else {
+                RETVAL = -1;
+        }
+OUTPUT:
+        RETVAL</pre>
+<p class="Pp">Nota: <span class="Li">PerlIO_findFILE()</span> buscará en las
+    capas una capa stdio. Si no encuentra una, llamará a
+    <span class="Li">PerlIO_exportFILE()</span> para generar un nuevo stdio
+    <span class="Li">&quot;FILE&quot;</span>. Por favor, llama solo a
+    <span class="Li">PerlIO_exportFILE()</span> si quieres un *nuevo*
+    <span class="Li">&quot;FILE&quot;</span>. Generará uno en cada llamada y
+    añadirá una nueva capa stdio. Así que no la llames repetidamente en el mismo
+    archivo. <span class="Li">PerlIO_findFILE()</span> recuperará la capa stdio
+    una vez que haya sido generada por <span class="Li">PerlIO_exportFILE()</span>.</p>
+<p class="Pp">Esto se aplica solo al sistema perlio. Para versiones anteriores a
+    5.7, <span class="Li">PerlIO_exportFILE()</span> es equivalente a
+    <span class="Li">PerlIO_findFILE()</span>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Solución_de_problemas_de_estos_Ejemplos'><a class='permalink' href='#Solución_de_problemas_de_estos_Ejemplos'>Solución   de problemas de estos Ejemplos</a></h2>
+<p class="Pp">Como se mencionó al principio de este documento, si tienes problemas
+    con estas extensiones de ejemplo, puedes ver si alguna de las siguientes
+    opciones te ayuda.</p>
+<ul class="Bl-bullet">
+  <li>En versiones de 5.002 anteriores a la versión gamma, el script de prueba
+      en el Ejemplo 1 no funcionará correctamente. Debes cambiar la línea
+      &quot;use lib&quot; para que diga:
+        <pre>use lib './blib';
+</pre>
+  </li>
+  <li>En versiones de 5.002 anteriores a la versión 5.002b1h, el archivo test.pl
+      no era creado automáticamente por h2xs. Esto significa que no puedes decir
+      &quot;make test&quot; para ejecutar el script de prueba. Necesitarás añadir
+      la siguiente línea antes de la declaración &quot;use extension&quot;:
+        <pre>use lib './blib';
+</pre>
+  </li>
+  <li>En las versiones 5.000 y 5.001, en lugar de usar la línea anterior,
+      necesitarás usar la siguiente línea:
+        <pre>BEGIN { unshift(@INC, &quot;./blib&quot;) }
+</pre>
+  </li>
+  <li>Este documento asume que el ejecutable llamado &quot;perl&quot; es Perl
+      versión 5. Algunos sistemas pueden haber instalado Perl versión 5 como
+      &quot;perl5&quot;.</li>
+</ul>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Véase_también'><a class='permalink' href='#Véase_también'>Véase   también</a></h1>
+<p class="Pp">Para más información, consulta perlguts, perlapi, perlclib, perlxs,
+    perlmod, perlapio y perlpod.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Autor'><a class='permalink' href='#Autor'>Autor</a></h1>
+<p class="Pp">Jeff Okamoto &lt;<i>okamoto@corp.hp.com</i>&gt;</p>
+<p class="Pp">Revisado y asistido por Dean Roehrich, Ilya Zakharevich, Andreas
+    Koenig y Tim Bunce.</p>
+<p class="Pp">Material de PerlIO aportado por Lupe Christoph, con alguna
+    aclaración de Nick Ing-Simmons.</p>
+<p class="Pp">Cambios para h2xs a partir de Perl 5.8.x por Renee Baecker</p>
+<p class="Pp">Este documento ahora se mantiene como parte del propio Perl.</p>
+<section class="Ss">
+<h2 class="Ss" id='Última_Modificación'><a class='permalink' href='#Última_Modificación'>Última   Modificación</a></h2>
+<p class="Pp">2020-10-05</p>
+</section>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#SPECIAL_NOTES">NOTAS ESPECIALES</a></li>
+        
+            <li><a href="#TUTORIAL">TUTORIAL</a></li>
+        
+            <li><a href="#See_also">Véase también</a></li>
+        
+            <li><a href="#Author">Autor</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/perlxstut.1perl.es.txt">txt</a>, 
+        
+            <a href="/man/perlxstut.1perl.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

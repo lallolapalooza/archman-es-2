@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ibv_post_srq_ops(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ibv_post_srq_ops(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/rdma-core/">rdma-core</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">IBV_POST_SRQ_OPS(3)</td>
+    <td class="head-vol">Manual del programador de Libibverbs</td>
+    <td class="head-rtitle">IBV_POST_SRQ_OPS(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">ibv_post_srq_ops - realiza manipulaciones de configuración en una cola de recepción compartida (SRQ) especial</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;infiniband/verbs.h&gt;</b>
+
+<b>int ibv_post_srq_ops(struct ibv_srq </b><i>*srq</i><b>, struct ibv_ops_wr </b><i>*wr</i><b>,</b>
+<b>                     struct ibv_ops_wr </b><i>**bad_wr</i><b>);</b></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La función <b>ibv_post_srq_ops()</b> realiza una serie de manipulaciones de configuración de descarga en tipos especiales de SRQ <i>srq. Actualmente se utiliza para configurar SRQ de coincidencia de etiquetas. La serie de operaciones de configuración se define mediante listas enlazadas de elementos de struct ibv_ops_wr que comienzan en </i>wr.</p>
+<pre>struct ibv_ops_wr {
+uint64_t                wr_id;   /* ID de WR definido por el usuario */
+/* Puntero al siguiente WR en la lista, NULL si es el último WR */
+struct ibv_ops_wr      *next;
+enum ibv_ops_wr_opcode  opcode;  /* De enum ibv_ops_wr_opcode */
+int                     flags;   /* De enum ibv_ops_flags */
+struct {
+/* Número de mensajes inesperados
+ * manejados por SW */
+uint32_t unexpected_cnt;
+/* Parámetro de entrada para el opcode DEL
+ * y parámetro de salida para el opcode ADD */
+uint32_t handle;
+struct {
+uint64_t                recv_wr_id;   /* ID de WR definido por el usuario para TM_RECV */
+struct ibv_sge         *sg_list; /* Puntero a la matriz s/g */
+int                     num_sge; /* Tamaño de la matriz s/g */
+uint64_t                tag;
+uint64_t                mask;    /* El mensaje entrante se considera coincidente si
+                                    TMH.tag &amp; entry.mask == entry.tag */
+} add;
+} tm;
+};</pre>
+<p class="Pp">La primera parte de struct ibv_ops_wr conserva la noción de ibv_send_wr. Opcode define la operación a realizar. Actualmente, los valores admitidos son IBV_WR_TAG_ADD, IBV_WR_TAG_DEL e IBV_WR_TAG_SYNC. Consulte a continuación para obtener una descripción detallada.</p>
+<p class="Pp">Para permitir la entrega de datos confiable, TM SRQ mantiene un primitivo de sincronización especial de bajo nivel: la sincronización de fase. El manejo de mensajes del lado de recepción comprende dos actividades concurrentes: la publicación de búferes etiquetados por SW y la recepción de mensajes entrantes por HW. Este proceso se considera coherente solo si todos los mensajes inesperados recibidos por HW se procesan completamente en SW. Para pasar al hardware el número de mensajes inesperados procesados, se debe usar el campo unexpected_cnt y se debe establecer el flag IBV_OPS_TM_SYNC.</p>
+<p class="Pp">Para solicitar WC para operaciones de lista de etiquetas, se deben pasar los flags IBV_OPS_SIGNALED. En este caso, se generará un WC en el CQ de TM SRQ, y el wr_id proporcionado identificará el WC.</p>
+<p class="Pp">El opcode IBV_WR_TAG_ADD se utiliza para agregar una entrada de etiqueta a la lista de coincidencia de etiquetas. La entrada de etiqueta consta de una lista SGE, etiqueta y máscara (parámetros de coincidencia), un wr_id opaco especificado por el usuario (pasado a través del campo recv_wr_id) y se identifica de forma única por un handle (devuelto por el controlador). El tamaño de la lista de coincidencia de etiquetas está limitado por max_num_tags. El tamaño de la lista SGE está limitado por max_sge.</p>
+<p class="Pp">El opcode IBV_WR_TAG_DEL elimina una entrada de etiqueta agregada previamente. El campo handle debe establecerse en el valor devuelto por la operación IBV_WR_TAG_ADD realizada anteriormente. La operación puede fallar debido al consumo concurrente de etiquetas; en este caso, se devolverá el estado IBV_WC_TM_ERR en el WC.</p>
+<p class="Pp">El opcode IBV_WR_TAG_SYNC se puede utilizar si no se requieren cambios en la lista de coincidencia, solo para actualizar el contador de mensajes inesperados.</p>
+<p class="Pp">El flag IBV_WC_TM_SYNC_REQ devuelto en el WC de operación de lista indica que se requiere la sincronización del contador. Este flag también puede ser devuelto por el WC de recepción inesperada, solicitando una operación IBV_WR_TAG_SYNC para mantener la consistencia de TM.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp"><b>ibv_post_srq_ops()</b> devuelve 0 si tiene éxito, o el valor de errno en caso de error (que indica el motivo del fallo).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ibv_create_srq_ex.3.en'>ibv_create_srq_ex(3)</a>,</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<dl class="Bl-tag">
+  <dt id="Artemy"><a class="permalink" href="#Artemy">Artemy Kovalyov
+    &lt;artemyko@mellanox.com&gt;</a></dt>
+  <dd></dd>
+</dl>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2017-03-26</td>
+    <td class="foot-os">libibverbs</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/rdma-core/">extra/rdma-core</a></dd>
+        <dt>Versión:</dt>
+        <dd>60.0-2</dd>
+        <dt>Versión anterior:</dt>
+        <dd><a href="https://github.com/linux-rdma/rdma-core">https://github.com/linux-rdma/rdma-core</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/rdma-core/">/listing/extra/rdma-core/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ibv_post_srq_ops.3.en.txt">txt</a>, 
+        
+            <a href="/man/ibv_post_srq_ops.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

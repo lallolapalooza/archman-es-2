@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>signature-protocols(1) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">signature-protocols(1)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">signature-protocols(1)</td>
+    <td class="head-vol"></td>
+    <td class="head-rtitle">signature-protocols(1)</td>
+  </tr>
+</table>
+<div class="manual-text">La biblioteca <b>go.podman.io/image/v5</b> soporta
+  firmas implementadas como blobs &#x201C;adjuntos&#x201D; a una imagen. Algunos
+  transportes de imágenes (formatos de almacenamiento local y protocolos remotos) implementan estas
+  firmas de forma nativa o trivial; para otros, son necesarias las extensiones de protocolo descritas a continuación.
+<section class="Sh">
+<h1 class="Sh" id='docker/distribution_registries&amp;#x2014;separate_storage'><a class='permalink' href='#docker/distribution_registries&amp;#x2014;separate_storage'>docker/distribution   registries&#x2014;almacenamiento separado</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Usage'><a class='permalink' href='#Usage'>Uso</a></h2>
+<p class="Pp">Cualquier registro docker/distribution existente, independientemente de si
+    soporta firmas de forma nativa o no, puede ser ampliado con almacenamiento de firmas separado configurando una URL de almacenamiento de firmas en
+    &#x27E8;containers-registries.d.md&#x27E9;. <b>registries.d</b> puede ser configurado para usar una URL de almacenamiento para todo un servidor docker/distribution, o también URLs separadas para espacios de nombres más pequeños o repositorios individuales dentro del servidor (lo que por ejemplo permite a los autores de imágenes gestionar su propio almacenamiento de firmas mientras publican las imágenes en el servidor público <b>docker.io</b>).</p>
+<p class="Pp">La URL de almacenamiento de firmas define la raíz de una jerarquía de rutas. Puede ser una URL <b>file:///&#x2026;</b>, apuntando a una estructura de directorios local, o una URL <b>http</b>/<b>https</b>, apuntando a un servidor remoto. El almacenamiento de firmas <b>file:///</b> puede ser leído y escrito, mientras que <b>http</b>/<b>https</b> solo soporta lectura.</p>
+<p class="Pp">La misma jerarquía de rutas se utiliza en ambos casos, por lo que el servidor HTTP/HTTPS puede ser un simple servidor web estático que sirva una estructura de directorios creada al escribir en un almacenamiento de firmas <b>file:///</b>. (Esto, por supuesto, no impide otras implementaciones de servidor, por ejemplo, un servidor HTTP leyendo firmas de una base de datos).</p>
+<p class="Pp">El flujo de trabajo habitual para producir y distribuir imágenes utilizando el mecanismo de almacenamiento separado es configurar el repositorio en
+    <b>registries.d</b> con una URL <b>lookaside-staging</b> apuntando a un área de preparación privada <b>file:///</b>, y una URL <b>lookaside</b> apuntando a un servidor web público. Para publicar una imagen, el autor de la imagen firmaría la imagen según sea necesario (por ejemplo, usando <b>skopeo copy</b>), y luego copiaría la estructura de directorios creada desde el área de preparación <b>file:///</b> a un subdirectorio de la raíz web del servidor web público para que sean accesibles utilizando la URL pública <b>lookaside</b>. El autor también indicaría a los consumidores de la imagen, o proporcionaría un archivo de configuración <b>registries.d</b> para, configurar una URL <b>lookaside</b> que apunte al servidor web público.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Path_structure'><a class='permalink' href='#Path_structure'>Estructura de rutas</a></h2>
+<p class="Pp">Dada una URL base de almacenamiento de firmas configurada en
+    <b>registries.d</b> como se mencionó anteriormente, y una imagen de contenedor almacenada en un registro docker/distribution utilizando el nombre <i>expandido completamente</i> <i>nombrehost</i><b>/</b><i>espaciosdenombre</i><b>/</b><i>nombre</i>{<b>@</b><i>digest</i>,<b>:</b><i>tag</i>}
+    (por ejemplo, para <b>docker.io/library/busybox:latest</b>, <i>espaciosdenombre</i> es
+    <b>library</b>, incluso si el usuario se refiere a la imagen usando la sintaxis más corta como <b>busybox:latest</b>), las firmas se acceden usando URLs de la forma &gt;
+    <i>base</i><b>/</b><i>espaciosdenombre</i><b>/</b><i>nombre</i><b>@</b><i>algoritmodigest</i><b>=</b><i>valuedigest</i><b>/signature-</b><i>indice</i></p>
+<p class="Pp">donde <i>algoritmodigest</i><b>:</b><i>valuedigest</i> es un digest de manifiesto utilizable para referenciar el manifiesto de imagen relevante (es decir, incluso si el usuario referenció la imagen usando una etiqueta, el almacenamiento de firmas siempre se desambigua usando referencias de digest). Tenga en cuenta que en las URLs utilizadas para las firmas, <i>algoritmodigest</i> y <i>valuedigest</i> se separan usando el carácter <b>=</b>, no <b>:</b> como al acceder al manifiesto usando la API de docker/distribution.</p>
+<p class="Pp">Dentro de la URL, <i>indice</i> es un entero decimal (en forma canónica), comenzando en 1. Las firmas se almacenan en URLs con valores de <i>indice</i> sucesivos; para leer todas ellas, comience con <i>indice</i>=1, y continúe leyendo firmas e incrementando <i>indice</i> mientras existan firmas con esos valores de <i>indice</i>. De manera similar, para agregar una firma más a una imagen, encuentre el primer <i>indice</i> que no exista, y luego almacene la nueva firma usando ese valor de <i>indice</i>.</p>
+<p class="Pp">No hay forma de listar las firmas existentes más que iterando a través de los valores sucesivos de <i>indice</i>, y no hay forma de descargar todas las firmas a la vez.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Examples'><a class='permalink' href='#Examples'>Ejemplos</a></h2>
+<p class="Pp">Para una imagen docker/distribution disponible como
+    <b>busybox@sha256:817a12c32a39bbe394944ba49de563e085f1d3c5266eb8e9723256bc4448680e</b>
+    (o como <b>busybox:latest</b> si la etiqueta <b>latest</b> apunta a un manifiesto con el mismo digest), y con una configuración <b>registries.d</b> que especifica una URL <b>lookaside</b> <a href='https://example.com/lookaside'>https://example.com/lookaside</a> para
+    la misma imagen, las siguientes URLs serían accedidas para descargar todas
+    las firmas: &gt; -
+    <a href='https://example.com/lookaside/library/busybox@sha256=817a12c32a39bbe394944ba49de563e085f1d3c5266eb8e9723256bc4448680e/signature-1'>https://example.com/lookaside/library/busybox@sha256=817a12c32a39bbe394944ba49de563e085f1d3c5266eb8e9723256bc4448680e/signature-1</a>
+    &gt; -
+    <a href='https://example.com/lookaside/library/busybox@sha256=817a12c32a39bbe394944ba49de563e085f1d3c5266eb8e9723256bc4448680e/signature-2'>https://example.com/lookaside/library/busybox@sha256=817a12c32a39bbe394944ba49de563e085f1d3c5266eb8e9723256bc4448680e/signature-2</a>
+    &gt; - &#x2026;</p>
+<p class="Pp">Para una imagen docker/distribution disponible como
+    <b>example.com/ns1/ns2/ns3/repo@somedigest:digestvalue</b> y la misma
+    URL <b>lookaside</b>, las firmas estarían disponibles en &gt;
+    <a href='https://example.com/lookaside/ns1/ns2/ns3/repo@somedigest=digestvalue/signature-1'>https://example.com/lookaside/ns1/ns2/ns3/repo@somedigest=digestvalue/signature-1</a></p>
+<p class="Pp">y así sucesivamente.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='(OpenShift)_docker/distribution_API_extension'><a class='permalink' href='#(OpenShift)_docker/distribution_API_extension'>(OpenShift)   extensión de la API docker/distribution</a></h1>
+<p class="Pp">A partir de <a href='https://github.com/openshift/origin/pull/12504/'>https://github.com/openshift/origin/pull/12504/</a>, el
+    registro integrado en OpenShift también proporciona una extensión de la API
+    docker/distribution que permite un acceso más simple a las firmas, utilizando
+    solo el endpoint de la API docker/distribution.</p>
+<p class="Pp">Esta API no es intrínsecamente específica de OpenShift (por ejemplo, el cliente
+    no necesita conocer el endpoint de la API de OpenShift, y las credenciales suficientes para acceder al servidor de la API docker/distribution son suficientes para acceder
+    a las firmas también), y es la forma preferida de implementar el almacenamiento de firmas
+    en los registros.</p>
+<p class="Pp">Consulte <a href='https://github.com/openshift/openshift-docs/pull/3556'>https://github.com/openshift/openshift-docs/pull/3556</a> para
+    obtener la documentación upstream de la API.</p>
+<p class="Pp">Para leer la firma, cualquier usuario con acceso a una imagen puede usar
+    la ruta <b>/extensions/v2/&#x2026;/signatures/&#x2026;</b> para leer un array
+    de firmas. Utilice solo los objetos de firma que tengan <b>version</b> igual a
+    <b>2</b>, <b>type</b> igual a <b>atomic</b>, y lea la firma desde <b>content</b>; ignore los otros campos del objeto de firma.</p>
+<p class="Pp">Para agregar una sola firma, <b>PUT</b> un nuevo objeto con
+    <b>version</b> establecido en <b>2</b>, <b>type</b> establecido en <b>atomic</b>, y
+    <b>content</b> establecido en la firma. Establezca también <b>name</b> a un nombre único con la forma <i>digest</i><b>@</b><i>nombreporimagen</i>, donde
+    <i>digest</i> es un digest de manifiesto de imagen (también utilizado en la URL), y
+    <i>nombreporimagen</i> es cualquier identificador único.</p>
+<p class="Pp">Para agregar más de una firma, agréguelas una a la vez. Esta API
+    no permite eliminar firmas.</p>
+<p class="Pp">Tenga en cuenta que debido a que las firmas se almacenan dentro de los objetos de imagen a nivel de clúster, es decir, diferentes espacios de nombres no pueden asociar diferentes conjuntos de firmas a la misma imagen, la actualización de firmas requiere un acceso a nivel de clúster al recurso <b>imagesignatures</b> (disponible por defecto para el rol <b>system:image-signer</b>),</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OpenShift-embedded_registries'><a class='permalink' href='#OpenShift-embedded_registries'>Registros integrados en OpenShift</a></h1>
+<p class="Pp">El registro integrado en OpenShift implementa la API ordinaria
+    docker/distribution, y también expone imágenes a través de la API REST de OpenShift (accesible a través de los servidores del &#x201C;maestro de API&#x201D;).</p>
+<p class="Pp">Nota: Las versiones 1.5 y posteriores de OpenShift soportan la extensión de la API
+    docker/distribution descrita anteriormente
+    &#x27E8;#openshift-dockerdistribution-api-extension&#x27E9;, que es más fácil de configurar y generalmente debería preferirse. Continúe leyendo para obtener detalles sobre el uso de versiones anteriores de OpenShift.</p>
+<p class="Pp">A partir de <a href='https://github.com/openshift/origin/pull/9181'>https://github.com/openshift/origin/pull/9181</a>, las firmas
+    se exponen a través de la API de OpenShift (es decir, para acceder a la imagen completa, es necesario utilizar ambas API</p>
+</section>
+</section>
+
+                
+            </article>
+            <aside id="content-right">
+                <nav id="sidebar">
+    <div class="sidebar-content">
+        <h2>Manual Pages</h2>
+        <ul>
+            <li>
+                <a href="/community/docs/man/signature-protocols.html">signature-protocols(1)</a>
+            </li>
+        </ul>
+    </div>
+</nav>
+            </aside>
+        </main>
+        <footer>
+            <div id="footer">
+                
+            </div>
+        </footer>
+    </body>
+</html>
+<section class="manual-section">
+    <h2 id="signature-protocols">signature-protocols</h2>
+    <p class="Pp">signature-protocols(5) - OpenShift Signature Protocols</p>
+    <section class="Sh">
+        <h2 id="NAME">NOMBRE</h2>
+        <p class="Nd">signature-protocols - OpenShift Signature Protocols</p>
+    </section>
+    <section class="Sh">
+        <h2 id="DESCRIPTION">DESCRIPCIÓN</h2>
+        <p class="Pp">OpenShift extends the capabilities of docker/distribution by adding a signature
+            protocol that allows image signatures to be associated with images in the
+            registry. This functionality is available through the OpenShift API.</p>
+        <p class="Pp">Images are identified by their digest and name. Signatures are associated with
+            specific image manifests (identified by digest) and can be named with any
+            unique identifier.</p>
+        <p class="Pp">To interact with signatures, you need to know the URLs for both the
+            docker/distribution y los puntos finales maestros de la API de OpenShift).</p>
+        <p class="Pp">Para leer la firma, cualquier usuario con acceso a una imagen puede usar el
+            recurso con ámbito de nombres <b>imagestreamimages</b> para leer un objeto <b>Image</b>
+            y su matriz <b>Signatures</b>. Use solo los objetos <b>ImageSignature</b>
+            que tengan <b>Type</b> igual a <b>atomic</b>, y lea la firma de
+            <b>Content</b>; ignore los otros campos del objeto
+            <b>ImageSignature</b>.</p>
+        <p class="Pp">Para agregar o eliminar firmas, use el recurso <b>imagesignatures</b>
+            (no con ámbito de nombres) a nivel de clúster, con <b>Type</b> establecido en
+            <b>atomic</b> y <b>Content</b> establecido en la firma. Los nombres de las
+            firmas deben tener el formato <i>digest</i><b>@</b><i>nombre-por-imagen</i>,
+            donde <i>digest</i> es un resumen del manifiesto de la imagen (el «nombre de
+            imagen» de OpenShift) y <i>nombre-por-imagen</i> es cualquier identificador
+            único.</p>
+        <p class="Pp">Tenga en cuenta que debido a que las firmas se almacenan dentro de los objetos de
+            imagen a nivel de clúster, es decir, diferentes espacios de nombres no pueden
+            asociar diferentes conjuntos de firmas a la misma imagen, la actualización de
+            firmas requiere acceso a nivel de clúster al recurso
+            <b>imagesignatures</b> (disponible por defecto para el rol
+            <b>system:image-signer</b>), y se desaconseja encarecidamente la eliminación
+            de firmas (elimina la firma de todos los espacios de nombres que contienen la
+            misma imagen).</p>
+    </section>
+</section>
+<table class="foot">
+    <tr>
+        <td class="foot-date">protocolos</td>
+        <td class="foot-os"></td>
+    </tr>
+</table>

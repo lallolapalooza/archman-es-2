@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>nbd_block_status(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">nbd_block_status(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libnbd/">libnbd</a></p>
+<p class="lic">Licencias: LGPL-2.1-o-posterior</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">nbd_block_status(3)</td>
+    <td class="head-vol">LIBNBD</td>
+    <td class="head-rtitle">nbd_block_status(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">nbd_block_status - envía el comando de estado de bloque, con callback de 32 bits</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>#include &lt;libnbd.h&gt;
+typedef struct {
+  int (*callback) (void *user_data,
+                   const char *metacontext,
+                   uint64_t offset, uint32_t *entries,
+                   size_t nr_entries, int *error);
+  void *user_data;
+  void (*free) (void *user_data);
+} nbd_extent_callback;
+int nbd_block_status (
+      struct nbd_handle *h, uint64_t count,
+      uint64_t offset, nbd_extent_callback extent_callback,
+      uint32_t flags
+    );</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Emite el comando de estado de bloque al servidor NBD. Si es soportado
+    por el servidor, esto hace que se devuelva información de contexto de metadatos
+    sobre bloques que comienzan desde el desplazamiento especificado. El
+    parámetro <span class="Li">&quot;count&quot;</span> es una pista: el servidor
+    puede elegir devolver menos estado, o el bloque final puede extenderse más
+    allá del rango solicitado. Si se soportan múltiples contextos, el número de
+    bloques y la longitud acumulada de esos bloques no tienen que ser idénticos
+    entre contextos.</p>
+<p class="Pp">Tenga en cuenta que no todos los servidores pueden soportar un
+    <span class="Li">&quot;count&quot;</span> de 4GiB o más;
+    <a href='/man/nbd_get_extended_headers_negotiated.3.en'>nbd_get_extended_headers_negotiated(3)</a> indica qué servidores analizarán una
+    solicitud mayor de 32 bits. El protocolo NBD aún no tiene una forma para que
+    un cliente aprenda si el servidor aplicará un tamaño máximo de estado de
+    bloque aún menor, aunque una extensión futura puede agregar una restricción
+    visible en <a href='/man/nbd_get_block_size.3.en'>nbd_get_block_size(3)</a>. Además, esta función está inherentemente
+    limitada a valores de 32 bits. Si el servidor responde con una extensión mayor,
+    la longitud de esa extensión se truncará a justo por debajo de 32 bits y se
+    ignorar{án,o} cualquier extensión adicional del servidor. Si el servidor
+    responde con un valor de estado mayor de 32 bits (solo posible cuando se usan
+    encabezados extendidos), la función de callback recibirá un error
+    <span class="Li">&quot;EOVERFLOW&quot;</span>. Para obtener la información de
+    extensión completa de un servidor que soporta extensiones de 64 bits, debe
+    usar <a href='/man/nbd_block_status_64.3.en'>nbd_block_status_64(3)</a>.</p>
+<p class="Pp">Dependiendo de qué contextos de metadatos se habilitaron antes de
+    conectar (ver <a href='/man/nbd_add_meta_context.3.en'>nbd_add_meta_context(3)</a>) y cuáles son soportados por
+    el servidor (ver <a href='/man/nbd_can_meta_context.3.en'>nbd_can_meta_context(3)</a>) esta llamada devuelve
+    información sobre extensiones llamando a la función
+    <span class="Li">&quot;extent&quot;</span>. El callback no puede llamar a las
+    APIs <span class="Li">&quot;nbd_*&quot;</span> en el mismo manejador ya que
+    este mantiene el bloqueo del manejador y causará un deadlock. Si el callback
+    devuelve <span class="Li">-1</span>, y no se ha detectado ningún error
+    anterior, entonces el comando general de estado de bloque fallará con cualquier
+    valor distinto de cero almacenado en el parámetro
+    <span class="Li">&quot;error&quot;</span> del callback (con un valor por
+    defecto de <span class="Li">&quot;EPROTO&quot;</span>); pero cualquier
+    contexto adicional seguirá invocando el callback.</p>
+<p class="Pp">La función <span class="Li">&quot;extent&quot;</span> se llama una
+    vez por tipo de metadatos disponibles, con el
+    <span class="Li">&quot;user_data&quot;</span> pasado a esta función. El
+    parámetro <span class="Li">&quot;metacontext&quot;</span> es una cadena como
+    <span class="Li">&quot;base:allocation&quot;</span>. El array
+    <span class="Li">&quot;entries&quot;</span> es un array de pares de enteros con
+    el primer elemento de cada par siendo la longitud (en bytes) del bloque y el
+    segundo elemento siendo un campo de estado/banderas específico para el contexto
+    de metadatos. El número de pares pasados a la función es
+    <span class="Li">&quot;nr_entries/2&quot;</span>. El documento del protocolo
+    NBD en la sección sobre
+    <span class="Li">&quot;NBD_REPLY_TYPE_BLOCK_STATUS&quot;</span> describe el
+    significado de este array; para contextos conocidos por libnbd,
+    <b>&lt;libnbd.h&gt;</b> contiene constantes que comienzan con
+    <span class="Li">&quot;LIBNBD_STATE_&quot;</span> que pueden ayudar a descifrar
+    los valores. Al entrar en el callback, el parámetro
+    <span class="Li">&quot;error&quot;</span> contiene el valor errno de cualquier
+    error detectado previamente, pero incluso si se detectó un error anterior,
+    el <span class="Li">&quot;metacontext&quot;</span> y
+    <span class="Li">&quot;entries&quot;</span> actuales son válidos.</p>
+<p class="Pp">Es posible que la función extent se llame más veces de lo que
+    espera (si el servidor tiene errores), por lo que siempre revise el campo
+    <span class="Li">&quot;metacontext&quot;</span> para asegurarse de que está
+    recibiendo los datos que espera. También es posible que la función extent no
+    se llame en absoluto, incluso para contextos de metadatos que solicitó. Esto
+    indica que el servidor no soporta el contexto o por alguna otra razón no puede
+    devolver los datos.</p>
+<p class="Pp">El parámetro <span class="Li">&quot;flags&quot;</span> puede ser
+    <span class="Li">0</span> para ninguna bandera, o puede contener
+    <span class="Li">&quot;LIBNBD_CMD_FLAG_REQ_ONE&quot;</span>, lo que significa
+    que el servidor debe devolver solo una extensión por contexto de metadatos
+    donde esa extensión no exceda <span class="Li">&quot;count&quot;</span> bytes;
+    sin embargo, libnbd no valida si el servidor obedeció la bandera.</p>
+<p class="Pp">Por defecto, libnbd rechazará los intentos de usar esta función con
+    parámetros que probablemente resulten en un fallo del servidor, como solicitar
+    una bandera de comando desconocida. La función <a href='/man/nbd_set_strict_mode.3.en'>nbd_set_strict_mode(3)</a> puede usarse
+    para alterar qué escenarios deben esperar una respuesta del servidor en lugar
+    de fallar rápidamente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Si la llamada es exitosa, la función devuelve
+    <span class="Li">0</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ERRORES'><a class='permalink' href='#ERRORES'>ERRORES</a></h1>
+<p class="Pp">En caso de error, se devuelve <span class="Li">-1</span>.</p>
+<p class="Pp">Consulte &quot;MANEJO DE ERRORES&quot; en <a href='/man/libnbd.3.en'>libnbd(3)</a> para saber cómo
+    obtener más detalles del error.</p>
+<p class="Pp">Los siguientes parámetros no deben ser NULL:
+    <span class="Li">&quot;h&quot;</span>. Para más información, consulte
+    &quot;Parámetros no NULL&quot; en <a href='/man/libnbd.3.en'>libnbd(3)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESTADO_DEL_MANEJADOR'><a class='permalink' href='#ESTADO_DEL_MANEJADOR'>ESTADO DEL MANEJADOR</a></h1>
+<p class="Pp">nbd_block_status puede ser llamado cuando el manejador se encuentra en el siguiente
+    estado:</p>
+<pre>&#x250C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x252C;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2510;
+&#x2502; Manejador creado, antes de conectar &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectando                          &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectando y handshake (opt_mode) &#x2502; &#x274C; error                &#x2502;
+&#x2502; Conectado al servidor             &#x2502; &#x2705; permitido            &#x2502;
+&#x2502; Conexión cerrada                 &#x2502; &#x274C; error                &#x2502;
+&#x2502; Manejador inactivo                &#x2502; &#x274C; error                &#x2502;
+&#x2514;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2534;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2500;&#x2518;</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSIÓN'><a class='permalink' href='#VERSIÓN'>VERSIÓN</a></h1>
+<p class="Pp">Esta función apareció por primera vez en libnbd 1.0.</p>
+<p class="Pp">Si necesita probar si esta función está disponible en tiempo de compilación,
+    compruebe si el siguiente macro está definido:</p>
+<pre>#define LIBNBD_HAVE_NBD_BLOCK_STATUS 1</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/nbd_add_meta_context.3.en'>nbd_add_meta_context(3)</a>, <a href='/man/nbd_aio_block_status.3.en'>nbd_aio_block_status(3)</a>,
+    <a href='/man/nbd_block_status_64.3.en'>nbd_block_status_64(3)</a>, <a href='/man/nbd_can_meta_context.3.en'>nbd_can_meta_context(3)</a>,
+    <a href='/man/nbd_create.3.en'>nbd_create(3)</a>, <a href='/man/nbd_get_block_size.3.en'>nbd_get_block_size(3)</a>,
+    <a href='/man/nbd_get_extended_headers_negotiated.3.en'>nbd_get_extended_headers_negotiated(3)</a>,
+    <a href='/man/nbd_set_strict_mode.3.e
+<section class="Sh">
+<h1 class="Sh" id="AUTORES"><a class="permalink" href="#AUTORES">AUTORES</a></h1>
+<p class="Pp">Eric Blake</p>
+<p class="Pp">Richard W.M. Jones</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+<p class="Pp">Copyright Red Hat</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LICENCIA"><a class="permalink" href="#LICENCIA">LICENCIA</a></h1>
+<p class="Pp">Esta biblioteca es software libre; puede redistribuirla y/o modificarla
+    bajo los términos de la Licencia Pública General Reducida de GNU tal como fue
+    publicada por la Free Software Foundation; bien la versión 2 de la Licencia,
+    o (a su elección) cualquier versión posterior.</p>
+<p class="Pp">Esta biblioteca se distribuye con la esperanza de que sea útil,
+    pero SIN NINGUNA GARANTÍA; sin siquiera la garantía implícita de
+    COMERCIABILIDAD o IDONEIDAD PARA UN PROPÓSITO PARTICULAR. Consulte la
+    Licencia Pública General Reducida de GNU para obtener más detalles.</p>
+<p class="Pp">Debería haber recibido una copia de la Licencia Pública General
+    Reducida de GNU junto con esta biblioteca; si no es así, escriba a la Free
+    Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
+    02110-1301 USA</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-11-01</td>
+    <td class="foot-os">libnbd-1.22.5</td>
+  </tr>
+</table>
+</section>
+</article>
+<aside id="sidebar">
+<section class="search">
+<form action="/search" class="search direct-search" role="search">
+<input type="search" placeholder="Buscar página de manual" name="q" value=""/>
+<input type="submit" name="go" value="Ir"/>
+</form>
+</section>
+<section class="package-info">
+<p>Información del paquete:</p>
+<dl>
+<dt>Nombre del paquete:</dt>
+<dd><a href="https://www.archlinux.org/packages/extra/x86_64/libnbd/">extra/libnbd</a></dd>
+<dt>Versión:</dt>
+<dd>1.22.5-2</dd>
+<dt>Principal:</dt>
+<dd><a href="https://gitlab.com/nbdkit/libnbd">https://gitlab.com/nbdkit/libnbd</a></dd>
+<dt>Licencias:</dt>
+<dd>LGPL-2.1-o-posterior</dd>
+<dt>Manuales:</dt>
+<dd><a href="/listing/extra/libnbd/">/listing/extra/libnbd/</a></dd>
+</dl>
+</section>
+<details>
+<summary>Tabla de contenidos</summary>
+<nav class="toc">
+<ul>
+<li><a href="#NOMBRE">NOMBRE</a></li>
+<li><a href="#SINOPSIS">SINOPSIS</a></li>
+<li><a href="#DESCRIPCION">DESCRIPCIÓN</a></li>
+<li><a href="#VALOR-DE-RETORNO">VALOR DE RETORNO</a></li>
+<li><a href="#ERRORES">ERRORES</a></li>
+<li><a href="#ESTADO-DEL-MANEJADOR">ESTADO DEL MANEJADOR</a></li>
+<li><a href="#VERSION">VERSIÓN</a></li>
+<li><a href="#VER-TAMBIEN">VER TAMBIÉN</a></li>
+<li><a href="#AUTORES">AUTORES</a></li>
+<li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+<li><a href="#LICENCIA">LICENCIA</a></li>
+</ul>
+</nav>
+</details>
+<nav class="other-formats">
+<p>Otros formatos:
+<a href="/man/nbd_block_status.3.en.txt">txt</a>,
+<a href="/man/nbd_block_status.3.en.raw">raw</a>
+</p>
+</nav>
+</aside>
+</main>
+<footer>
+
+<p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+excepto por el contenido de las páginas de manual, que tienen su propia licencia
+especificada en el paquete correspondiente de Arch Linux.
+</p>
+</footer>
+</body>
+</html>

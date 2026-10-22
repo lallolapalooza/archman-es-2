@@ -1,0 +1,581 @@
+
+
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>gl_tty_signals(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">gl_tty_signals(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libtecla/">libtecla</a></p>
+<p class="lic">Licencias: custom:X11</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">gl_io_mode(3)</td>
+    <td class="head-vol">Manual de Funciones de Biblioteca</td>
+    <td class="head-rtitle">gl_io_mode(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<br/>
+<p class="Pp"> gl_io_mode, gl_raw_io, gl_normal_io, gl_tty_signals,
+    gl_abandon_line,
+  <br/>
+   gl_handle_signal, gl_pending_io - Cómo usar gl_get_line() desde un bucle de eventos externo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre>#include &lt;libtecla.h&gt;
+int gl_io_mode(GetLine *gl, GlIOMode mode);
+int gl_raw_io(GetLine *gl);
+int gl_normal_io(GetLine *gl);
+int gl_tty_signals(void (*term_handler)(int),
+                   void (*susp_handler)(int),
+                   void (*cont_handler)(int),
+                   void (*size_handler)(int));
+void gl_abandon_line(GetLine *gl);
+void gl_handle_signal(int signo, GetLine *gl, int ngl);
+GlPendingIO gl_pending_io(GetLine *gl);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La <b>gl_get_line()</b> función, la cual está documentada por separado
+    en la <a href='/man/gl_get_line.3.en'>gl_get_line(3)</a> página del manual, soporta dos modos de E/S diferentes.
+    Estos se seleccionan llamando a la <b>gl_io_mode()</b> función.</p>
+<pre>  int gl_io_mode(GetLine *gl, GlIOMode mode);</pre>
+<p class="Pp">El <b>modo</b> argumento de esta función especifica el nuevo modo de E/S,
+    y debe ser uno de los siguientes.</p>
+<pre>  GL_NORMAL_MODE   -  Selecciona el modo normal de E/S bloqueante.
+                      En este modo <b>gl_get_line()</b>
+                      no retorna hasta que ocurre un error
+                      o el usuario termina de introducir una
+                      nueva línea. Este modo es el foco de la
+                      página del manual <a href='/man/gl_get_line.3.en'>gl_get_line(3)</a> .
+  GL_SERVER_MODE   -  Selecciona el modo de E/S de servidor no bloqueante.
+                      En este modo, ya que se usa E/S de terminal
+                      no bloqueante, la introducción de cada nueva
+                      línea de entrada normalmente requiere muchas
+                      llamadas a <b>gl_get_line()</b> desde
+                      un bucle de eventos externo impulsado por E/S.
+                      Este modo es el foco de esta página del manual.</pre>
+<p class="Pp">Los objetos <b>GetLine</b> recién creados comienzan en modo de E/S normal, así
+    que para cambiar al modo de servidor no bloqueante se requiere una llamada inicial a
+    <b>gl_io_mode()</b>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SERVER_I/O_MODE'><a class='permalink' href='#SERVER_I/O_MODE'>MODO DE E/S DE SERVIDOR</a></h1>
+<p class="Pp">En modo de E/S de servidor no bloqueante, la aplicación está obligada a
+    tener un bucle de eventos que llame a <b>gl_get_line()</b> siempre que el descriptor de archivo del terminal pueda hacer el tipo de E/S que <b>gl_get_line()</b> está esperando. Para determinar qué tipo de E/S <b>gl_get_line()</b> está esperando, la
+    aplicación llama a la <b>gl_pending_io()</b> función.</p>
+<pre>  GlPendingIO gl_pending_io(GetLine *gl);</pre>
+<p class="Pp">El valor de retorno de esta función es uno de los dos
+    valores enumerados siguientes.</p>
+<pre>  GLP_READ    -  gl_get_line() está esperando para escribir un
+                 carácter en el terminal.
+  GLP_WRITE   -  gl_get_line() está esperando para leer un
+                 carácter del teclado.</pre>
+<p class="Pp">Si la aplicación está usando ya sea la <b>select()</b> o
+    <b>poll()</b> llamadas al sistema para vigilar la E/S en un grupo de descriptores de archivo,
+    entonces debería llamar a la <b>gl_pending_io()</b> función antes de cada llamada a
+    estas funciones para ver qué dirección de E/S debería decirles que vigilen,
+    y configurar sus argumentos en consecuencia. En el caso de la
+    <b>select()</b> llamada al sistema, esto significa usar la <b>FD_SET()</b> macro para
+    añadir el descriptor de archivo del terminal ya sea al conjunto de descriptores de archivo a
+    ser vigilados por legibilidad, o al conjunto a ser vigilado por escribibilidad.</p>
+<p class="Pp">Como en modo de E/S normal, el valor de retorno de <b>gl_get_line()</b> es
+    ya sea un puntero a una línea de entrada completada, o <b>NULL</b>. Sin embargo, mientras que
+    en modo de E/S normal un <b>NULL</b> valor de retorno siempre significa que ocurrió
+    un error, en modo de servidor no bloqueante, <b>NULL</b> también se retorna cuando
+    <b>gl_get_line()</b> no puede leer o escribir en el terminal sin bloquear.
+    Así que en modo de servidor no bloqueante, para determinar cuándo un <b>NULL</b>
+    valor de retorno significa que ocurrió un error o no, es necesario
+    llamar a la <b>gl_return_status()</b> función. Si esta función retorna el valor enumerado, <b>GLR_BLOCKED</b>, como está documentado en la
+    <a href='/man/gl_get_line.3.en'>gl_get_line(3)</a> página del manual, esto significa que <b>gl_get_line()</b> está
+    esperando E/S, y no ha ocurrido ningún error.</p>
+<p class="Pp">Cuando <b>gl_get_line()</b> retorna <b>NULL</b> y
+    <b>gl_return_status()</b> indica que esto es debido a E/S de terminal bloqueada,
+    la aplicación debería llamar a <b>gl_get_line()</b> de nuevo cuando el tipo de E/S reportado por <b>gl_pending_io()</b> se vuelva posible. Los argumentos <b>prompt</b>,
+    <b>start_line</b> y <b>start_pos</b> de <b>gl_get_line()</b>
+    serán ignorados en estas llamadas. Si necesita cambiar el prompt de la línea
+    que está siendo editada actualmente, entonces puede llamar a la
+    <b>gl_replace_prompt()</b> función (documentada en la <b>página del manual gl_get_line(3)
+    ) entre llamadas a</b> <b></b><b>gl_get_line()</b>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GIVING_UP_THE_TERMINAL'><a class='permalink' href='#GIVING_UP_THE_TERMINAL'>RENDIENDO EL TERMINAL</a></h1>
+<p class="Pp">Una complicación que es única al modo de servidor no bloqueante es que
+    requiere que el terminal sea dejado en modo crudo entre llamadas a
+    <b>gl_get_line()</b>. Si no fuera el caso, el bucle de eventos externo
+    no sería capaz de detectar pulsaciones de teclas individuales, y la edición
+    básica de línea implementada por el controlador del terminal entraría en conflicto con la
+    edición provista por <b>gl_get_line()</b>. Lo que esto significa es que cada vez que el
+    terminal necesita ser usado para otras cosas que introducir una nueva línea de entrada con <b>gl_get_line()</b>, necesita ser restaurado a un estado utilizable. En
+    particular, siempre que el proceso sea suspendido o terminado, el terminal
+    debe ser devuelto a un estado normal. Si esto no se hace, entonces dependiendo de
+    las características del shell que fue usado para invocar el programa, el
+    usuario puede terminar con un terminal colgado. Para este fin, la <b>gl_normal_io()</b>
+    función es provista para cambiar el terminal de vuelta al estado en el que
+    estaba cuando el modo crudo fue establecido por última vez.</p>
+<pre>  int gl_normal_io(GetLine *gl);</pre>
+<p class="Pp">Lo que esta función hace es primero vaciar cualquier salida pendiente al
+    terminal, luego mover el cursor al inicio de la línea del terminal que
+    sigue al final de la línea de entrada introducida incompletamente. En este punto es
+    seguro suspender o terminar el proceso, y es seguro para la aplicación
+    leer y escribir en el terminal. Para reanudar la introducción de la línea de entrada, la
+    aplicación debería llamar a la <b>gl_raw_io()</b> función.</p>
+<pre>  int gl_raw_io(GetLine *gl);</pre>
+<p class="Pp">Esta función inicia una nueva línea, redisplaya la línea de entrada
+    parcialmente completada (si hay alguna), restaura la posición del cursor dentro de esta línea
+    a donde estaba cuando se llamó a <b>gl_normal_io()</b> , luego cambia de vuelta a
+    modo de terminal crudo, no bloqueante, listo para continuar la introducción de la línea de entrada
+    cuando <b>gl_get_line()</b> sea llamada la próxima vez.</p>
+<p class="Pp">Note que en modo de servidor no bloqueante, si <b>gl_get_line()</b> es
+    llamada después de una llamada a <b>gl_normal_io()</b>, sin una llamada intermedia a
+    <b>gl_raw_io()</b>, <b>gl_get_line()</b> llamará a <b>gl_raw_mode()</b>
+    ella misma, y el terminal permanecerá en este modo cuando <b>gl_get_line()</b>
+    retorne.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SIGNAL_HANDLING'><a class='permalink' href='#SIGNAL_HANDLING'>MANEJO DE SEÑALES</a></h1>
+<p class="Pp">En la sección anterior se señaló que en modo de servidor no bloqueante, el
+    terminal debe ser restaurado a un estado sensato siempre que se reciba una señal
+    que suspenda o termine el proceso. En modo de E/S normal, esto es
+    hecho por usted por <b>gl_get_line()</b>, pero en modo de servidor no bloqueante, ya que el terminal es dejado en modo crudo entre llamadas a
+    <b>gl_get_line()</b>, este manejo de señales tiene que ser hecho por la
+    aplicación. Ya que hay muchas señales que pueden suspender o terminar un
+    proceso, así como otras señales que son importantes para
+    <b>gl_get_line()</b>, tales como la <b>SIGWINCH</b> señal, la cual le dice
+    cuándo el tamaño del terminal ha cambiado, la <b>gl_tty_signals()</b> función es
+    provista para instalar manejadores de señales para todas las señales pertinentes.</p>
+<pre>  int gl_tty_signals(void (*term_handler)(int),
+                     void (*susp_handler)(int),
+                     void (*cont_handler)(int),
+                     void (*size_handler)(int));</pre>
+<p class="Pp">Lo que esto hace es usar la lista interna de señales de <b>gl_get_line()</b>para asignar manejadores de señal especificados a grupos de señales. Los
+    argumentos de esta función son los siguientes.</p>
+<pre>  term_handler  -  Este es el manejador de señal que debe ser
+                   usado para atrapar señales que por defecto
+                   terminan cualquier proceso que las reciba
+                   (ej. SIGINT o SIGTERM).
+  susp_handler  -  Este es el manejador de señal que debe ser
+                   usado para atrapar señales que por defecto
+                   suspenden cualquier proceso que las reciba,
+                   (ej. SIGTSTP o SIGTTOU).
+  cont_handler  -  Este es el manejador de señal que debe ser
+                   usado para atrapar señales que usualmente
+                   son enviadas cuando un proceso se reanuda después de ser
+
+                   suspendido (normalmente SIGCONT). Tenga cuidado de que
+                   no hay nada que impida que un usuario envíe una de estas
+                   señales en otros momentos.
+  size_handler  -  Este manejador de señales se utiliza para capturar
+                   señales que se envían a los procesos cuando
+                   sus terminales de control son redimensionados
+                   por el usuario (por ejemplo, SIGWINCH)</pre>.
+<p class="Pp">Estos argumentos pueden ser todos iguales, si así se desea, y usted puede
+    especificar <b>SIG_IGN </b>(ignorar esta señal) o <b>S</b>IG_DFL <b>(usar el
+    manejador de señal predeterminado proporcionado </b>por el sistema) en lugar de una función donde
+    sea pertinente. En particular, rara vez es útil capturar
+    <b>SIGCONT , por </b>lo que el argumento cont_handler <b>será </b>normalmente SIG_DFL
+    <b></b>o</p>
+<p class="Pp">SIG_IGN . La función gl_tty_signals() utiliza la función POSIX <b>sigaction() para instalar estos </b>manejadores de señales, y tiene
+    cuidado de usar el
+    <b>miembro </b>sa_mask <b>de cada </b>estructura sigaction para
+    asegurar que solo una de estas señales sea entregada a la vez. Esto
+    protege contra que diferentes instancias de estos manejadores de señales
+    intenten simultáneamente escribir en datos globales comunes, como un
+    búfer
+    <b>sig</b>setjmp(</p>)
+<p class="Pp">compartido o un indicador de señal recibida. <b>Los manejadores de señales que son instalados por esta función deberían
+    llamar </b></p>a
+<pre>  gl_handle_signal(). void gl_handle_signal(int signo, GetLine *gl, int ngl)</pre>;
+<p class="Pp">El argumento signo le indica a esta función a qué señal se le
+    está pidiendo que responda, y el <b>argumento </b>gl debe ser un puntero al
+    primer elemento de un arreglo de ngl <b>objetos </b>GetLine <b>. Si su
+    aplicación solo tiene uno de estos objetos, simplemente pase su </b>puntero como el
+    argumento <b>g</b>l
+    <b>y </b>especifique <b>n</b>gl <b>com</b>o </p>1 .
+<p class="Pp">Dependiendo de la señal que se esté manejando, esta función hace
+    cosas </p>diferentes.
+<section class="Ss">
+<h2 class="Ss" id='Terminal_resize_signals_(SIGWINCH)'><a class='permalink' href='#Terminal_resize_signals_(SIGWINCH)'>Señales de   redimensionamiento de terminal </a></h2>(SIGWINCH)
+<p class="Pp">Si la señal indica que la terminal fue redimensionada, entonces
+    se organiza para que la siguiente llamada a <b>gl</b>_get_line()
+    <b>pregunte a la terminal </b>por
+    su nuevo tamaño y vuelva a dibujar la línea de entrada en consecuencia. Para que
+    <b>gl_get_line() sea </b>llamado lo antes posible para hacer esto,
+    <b>gl_handle_signal() también organiza que la </b>siguiente llamada a gl_pending_io() <b>devuelva </b>GLP_WRITE <b>. Así que si la aplicación
+    espera </b>E/S en select() <b></b></p>o</section></section>
+<section class="Sh">
+<h1 class="Sh" id='Process_termination_signals.'><a class='permalink' href='#Process_termination_signals.'>poll(</a></h1>)
+<p class="Pp">, entonces la aplicación
+    necesita asegurarse de que estas funciones sean abortadas de manera fiable cuando una señal
+    sea capturada y manejada por la aplicación. Más sobre esto a continuación. <b>Señales de   </b>terminación de </p>proceso.
+<p class="Pp">Si la señal que fue capturada es una de aquellas que por defecto
+    termina cualquier proceso que la recibe, entonces
+  <br/>
+   gl_handle_signal() hace
+    los siguientes pasos. <b>1. Primero bloquea la entrega de todas las señales </b>que pueden
+    ser bloqueadas (es decir, <b>SIG</b>KIL</p>L y
+<p class="Pp">SIGSTOP <b>no pueden ser bloqueadas)</b> 2. A continuación llama a <b>gl_normal_io() para </b>cada uno de los
+  <br/>
+   <b>n</b>gl
+  <br/>
+   <b>objetos </b>GetLine . Tenga en cuenta que esto no hace nada con ninguno de los
+    </p>objetos
+<p class="Pp">GetLine
+  <br/>
+   que no estén actualmente en modo </p>crudo.
+<p class="Pp">3. A continuación establece el manejador de señales de la señal a su disposición
+    predeterminada de terminación de </p>proceso.
+<p class="Pp">4. A continuación reenvía al proceso la señal que fue capturada.
+  <br/>
+   5. Finalmente, desb</p>loquea la entrega de</section> esta señal, lo que
+<section class="Sh">
+<h1 class="Sh" id='Process_suspension_signals.'><a class='permalink' href='#Process_suspension_signals.'>resulta en la terminación del </a></h1>proceso.
+<p class="Pp">Señales de   suspensión de proceso. <b>Si la disposición predeterminada de la señal es suspender </b>el
+    proceso, se ejecutan los mismos pasos que para las señales de terminación de proceso,
+    excepto que cuando el proceso es reanudado más </p>tarde,
+<p class="Pp">gl_handle_signal(</p>)
+<p class="Pp">continúa, y hace los siguientes pasos.
+  <br/>
+   6. Vuelve a bloquear la entrega de la </p>señal.
+<p class="Pp">7. Restablece el manejador de señales de la señal al que <b>fue desplazado </b>cuando se sustituyó su disposición predeterminada. 8. Para cualquiera de los objetos GetLine
+  <br/>
+   <b>que estaban en modo </b>crudo
+    cuando <b>gl_handle_signal() fue llamado, gl_handle_signal() entonces llama a gl_raw_io() , para reanudar la </b>entrada de las líneas en
+    esas terminales.
+  <br/>
+   9. Finalmente, restaura la máscara de señales del proceso a como <b>estaba </b>cuando
+  <br/>
+   gl_handle_signal() fue </p>llamado.
+<p class="Pp">Tenga en cuenta que el proceso es suspendido o terminado usando la
+    señal original que fue capturada, en lugar de usar las señales inatrapables
+  <br/>
+   SIGSTOP <b></b>y</p>
+<p class="Pp">SIGKILL
+    <b>. Esto es importante, porque cuando un
+    proceso es suspendido o terminado, el padre del </b>proceso puede desear
+    usar el valor de estado devuelto por la <b>llamada </b>al sistema wait() <b>para </b>averiguar
+    qué señal fue la responsable. En particular, la mayoría de los shells usan esta
+    información para imprimir un mensaje correspondiente en la terminal. Los usuarios estarían
+    confundidos con razón si cuando su proceso recibiera una <b>señal </b>SIGPIPE , el
+    programa respondiera enviándose a sí mismo una <b>señ</b>al </p>SIGK</section>ILL
+<section class="Sh">
+<h1 class="Sh" id='INTERRUPTING_THE_EVENT_LOOP'><a class='permalink' href='#INTERRUPTING_THE_EVENT_LOOP'>, y el
+    shell luego imprimiera la provocativa declaración, "¡Killed!</a></h1>".
+<p class="Pp">INTERRUMPIENDO   EL BUCLE DE EVENTOS <b>Si una señal es capturada y manejada cuando el bucle de eventos
+    </b>de la aplicación está esperando en <b>select()</b> o poll() , estas funciones serán
+    abortadas con <b>er</b>rno <b>establecido </b>a <b>EI</b>NTR <b>. Cuando esto sucede, el bucle de eventos
+</b>    debería llamar a gl_pending_io()
+    <b>, antes de </b>llamar a select() o poll() de nuevo. Luego debería organizar para que <b>select()</b> o
+    <b>p</b>oll() <b>espere por el tipo de E/S que esto reporta. Esto es
+</b>    necesario, porque cualquier manejador de señales que llame a gl_handle_signal() ,
+    cambiará frecuentemente el tipo de E/S por el que <b>gl_get_line() está esperando. Desafortunadamente,</b> si una señal llega entre las sentencias que
+    configuran los argumentos </p>de
+<p class="Pp">select() <b></b>o <b>p</b>oll(</p>)
+<p class="Pp">y las llamadas a
+    estas funciones, entonces la señal no será vista por estas funciones, que
+    luego no serán abortadas. Si estas funciones están esperando la entrada del teclado
+    del usuario cuando la señal es recibida, y el manejador de señales organiza
+    volver a dibujar la línea de entrada para acomodar un redimensionamiento de la terminal o la
+    reanudación del proceso, entonces este redibujado se retrasará hasta que
+    el usuario presione la siguiente tecla. Aparte de confundir al usuario, esto claramente no es un
+    problema serio. Sin embargo, hay una manera, aunque complicada, de evitar
+    completamente esta condición de carrera. Los siguientes pasos ilustran esto. <b>1. Bloquee todas </b>las señales que
+  <br/>
+   gl_get_line() captura,
+    pasando el conjunto de señales devuelto por gl_list_signals() <b></b>a
+  <br/>
+   <b>sigprocmask</b>(</p>)
+<p class="Pp">. <b>2. </b>Llame a
+  <br/>
+   <b>gl_pending</b>_io() <b>y configure </b>los argumentos de </p>select()
+<p class="Pp">o <b>poll() en </b>consecuencia. <b>3. </b>Llame </p>a
+<p class="Pp">sigsetjmp() con un argumento savesigs distinto de cero. <b>4. </b>Inicialmente esta sentencia
+  <br/>
+   sigsetjmp() devolverá cero,
+    indicando que el control no se reanuda allí después de una
+  <br/>
+   llamada coincidente a <b>siglongjmp()</b> </p>.
+<p class="Pp">5. Reemplace todos los manejadores de las señales que
+    <b>gl_get_line</b>()
+  <br/>
+   está configurado para capturar, con un manejador de señales que primero registre
+    el número de la señal que fue capturada, en una variable de ámbito de archivo,
+    luego llame a
+  <br/>
+   siglongjmp()
+  <br/>
+   con un argumento de valor distinto de cero, para
+    devolver la ejecución a la sentencia <b>sig</b>setjmp()
+  <br/>
+   anterior. Registrar estos manejadores de señales puede hacerse convenientemente
+    usando la <b>función gl_tty_signals()</b> .
+  <br/>
+   6. Establezca la variable de ámbito de archivo que el manejador de señales anterior usa
+    para
+    registrar cualquier señal capturada en -1, para que podamos comprobar
+    si una señal fue capturada viendo si contiene un número de señal
+    válido.
+  <br/>
+   7. Ahora desbloquee las señales que fueron bloqueadas en el paso 1. Cualquier señal
+    que fue recibida por el proceso entre el paso 1 y ahora será
+    ahora entregada, y activará nuestro manejador de señales, al igual que cualquier
+    señal que sea recibida hasta que bloqueemos estas señales de nuevo. <b>8. Ahora </b>llame </p>a
+<p class="Pp">select() o poll() .
+  <br/>
+   9. Cuando select()
+  <br/>
+   devuelva, vuelva a bloquear las señales que fueron
+    desbloqueadas en el paso 7.
+  <br/>
+   Si una señal llega en cualquier momento durante los pasos anteriores, nuestro manejador
+    de señales será activado y hará que el control </p>regrese a la
+<p class="Pp">sentencia sigsetjmp()
+  <br/>
+   , donde esta vez,
+  <br/>
+   sigsetjmp()
+  <br/>
+   devolverá
+    un valor distinto de cero, indicando que una señal fue capturada. Cuando esto sucede, simplemente
+    omitimos el bloque anterior de sentencias, y continuamos con las siguientes
+    sentencias, que se ejecutan independientemente de si una señal fue
+    capturada o no. Tenga en cuenta que </p>cuando
+<p class="Pp">sigsetjmp() <b>devuelve, independientemente de por qué
+    devolvió, la máscara de señales del </b>proceso se restaura a como estaba cuando <b>sigsetjm</b>p(</p>)
+<p class="Pp">fue llamado. Así que las siguientes sentencias se ejecutan
+    siempre con todas nuestras señales bloqueadas. <b>9. Restablezca </b>los manejadores de señales que fueron desplazados en el paso
+  5.
+  <br/>
+   10. Compruebe si una señal fue capturada, comprobando la variable de ámbito de archivo
+    en la que el manejador de señales registra los números de </p>señal.
+<p class="Pp">11. Si una señal fue capturada, envíe esta señal a la aplicación
+    de nuevo, y desbloquee solo esta señal, para que invoque el
+    manejador de señales que acabamos de restablecer en el paso 10.
+    <b>12. Desbloquee todas </b>las señales que fueron bloqueadas en el paso 7. <b>Dado </b>que esto es complicado, tenga en cuenta que <b>demo3.</b>c
+    <b>incluye un
+    </b>ejemplo funcional de cómo hacer esto. El método utilizado allí, sin embargo, es más
+    general que el anterior. Lo que proporciona es una función envolvente alrededor </p>de
+<p class="Pp">select(</p>)
+<p class="Pp">que abarca los pasos 3 a 11. En este envoltorio, en lugar de
+    usar
+  <br/>
+   gl_list_signals(</p>)
+<p class="Pp">para averiguar las señales a bloquear, y
+    usar
+  <br/>
+   gl_tty_signals()
+  <br/>
+   para asignar y revertir manejadores de señales, uno de sus
+    argumentos es </p>un
+<p class="Pp">sigset_</p>t
+<p class="Pp">que especifica qué señales bloquear y a
+    qué señales asignar manejadores. Esta función así no depende de <b>g</b>l_get_line()
+    <b>y puede </b>usarse en otras situaciones donde se requiera
+    un manejo de señales libre de condiciones de carrera. <b>SEÑALES  </b> CAPTURADAS POR GL_GET_LINE <b>Dado que se espera </b>que la aplicación maneje señales en
+    modo de servidor no bloqueante, <b>g</b>l_get_line()
+    <b>no intenta duplicar
+    esto cuando es</b>tá siendo llamado. Si una de las señal</p>es que está configurado para
+    captur</section>ar es enviada a la aplicación mientras
+<section class="Sh">
+<h1 class="Sh" id='SIGNALS_CAUGHT_BY_GL_GET_LINE'><a class='permalink' href='#SIGNALS_CAUGHT_BY_GL_GET_LINE'>gl_get_line(</a></h1>)
+<p class="Pp">está siendo llamado, <b>g</b>l_get_line() <b>restablece los manejadores de señales del llamador, luego justo
+    antes de devolver, </b>reenvía la señal al proceso para dejar que el
+    manejador de señales de la aplicación la maneje. Si el proceso no es terminado por
+    esta señal,
+    <b>gl_get_line()</b> devuelve NULL <b>, y una llamada </b>posterior
+    a <b>gl</b>_return_status() <b>devuelve la </b>enumeración<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" type="text/css" href="/css/style.css">
+        <link rel="stylesheet" type="text/css" href="/css/man.css">
+        <title>gl_tty_signals(3) — libtecla — Arch Linux</title>
+    </head>
+    <body>
+        <main>
+            <article class="manual-page">
+                <section class="Sh">
+                    <h1 class="Sh" id="NAME">NAME</h1>
+                    <p class="Nd">gl_tty_signals — signal handling for terminal I/O</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SYNOPSIS">SYNOPSIS</h1>
+                    <pre>#include &lt;tecla.h&gt;</pre>
+                    <pre>int gl_handle_signal(GetLine *gl, int sig);</pre>
+                    <pre>int gl_trap_signal(GetLine *gl, int sig, int enable);</pre>
+                    <pre>int gl_abandon_line(GetLine *gl);</pre>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="DESCRIPTION">DESCRIPTION</h1>
+                    <p class="Pp">The functions described here are intended for use with the <b>gl_get_line</b> function when it is used in non-blocking server I/O mode. This mode is specified by calling <b>gl_normal_io</b> or <b>gl_raw_io</b> before calling <b>gl_get_line</b>.</p>
+                    <p class="Pp">In non-blocking server I/O mode, <b>gl_get_line</b> does not block indefinitely waiting for input. Instead, it returns immediately. If there is no input, it returns <b>NULL</b> and a subsequent call to <b>gl_return_status</b> will return <b>GLR_BLOCKED</b>. If there is input, it returns the input string.</p>
+                    <p class="Pp">While <b>gl_get_line</b> is waiting for input, the application is expected to perform other tasks. These tasks may include waiting for events on other file descriptors using <b>select</b> or <b>poll</b>. When such an event occurs, or when a signal is received, the application may need to return control to <b>gl_get_line</b> to process the event or signal.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SERVER_I/O_MODE">SERVER I/O MODE</h1>
+                    <p class="Pp">Non-blocking server I/O mode is enabled by calling either <b>gl_normal_io</b> or <b>gl_raw_io</b> before calling <b>gl_get_line</b>. These functions configure the GetLine object to use non-blocking I/O and to return control to the application when no input is available. The application must then use a mechanism like <b>select</b> or <b>poll</b> to detect when input is available or when other events occur.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="GIVING_UP_THE_TERMINAL">GIVING UP THE TERMINAL</h1>
+                    <p class="Pp">In server I/O mode, the application may need to temporarily give up control of the terminal to <b>gl_get_line</b>. This is typically done when an external event occurs that requires attention. The <b>gl_handle_signal</b> function is used to handle signals that are received while <b>gl_get_line</b> is waiting for input. The <b>gl_abandon_line</b> function is used to discard the current input line and start a new one.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SIGNAL_HANDLING">SIGNAL HANDLING</h1>
+                    <p class="Pp">The <b>gl_get_line</b> function, when used in server I/O mode, can be configured to catch certain signals. When one of these signals is received, <b>gl_get_line</b> will return control to the application, and the application can then decide how to handle the signal.</p>
+                    <p class="Pp">The <b>gl_trap_signal</b> function is used to configure which signals <b>gl_get_line</b> should catch. The `sig` argument is the signal number, and the `enable` argument is a boolean value (1 to enable, 0 to disable).</p>
+                    <p class="Pp">The <b>gl_handle_signal</b> function is called by the application's signal handler to inform <b>gl_get_line</b> that a signal has been caught. The `sig` argument is the signal number that was caught.</p>
+                    <p class="Pp">The return value of <b>gl_handle_signal</b> indicates how <b>gl_get_line</b> should proceed. A return value of <b>GLR_CONTINUE</b> means that <b>gl_get_line</b> should continue processing. A return value of <b>GLR_ABORT</b> means that <b>gl_get_line</b> should abort the current input line. A return value of <b>GLR_QUIT</b> means that <b>gl_get_line</b> should terminate.</p>
+                    <section class="Ss">
+                        <h2 class="Ss" id="Process_termination_signals.">Process termination signals.</h2>
+                        <p class="Pp">Signals such as SIGINT, SIGQUIT, and SIGTERM are typically used to terminate the process. When such a signal is caught, the application should usually allow the process to terminate.</p>
+                    </section>
+                    <section class="Ss">
+                        <h2 class="Ss" id="Process_suspension_signals.">Process suspension signals.</h2>
+                        <p class="Pp">Signals such as SIGTSTP, SIGSTOP, and SIGCONT are used to suspend and resume the process. When such a signal is caught, the application should handle it appropriately, possibly by suspending or resuming the process.</p>
+                    </section>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="INTERRUPTING_THE_EVENT_LOOP">INTERRUPTING THE EVENT LOOP</h1>
+                    <p class="Pp">In server I/O mode, the application typically has an event loop that waits for input from various sources, including the terminal. Signals can be used to interrupt this event loop and force it to return to <b>gl_get_line</b>.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SIGNALS_CAUGHT_BY_GL_GET_LINE">SIGNALS CAUGHT BY GL_GET_LINE</h1>
+                    <p class="Pp">By default, <b>gl_get_line</b> catches the following signals:</p>
+                    <dl class="Bl-tag">
+                        <dt><b>SIGINT</b></dt>
+                        <dd>Interrupt signal, typically generated by pressing Ctrl+C.</dd>
+                        <dt><b>SIGQUIT</b></dt>
+                        <dd>Quit signal, typically generated by pressing Ctrl+\.</dd>
+                        <dt><b>SIGTSTP</b></dt>
+                        <dd>Terminal stop signal, typically generated by pressing Ctrl+Z.</dd>
+                    </dl>
+                    <p class="Pp">These signals can be enabled or disabled using the <b>gl_trap_signal</b> function.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="ABORTING_LINE_INPUT">ABORTING LINE INPUT</h1>
+                    <p class="Pp">Often, rather than letting it terminate the process, applications respond to the SIGINT user-interrupt signal by aborting the current input line. The way to do this in non-blocking server-I/O mode is to not call <b>gl_handle_signal()</b> when this signal is caught, but instead to call the <b>gl_abandon_line()</b>.</p>
+                    <pre>  void gl_abandon_line(GetLine *gl);</pre>
+                    <p class="Pp">This function arranges that when <b>gl_get_line()</b> is next called, it first flushes any pending output to the terminal, then discardes the current input line, outputs a new prompt on the next line, and finally starts accepting input of a new input line from the user.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SIGNAL_SAFE_FUNCTIONS">SIGNAL SAFE FUNCTIONS</h1>
+                    <p class="Pp">Provided that certain rules are followed, the following functions can have been written to be safely callable from signal handlers. Other functions in this library should not be called from signal handlers.</p>
+                    <pre>  gl_normal_io()
+  gl_raw_io()
+  gl_handle_signal()
+  gl_abandon_line()</pre>
+                    <p class="Pp">In order for this to be true, all signal handlers that call these functions must be registered in such a way that only one instance of any one of them can be running at one time. The way to do this is to use the POSIX <b>sigaction()</b> function to register all signal handlers, and when doing this, use the <b>sa_mask</b> member of the corresponding sigaction structure, to indicate that all of the signals who's handlers invoke the above functions, should be blocked when the current signal is being handled. This prevents two signal handlers from operating on a <b>GetLine</b> object at the same time.</p>
+                    <p class="Pp">To prevent signal handlers from accessing a <b>GetLine</b> object while <b>gl_get_line()</b> or any of its associated public functions are operating on it, all public functions associated with <b>gl_get_line()</b>, including <b>gl_get_line()</b> itself, temporarily block the delivery of signals when they are accessing <b>GetLine</b> objects. Beware that the only signals that they block are the signals that <b>gl_get_line()</b> is currently configured to catch, so be sure that if you call any of the above functions from signal handlers, that the signals that these handlers are assigned to are configured to be caught by <b>gl_get_line()</b> (see <b>gl_trap_signal()</b>).</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="USING_TIMEOUTS_TO_POLL">USING TIMEOUTS TO POLL</h1>
+                    <p class="Pp">If instead of using <b>select()</b> or <b>poll()</b> to wait for I/O, your application just needs to get out of <b>gl_get_line()</b> periodically to briefly do something else before returning to accept input from the user, this can be done in non-blocking server mode by using the <b>gl_inactivity_timeout()</b> function (see <a href="/man/gl_get_line.3.en">gl_get_line(3)</a>), to specify that a callback function that returns <b>GLTO_CONTINUE</b> should be called whenever <b>gl_get_line()</b> has been waiting for I/O for more than a specified amount of time.</p>
+                    <p class="Pp">When this callback is triggered, <b>gl_get_line()</b> will return <b>NULL</b>, and a following call to <b>gl_return_status()</b> will return <b>GLR_BLOCKED</b>.</p>
+                    <p class="Pp">Beware that <b>gl_get_line()</b> won't return until the user hasn't typed a key for the specified interval, so if the interval is long, and the user keeps typing, <b>gl_get_line()</b> may not return for a while. In other words there is no guarantee that it will return in the time specified.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="THE_SERVER_DEMO_PROGRAM">THE SERVER DEMO PROGRAM</h1>
+                    <p class="Pp">The <b>demo3</b> program that is distributed with the library, provides a working example of how to use non-blocking server I/O mode in a real program. As far as the user is concerned, this program operates identically to the main demo program (called <b>demo</b>), except that whereas the main demo program uses the normal blocking I/O mode, <b>demo3</b> using non-blocking I/O and an external event loop. The source code can be found in <b>demo3.c</b>, and the comments therein explain the various steps.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="FILES">FILES</h1>
+                    <pre>libtecla.a      -    The tecla library
+libtecla.h      -    The tecla header file.</pre>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SEE_ALSO">SEE ALSO</h1>
+                    <pre>libtecla(3), gl_get_line(3), tecla(7), ef_expand_file(3),
+cpl_complete_word(3), pca_lookup_file(3)</pre>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="AUTHOR">AUTHOR</h1>
+                    <p class="Pp">Martin Shepherd (mcs@astro.caltech.edu)</p>
+                </section>
+            </article>
+            <aside id="sidebar">
+                <section class="search">
+                    <form action="/search" class="search direct-search" role="search">
+                        <input type="search" placeholder="Search manual page" name="q" value="">
+                        <input type="submit" name="go" value="Go">
+                    </form>
+                </section>
+                <section class="package-info">
+                    <p>Package information:</p>
+                    <dl>
+                        <dt>Package name:</dt>
+                        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libtecla/">extra/libtecla</a></dd>
+                        <dt>Version:</dt>
+                        <dd>1.6.3-2</dd>
+                        <dt>Upstream:</dt>
+                        <dd><a href="http://www.astro.caltech.edu/~mcs/tecla/">http://www.astro.caltech.edu/~mcs/tecla/</a></dd>
+                        <dt>Licenses:</dt>
+                        <dd>custom:X11</dd>
+                        <dt>Manuals:</dt>
+                        <dd><a href="/listing/extra/libtecla/">/listing/extra/libtecla/</a></dd>
+                    </dl>
+                </section>
+                <details>
+                    <summary>Table of contents</summary>
+                    <nav class="toc">
+                        <ul>
+                            <li><a href="#NAME">NAME</a></li>
+                            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+                            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+                            <li><a href="#SERVER_I/O_MODE">SERVER I/O MODE</a></li>
+                            <li><a href="#GIVING_UP_THE_TERMINAL">GIVING UP THE TERMINAL</a></li>
+                            <li><a href="#SIGNAL_HANDLING">SIGNAL HANDLING</a></li>
+                            <li><a href="#Process_termination_signals.">Process termination signals.</a></li>
+                            <li><a href="#Process_suspension_signals.">Process suspension signals.</a></li>
+                            <li><a href="#INTERRUPTING_THE_EVENT_LOOP">INTERRUPTING THE EVENT LOOP</a></li>
+                            <li><a href="#SIGNALS_CAUGHT_BY_GL_GET_LINE">SIGNALS CAUGHT BY GL_GET_LINE</a></li>
+                            <li><a href="#ABORTING_LINE_INPUT">ABORTING LINE INPUT</a></li>
+                            <li><a href="#SIGNAL_SAFE_FUNCTIONS">SIGNAL SAFE FUNCTIONS</a></li>
+                            <li><a href="#USING_TIMEOUTS_TO_POLL">USING TIMEOUTS TO POLL</a></li>
+                            <li><a href="#THE_SERVER_DEMO_PROGRAM">THE SERVER DEMO PROGRAM</a></li>
+                            <li><a href="#FILES">FILES</a></li>
+                            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+                            <li><a href="#AUTHOR">AUTHOR</a></li>
+                        </ul>
+                    </nav>
+                </details>
+                <nav class="other-formats">
+                    <p>Other formats:
+                        <a href="/man/gl_tty_signals.3.en.txt">txt</a>,
+                        <a href="/man/gl_tty_signals.3.en.raw">raw</a>
+                    </p>
+                </nav>
+            </aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

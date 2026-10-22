@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>mrf(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">mrf(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/netpbm/">netpbm</a></p>
+<p class="lic">Licencias: Artistic-1.0, GPL-2.0-only, LGPL-2.0-only, MIT</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">MRF image format specification(0)</td>
+    <td class="head-vol"></td>
+    <td class="head-rtitle">MRF image format specification(0)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">MRF - formato recursivo monocromático (mapas de bits comprimidos)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este programa forma parte de <a href='/man/Netpbm.1.en'>Netpbm(1)</a></p>
+<p class="Pp">MRF es un formato comprimido para imágenes bit a bit (mono de 1 bit).
+    Logra una mejor compresión para algunas de estas imágenes que GIF o PNG.
+    (También es muy fácil de implementar (aproximadamente la misma dificultad
+    que RLE, diría yo) y un lector MRF no necesita tablas/buffers, lo que puede
+    hacerlo útil para máquinas muy pequeñas).</p>
+<p class="Pp">En caso de que lo anterior no lo haya dejado suficientemente claro,
+    haré explícito el siguiente punto: <i>MRF no puede representar color en
+    absoluto.</i> Tampoco puede representar escala de grises. Es específicamente
+    un formato mono. (Si desea comprimir una imagen en color o escala de grises,
+    mi consejo es que utilice JPEG2000).</p>
+<p class="Pp">Primero, aquí se explica qué va dónde en un archivo MRF. Explicaré
+    cómo funciona la compresión después.</p>
+<dl class="Bl-tag">
+  <dt id="Offset"><a class="permalink" href="#Offset">Desplazamiento</a></dt>
+  <dd>Descripción</dd>
+  <dt>0</dt>
+  <dd>número mágico - 'MRF1' (en ASCII)
+      </dd>
+  <dt>4</dt>
+  <dd>ancho (32 bits, MSB primero (es decir, big-endian))
+      </dd>
+  <dt>8</dt>
+  <dd>alto (igual)
+      </dd>
+  <dt>12</dt>
+  <dd>reservado (un solo byte, debe ser cero)
+      </dd>
+  <dt>13</dt>
+  <dd>datos comprimidos
+          </dd>
+</dl>
+<p class="Pp">Tenga en cuenta que no hay un marcador de fin de archivo en el
+    archivo en sí; los datos comprimidos continúan hasta el final del archivo
+    (EOF).</p>
+<p class="Pp">La forma en que se comprime la imagen es esencialmente muy simple,
+    pero como dicen, el diablo está en los detalles. Así que no se desanime si
+    suena confuso.</p>
+<p class="Pp">La imagen se trata como un número de cuadrados de 64x64, formando
+    una cuadrícula lo suficientemente grande como para abarcarla. (Si una imagen
+    es, por ejemplo, de 129x65, se tratará de la misma manera que una de 192x128.
+    En la descompresión, se debe ignorar el área adicional que se codificó (el
+    contenido de esta área no está definido)). Cada uno de estos cuadrados, a su
+    vez (en orden de izquierda a derecha, de arriba a abajo), se subdivide
+    recursivamente hasta encontrar los cuadrados más pequeños completamente negros
+    o blancos. Algo de pseudocódigo (¡ay!) para la rutina de subdivisión
+    recursiva debería aclarar las cosas:</p>
+<pre>    si el tamaño del cuadrado &gt; 1x1 y el cuadrado es de un solo color, emite 1 bit
+    si todo el cuadrado es negro, emite un bit 0 y retorna
+    si todo el cuadrado es blanco, emite un bit 1 y retorna
+    emite un bit 0
+    divide el cuadrado en cuatro cuartos, llamando a la rutina para
+    cada uno en este orden: superior izquierdo, superior derecho, inferior izquierdo, inferior derecho</pre>
+<p class="Pp">(Tenga en cuenta que la etapa de 'emite un bit 0' no se alcanza para
+    cuadrados de tamaño 1x1, lo que evita que se recurra infinitamente. Lo menciono
+    ya que puede que no sea inmediatamente obvio).</p>
+<p class="Pp">La totalidad de los datos comprimidos está formada por los bits
+    emitidos por la rutina anterior. Los bits se empaquetan en bytes MSB
+    primero, por lo que, por ejemplo, emitir los bits 1,0,0,0,0,0,0,0 resultaría
+    en la emisión de un byte 80h. Cualquier bit 'no utilizado' en el último byte
+    emitido no está definido; estos están efectivamente después del EOF y su
+    valor no es importante.</p>
+<p class="Pp">Si escribir eso suena a demasiado trabajo :-), siempre puede adaptar
+    <b>pbmtomrf</b> y/o <b>mrftopbm</b>. Esa es la razón principal por la que
+    su código fuente es de dominio público, después de todo.</p>
+<p class="Pp">Arriba, dije que el contenido de cualquier área adicional codificada
+    (cuando se comprime un mapa de bits más pequeño que la cuadrícula de
+    cuadrados) no está definido. Esto es deliberado para que el compresor MRF
+    pueda hacer que estas áreas invisibles sean lo que quiera para maximizar la
+    compresión, en lugar de simplemente dejarlas en blanco.
+    <b>pbmtomrf</b> hace un poco en este sentido, pero definitivamente podría
+    mejorarse.</p>
+<p class="Pp">La opción <b>-1</b> de <b>mrftopbm</b> hace que incluya los bordes,
+    si los hay, en el PBM de salida. Esto puede ayudar al depurar la optimización
+    de bordes de un compresor.</p>
+<p class="Pp">Tenga en cuenta que la "F" en el nombre "MRF" proviene de
+    "formato", lo que es redundante porque es el nombre de un formato. Eso hace
+    que "formato MRF" suene tan estúpido como "número PIN", pero en realidad no
+    es tan malo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/mrftopbm.1.en'>mrftopbm(1)</a> , <a href='/man/pbmtomrf.1.en'>pbmtomrf(1)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Russell Marks.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">1991</td>
+    <td class="foot-os">documentación de netpbm</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/netpbm/">extra/netpbm</a></dd>
+        <dt>Versión:</dt>
+        <dd>10.86.48-1</dd>
+        <dt>Oficial:</dt>
+        <dd><a href="http://netpbm.sourceforge.net/">http://netpbm.sourceforge.net/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0, GPL-2.0-only, LGPL-2.0-only, MIT</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/netpbm/">/listing/extra/netpbm/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/mrf.1.en.txt">txt</a>, 
+        
+            <a href="/man/mrf.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

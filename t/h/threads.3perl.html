@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>threads(3perl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">threads.3perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">threads(3perl)</td>
+    <td class="head-vol">Guía de Programación para Perl</td>
+    <td class="head-rtitle">threads(3perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">threads - Hilos basados en intérprete de Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSIÓN</a></h1>
+<p class="Pp">Este documento describe la versión 2.43 de threads</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='WARNING'><a class='permalink' href='#WARNING'>ADVERTENCIA</a></h1>
+<p class="Pp">Los "hilos basados en intérprete" proporcionados por Perl no son
+    el sistema rápido y ligero para la multitarea que uno podría esperar o desear.
+    Los hilos se implementan de una manera que los hace fáciles de usar incorrectamente.
+    Pocas personas saben cómo usarlos correctamente o podrán brindar ayuda.</p>
+<p class="Pp">El uso de hilos basados en intérprete en perl está oficialmente
+    desaconsejado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre>use threads ('yield',
+             'stack_size' =&gt; 64*4096,
+             'exit' =&gt; 'threads_only',
+             'stringify');
+sub start_thread {
+    my @args = @_;
+    print('Hilo iniciado: ', join(' ', @args), &quot;\n&quot;);
+}
+my $thr = threads-&gt;create('start_thread', 'argumento');
+$thr-&gt;join();
+threads-&gt;create(sub { print(&quot;Soy un hilo\n&quot;); })-&gt;join();
+my $thr2 = async { foreach (@archivos) { ... } };
+$thr2-&gt;join();
+if (my $err = $thr2-&gt;error()) {
+    warn(&quot;Error del hilo: $err\n&quot;);
+}
+# Invocar hilo en contexto de lista (implícito) para que pueda devolver una lista
+my ($thr) = threads-&gt;create(sub { return (qw/a b c/); });
+# o especificar contexto de lista explícitamente
+my $thr = threads-&gt;create({'context' =&gt; 'list'},
+                          sub { return (qw/a b c/); });
+my @resultados = $thr-&gt;join();
+$thr-&gt;detach();
+# Obtener el objeto de un hilo
+$thr = threads-&gt;self();
+$thr = threads-&gt;object($tid);
+# Obtener el ID de un hilo
+$tid = threads-&gt;tid();
+$tid = $thr-&gt;tid();
+$tid = &quot;$thr&quot;;
+# Dar a otros hilos la oportunidad de ejecutarse
+threads-&gt;yield();
+yield();
+# Listas de hilos no desvinculados
+my @hilos = threads-&gt;list();
+my $num_hilos = threads-&gt;list();
+my @corriendo = threads-&gt;list(threads::running);
+my @esperando = threads-&gt;list(threads::joinable);
+# Probar objetos de hilo
+if ($thr1 == $thr2) {
+    ...
+}
+# Gestionar el tamaño de la pila del hilo
+$tamano_pila = threads-&gt;get_stack_size();
+$tamano_antiguo = threads-&gt;set_stack_size(32*4096);
+# Crear un hilo con un contexto y tamaño de pila específicos
+my $thr = threads-&gt;create({ 'context'    =&gt; 'list',
+                            'stack_size' =&gt; 32*4096,
+                            'exit'       =&gt; 'thread_only' },
+                          \&amp;foo);
+# Obtener el contexto del hilo
+my $wantarray = $thr-&gt;wantarray();
+# Comprobar el estado del hilo
+if ($thr-&gt;is_running()) {
+    sleep(1);
+}
+if ($thr-&gt;is_joinable()) {
+    $thr-&gt;join();
+}
+# Enviar una señal a un hilo
+$thr-&gt;kill('SIGUSR1');
+# Salir de un hilo
+threads-&gt;exit();</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Desde Perl 5.8, la programación de hilos ha estado disponible utilizando un
+    modelo llamado *hilos de intérprete*, que proporciona un nuevo intérprete de Perl
+    para cada hilo y, por defecto, resulta en que no se comparte información de datos o estado
+    entre hilos.</p>
+<p class="Pp">(Antes de Perl 5.8, *5005threads* estaba disponible a través de la
+    API de <span class="Li">&quot;Thread.pm&quot;</span>. Este modelo de hilos ha sido
+    deprecado y se eliminó a partir de Perl 5.10.0).</p>
+<p class="Pp">Como se mencionó anteriormente, todas las variables son, por defecto, locales al hilo. Para usar variables compartidas, también necesitas cargar threads::shared:</p>
+<pre>use threads;
+use threads::shared;</pre>
+<p class="Pp">Al cargar threads::shared, debes <span class="Li">&quot;use
+    threads&quot;</span> antes de <span class="Li">&quot;use
+    threads::shared&quot;</span>. (<span class="Li">&quot;threads&quot;</span>
+    emitirá una advertencia si lo haces al revés).</p>
+<p class="Pp">Se recomienda encarecidamente habilitar los hilos mediante
+    <span class="Li">&quot;use threads&quot;</span> lo antes posible en tu script.</p>
+<p class="Pp">Si es necesario, los scripts se pueden escribir para que se ejecuten tanto en Perls con hilos como sin ellos:</p>
+<pre>my $puede_usar_hilos = eval 'use threads; 1';
+if ($puede_usar_hilos) {
+    # Hacer el procesamiento usando hilos
+    ...
+} else {
+    # Hacerlo sin usar hilos
+    ...
+}</pre>
+<dl class="Bl-tag">
+  <dt>$thr = threads-&gt;create(FUNCION, ARGUMENTOS)</dt>
+  <dd>Esto creará un nuevo hilo que comenzará la ejecución con la función de punto
+      de entrada especificada y le dará la lista de *ARGUMENTOS* como parámetros.
+      Devolverá el objeto de hilos correspondiente, o <span class="Li">&quot;undef&quot;</span>
+      si la creación del hilo falló.
+    <p class="Pp"><i>FUNCION</i> puede ser el nombre de una función, una subrutina
+        anónima o una referencia de código.</p>
+        <pre>my $thr = threads-&gt;create('nombre_func', ...);
+    # o
+my $thr = threads-&gt;create(sub { ... }, ...);
+    # o
+my $thr = threads-&gt;create(\&amp;func, ...);
+</pre>
+    <p class="Pp">El método <span class="Li">&quot;-&gt;new()&quot;</span> es un
+        alias de <span class="Li">&quot;-&gt;create()&quot;</span>.</p>
+  </dd>
+  <dt>$thr-&gt;<b>join()</b></dt>
+  <dd>Esto esperará a que el hilo correspondiente complete su ejecución.
+      Cuando el hilo finaliza, <span class="Li">&quot;-&gt;join()&quot;</span>
+      devolverá el(los) valor(es) de retorno de la función de punto de entrada.
+    <p class="Pp">El contexto (vacío, escalar o lista) para el(los) valor(es) de
+        retorno para <span class="Li">&quot;-&gt;join()&quot;</span> se determina
+        en el momento de la creación del hilo.</p>
+        <pre># Crear hilo en contexto de lista (implícito)
+my ($thr1) = threads-&gt;create(sub {
+                                my @resultados = qw(a b c);
+                                return (@resultados);
+                             });
+#   o (explícito)
+my $thr1 = threads-&gt;create({'context' =&gt; 'list'},
+                           sub {
+                                my @resultados = qw(a b c);
+                                return (@resultados);
+                           });
+# Recuperar resultados de lista del hilo
+my @res1 = $thr1-&gt;join();
+# Crear hilo en contexto escalar (implícito)
+my $thr2 = threads-&gt;create(sub {
+                                my $resultado = 42;
+                                return ($resultado);
+                             });
+# Recuperar resultado escalar del hilo
+my $res2 = $thr2-&gt;join();
+# Crear un hilo en contexto vacío (explícito)
+my $thr3 = threads-&gt;create({'void' =&gt; 1},
+                           sub { print(&quot;Hola, mundo\n&quot;); });
+# Unir el hilo en contexto vacío (es decir, sin valor de retorno)
+$thr3-&gt;join();
+</pre>
+    <p class="Pp">Ver &quot;CONTEXTO DEL HILO&quot; para más detalles.</p>
+    <p class="Pp">Si el programa sale sin que todos los hilos hayan sido unidos o
+        desvinculados, se emitirá una advertencia.</p>
+    <p class="Pp">Llamar a <span class="Li">&quot;-&gt;join()&quot;</span> o
+        <span class="Li">&quot;-&gt;detach()&quot;</span> en un hilo ya unido
+        causará un error.</p>
+  </dd>
+  <dt>$thr-&gt;<b>detach()</b></dt>
+  <dd>Hace que el hilo no sea unible y causa que cualquier valor de retorno eventual
+      sea descartado. Cuando el programa sale, cualquier hilo desvinculado que
+      todavía esté en ejecución se termina silenciosamente.
+    <p class="Pp">Si el programa sale sin que todos los hilos hayan sido unidos o
+        desvinculados, se emitirá una advertencia.</p>
+    <p class="Pp">Llamar a <span class="Li">&quot;-&gt;join()&quot;</span> o
+        <span class="Li">&quot;-&gt;detach()&quot;</span> en un hilo ya desvinculado
+        causará un error.</p>
+  </dd>
+  <dt id="threads"><a class="permalink" href="#threads">threads-&gt;<b>detach()</b></a></dt>
+  <dd>Método de clase que permite a un hilo desvincularse.</dd>
+  <dt id="threads~2"><a class="permalink" href="#threads~2">threads-&gt;<b>self()</b></a></dt>
+  <dd>Método de clase que permite a un hilo obtener su propio objeto
+      <i>threads</i>.</dd>
+  <dt>$thr-&gt;<b>tid()</b></dt>
+  <dd>Devuelve el ID del hilo. Los IDs de hilo son enteros únicos, siendo el hilo
+      principal en un programa 0, e incrementando en 1 por cada hilo creado.</dd>
+  <dt id="threads~3"><a class="permalink" href="#threads~3">threads-&gt;<b>tid()</b></a></dt>
+  <dd>Método de clase que permite a un hilo obtener su propio ID.</dd>
+  <dt>&quot;$thr&quot;</dt>
+  <dd>Si agregas la opción de importación <span class="Li">&quot;stringify&quot;</span>
+      a tu declaración <span class="Li">&quot;use threads&quot;</span>, entonces
+      usar un objeto de hilos en una cadena o contexto de cadena (por ejemplo,
+      como clave de hash) hará que su ID se use como valor:
+        <pre>use threads qw(stringify);
+my $thr = threads-&gt;create(...);
+print(&quot;Hilo $thr iniciado\n&quot;);  # Imprime: Hilo 1 iniciado
+</pre>
+  </dd>
+  <dt id="threads~4"><a class="permalink" href="#threads~4">threads-&gt;object($tid)</a></dt>
+  <dd>Esto devolverá el objeto <i>threads</i> para el hilo *activo* asociado con
+      el ID de hilo especificado. Si <span class="Li">$tid</span> es el valor
+      para el hilo actual, entonces esta llamada funciona igual que
+      <span class="Li">&quot;-&gt;self()&quot;</span>. De lo contrario, devuelve
+      <span class="Li">&quot;undef&quot;</span> si no hay ningún hilo asociado
+      con el TID, si el hilo está unido o desvinculado, si no se especifica ningún
+      TID o si el TID especificado es undef.</dd>
+  <dt id="threads~5"><a class="permalink" href="#threads~5">threads-&gt;<b>yield()</b></a><<section class="Sh">
+<h1 class="Sh" id='YIELDING_CPU_TIME'><a class='permalink' href='#YIELDING_CPU_TIME'>YIELDING   CPU TIME</a></h1>
+<dl class="Bl-tag">
+  <dt id="threads~1"><a class="permalink" href="#threads~1">threads-&gt;yield()</a></dt>
+  <dd>This is a suggestion to the OS to let this thread yield CPU time to other
+      threads. What actually happens is highly dependent upon the underlying
+      thread implementation.
+    <p class="Pp">You may do <span class="Li">&quot;use threads
+        qw(yield)&quot;</span>, and then just use
+        <span class="Li">yield()</span> in your code.</p>
+  </dd>
+  <dt id="threads~6"><a class="permalink" href="#threads~6">threads-&gt;<b>list()</b></a></dt>
+  <dd></dd>
+  <dt id="threads~7"><a class="permalink" href="#threads~7">threads-&gt;list(threads::all)</a></dt>
+  <dd></dd>
+  <dt id="threads~8"><a class="permalink" href="#threads~8">threads-&gt;list(threads::running)</a></dt>
+  <dd></dd>
+  <dt id="threads~9"><a class="permalink" href="#threads~9">threads-&gt;list(threads::joinable)</a></dt>
+  <dd>With no arguments (or using
+      <span class="Li">&quot;threads::all&quot;</span>) and in a list context,
+      returns a list of all non-joined, non-detached <i>threads</i> objects. In
+      a scalar context, returns a count of the same.
+    <p class="Pp">With a <i>true</i> argument (using
+        <span class="Li">&quot;threads::running&quot;</span>), returns a list of
+        all non-joined, non-detached <i>threads</i> objects that are still
+        running.</p>
+    <p class="Pp">With a <i>false</i> argument (using
+        <span class="Li">&quot;threads::joinable&quot;</span>), returns a list
+        of all non-joined, non-detached <i>threads</i> objects that have
+        finished running (i.e., for which
+        <span class="Li">&quot;-&gt;join()&quot;</span> will not
+      <i>block</i>).</p>
+  </dd>
+  <dt>$thr1-&gt;equal($thr2)</dt>
+  <dd>Tests if two threads objects are the same thread or not. This is
+      overloaded to the more natural forms:
+        <pre>if ($thr1 == $thr2) {
+    print(&quot;Threads are the same\n&quot;);
+}
+# or
+if ($thr1 != $thr2) {
+    print(&quot;Threads differ\n&quot;);
+}
+</pre>
+    <p class="Pp">(Thread comparison is based on thread IDs.)</p>
+  </dd>
+  <dt id="async"><a class="permalink" href="#async">async BLOCK;</a></dt>
+  <dd><span class="Li">&quot;async&quot;</span> creates a thread to execute the
+      block immediately following it. This block is treated as an anonymous
+      subroutine, and so must have a semicolon after the closing brace. Like
+      <span class="Li">&quot;threads-&gt;create()&quot;</span>,
+      <span class="Li">&quot;async&quot;</span> returns a <i>threads</i>
+    object.</dd>
+  <dt>$thr-&gt;<b>error()</b></dt>
+  <dd>Threads are executed in an <span class="Li">&quot;eval&quot;</span>
+      context. This method will return <span class="Li">&quot;undef&quot;</span>
+      if the thread terminates <i>normally</i>. Otherwise, it returns the value
+      of <span class="Li">$@</span> associated with the thread's execution
+      status in its <span class="Li">&quot;eval&quot;</span> context.</dd>
+  <dt>$thr-&gt;<b>_handle()</b></dt>
+  <dd>This <i>private</i> method returns a pointer (i.e., the memory location
+      expressed as an unsigned integer) to the internal thread structure
+      associated with a threads object. For Win32, this is a pointer to the
+      <span class="Li">&quot;HANDLE&quot;</span> value returned by
+      <span class="Li">&quot;CreateThread&quot;</span> (i.e.,
+      <span class="Li">&quot;HANDLE *&quot;</span>); for other platforms, it is
+      a pointer to the <span class="Li">&quot;pthread_t&quot;</span> structure
+      used in the <span class="Li">&quot;pthread_create&quot;</span> call (i.e.,
+      <span class="Li">&quot;pthread_t *&quot;</span>).
+    <p class="Pp">This method is of no use for general Perl threads programming.
+        Its intent is to provide other (XS-based) thread modules with the
+        capability to access, and possibly manipulate, the underlying thread
+        structure associated with a Perl thread.</p>
+  </dd>
+  <dt id="threads~10"><a class="permalink" href="#threads~10">threads-&gt;<b>_handle()</b></a></dt>
+  <dd>Class method that allows a thread to obtain its own <i>handle</i>.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXITING_A_THREAD'><a class='permalink' href='#EXITING_A_THREAD'>EXITING   A THREAD</a></h1>
+<p class="Pp">The usual method for terminating a thread is to <b>return()</b>
+    from the entry point function with the appropriate return value(s).</p>
+<dl class="Bl-tag">
+  <dt id="threads~11"><a class="permalink" href="#threads~11">threads-&gt;<b>exit()</b></a></dt>
+  <dd>If needed, a thread can be exited at any time by calling
+      <span class="Li">&quot;threads-&gt;exit()&quot;</span>. This will cause
+      the thread to return <span class="Li">&quot;undef&quot;</span> in a scalar
+      context, or the empty list in a list context.
+    <p class="Pp">When called from the <i>main</i> thread, this behaves the same
+        as <span class="Li">exit(0)</span>.</p>
+  </dd>
+  <dt id="threads~12"><a class="permalink" href="#threads~12">threads-&gt;exit(status)</a></dt>
+  <dd>When called from a thread, this behaves like
+      <span class="Li">&quot;threads-&gt;exit()&quot;</span> (i.e., the exit
+      status code is ignored).
+    <p class="Pp">When called from the <i>main</i> thread, this behaves the same
+        as <span class="Li">exit(status)</span>.</p>
+  </dd>
+  <dt id="die()"><a class="permalink" href="#die()"><b>die()</b></a></dt>
+  <dd>Calling <span class="Li">die()</span> in a thread indicates an abnormal
+      exit for the thread. Any <span class="Li">$SIG{__DIE__}</span> handler in
+      the thread will be called first, and then the thread will exit with a
+      warning message that will contain any arguments passed in the
+      <span class="Li">die()</span> call.</dd>
+  <dt id="exit(status)"><a class="permalink" href="#exit(status)">exit(status)</a></dt>
+  <dd>Calling <b>exit()</b> inside a thread causes the whole application to
+      terminate. Because of this, the use of <span class="Li">exit()</span>
+      inside threaded code, or in modules that might be used in threaded
+      applications, is strongly discouraged.
+    <p class="Pp">If <span class="Li">exit()</span> really is needed, then
+        consider using the following:</p>
+        <pre>threads-&gt;exit() if threads-&gt;can('exit');   # Thread friendly
+exit(status);
+</pre>
+  </dd>
+  <dt id="use"><a class="permalink" href="#use">use threads 'exit' =&gt;
+    'threads_only'</a></dt>
+  <dd>This globally overrides the default behavior of calling
+      <span class="Li">exit()</span> inside a thread, and effectively causes
+      such calls to behave the same as
+      <span class="Li">&quot;threads-&gt;exit()&quot;</span>. In other words,
+      with this setting, calling <span class="Li">exit()</span> causes only the
+      thread to terminate.
+    <p class="Pp">Because of its global effect, this setting should not be used
+        inside modules or the like.</p>
+    <p class="Pp">The <i>main</i> thread is unaffected by this setting.</p>
+  </dd>
+  <dt id="threads~13"><a class="permalink" href="#threads~13">threads-&gt;create({'exit'
+    =&gt; 'thread_only'}, ...)</a></dt>
+  <dd>This overrides the default behavior of <span class="Li">exit()</span>
+      inside the newly created thread only.</dd>
+  <dt>$thr-&gt;set_thread_exit_only(boolean)</dt>
+  <dd>This can be used to change the <i>exit thread only</i> behavior for a
+      thread after it has been created. With a <i>true</i> argument,
+      <span class="Li">exit()</span> will cause only the thread to exit. With a
+      <i>false</i> argument, <span class="Li">exit()</span> will terminate the
+      application.
+    <p class="Pp">The <i>main</i> thread is unaffected by this call.</p>
+  </dd>
+  <dt id="threads~14"><a class="permalink" href="#threads~14">threads-&gt;set_thread_exit_only(boolean)</a></dt>
+  <dd>Class method for use inside a thread to change its own behavior for
+      <span class="Li">exit()</span>.
+    <p class="Pp">The <i>main</i> thread is unaffected by this call.</p>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='THREAD_STATE'><a class='permalink' href='#THREAD_STATE'>THREAD   STATE</a></h1>
+<p class="Pp">The following boolean methods are useful in determining the
+    <i>state</i> of a thread.</p>
+<dl class="Bl-tag">
+  <dt>$thr-&gt;<b>is_running()</b></dt>
+  <dd>Returns true if a thread is still running (i.e., if its entry point
+      function has not yet finished or exited).</dd>
+  <dt>$thr-&gt;<b>is_joinable()</b></dt>
+  <dd>Returns true if the thread has finished running, is not detached and has
+      not yet been joined. In other words, the thread is ready to be joined, and
+      a call to <span class="Li">&quot;$thr-&gt;join()&quot;</span> will not
+      <i>block</i>.</dd>
+  <dt>$thr-&gt;<b>is_detached()</b></dt>
+  <dd>Returns true if the thread has been detached.</dd>
+  <dt id="threads~15"><a class="permalink" href="#threads~15">threads-&gt;<b>is_detached()</b></a></dt>
+  <dd>Class method that allows a thread to determine whether or not it is
+      detached.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='THREAD_CONTEXT'><a class='permalink' href='#THREAD_CONTEXT'>THREAD   CONTEXT</a></h1>
+<p class="Pp">As with subroutines, the type of value returned from a thread's
+    entry point function may be determined by the thread's <i>context</i>: list,
+    scalar or void. The thread's context is determined at thread creation. This
+    is necessary so that the context is available to the entry point function
+    via <b>wantarray()</b>. The thread may then specify a value of the
+    appropriate type to be returned from
+    <span class="Li">&quot;-&gt;join()&quot;</span>.</p>
+<section class="Ss">
+<h2 class="Ss" id='Explicit_context'><a class='permalink' href='#Explicit_context'>Explicit   context</a></h2>
+<p class="Pp">Because thread creation and thread joining may occur in different
+    contexts, it may be desirable to state the context explicitly to the
+    thread's entry point function. This may be done by calling
+    <span class="Li">&quot;-&gt;create()&quot;</span> with a hash reference as
+    the first argument:</p>
+<pre>my $thr = threads-&gt;create({'context' =&gt; 'list'}, \&amp;foo);
+...
+my @results = $thr-&gt;join();</pre>
+<p class="Pp">In the above, the threads object is returned to the parent thread
+    in scalar context, and the thread's entry point function
+    <span class="Li">&quot;foo&quot;</span> will be called in list (array)
+    context such that the parent thread can receive a list (array) from the
+    <span class="Li">&quot;-&gt;join()&quot;</span> call.
+    (<span class="Li">'array'</span> is synonymous with
+    <span class="Li">'list'</span>.)</p>
+<p class="Pp">Similarly, if you need the threads object, but your thread will
+    not be returning a value (i.e., <i>void</i> context), you would do the
+    following:</p>
+<pre>my $thr = threads-&gt;create({'context' =&gt; 'void'}, \&amp;foo);
+...
+$thr-&gt;join();</pre>
+<p class="Pp">The context type may also be used as the <i>key</i> in the hash
+    reference followed by a <i>true</i> value:</p>
+<pre>threads-&gt;create({'scalar' =&gt; 1}, \&amp;foo);
+...
+my ($thr) = threads-&gt;list();
+my $result = $thr-&gt;join();</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Implicit_context'><a class='permalink' href='#Implicit_context'>Implicit   context</a></h2>
+<p class="Pp">If not explicitly stated, the thread's context is implied from the
+    context of the <span class="Li">&quot;-&gt;create()&quot;</span> call:</p>
+<pre># Create thread in list context
+my ($thr) = threads-&gt;create(...);
+# Create thread in scalar context
+my $thr = threads-&gt;create(...);
+# Create thread in void context
+threads-&gt;create(...);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='$thr-&amp;gt;&lt;b&gt;wantarray()&lt;/b&gt;'><a class='permalink' href='#$thr-&amp;gt;&lt;b&gt;wantarray()&lt;/b&gt;'>$thr-&gt;<b>wantarray()</b></a></h2>
+<p class="Pp">This returns the thread's context in the same manner as
+    <b>wantarray()</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='threads-&amp;gt;&lt;b&gt;w'><a class='permalink' href='#threads-&amp;gt;&lt;b&gt;w'>threads-&gt;<b>wantarray()</b></a></h2>
+<p class="Pp">This returns the context of the <i>main</i> thread.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="wantarray()"><a class="permalink" href="#wantarray()">wantarray()</a></h1>
+<p class="Pp">Clase método para devolver el contexto del hilo actual. Esto devuelve el mismo valor que ejecutar <b>wantarray()</b> dentro de la función de punto de entrada del hilo actual.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="THREAD_STACK_SIZE">TAMAÑO_DE_LA_PILADE_HILOS</h1>
+<p class="Pp">El tamaño por defecto de la pila por hilo para diferentes plataformas varía significativamente, y es casi siempre mucho mayor de lo que se necesita para la mayoría de las aplicaciones. En Win32, el makefile de Perl establece explícitamente la pila por defecto a 16 MB; en la mayoría de las otras plataformas, se utiliza el valor por defecto del sistema, que de nuevo puede ser mucho mayor de lo necesario.</p>
+<p class="Pp">Ajustando el tamaño de la pila para que refleje con mayor precisión las necesidades de su aplicación, puede reducir significativamente el uso de memoria de su aplicación y aumentar el número de hilos que se ejecutan simultáneamente.</p>
+<p class="Pp">Tenga en cuenta que en Windows, la granularidad de asignación del espacio de direcciones es de 64 KB, por lo tanto, establecer la pila más pequeña que eso en Win32 Perl no ahorrará más memoria.</p>
+<dl class="Bl-tag">
+  <dt id="threads~17"><a class="permalink" href="#threads~17">threads-&gt;<b>get_stack_size()</b>;</a></dt>
+  <dd>Devuelve el tamaño por defecto actual de la pila por hilo. El valor por defecto es cero, lo que significa que se está utilizando el tamaño de pila por defecto del sistema.</dd>
+  <dt>$size = $thr-&gt;<b>get_stack_size()</b>;</dt>
+  <dd>Devuelve el tamaño de la pila para un hilo en particular. Un valor de retorno de cero indica que se utilizó el tamaño de pila por defecto del sistema para el hilo.</dd>
+  <dt>$old_size = threads-&gt;set_stack_size($new_size);</dt>
+  <dd>Establece un nuevo tamaño por defecto de pila por hilo y devuelve la configuración anterior.
+    <p class="Pp">Algunas plataformas tienen un tamaño mínimo de pila de hilos. Intentar establecer el tamaño de la pila por debajo de este valor generará una advertencia y se utilizará el tamaño mínimo de pila.</p>
+    <p class="Pp">Algunas plataformas Linux tienen un tamaño máximo de pila. Establecer un tamaño de pila demasiado grande provocará que la creación de hilos falle.</p>
+    <p class="Pp">Si es necesario, <span class="Li">$new_size</span> se redondeará al múltiplo más cercano del tamaño de página de memoria (generalmente 4096 u 8192).</p>
+    <p class="Pp">Los hilos creados después de que se establezca el tamaño de la pila llamarán entonces a <span class="Li">pthread_attr_setstacksize()</span> <i>(para plataformas pthreads)</i>, o proporcionarán el tamaño de la pila a <span class="Li">CreateThread()</span> <i>(para Win32 Perl)</i>.</p>
+    <p class="Pp">(Obviamente, esta llamada no afecta a ningún hilo existente en este momento.)</p>
+  </dd>
+  <dt id="use~2"><a class="permalink" href="#use~2">use threads ('stack_size'
+    =&gt; VALUE);</a></dt>
+  <dd>Esto establece el tamaño por defecto de la pila por hilo al inicio de la aplicación.</dd>
+  <dt>$ENV{'PERL5_ITHREADS_STACK_SIZE'}</dt>
+  <dd>El tamaño por defecto de la pila por hilo puede establecerse al inicio de la aplicación mediante la variable de entorno <span class="Li">&quot;PERL5_ITHREADS_STACK_SIZE&quot;</span>:
+    <pre>PERL5_ITHREADS_STACK_SIZE=1048576
+export PERL5_ITHREADS_STACK_SIZE
+perl -e'use threads; print(threads-&gt;get_stack_size(), &quot;\n&quot;)'
+</pre>
+    <p class="Pp">Este valor anula cualquier parámetro
+        <span class="Li">&quot;stack_size&quot;</span> proporcionado a
+        <span class="Li">&quot;use threads&quot;</span>. Su propósito principal es
+        permitir el establecimiento del tamaño de pila por hilo para aplicaciones
+        con hilos heredadas.</p>
+  </dd>
+  <dt id="threads~18"><a class="permalink" href="#threads~18">threads-&gt;create({'stack_size'
+    =&gt; VALUE}, FUNCTION, ARGS)</a></dt>
+  <dd>Para especificar un tamaño de pila particular para cualquier hilo individual, llame a
+      <span class="Li">&quot;-&gt;create()&quot;</span> con una referencia a hash como primer argumento:
+        <pre>my $thr = threads-&gt;create({'stack_size' =&gt; 32*4096},
+                          \&amp;foo, @args);
+</pre>
+  </dd>
+  <dt>$thr2 = $thr1-&gt;create(FUNCTION, ARGS)</dt>
+  <dd>Esto crea un nuevo hilo (<span class="Li">$thr2</span>) que hereda el tamaño de la pila de un hilo existente (<span class="Li">$thr1</span>).
+      Esto es un atajo para lo siguiente:
+        <pre>my $stack_size = $thr1-&gt;get_stack_size();
+my $thr2 = threads-&gt;create({'stack_size' =&gt; $stack_size},
+                           FUNCTION, ARGS);
+</pre>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="THREAD_SIGNALLING">SEÑALIZACIÓN DE HILOS</h1>
+<p class="Pp">Cuando las señales seguras están activas (el comportamiento por defecto - ver &quot;Señales inseguras&quot; para más detalles), entonces las señales pueden ser enviadas y actuadas por hilos individuales.</p>
+<dl class="Bl-tag">
+  <dt>$thr-&gt;kill('SIG...');</dt>
+  <dd>Envía la señal especificada al hilo. Los nombres de señal y los números de señal (positivos) son los mismos que los soportados por <b>kill()</b>. Por ejemplo, 'SIGTERM', 'TERM' y (dependiendo del sistema operativo) 15 son argumentos válidos para
+      <span class="Li">&quot;-&gt;kill()&quot;</span>.
+    <p class="Pp">Devuelve el objeto de hilo para permitir el encadenamiento de métodos:</p>
+        <pre>$thr-&gt;kill('SIG...')-&gt;join();
+</pre>
+  </dd>
+</dl>
+<p class="Pp">Los manejadores de señales deben configurarse en los hilos para las señales sobre las que se espera que actúen. Aquí tienes un ejemplo para *cancelar* un hilo:</p>
+<pre>use threads;
+sub thr_func
+{
+    # Manejador de señales de 'cancelación' del hilo
+    $SIG{'KILL'} = sub { threads-&gt;exit(); };
+    ...
+}
+# Crea un hilo
+my $thr = threads-&gt;create('thr_func');
+...
+# Señaliza al hilo para que termine, y luego sepáralo
+# para que se limpie automáticamente
+$thr-&gt;kill('KILL')-&gt;detach();</pre>
+<p class="Pp">Aquí tienes otro ejemplo simplista que ilustra el uso de la señalización de hilos en conjunción con un semáforo para proporcionar capacidades rudimentarias de *suspensión* y *reanudación*:</p>
+<pre>use threads;
+use Thread::Semaphore;
+sub thr_func
+{
+    my $sema = shift;
+    # Manejador de señales de 'suspensión/reanudación' del hilo
+    $SIG{'STOP'} = sub {
+        $sema-&gt;down();      # Hilo suspendido
+        $sema-&gt;up();        # Hilo reanudado
+    };
+    ...
+}
+# Crea un semáforo y pásalo a un hilo
+my $sema = Thread::Semaphore-&gt;new();
+my $thr = threads-&gt;create('thr_func', $sema);
+# Suspende el hilo
+$sema-&gt;down();
+$thr-&gt;kill('STOP');
+...
+# Permite que el hilo continúe
+$sema-&gt;up();</pre>
+<p class="Pp">ADVERTENCIA: La capacidad de señalización de hilos proporcionada por este módulo no envía realmente señales a través del sistema operativo. *Emula* señales a nivel de Perl de tal manera que los manejadores de señales se llaman en el hilo apropiado. Por ejemplo, enviar
+    <span class="Li">&quot;$thr-&gt;kill('STOP')&quot;</span> no suspende realmente un hilo (o todo el proceso), pero sí provoca que se llame a un manejador
+    <span class="Li">$SIG{'STOP'}</span> en ese hilo (como se ilustra anteriormente).</p>
+<p class="Pp">Como tal, las señales que normalmente no serían apropiadas para usar en el comando
+    <span class="Li">kill()</span> (por ejemplo,
+    <span class="Li">&quot;kill('KILL', $$)&quot;</span>) están bien para usarlas con el método
+    <span class="Li">&quot;-&gt;kill()&quot;</span> (de nuevo, como se ilustra anteriormente).</p>
+<p class="Pp">Correspondientemente, enviar una señal a un hilo no interrumpe la operación en la que el hilo está trabajando actualmente: la señal actuará después de que la operación actual se haya completado. Por ejemplo, si el hilo está *atascado* en una llamada de E/S, enviarle una señal no interrumpirá la llamada de E/S de tal manera que la señal se actúe de inmediato.</p>
+<p class="Pp">Enviar una señal a un hilo terminado/finalizado se ignora.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="WARNINGS">ADVERTENCIAS</h1>
+<dl class="Bl-tag">
+  <dt id="Perl"><a class="permalink" href="#Perl">Perl salió con hilos activos:</a></dt>
+  <dd>Si el programa sale sin que todos los hilos hayan sido unidos o separados, se emitirá esta advertencia.
+    <p class="Pp">NOTA: Si el hilo *principal* sale, esta advertencia no se puede suprimir usando <span class="Li">&quot;no warnings
+        'threads';&quot;</span> como se sugiere a continuación.</p>
+  </dd>
+  <dt id="Thread"><a class="permalink" href="#Thread">Fallo en la creación de hilos:
+    pthread_create devolvió #</a></dt>
+  <dd>Consulte la página *man* apropiada para
+      <span class="Li">&quot;pthread_create&quot;</span> para determinar la causa real del fallo.</dd>
+  <dt id="Thread~2"><a class="permalink" href="#Thread~2">Hilo # terminado
+    anormalmente: ...</a></dt>
+  <dd>Un hilo terminó de alguna manera que no sea simplemente regresar de su función de punto de entrada, o usando
+      <span class="Li">&quot;threads-&gt;exit()&quot;</span>. Por ejemplo, el hilo puede haber terminado debido a un error, o usando
+      <span class="Li">&quot;die&quot;</span>.</dd>
+  <dt id="Using"><a class="permalink" href="#Using">Usando el tamaño mínimo de pila de hilos de #</a></dt>
+  <dd>Algunas plataformas tienen un tamaño mínimo de pila de hilos. Intentar establecer el tamaño de la pila por debajo de este valor generará la advertencia anterior, y el tamaño de la pila se establecerá en el mínimo.</dd>
+  <dt id="Thread~3"><a class="permalink" href="#Thread~3">Fallo en la creación de hilos: pthread_attr_setstacksize(<i>SIZE</i>) devolvió 22</a></dt>
+  <dd>El <i>SIZE</i> especificado excede el tamaño máximo de pila del sistema. Use un valor más pequeño para el tamaño de pila.</dd>
+</dl>
+<p class="Pp">Si es necesario, las advertencias de hilos se pueden suprimir usando:</p>
+<pre>no warnings 'threads';</pre>
+<p class="Pp">en el ámbito apropiado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ERRORS">ERRORES</h1>
+<dl class="Bl-tag">
+  <dt id="This"><a class="permalink" href="#This">Esta Perl no fue compilada para soportar hilos</a></dt>
+  <dd>La copia particular de Perl que está intentando usar no fue compilada usando la opción de configuración
+      <span class="Li">&quot;useithreads&quot;</span>.
+    <p class="Pp">Tener soporte para hilos requiere que toda la Perl y todos los módulos XS en la instalación de Perl sean recompilados; no es solo una cuestión de añadir el módulo de hilos (es decir, las Perl con y sin hilos son binariamente incompatibles).</p>
+  </dd>
+  <dt id="Cannot"><a class="permalink" href="#Cannot">No se puede cambiar el tamaño de la pila de un hilo existente</a></dt>
+  <dd>El tamaño de la pila de los hilos existentes actualmente no se puede cambiar, por lo tanto, lo siguiente resulta en el error anterior:
+        <pre>$thr-&gt;set_stack_size($size);
+</pre>
+  </dd>
+  <dt id="Cannot~2"><a class="permalink" href="#Cannot~2">No se pueden señalar hilos sin señales seguras</a></dt>
+  <dd>Las señales seguras deben estar activas para usar el método de señalización
+      <span class="Li">&quot;-&gt;kill()&quot;</span>. Ver &quot;Señales inseguras&quot; para más detalles.</dd>
+  <dt id="Unrecognized"><a class="permalink" href="#Unrecognized">Nombre de señal no reconocido: ...</a></dt>
+  <dd>La copia particular de Perl que está intentando usar no soporta la señal especificada que se utiliza en una llamada
+      <span class="Li">&quot;-&gt;kill()&quot;</span>.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="BUGS_AND_LIMITATIONS">ERRORES Y LIMITACIONES</h1>
+<p class="Pp">Antes de considerar publicar un informe de error, consulte, y posiblemente publique un mensaje en el foro de discusión para ver si lo que ha encontrado es un problema conocido.</p>
+<dl class="Bl-tag">
+  <dt id="Thread~4"><a class="permalink" href="#Thread~4">Módulos seguros para hilos</a></dt>
+  <dd>Ver &quot;Haciendo que su módulo sea seguro para hilos&quot; en perlmod</dd>
+</dl>
+</section>
+<dl class="Bl-tag">
+  <dt id="Using~2"><a class="permalink" href="#Using~2">Usar módulos no seguros para hilos</a></dt>
+  <dd>Desafortunadamente, es posible que encuentre módulos de Perl que no sean
+      <i>seguros para hilos</i>. Por ejemplo, pueden hacer que el intérprete de
+      Perl falle durante la ejecución o que se vuelque al terminar. Dependiendo
+      del módulo y de los requisitos de su aplicación, puede ser posible sortear
+      estas dificultades.
+    <p class="Pp">Si el módulo solo se usará dentro de un hilo, puede intentar
+        cargar el módulo desde dentro de la función de punto de entrada del hilo
+        usando <span class="Li">&quot;require&quot;</span> (e
+        <span class="Li">&quot;import&quot;</span> si es necesario):</p>
+        <pre>sub thr_func
+{
+    require Unsafe::Module
+    # Unsafe::Module-&gt;import(...);
+    ....
+}
+</pre>
+    <p class="Pp">Si el módulo es necesario dentro del hilo <i>principal</i>,
+        intente modificar su aplicación para que el módulo se cargue (nuevamente
+        usando <span class="Li">&quot;require&quot;</span> y
+        <span class="Li">&quot;-&gt;import()&quot;</span>) después de que se
+        hayan iniciado todos los hilos, y de tal manera que no se inicien otros
+        hilos después.</p>
+    <p class="Pp">Si lo anterior no funciona o no es adecuado para su
+        aplicación, registre un informe de error en
+        <a href='https://rt.cpan.org/Public/'>https://rt.cpan.org/Public/</a> contra el módulo problemático.</p>
+  </dd>
+  <dt id="Memory"><a class="permalink" href="#Memory">Consumo de memoria</a></dt>
+  <dd>En la mayoría de los sistemas, la creación y destrucción frecuente y continua
+      de hilos puede provocar un crecimiento cada vez mayor en el consumo de
+      memoria del intérprete de Perl. Si bien es fácil simplemente lanzar hilos y
+      luego <span class="Li">&quot;-&gt;join()&quot;</span> o
+      <span class="Li">&quot;-&gt;detach()&quot;</span>, para aplicaciones de
+      larga duración, es mejor mantener un grupo de hilos y reutilizarlos para el
+      trabajo necesario, utilizando colas para notificar a los hilos sobre el
+      trabajo pendiente. La distribución CPAN de este módulo contiene un ejemplo
+      simple (<i>examples/pool_reuse.pl</i>) que ilustra la creación, el uso y
+      el monitoreo de un grupo de hilos <i>reutilizables</i>.</dd>
+  <dt id="Current"><a class="permalink" href="#Current">Directorio de trabajo
+    actual</a></dt>
+  <dd>En todas las plataformas excepto MSWin32, la configuración del directorio de
+      trabajo actual se comparte entre todos los hilos, de modo que cambiarlo en
+      un hilo (por ejemplo, usando <span class="Li">chdir()</span>) afectará a
+      todos los hilos de la aplicación.
+    <p class="Pp">En MSWin32, cada hilo mantiene su propia configuración del
+        directorio de trabajo actual.</p>
+  </dd>
+  <dt id="Locales"><a class="permalink" href="#Locales">Configuraciones regionales</a></dt>
+  <dd>Antes de Perl 5.28, las configuraciones regionales no se podían usar con
+      hilos, debido a varias condiciones de carrera. A partir de esa versión, en
+      sistemas que implementan funciones de configuración regional seguras para
+      hilos, se pueden usar hilos, con algunas advertencias. Esto incluye Windows
+      a partir de Visual Studio 2005, y sistemas compatibles con POSIX 2008. Ver
+      &quot;Operación multihilo&quot; en perllocale.
+    <p class="Pp">Cada hilo (excepto el hilo principal) se inicia utilizando la
+        configuración regional C. El hilo principal se inicia como todos los
+        demás programas de Perl; ver &quot;ENVIRONMENT&quot; en perllocale.
+        Puede cambiar las configuraciones regionales en cualquier hilo tantas
+        veces como desee.</p>
+    <p class="Pp">Si desea heredar la configuración regional del hilo padre,
+        puede, en el padre, establecer una variable de la siguiente manera:</p>
+        <pre>$foo = POSIX::setlocale(LC_ALL, NULL);
+</pre>
+    <p class="Pp">y luego pasar a threads-&gt;<b>create()</b> una subrutina que
+        incluya <span class="Li">$foo</span>. Luego, en el hijo, dice</p>
+        <pre>POSIX::setlocale(LC_ALL, $foo);
+</pre>
+    <p class="Pp">O puede usar las facilidades en threads::shared para pasar
+        <span class="Li">$foo</span>; o si el entorno no ha cambiado, en el
+        hijo, haga</p>
+        <pre>POSIX::setlocale(LC_ALL, &quot;&quot;);
+</pre>
+  </dd>
+  <dt id="Environment"><a class="permalink" href="#Environment">Variables de
+    entorno</a></dt>
+  <dd>Actualmente, en todas las plataformas excepto MSWin32, todas las llamadas al
+      <i>sistema</i> (por ejemplo, usando <span class="Li">system()</span> o
+      backticks) realizadas desde hilos utilizan la configuración de variables de
+      entorno del hilo <i>principal</i>. En otras palabras, los cambios realizados
+      en <span class="Li">%ENV</span> en un hilo no serán visibles en las
+      llamadas al <i>sistema</i> realizadas por ese hilo.
+    <p class="Pp">Para sortear esto, establezca variables de entorno como parte
+        de la llamada al <i>sistema</i>. Por ejemplo:</p>
+        <pre>my $msg = 'hello';
+system(&quot;FOO=$msg; echo \$FOO&quot;);   # Muestra 'hello' en STDOUT
+</pre>
+    <p class="Pp">En MSWin32, cada hilo mantiene su propio conjunto de variables
+        de entorno.</p>
+  </dd>
+  <dt id="Catching"><a class="permalink" href="#Catching">Captura de señales</a></dt>
+  <dd>Las señales son <i>capturadas</i> por el hilo principal (ID de hilo = 0) de
+      un script. Por lo tanto, configurar manejadores de señales en hilos para
+      fines distintos de &quot;SEÑALIZACIÓN DE HILOS&quot; como se documenta
+      anteriormente no logrará lo que se pretende.
+    <p class="Pp">Esto es especialmente cierto si se intenta capturar
+        <span class="Li">&quot;SIGALRM&quot;</span> en un hilo. Para manejar
+        alarmas en hilos, configure un manejador de señales en el hilo principal
+        y luego use &quot;SEÑALIZACIÓN DE HILOS&quot; para transmitir la señal
+        al hilo:</p>
+        <pre># Crear hilo con una tarea que puede caducar
+my $thr = threads-&gt;create(sub {
+    threads-&gt;yield();
+    eval {
+        $SIG{ALRM} = sub { die(&quot;Timeout\n&quot;); };
+        alarm(10);
+        ...  # Hacer el trabajo aquí
+        alarm(0);
+    };
+    if ($@ =~ /Timeout/) {
+        warn(&quot;Tarea en hilo caducada\n&quot;);
+    }
+};
+# Configurar manejador de señales para transmitir SIGALRM al hilo
+$SIG{ALRM} = sub { $thr-&gt;kill('ALRM') };
+... # El hilo principal continúa trabajando
+</pre>
+  </dd>
+  <dt id="Parent"><a class="permalink" href="#Parent">Hilos padre-hijo</a></dt>
+  <dd>En algunas plataformas, puede que no sea posible destruir <i>hilos</i>
+      <i>padre</i> mientras todavía existan <i>hilos</i> <i>hijo</i>.</dd>
+  <dt id="Unsafe"><a class="permalink" href="#Unsafe">Señales inseguras</a></dt>
+  <dd>Desde Perl 5.8.0, las señales se han vuelto más seguras en Perl al posponer
+      su manejo hasta que el intérprete esté en un estado <i>seguro</i>. Ver
+      &quot;Señales Seguras&quot; en perl58delta y &quot;Señales Diferidas (Señales
+      Seguras)&quot; en perlipc para más detalles.
+    <p class="Pp">Las señales seguras son el comportamiento predeterminado, y el
+        antiguo comportamiento de señalización inmediata e insegura solo está en
+        efecto en las siguientes situaciones:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Perl se ha compilado con
+      <span class="Li">&quot;PERL_OLD_SIGNALS&quot;</span> (ver
+      <span class="Li">&quot;perl&#x00A0;-V&quot;</span>).</li>
+  <li>La variable de entorno <span class="Li">&quot;PERL_SIGNALS&quot;</span>
+      se establece en <span class="Li">&quot;unsafe&quot;</span> (ver
+      &quot;PERL_SIGNALS&quot; en perlrun).</li>
+  <li>Se utiliza el módulo Perl::Unsafe::Signals.</li>
+</ul>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Si las señales inseguras están en efecto, el manejo de señales no
+    es seguro para hilos, y el método de señalización
+    <span class="Li">&quot;-&gt;kill()&quot;</span> no se puede usar.</p>
+</div>
+<dl class="Bl-tag">
+  <dt id="Identity"><a class="permalink" href="#Identity">Identidad de los objetos
+    devueltos desde hilos</a></dt>
+  <dd>Cuando un valor se devuelve desde un hilo a través de una operación
+      <span class="Li">&quot;join&quot;</span>, el valor y todo lo que referencia
+      se copia al hilo que se une, de manera muy similar a como se copian los
+      valores al crear un hilo. Esto funciona bien para la mayoría de los tipos
+      de valores, incluidos arreglos, hashes y subrutinas. La copia se aplica
+      recursivamente a los elementos de arreglos, escalares de referencia,
+      variables abarcadas por subrutinas y otros tipos de referencias.
+    <p class="Pp">Sin embargo, todo lo referenciado por el valor devuelto es una
+        copia nueva en el hilo que se une, incluso si un objeto devuelto en el
+        hilo hijo hubiera sido una copia de algo que existía previamente en el
+        hilo padre. Después de unirse, el padre tendrá, por lo tanto, un duplicado
+        de cada objeto de este tipo. Esto a veces importa, especialmente si el
+        objeto se muta; esto puede importar especialmente para datos privados a
+        los que una subrutina devuelta proporciona acceso.</p>
+  </dd>
+  <dt id="Returning"><a class="permalink" href="#Returning">Devolución de objetos bendecidos desde hilos</a></dt>
+  <dd>Devolver objetos bendecidos desde hilos no funciona. Dependiendo de las
+      clases involucradas, puede ser posible sortear esto devolviendo una
+      versión serializada del objeto (por ejemplo, usando Data::Dumper o
+      Storable) y luego reconstituyéndolo en el hilo que se une. Si está usando
+      Perl 5.10.0 o posterior, y si la clase admite objetos compartidos, puede
+      pasarlos a través de colas compartidas.</dd>
+  <dt id="END"><a class="permalink" href="#END">Bloques END en hilos</a></dt>
+  <dd>Es posible agregar bloques END a hilos usando require o eval con el código
+      apropiado. Estos bloques <span class="Li">&quot;END&quot;</span> se ejecutarán
+      cuando el intérprete del hilo sea destruido (es decir, ya sea durante una
+      llamada a <span class="Li">&quot;-&gt;join()&quot;</span>, o al finalizar
+      el programa).
+    <p class="Pp">Sin embargo, llamar a cualquier método de hilos en un bloque
+        <span class="Li">&quot;END&quot;</span> de este tipo muy probablemente
+        <i>fallará</i> (por ejemplo, la aplicación puede colgarse o generar un
+        error) debido a los mutexes que se necesitan para controlar la
+        funcionalidad dentro del módulo de hilos.</p>
+    <p class="Pp">Por esta razón, el uso de bloques
+        <span class="Li">&quot;END&quot;</span> en hilos está
+        <b>fuertemente</b> desaconsejado.</p>
+  </dd>
+  <dt id="Open"><a class="permalink" href="#Open">Manos de directorios abiertos</a></dt>
+  <dd>En perl 5.14 y versiones posteriores, en sistemas que no son Windows que no
+      admiten la función C <span class="Li">&quot;fchdir&quot;</span>, los
+      manejadores de directorios (ver opendir) no se copiarán a los nuevos
+      hilos. Puede usar la variable <span class="Li">&quot;d_fchdir&quot;</span>
+      en Config.pm para determinar si su sistema la admite.
+    <p class="Pp">En versiones anteriores de perl, el lanzamiento de hilos con
+        manejadores de directorios abiertos hacía fallar el intérprete. [perl
+        #75154]
+        <a href='https://rt.perl.org/rt3/Public/Bug/Display.html?id=75154'>https://rt.perl.org/rt3/Public/Bug/Display.html?id=75154</a></p>
+  </dd>
+  <dt id="Detached"><a class="permalink" href="#Detached">Hilos desvinculados y
+    destrucción global</a></dt>
+  <dd>Si el hilo principal sale mientras hay hilos desvinculados que todavía se
+      están ejecutando, entonces la fase de destrucción global de Perl no se
+      ejecuta porque de lo contrario ciertas estructuras globales que controlan
+      la operación de los hilos y que se asignan en la memoria del hilo principal
+      podrían destruirse antes de que se destruya el hilo desvinculado.
+    <p class="Pp">Si está utilizando algún código que requiere la ejecución de la
+        fase de destrucción global para la limpieza (por ejemplo, eliminación de
+        archivos temporales), entonces no utilice hilos desvinculados, sino que
+        una todos los hilos antes de salir del programa.</p>
+  </dd>
+  <dt id="Perl~2"><a class="permalink" href="#Perl~2">Errores de Perl y la
+    versión CPAN de threads</a></dt>
+  <dd>El soporte para hilos se extiende más allá del código en este módulo (es
+      decir, <i>threads.pm</i> y <i>threads.xs</i>), y dentro del propio
+      intérprete de Perl. Versiones anteriores de Perl contienen errores que</dd>
+</dl>
+<section class="Sh">
+<h1 class="Sh" id="BUGS_AND_LIMITATIONS">BUGS AND LIMITATIONS</h1>
+<dl class="Bl-tag">
+<dt>•</dt>
+<dd>Se han reportado fallos en versiones antiguas de Perl que causan condiciones de
+    carrera y otros problemas al usar hilos. Estos pueden manifestarse incluso al
+    usar la última versión de hilos de CPAN. No hay una solución alternativa para
+    esto más que actualizar a la última versión de Perl.</dd>
+<dt>•</dt>
+<dd>Incluso con la última versión de Perl, se sabe que ciertas construcciones
+    con hilos pueden generar mensajes de advertencia sobre escalares filtrados
+    o escalares no referenciados. Sin embargo, tales advertencias son inofensivas y
+    pueden ignorarse de forma segura.</dd>
+</dl>
+<p class="Pp">Puede buscar informes de errores relacionados con hilos en
+    <a href='https://rt.cpan.org/Public/'>https://rt.cpan.org/Public/</a>. Si es necesario, envíe nuevos errores,
+    problemas, parches, etc. a:
+    <a href='https://rt.cpan.org/Public/Dist/Display.html?Name=threads'>https://rt.cpan.org/Public/Dist/Display.html?Name=threads</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="REQUIREMENTS">REQUERIMIENTOS</h1>
+<p class="Pp">Perl 5.8.0 o posterior</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO">VEA TAMBIÉN</h1>
+<p class="Pp">threads en MetaCPAN:
+  <a href='https://metacpan.org/release/threads'>https://metacpan.org/release/threads</a></p>
+<p class="Pp">Repositorio de código para la distribución CPAN:
+    <a href='https://github.com/Dual-Life/threads'>https://github.com/Dual-Life/threads</a></p>
+<p class="Pp">threads::shared, perlthrtut</p>
+<p class="Pp"><a href='https://www.perl.com/pub/a/2002/06/11/threads.html'>https://www.perl.com/pub/a/2002/06/11/threads.html</a> y
+    <a href='https://www.perl.com/pub/a/2002/09/04/threads.html'>https://www.perl.com/pub/a/2002/09/04/threads.html</a></p>
+<p class="Pp">Lista de correo de hilos de Perl:
+    <a href='https://lists.perl.org/list/ithreads.html'>https://lists.perl.org/list/ithreads.html</a></p>
+<p class="Pp">Discusión sobre el tamaño de la pila:
+    <a href='https://www.perlmonks.org/?node_id=532956'>https://www.perlmonks.org/?node_id=532956</a></p>
+<p class="Pp">Código de ejemplo en el directorio <i>examples</i> de esta distribución
+    en CPAN.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR">AUTOR</h1>
+<p class="Pp">Artur Bergman &lt;sky AT crucially DOT net&gt;</p>
+<p class="Pp">Versión CPAN producida por Jerry D. Hedden &lt;jdhedden AT cpan DOT
+    org&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LICENSE">LICENCIA</h1>
+<p class="Pp">threads se distribuye bajo la misma licencia que Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ACKNOWLEDGEMENTS">AGRADECIMIENTOS</h1>
+<p class="Pp">Richard Soderberg &lt;perl AT crystalflame DOT net&gt; - Me ayudó muchísimo, intentando encontrar las causas de las condiciones de carrera y otros errores extraños.</p>
+<p class="Pp">Simon Cozens &lt;simon AT brecon DOT co DOT uk&gt; - Estuvo ahí para responder zillones de preguntas molestas.</p>
+<p class="Pp">Rocco Caputo &lt;troc AT netrus DOT net&gt;</p>
+<p class="Pp">Vipul Ved Prakash &lt;mail AT vipul DOT net&gt; - Ayudó con la depuración.</p>
+<p class="Pp">Dean Arnold &lt;darnold AT presicient DOT com&gt; - API de tamaño de pila.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#VERSION">VERSIÓN</a></li>
+        
+            <li><a href="#WARNING">ADVERTENCIA</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EXITING_A_THREAD">SALIDA DE UN HILO</a></li>
+        
+            <li><a href="#THREAD_STATE">ESTADO DEL HILO</a></li>
+        
+            <li><a href="#THREAD_CONTEXT">CONTEXTO DEL HILO</a></li>
+        
+            <li><a href="#THREAD_STACK_SIZE">TAMAÑO DE LA PILA DEL HILO</a></li>
+        
+            <li><a href="#THREAD_SIGNALLING">SEÑALIZACIÓN DE HILOS</a></li>
+        
+            <li><a href="#WARNINGS">ADVERTENCIAS</a></li>
+        
+            <li><a href="#ERRORS">ERRORES</a></li>
+        
+            <li><a href="#BUGS_AND_LIMITATIONS">ERRORES Y LIMITACIONES</a></li>
+        
+            <li><a href="#REQUIREMENTS">REQUERIMIENTOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VEA TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#ACKNOWLEDGEMENTS">AGRADECIMIENTOS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/threads.3perl.es.txt">txt</a>, 
+        
+            <a href="/man/threads.3perl.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,829 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ldap_table(5) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ldap_table(5)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LDAP_TABLE(5)</td>
+    <td class="head-vol">Manual de Formatos de Archivo</td>
+    <td class="head-rtitle">LDAP_TABLE(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">ldap_table - Configuración del cliente LDAP de Postfix</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre><b>postmap -q &quot;</b><i>cadena</i><b>&quot; ldap:/etc/postfix/</b><i>nombre_archivo</i>
+<b>postmap -q - ldap:/etc/postfix/</b><i>nombre_archivo</i><b> &lt;</b><i>archivo_entrada</i></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<br/>
+<p class="Pp">El sistema de correo Postfix utiliza tablas opcionales para la
+    reescritura de direcciones o el enrutamiento de correo. Estas tablas suelen
+    estar en formato <b>dbm</b> o <b>db</b>.</p>
+<p class="Pp">Alternativamente, las tablas de consulta pueden especificarse como
+    bases de datos LDAP.</p>
+<p class="Pp">Para usar consultas LDAP, define una fuente LDAP como tabla de
+    consulta en main.cf, por ejemplo:</p>
+<pre>    alias_maps = ldap:/etc/postfix/ldap-aliases.cf</pre>
+<p class="Pp">El archivo /etc/postfix/ldap-aliases.cf tiene el mismo formato que
+    el archivo main.cf de Postfix y puede especificar los parámetros descritos a
+    continuación. Al final de este manual se incluye un ejemplo.</p>
+<p class="Pp">Esta método de configuración está disponible con Postfix versión
+    2.1 y posteriores. Consulta la sección &quot;PARÁMETROS OBSOLETOS DE
+    MAIN.CF&quot; más abajo para ver las versiones anteriores de Postfix.</p>
+<p class="Pp">Para obtener detalles sobre SSL y STARTTLS de LDAP, consulta la
+    sección sobre SSL y STARTTLS más abajo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LIST_MEMBERSHIP'><a class='permalink' href='#LIST_MEMBERSHIP'>PERTENENCIA A LISTAS</a></h1>
+<p class="Pp">Al usar LDAP para almacenar listas como $mynetworks,
+    $mydestination, $relay_domains, $local_recipient_maps, etc., es importante
+    entender que la tabla debe almacenar cada miembro de la lista como una clave
+    separada. La consulta de la tabla verifica la *existencia* de la clave.
+    Consulta &quot;Listas de Postfix versus tablas&quot; en el documento
+    DATABASE_README para una discusión.</p>
+<p class="Pp">NO crees tablas que devuelvan la lista completa de dominios en
+    $mydestination o $relay_domains, etc., o direcciones IP en $mynetworks.</p>
+<p class="Pp">SÍ crea tablas con cada elemento coincidente como clave y con un
+    valor arbitrario. Con las bases de datos LDAP, no es raro devolver la propia
+    clave.</p>
+<p class="Pp">Por ejemplo, NUNCA hagas esto en un mapa que defina $mydestination:</p>
+<pre>    query_filter = domain=*
+    result_attribute = domain</pre>
+<p class="Pp">Haz esto en su lugar:</p>
+<pre>    query_filter = domain=%s
+    result_attribute = domain</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GENERAL_LDAP_PARAMETERS'><a class='permalink' href='#GENERAL_LDAP_PARAMETERS'>PARÁMETROS LDAP GENERALES</a></h1>
+<p class="Pp">En el texto siguiente, los valores predeterminados se dan entre
+    paréntesis. Nota: no uses comillas en estas variables; al menos, no hasta que
+    las rutinas de configuración de Postfix comprendan cómo tratar las cadenas
+    entre comillas.</p>
+<dl class="Bl-tag">
+  <dt id="server_host"><a class="permalink" href="#server_host"><b>server_host
+    (predeterminado: localhost)</b></a></dt>
+  <dd>El nombre del host que ejecuta el servidor LDAP, por ejemplo,
+        <pre>    server_host = ldap.example.com</pre>
+    <p class="Pp">Dependiendo de la biblioteca cliente LDAP que estés utilizando,
+        debería ser posible especificar varios servidores aquí, con la biblioteca
+        intentándolos en orden si el primero falla. También debería ser posible
+        dar a cada servidor de la lista un puerto diferente (que anula
+        <b>server_port</b> más abajo), nombrando los servidores como</p>
+        <pre>    server_host = ldap.example.com:1444</pre>
+    <p class="Pp">NOTA: este cliente se reconectará inmediatamente después de un
+        único fallo, y fallará una solicitud de consulta después de que un segundo
+        intento también falle.</p>
+    <p class="Pp">Con OpenLDAP, se puede utilizar una (lista de) URL LDAP para
+        especificar tanto los nombres de host como los puertos:</p>
+        <pre>    server_host = ldap://ldap.example.com:1444
+                ldap://ldap2.example.com:1444</pre>
+    <p class="Pp">Se admiten todas las URL LDAP aceptadas por la biblioteca
+        OpenLDAP, incluidas las conexiones a través de sockets de dominio UNIX y
+        LDAP SSL (este último siempre que OpenLDAP se haya compilado con soporte
+        para SSL):</p>
+        <pre>    server_host = ldapi://%2Fsome%2Fpath
+                ldaps://ldap.example.com:636</pre>
+  </dd>
+  <dt id="server_port"><a class="permalink" href="#server_port"><b>server_port
+    (predeterminado: 389)</b></a></dt>
+  <dd>El puerto en el que escucha el servidor LDAP, por ejemplo,
+        <pre>    server_port = 778</pre>
+  </dd>
+  <dt id="timeout"><a class="permalink" href="#timeout"><b>timeout (predeterminado:
+    10 segundos)</b></a></dt>
+  <dd>El número de segundos que una búsqueda puede tardar antes de que caduque,
+    por ejemplo,
+    <p class="Pp">
+      <br/>
+      <br/>
+       timeout = 5
+      <br/>
+    </p>
+  </dd>
+  <dt id="search_base"><a class="permalink" href="#search_base"><b>search_base
+    (Sin valor predeterminado; debes configurarlo)</b></a></dt>
+  <dd>El DN base RFC2253 en el que realizar la búsqueda, por ejemplo,
+        <pre>    search_base = dc=tu, dc=com</pre>
+  </dd>
+  <dt></dt>
+  <dd>Con Postfix 2.2 y posteriores, este parámetro admite las siguientes
+      expansiones '%':</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>%%</b></dt>
+  <dd>Se reemplaza por un carácter '%' literal.</dd>
+  <dt><b>%s</b></dt>
+  <dd>Se reemplaza por la clave de entrada. Se utiliza el citado RFC 2253 para
+      asegurar que la clave de entrada no añada metacaracteres inesperados.</dd>
+  <dt><b>%u</b></dt>
+  <dd>Cuando la clave de entrada es una dirección del tipo usuario@dominio,
+      <b>%u</b> se reemplaza por la parte local de la dirección (citada según
+      RFC 2253). En caso contrario, <b>%u</b> se reemplaza por la cadena de
+      búsqueda completa. Si la parte local está vacía, la búsqueda se suprime y
+      no devuelve resultados.</dd>
+  <dt><b>%d</b></dt>
+  <dd>Cuando la clave de entrada es una dirección del tipo usuario@dominio,
+      <b>%d</b> se reemplaza por la parte del dominio de la dirección (citada
+      según RFC 2253). En caso contrario, la búsqueda se suprime y no devuelve
+      resultados.</dd>
+  <dt><b>%[SUD]</b></dt>
+  <dd>Para el parámetro <b>search_base</b>, las versiones en mayúsculas de las
+      expansiones anteriores se comportan de forma idéntica a sus contrapartes
+      en minúsculas. Con el parámetro <b>result_format</b> (anteriormente
+      llamado <b>result_filter</b>, consulta la sección SOBRE OTRAS
+      CARACTERÍSTICAS OBSOLETAS y más abajo), se expanden a los componentes
+      correspondientes de la clave de entrada en lugar del valor del
+      resultado.</dd>
+  <dt><b>%[1-9]</b></dt>
+  <dd>Los patrones %1, %2, ... %9 se reemplazan por el componente más
+      significativo correspondiente del dominio de la clave de entrada. Si la
+      clave de entrada es <i>usuario@correo.ejemplo.com</i>, entonces %1 es
+      <b>com</b>, %2 es <b>ejemplo</b> y %3 es <b>correo</b>. Si la clave de
+      entrada no está cualificada o no tiene suficientes componentes de dominio
+      para satisfacer todos los patrones especificados, la búsqueda se suprime y
+      no devuelve resultados.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="query_filter"><a class="permalink" href="#query_filter"><b>query_filter
+    (predeterminado: mailacceptinggeneralid=%s)</b></a></dt>
+  <dd>El filtro RFC2254 utilizado para buscar en el directorio, donde
+      <b>%s</b> es un sustituto de la dirección que Postfix intenta resolver,
+      por ejemplo,
+        <pre>    query_filter = (&amp;(mail=%s)(paid_up=true))</pre>
+    <p class="Pp">Este parámetro admite las siguientes expansiones '%':</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>%%</b></dt>
+  <dd>Se reemplaza por un carácter '%' literal. (Postfix 2.2 y posteriores).</dd>
+  <dt><b>%s</b></dt>
+  <dd>Se reemplaza por la clave de entrada. Se utiliza el citado RFC 2254 para
+      asegurar que la clave de entrada no añada metacaracteres inesperados.</dd>
+  <dt><b>%u</b></dt>
+  <dd>Cuando la clave de entrada es una dirección del tipo usuario@dominio,
+      <b>%u</b> se reemplaza por la parte local de la dirección (citada según
+      RFC 2254). En caso contrario, <b>%u</b> se reemplaza por la cadena de
+      búsqueda completa. Si la parte local está vacía, la búsqueda se suprime y
+      no devuelve resultados.</dd>
+  <dt><b>%d</b></dt>
+  <dd>Cuando la clave de entrada es una dirección del tipo usuario@dominio,
+      <b>%d</b> se reemplaza por la parte del dominio de la dirección (citada
+      según RFC 2254). En caso contrario, la búsqueda se suprime y no devuelve
+      resultados.</dd>
+  <dt><b>%[SUD]</b></dt>
+  <dd>Las versiones en mayúsculas de las expansiones anteriores se comportan en
+      el parámetro <b>query_filter</b> de forma idéntica a sus contrapartes en
+      minúsculas. Con el parámetro <b>result_format</b> (anteriormente llamado
+      <b>result_filter</b>, consulta la sección SOBRE OTRAS CARACTERÍSTICAS
+      OBSOLETAS y más abajo), se expanden a los componentes correspondientes de
+      la clave de entrada en lugar del valor del resultado.</dd>
+  <dt></dt>
+  <dd>Las expansiones %S, %U y %D anteriores están disponibles con Postfix 2.2 y
+      posteriores.</dd>
+  <dt><b>%[1-9]</b></dt>
+  <dd>Los patrones %1, %2, ... %9 se reemplazan por el componente más
+      significativo correspondiente del dominio de la clave de entrada. Si la
+      clave de entrada es <i>usuario@correo.ejemplo.com</i>, entonces %1 es
+      <b>com</b>, %2 es <b>ejemplo</b> y %3 es <b>correo</b>. Si la clave de
+      entrada no está cualificada o no tiene suficientes componentes de dominio
+      para satisfacer todos los patrones especificados, la búsqueda se suprime y
+      no devuelve resultados.</dd>
+  <dt></dt>
+  <dd>Las expansiones %1, ..., %9 anteriores están disponibles con Postfix 2.2 y
+      posteriores.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>El parámetro &quot;domain&quot; descrito más abajo limita las claves de
+      entrada a las direcciones en dominios coincidentes. Cuando el parámetro
+      &quot;domain&quot; no está vacío, las consultas LDAP para direcciones no
+      cualificadas o direcciones en dominios no coincidentes se suprimen y no
+      devuelven resultados.
+    <p class="Pp">NOTA: NO pongas comillas alrededor de la</p>
+b>filtro_consulta</b>
+        parámetro.</p>
+  </dd>
+  <dt id="formato_resultado"><a class="permalink" href="#formato_resultado"><b>formato_resultado
+    (por defecto: </b><b>%s</b><b>)</b></a></dt>
+  <dd>Llamado <b>filtro_resultado</b> en las versiones de Postfix anteriores a la 2.2. Plantilla de formato aplicada a los atributos de resultado. Se usa más comúnmente para añadir (o anteponer) texto al resultado. Este parámetro admite las siguientes expansiones de '%':</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>%%</b></dt>
+  <dd>Se reemplaza por un carácter '%' literal. (Postfix 2.2 y posterior).</dd>
+  <dt><b>%s</b></dt>
+  <dd>Se reemplaza por el valor del atributo de resultado. Cuando el resultado está vacío, se omite.</dd>
+  <dt><b>%u</b></dt>
+  <dd>Cuando el valor del atributo de resultado es una dirección del tipo usuario@dominio, <b>%u</b> se reemplaza por la parte local de la dirección. Cuando la parte local del resultado está vacía, se omite.</dd>
+  <dt><b>%d</b></dt>
+  <dd>Cuando el valor de un atributo de resultado es una dirección del tipo usuario@dominio, <b>%d</b> se reemplaza por la parte del dominio del valor del atributo. Cuando el resultado no está cualificado, se omite.</dd>
+  <dt><b>%[SUD1-9]</b></dt>
+  <dd>Las expansiones de letras mayúsculas y dígitos decimales interpolan las partes de la clave de entrada en lugar del resultado. Su comportamiento es idéntico al descrito con <b>filtro_consulta</b>, y de hecho, dado que la clave de entrada se conoce de antemano, las búsquedas cuya clave no contenga toda la información especificada en la plantilla de resultado se suprimen y no devuelven ningún resultado.</dd>
+  <dt></dt>
+  <dd>Las expansiones %S, %U, %D y %1, ..., %9 anteriores están disponibles con Postfix 2.2 y posterior.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>Por ejemplo, usar "formato_resultado = smtp:[%s]" permite utilizar un atributo mailHost como base de una tabla transport(5). Después de aplicar el formato de resultado, los valores múltiples se concatenan como cadenas separadas por comas. Los parámetros expansion_limit y size_limit explicados a continuación permiten restringir el número de valores en el resultado, lo que es especialmente útil para mapas que deberían devolver un único valor.
+    <p class="Pp">El valor por defecto <b>%s</b> especifica que cada valor de atributo debe usarse tal cual.</p>
+    <p class="Pp">Este parámetro se llamaba <b>filtro_resultado</b> en las versiones de Postfix anteriores a la 2.2. Si no se especifica ningún "formato_resultado", se utilizará el valor de "filtro_resultado" en su lugar antes de recurrir al valor por defecto. Esto proporciona compatibilidad con archivos de configuración antiguos.</p>
+    <p class="Pp">NOTA: ¡NO ponga comillas alrededor del formato de resultado!</p>
+  </dd>
+  <dt id="dominio"><a class="permalink" href="#dominio"><b>dominio (por defecto: sin
+    lista de dominios)</b></a></dt>
+  <dd>Esta es una lista de nombres de dominio, rutas a archivos o bases de datos de "tipo:tabla". Cuando se especifica, solo las claves de búsqueda completamente cualificadas con una parte local *no vacía* y un dominio coincidente son elegibles para la búsqueda: las búsquedas de 'usuario', las búsquedas de dominio desnudo y las búsquedas "@dominio" no se realizan. Esto puede reducir significativamente la carga de consulta en el servidor LDAP.
+        <pre>    dominio = postfix.org, hash:/etc/postfix/searchdomains</pre>
+    <p class="Pp">Es mejor no utilizar LDAP para almacenar los dominios elegibles para búsquedas LDAP.</p>
+    <p class="Pp">NOTA: ¡NO defina este parámetro para alias locales(8)!</p>
+    <p class="Pp">Esta característica está disponible en Postfix 1.0 y posterior.</p>
+  </dd>
+  <dt id="atributo_resultado"><a class="permalink" href="#atributo_resultado"><b>atributo_resultado
+    (por defecto: maildrop)</b></a></dt>
+  <dd>El/los atributo(s) que Postfix leerá de cualquier entrada de directorio devuelta por la búsqueda, para resolverla a una dirección de correo electrónico.
+        <pre>    atributo_resultado = mailbox, maildrop</pre>
+    <p class="Pp">No confíe en el valor por defecto ("maildrop"). Establezca explícitamente el atributo_resultado en todos los archivos de configuración de tablas ldap. Esto es particularmente relevante cuando no hay un atributo_resultado aplicable, por ejemplo, en casos en los que se utilizan leaf_result_attribute y/o terminal_result_attribute en su lugar. El valor por defecto es inofensivo si "maildrop" también se enumera como un atributo de resultado hoja o terminal, pero es mejor no dejar esto al azar.</p>
+  </dd>
+  <dt id="atributo_resultado_especial"><a class="permalink" href="#atributo_resultado_especial"><b>atributo_resultado_especial
+    (por defecto: vacío)</b></a></dt>
+  <dd>El/los atributo(s) de las entradas de directorio que pueden contener DNs o URLs LDAP RFC 2255. Si se encuentran, se realiza una búsqueda recursiva para recuperar la entrada referenciada por el DN, o las entradas que coinciden con la consulta de la URL.
+        <pre>    atributo_resultado_especial = memberdn</pre>
+    <p class="Pp">La recursión de DN recupera los mismos atributos de resultado que la consulta principal, incluidos los atributos especiales para una mayor recursión.</p>
+    <p class="Pp">El procesamiento de URL recupera solo aquellos atributos que están incluidos tanto en la definición de la URL como en los atributos de resultado (ordinarios, especiales, hoja o terminal) en la definición de la tabla Postfix. Si la URL enumera alguno de los atributos de resultado especiales de la tabla, estos se recuperan y se utilizan de forma recursiva. Una URL que no especifica ninguna selección de atributos, es equivalente (RFC 2255) a una URL que selecciona todos los atributos, en cuyo caso los atributos seleccionados serán el conjunto completo de atributos de resultado en la tabla Postfix.</p>
+    <p class="Pp">Si un descriptor de atributo de URL LDAP o el atributo de resultado de tabla LDAP de Postfix correspondiente (pero no ambos) utiliza opciones de subtipo RFC 2255 ("attr;option"), el atributo solicitado al servidor LDAP incluirá la opción de subtipo. En todos los demás casos, la URL del atributo y el atributo de la tabla deben coincidir exactamente. Los atributos con opciones tanto en la URL como en la tabla Postfix se solicitan solo cuando las opciones son idénticas. Las opciones de descriptor de atributo LDAP se utilizan muy raramente, la mayoría de los usuarios de LDAP no necesitarán preocuparse por este nivel de detalle matizado.</p>
+  </dd>
+  <dt id="atributo_resultado_terminal"><a class="permalink" href="#atributo_resultado_terminal"><b>atributo_resultado_terminal
+    (por defecto: vacío)</b></a></dt>
+  <dd>Cuando se encuentran uno o más atributos de resultado terminal en una entrada LDAP, todos los demás atributos de resultado se ignoran y solo se devuelven los atributos de resultado terminal. Esto es útil para delegar la expansión de miembros de grupos a un host particular, utilizando un atributo opcional "maildrop" en grupos seleccionados para dirigir el grupo a un host específico, donde el grupo se expande, posiblemente a través de un gestor de listas de correo u otro procesamiento especial.
+        <pre>    atributo_resultado =
+    atributo_resultado_terminal = maildrop</pre>
+    <p class="Pp">Al utilizar atributos de resultado terminales y/o hoja, es mejor establecer el atributo_resultado a un valor vacío cuando no se utiliza, o establecerlo explícitamente al valor deseado, incluso si es el valor por defecto "maildrop".</p>
+    <p class="Pp">Esta característica está disponible con Postfix 2.4 o posterior.</p>
+  </dd>
+  <dt id="atributo_resultado_hoja"><a class="permalink" href="#atributo_resultado_hoja"><b>atributo_resultado_hoja
+    (por defecto: vacío)</b></a></dt>
+  <dd>Cuando se encuentran uno o más atributos de resultado especiales en una entrada LDAP no terminal (ver arriba), los atributos de resultado hoja se excluyen de la expansión de esa entrada. Esto es útil al expandir grupos y los atributos de dirección de correo electrónico deseados de los objetos miembro obtenidos a través de la recursión DN o URI también están presentes en el objeto del grupo. Para devolver solo los valores de atributo de los objetos hoja y no del grupo contenedor, agregue el atributo a la lista leaf_result_attribute, y no a la lista result_attribute, que siempre se expande. Tenga en cuenta que el valor por defecto de "atributo_resultado" no está vacío; es posible que desee establecerlo explícitamente vacío cuando utilice "atributo_resultado_hoja" para expandir el grupo a una lista de direcciones DN de miembros. Si los grupos tienen referencias a DN de miembros Y atributos que contienen direcciones rfc822 de múltiples valores, entonces los atributos de cadena van en "atributo_resultado". Los atributos que representan las direcciones de correo electrónico de los objetos referenciados a través de un DN (o URI LDAP) van en "atributo_resultado_hoja".
+        <pre>    atributo_resultado = memberaddr
+    atributo_resultado_especial = memberdn
+    atributo_resultado_terminal = maildrop
+    atributo_resultado_hoja = mail</pre>
+    <p class="Pp">Al utilizar atributos de resultado terminales y/o hoja, es mejor establecer el atributo_resultado a un valor vacío cuando no se utiliza, o establecerlo explícitamente al valor deseado, incluso si es el valor por defecto "maildrop".</p>
+    <p class="Pp">Esta característica está disponible con Postfix 2.4 o posterior.</p>
+  </dd>
+  <dt id="ambito"><a class="permalink" href="#ambito"><b>ambito (por defecto:
+    sub)</b></a></dt>
+  <dd>El ámbito de búsqueda LDAP: <b>sub</b>, <b>base</b> o <b>one</b>. Estos se traducen en LDAP_SCOPE_SUBTREE, LDAP_SCOPE_BASE y LDAP_SCOPE_ONELEVEL.</dd>
+  <dt id="enlazar"><a class="permalink" href="#enlazar"><b>enlazar (por defecto:
+    sí)</b></a></dt>
+  <dd>Si enlazar al servidor LDAP y cómo hacerlo. Las implementaciones LDAP más nuevas no requieren que los clientes enlacen, lo que ahorra tiempo. Ejemplo:
+        <pre>    # No enlazar
+    enlazar = no
+    # Usar enlace SIMPLE
+    enlazar = sí
+    # Usar enlace SASL
+    enlazar = sasl</pre>
+    <p class="Pp">Las versiones de Postfix anteriores a la 2.8 solo admiten "enlazar = no", lo que significa no enlazar, y "enlazar = sí", lo que significa realizar un enlace SIMPLE. Postfix 2.8 y posteriores también admiten "enlazar = SASL" cuando se compila con soporte SASL LDAP como se describe en LDAP_README, también añade los sinónimos "enlazar = none" y "enlazar = simple" para "enlazar = no" y "enlazar = sí" respectivamente. Consulte la sección SASL a continuación para ver parámetros adicionales disponibles con "enlazar = sasl".</p>
+    <p class="Pp">Si necesita enlazar, puede considerar configurar Postfix para conectarse a la máquina local en un puerto que sea un túnel SSL a su servidor LDAP. Si su servidor LDAP no admite SSL de forma nativa, coloque también un túnel (wrapper, proxy, como quiera llamarlo) en ese sistema. Esto debería evitar que la contraseña atraviese la red en texto plano.</p>
+  </dd>
+  <dt id="dn_enlazar"><a class="permalink" href="#dn_enlazar"><b>dn_enlazar (por defecto:
+    vacío)</b></a></dt>
+  <dd>Si tiene que enlazar, hágalo con este nombre distinguido. Ejemplo:
+        <pre>    dn_enlazar = uid=postfix, dc=your, dc=com</pre>
+    Con "enlazar = sasl" (ver arriba), el DN puede ser opcional para algunos mecanismos SASL, no especifique un DN si no es necesario.</dd>
+  <dt id="pw_enlazar"><a class="permalink" href="#pw_enlazar"><b>pw_enlazar (por defecto:
+    vacío)</b></a></dt>
+  <dd>La contraseña para el nombre distinguido anterior. Si tiene que usar esto, probablemente querrá hacer que el archivo de configuración del mapa solo sea legible por el usuario de Postfix. Al usar la sintaxis obsoleta ldap:ldapsource, con parámetros de mapa en main.cf, no es posible almacenar de forma segura la contraseña de enlace. Esto se debe a que main.cf debe ser legible por todos para permitir que las cuentas locales envíen correo a través del comando sendmail. Ejemplo:
+        <pre>    pw_enlazar = postfixpw</pre>
+    Con "enlazar = sasl" (ver arriba), la contraseña puede ser opcional para algunos mecanismos SASL, no especifique una contraseña si no es necesaria.</dd>
+  <dt id="cache"><a class="permalink" href="#cache"><b>cache (IGNORADO con una
+    advertencia)</b></a></dt>
+  <dd></dd>
+  <dt id="cache_vencimiento"><a class="perma<dt id="cache_expiry"><a class="permalink" href="#cache_expiry"><b>cache_expiry
+    (IGNORADO con advertencia)</b></a></dt>
+  <dd></dd>
+  <dt id="cache_size"><a class="permalink" href="#cache_size"><b>cache_size
+    (IGNORADO con advertencia)</b></a></dt>
+  <dd>Los parámetros anteriores YA NO SON SOPORTADOS por Postfix. El soporte de caché se
+      ha eliminado de OpenLDAP a partir de la versión 2.1.13.</dd>
+  <dt id="recursion_limit"><a class="permalink" href="#recursion_limit"><b>recursion_limit
+    (por defecto: 1000)</b></a></dt>
+  <dd>Un límite en la profundidad de anidación de la evaluación especial de atributos de
+      resultado DN y URL. El límite debe ser un número entero positivo no nulo.</dd>
+  <dt id="expansion_limit"><a class="permalink" href="#expansion_limit"><b>expansion_limit
+    (por defecto: 0)</b></a></dt>
+  <dd>Un límite en el número total de elementos de resultado devueltos (como una lista
+      separada por comas) por una búsqueda en el mapa. Un valor de cero deshabilita el
+      límite. Las búsquedas fallan con un error temporal si se supera el límite.
+      Establecer el límite a 1 asegura que las búsquedas no devuelvan múltiples
+      valores.</dd>
+  <dt id="size_limit"><a class="permalink" href="#size_limit"><b>size_limit
+    (por defecto: $expansion_limit)</b></a></dt>
+  <dd>Un límite en el número de entradas LDAP devueltas por una única búsqueda LDAP
+      realizada como parte de la búsqueda. Un valor de 0 deshabilita el límite.
+      La expansión de referencias DN y URL implica consultas LDAP anidadas, cada una de
+      las cuales está sujeta por separado a este límite.
+    <p class="Pp">Nota: incluso una sola entrada LDAP puede generar múltiples
+        resultados de búsqueda, a través de múltiples atributos de resultado y/o
+        atributos de resultado multivalor. Este límite limita la utilización de
+        recursos por búsqueda en el servidor LDAP, no la multiplicidad final del
+        resultado de la búsqueda. Es análogo a la opción &quot;-z&quot; de
+        &quot;ldapsearch&quot;.</p>
+  </dd>
+  <dt id="dereference"><a class="permalink" href="#dereference"><b>dereference
+    (por defecto: 0)</b></a></dt>
+  <dd>Cuándo seguir las alias de LDAP. (Nota: esto no tiene nada que ver con las alias
+      de Postfix.) Los valores permitidos son los legales para las implementaciones
+      LDAP de OpenLDAP/UM:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>0</dt>
+  <dd>nunca</dd>
+  <dt>1</dt>
+  <dd>al buscar</dd>
+  <dt>2</dt>
+  <dd>al localizar el objeto base para la búsqueda</dd>
+  <dt>3</dt>
+  <dd>siempre</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>Consulte ldap.h o las páginas man de ldap_open(3) o ldapsearch(1) para más
+      información. Y si está utilizando un paquete LDAP que tenga otros valores
+      posibles, por favor, llévelo a la atención de la lista de correo
+      postfix-users@postfix.org.</dd>
+  <dt id="chase_referrals"><a class="permalink" href="#chase_referrals"><b>chase_referrals
+    (por defecto: 0)</b></a></dt>
+  <dd>Establece (o borra) LDAP_OPT_REFERRALS (requiere soporte de LDAP versión 3).</dd>
+  <dt id="version"><a class="permalink" href="#version"><b>version (por defecto:
+    2)</b></a></dt>
+  <dd>Especifica la versión del protocolo LDAP a utilizar.</dd>
+  <dt id="debuglevel"><a class="permalink" href="#debuglevel"><b>debuglevel
+    (por defecto: 0)</b></a></dt>
+  <dd>Nivel a establecer para la depuración en las bibliotecas de OpenLDAP.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LDAP_SASL_PARAMETERS'><a class='permalink' href='#LDAP_SASL_PARAMETERS'>PARÁMETROS LDAP   SASL</a></h1>
+<p class="Pp">Si está utilizando las bibliotecas de OpenLDAP compiladas con soporte
+    SASL, Postfix 2.8 y posteriores compilados con soporte SASL LDAP según se
+    describe en LDAP_README pueden autenticarse en servidores LDAP a través de
+    SASL.</p>
+<p class="Pp">Esto permite la autenticación en el servidor LDAP a través de
+    mecanismos distintos de una contraseña simple. La flexibilidad añadida tiene
+    un coste: ya no es práctico establecer un tiempo de espera explícito en la
+    duración de una operación de enlace LDAP. Bajo condiciones adversas, si un
+    enlace SASL caduca, o si lo hace, la duración del tiempo de espera está
+    determinada por las bibliotecas LDAP y SASL.</p>
+<p class="Pp">Es mejor utilizar tablas que utilicen enlaces SASL a través de
+    proxymap(8), de esta manera el proceso solicitante puede establecer un tiempo
+    de espera para la solicitud de proxymap. Esto también le permite ajustar el
+    entorno del proceso anulando la configuración de import_environment de
+    proxymap(8) en master.cf(5). Pueden ser necesarios ajustes de entorno
+    especiales para configurar cachés de credenciales GSSAPI u otras opciones
+    específicas del mecanismo SASL. Las credenciales GSSAPI utilizadas para las
+    búsquedas LDAP pueden necesitar ser diferentes a, por ejemplo, las utilizadas
+    por el cliente SMTP de Postfix para autenticarse en servidores remotos.</p>
+<p class="Pp">El uso de mecanismos SASL requiere la versión 3 del protocolo LDAP, la
+    versión de protocolo por defecto es la 2 para compatibilidad retroactiva. Debe
+    establecer &quot;version = 3&quot; además de &quot;bind = sasl&quot;.</p>
+<p class="Pp">Los siguientes parámetros son relevantes para usar LDAP con
+    SASL</p>
+<dl class="Bl-tag">
+  <dt id="sasl_mechs"><a class="permalink" href="#sasl_mechs"><b>sasl_mechs
+    (por defecto: vacío)</b></a></dt>
+  <dd>Lista de mecanismos SASL separados por espacios a intentar.</dd>
+  <dt id="sasl_realm"><a class="permalink" href="#sasl_realm"><b>sasl_realm
+    (por defecto: vacío)</b></a></dt>
+  <dd>Dominio SASL a utilizar, si es aplicable.</dd>
+  <dt id="sasl_authz_id"><a class="permalink" href="#sasl_authz_id"><b>sasl_authz_id
+    (por defecto: vacío)</b></a></dt>
+  <dd>La identidad de autorización SASL a afirmar, si es aplicable.</dd>
+  <dt id="sasl_minssf"><a class="permalink" href="#sasl_minssf"><b>sasl_minssf
+    (por defecto: 0)</b></a></dt>
+  <dd>El factor de seguridad sasl mínimo requerido para establecer una conexión.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LDAP_SSL_AND_STARTTLS_PARAMETERS'><a class='permalink' href='#LDAP_SSL_AND_STARTTLS_PARAMETERS'>PARÁMETROS LDAP   SSL Y STARTTLS</a></h1>
+<p class="Pp">Si está utilizando las bibliotecas de OpenLDAP compiladas con soporte
+    SSL, Postfix puede conectarse a servidores LDAP SSL y puede emitir el comando
+    STARTTLS.</p>
+<p class="Pp">Se puede solicitar el servicio LDAP SSL utilizando una URL LDAP SSL
+    en el parámetro server_host:</p>
+<pre>    server_host = ldaps://ldap.example.com:636</pre>
+<p class="Pp">STARTTLS se puede activar con el parámetro start_tls:</p>
+<pre>    start_tls = yes</pre>
+<p class="Pp">Ambas formas requieren la versión 3 del protocolo LDAP, que debe ser
+    establecida explícitamente con:</p>
+<pre>    version = 3</pre>
+<p class="Pp">Si alguno de los programas de Postfix que consultan el mapa está
+    configurado en master.cf para ejecutarse en chroot, todos los certificados y
+    claves involucradas deben copiarse a la cárcel chroot. Por supuesto, las
+    claves privadas solo deben ser legibles por el usuario &quot;postfix&quot;.</p>
+<p class="Pp">Los siguientes parámetros son relevantes para LDAP SSL y
+    STARTTLS:</p>
+<dl class="Bl-tag">
+  <dt id="start_tls"><a class="permalink" href="#start_tls"><b>start_tls
+    (por defecto: no)</b></a></dt>
+  <dd>Si se debe emitir o no STARTTLS al conectarse al servidor. No establezca esto
+      con LDAP SSL (la sesión SSL se configura automáticamente cuando se abre la
+      conexión TCP).</dd>
+  <dt id="tls_ca_cert_dir"><a class="permalink" href="#tls_ca_cert_dir"><b>tls_ca_cert_dir
+    (Sin valor por defecto; establezca este o tls_ca_cert_file)</b></a></dt>
+  <dd>Directorio que contiene certificados de Autoridad de Certificación X509 en
+      formato PEM que deben ser reconocidos por el cliente en conexiones SSL/TLS.
+      Los archivos contienen cada uno un certificado de CA. Los archivos se buscan
+      por el valor hash del nombre del sujeto de la CA, que por lo tanto debe estar
+      disponible. Si existen varios certificados de CA con el mismo valor hash de
+      nombre, la extensión debe ser diferente (por ejemplo, 9d66eef0.0,
+      9d66eef0.1, etc.). La búsqueda se realiza en el orden del número de
+      extensión, independientemente de otras propiedades de los certificados.
+      Utilice la utilidad c_rehash (de la distribución OpenSSL) para crear los
+      enlaces necesarios.</dd>
+  <dt id="tls_ca_cert_file"><a class="permalink" href="#tls_ca_cert_file"><b>tls_ca_cert_file
+    (Sin valor por defecto; establezca este o tls_ca_cert_dir)</b></a></dt>
+  <dd>Archivo que contiene los certificados de Autoridad de Certificación X509 en
+      formato PEM que deben ser reconocidos por el cliente en conexiones SSL/TLS.
+      Esta configuración tiene prioridad sobre tls_ca_cert_dir.</dd>
+  <dt id="tls_cert"><a class="permalink" href="#tls_cert"><b>tls_cert (Sin
+    valor por defecto; debe establecerlo)</b></a></dt>
+  <dd>Archivo que contiene el certificado X509 del cliente a ser utilizado por el
+      cliente en conexiones SSL/TLS.</dd>
+  <dt id="tls_key"><a class="permalink" href="#tls_key"><b>tls_key (Sin valor
+    por defecto; debe establecerlo)</b></a></dt>
+  <dd>Archivo que contiene la clave privada correspondiente al tls_cert anterior.</dd>
+  <dt id="tls_require_cert"><a class="permalink" href="#tls_require_cert"><b>tls_require_cert
+    (por defecto: no)</b></a></dt>
+  <dd>Si se debe solicitar o no el certificado X509 del servidor y verificar su
+      validez al establecer conexiones SSL/TLS. Los valores soportados son <b>no</b>
+      y <b>sí</b>.
+    <p class="Pp">Con <b>no</b>, la cadena de confianza del certificado del servidor
+        no se verifica, pero con OpenLDAP anterior a 2.1.13, el nombre en el
+        certificado del servidor aún debe coincidir con el nombre del servidor
+        LDAP. Con OpenLDAP 2.0.0 a 2.0.11 el nombre del servidor no es necesariamente
+        lo que especificó, sino que se determina (por búsqueda inversa) a partir de
+        la dirección IP de la conexión del servidor LDAP. Con OpenLDAP anterior a
+        2.0.13, las extensiones subjectAlternativeName en el certificado del servidor
+        LDAP se ignoran: el nombre del servidor debe coincidir con el CommonName
+        del sujeto. La configuración <b>no</b> corresponde al valor <b>never</b> de
+        <b>TLS_REQCERT</b> en los archivos de configuración del cliente LDAP.</p>
+    <p class="Pp">No utilice TLS con OpenLDAP 2.0.x (y especialmente con x <=
+        11) si puede evitarlo.</p>
+    <p class="Pp">Con <b>sí</b>, el certificado del servidor debe haber sido emitido
+        por una CA de confianza y no estar caducado. El nombre del servidor LDAP
+        debe coincidir con uno de los nombres encontrados en el certificado (ver arriba
+        para el comportamiento dependiente de la versión de la biblioteca OpenLDAP).
+        La configuración <b>sí</b> corresponde al valor <b>demand</b> de
+        <b>TLS_REQCERT</b> en los archivos de configuración del cliente LDAP.</p>
+    <p class="Pp">Los valores &quot;try&quot; y &quot;allow&quot; de
+        <b>TLS_REQCERT</b> no tienen equivalentes aquí. No están disponibles con
+        OpenLDAP 2.0 y, en cualquier caso, tienen propiedades de seguridad cuestionables.
+        O quiere conexiones LDAP verificadas con TLS, o no las quiere.</p>
+    <p class="Pp">El valor &quot;yes&quot; solo funciona correctamente con Postfix
+        2.5 y posteriores, o con OpenLDAP 2.0. Versiones anteriores de Postfix o
+        versiones posteriores de OpenLDAP no funcionan juntas con esta configuración.
+        El soporte para LDAP sobre TLS se añadió a Postfix basándose en la API
+        OpenLDAP 2.0.</p>
+  </dd>
+  <dt id="tls_random_file"><a class="permalink" href="#tls_random_file"><b>tls_random_file
+    (Sin valor por defecto)</b></a></dt>
+  <dd>Ruta de un archivo para obtener bits aleatorios cuando /dev/[u]random no
+      está disponible, a ser utilizados por el cliente en conexiones SSL/TLS.</dd>
+  <dt id="tls_cipher_suite"><a class="permalink" href="#tls_cipher_suite"><b>tls_cipher_suite
+    (Sin valor por defecto)</b></a></dt>
+  <dd>Conjunto de cifrado a utilizar en las negociaciones SSL/TLS.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE'><a class='permalink' href='#EXAMPLE'>EJEMPLO</a></h1>
+<p class="Pp">Aquí hay un ejemplo básico para usar LDAP para buscar alias locales(8).
+    Supongamos que en main.cf, tiene:</p>
+<pre>    alias_maps = hash:/etc/aliases,
+            ldap:/etc/postfix/ldap-aliases.cf</pre>
+<p class="Pp">y en ldap:/etc/postfix/ldap-aliases.cf tiene:</p>
+<pre>    server_host = ldap.example.com
+    search_base = dc=example, dc=com</pre>
+<p class="Pp">Al recibir correo para una dirección local &quot;ldapuser&quot; que no
+    se encuentra en la base de datos /etc/aliases, Postfix buscará en el servidor
+    LDAP que escucha en el puerto 389 en ldap.example.com. Se enlazará anónimamente,
+    buscará cualquier entrada de directorio</p><html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>ldap_table.5.es.html</title>
+        <link rel="stylesheet" href="/css/style.css" type="text/css" />
+        <link rel="stylesheet" href="/css/man.css" type="text/css" />
+        <link rel="stylesheet" href="/css/print.css" type="text/css" media="print" />
+    </head>
+    <body>
+        
+        <main>
+            <article>
+                <section class="Sh">
+                    <h1 class="Sh" id="NOMBRE">NOMBRE</h1>
+                    <p class="Nd">ldap_table - Postfix LDAP lookup table client</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="SINOPSIS">SINOPSIS</h1>
+                    <p class="Bd" style="padding-left: 1em;"><code>/etc/postfix/ldap-users.cf</code></p>
+                    <p class="Bd" style="padding-left: 1em;"><code>ldap:/etc/postfix/ldap-users.cf</code></p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="DESCRIPCIÓN">DESCRIPCIÓN</h1>
+                    <p class="Pp">El cliente LDAP de Postfix permite a Postfix consultar tablas de búsqueda
+                        almacenadas en un servidor LDAP.</p>
+                    <p class="Pp">Los archivos de configuración de cliente LDAP de Postfix son archivos de texto plano
+                        que especifican los parámetros necesarios para conectarse a un servidor LDAP.</p>
+                    <p class="Pp">La configuración de la tabla de búsqueda LDAP se realiza especificando un nombre
+                        de archivo de configuración para la directiva de tabla de búsqueda en Postfix, como se muestra
+                        en la sinopsis.</p>
+                    <p class="Pp">El cliente LDAP de Postfix soporta los siguientes tipos de tablas de búsqueda:</p>
+                    <dl class="Bl-tag">
+                        <dt><code>hash:</code>, <code>btree:</code>, <code>nis:</code>, <code>nisplus:</code>, <code>dbm:</code>, <code>sdbm:</code>, <code>cdb:</code>, <code>regexp:</code>, <code>pcre:</code>, <code>texthash:</code>, <code>socket:</code>, <code>tcp:</code></dt>
+                        <dd>Estos son tipos de tabla de búsqueda estándar de Postfix y no son relevantes para
+                            el cliente LDAP.</dd>
+                        <dt><code>ldap:</code></dt>
+                        <dd>Este es el tipo de tabla de búsqueda para el cliente LDAP. El argumento que sigue
+                            a <code>ldap:</code> es el nombre de un archivo de configuración de cliente LDAP.</dd>
+                    </dl>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="MEMBRESÍA_DE_LISTA">MEMBRESÍA DE LISTA</h1>
+                    <p class="Pp">Este cliente LDAP soporta la búsqueda de membresía de listas RFC 822.
+                        Especifique el dominio de la lista (por ejemplo,<code>example.com</code>) como el
+                        valor de búsqueda. El cliente LDAP consultará el servidor LDAP para encontrar entradas
+                        de usuario cuyos atributos<code>mailacceptinggeneralid</code> (o un atributo
+                        configurado similarmente) coincidan con el nombre de la lista de correo. Luego, para esas entradas
+                        de usuario encontradas, leerá los atributos<code>maildrop</code> (o un atributo
+                        configurado similarmente) y construirá una lista de sus<code>maildrop</code>, que
+                        se tratarán como direcciones RFC822 a las que se entregará el mensaje.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="PARÁMETROS_GENERALES_LDAP">PARÁMETROS GENERALES LDAP</h1>
+                    <p class="Pp">Los siguientes parámetros son utilizados por el cliente LDAP de Postfix para configurar
+                        la conexión al servidor LDAP y las búsquedas.</p>
+                    <dl class="Bl-tag">
+                        <dt id="server_host"><a class="permalink" href="#server_host"><b>server_host</b>
+                            (<code>$tilde</code>)</a></dt>
+                        <dd>El nombre de host o la dirección IP del servidor LDAP. Se pueden especificar varios hosts
+                            separados por comas. Si el nombre de host comienza con<code>/</code>, se trata como un
+                            socket de dominio Unix.</dd>
+                        <dt id="server_port"><a class="permalink" href="#server_port"><b>server_port</b>
+                            (<code>389</code>)</a></dt>
+                        <dd>El número de puerto del servidor LDAP. El valor predeterminado es 389.</dd>
+                        <dt id="search_base"><a class="permalink" href="#search_base"><b>search_base</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El DN base para las búsquedas LDAP. Este es un parámetro obligatorio.</dd>
+                        <dt id="search_filter"><a class="permalink" href="#search_filter"><b>search_filter</b>
+                            (No predeterminado)</a></dt>
+                        <dd>La plantilla de filtro de búsqueda LDAP. El nombre de host o la dirección de correo electrónico
+                            se sustituirá en esta plantilla. Por ejemplo:<code>(mail=%s)</code> o
+                            <code>(uid=%s)</code>. Este es un parámetro obligatorio.</dd>
+                        <dt id="search_scope"><a class="permalink" href="#search_scope"><b>search_scope</b>
+                            (<code>sub</code>)</a></dt>
+                        <dd>El alcance de la búsqueda. Los valores posibles son<code>base</code>,<code>one</code>
+                            o<code>sub</code>.</dd>
+                        <dt id="domain"><a class="permalink" href="#domain"><b>domain</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Un nombre de dominio para añadir a los nombres de host que no tienen un componente de dominio.</dd>
+                        <dt id="size_limit"><a class="permalink" href="#size_limit"><b>size_limit</b>
+                            (<code>0</code>)</a></dt>
+                        <dd>El número máximo de entradas a devolver en una búsqueda. Un valor de<code>0</code>
+                            significa sin límite.</dd>
+                        <dt id="time_limit"><a class="permalink" href="#time_limit"><b>time_limit</b>
+                            (<code>60</code>)</a></dt>
+                        <dd>El tiempo máximo en segundos permitido para una búsqueda LDAP. Un valor de<code>0</code>
+                            significa sin límite.</dd>
+                        <dt id="connect_timeout"><a class="permalink" href="#connect_timeout"><b>connect_timeout</b>
+                            (<code>10</code>)</a></dt>
+                        <dd>El tiempo máximo en segundos permitido para establecer una conexión LDAP. Un valor de<code>0</code>
+                            significa sin límite.</dd>
+                        <dt id="read_timeout"><a class="permalink" href="#read_timeout"><b>read_timeout</b>
+                            (<code>60</code>)</a></dt>
+                        <dd>El tiempo máximo en segundos permitido para leer una respuesta LDAP. Un valor de<code>0</code>
+                            significa sin límite.</dd>
+                        <dt id="bind_dn"><a class="permalink" href="#bind_dn"><b>bind_dn</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El DN utilizado para enlazar con el servidor LDAP. Si no se especifica, se realizará un enlace
+                            anónimo.</dd>
+                        <dt id="bind_pw"><a class="permalink" href="#bind_pw"><b>bind_pw</b>
+                            (No predeterminado)</a></dt>
+                        <dd>La contraseña utilizada para enlazar con el servidor LDAP. Si no se especifica, se realizará un enlace
+                            anónimo.</dd>
+                        <dt id="sasl_mech"><a class="permalink" href="#sasl_mech"><b>sasl_mech</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El mecanismo SASL a utilizar para la autenticación. Si no se especifica, no se utilizará SASL.</dd>
+                        <dt id="sasl_realm"><a class="permalink" href="#sasl_realm"><b>sasl_realm</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El reino SASL a utilizar para la autenticación.</dd>
+                        <dt id="sasl_auth_enable"><a class="permalink" href="#sasl_auth_enable"><b>sasl_auth_enable</b>
+                            (<code>yes</code>)</a></dt>
+                        <dd>Habilitar la autenticación SASL. Si se establece en<code>no</code>, la autenticación SASL se
+                            deshabilitará.</dd>
+                        <dt id="tls_reqcert"><a class="permalink" href="#tls_reqcert"><b>tls_reqcert</b>
+                            (<code>hard</code>)</a></dt>
+                        <dd>Especifica si se debe solicitar un certificado del servidor LDAP y cómo se debe verificar. Los
+                            valores posibles son:<code>never</code>,<code>allow</code>,<code>try</code>,<code>demand</code>,<code>hard</code>.</dd>
+                        <dt id="tls_cert_file"><a class="permalink" href="#tls_cert_file"><b>tls_cert_file</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El archivo que contiene el certificado de cliente para la autenticación mutua TLS.</dd>
+                        <dt id="tls_key_file"><a class="permalink" href="#tls_key_file"><b>tls_key_file</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El archivo que contiene la clave privada para la autenticación mutua TLS.</dd>
+                        <dt id="tls_cacert_file"><a class="permalink" href="#tls_cacert_file"><b>tls_cacert_file</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El archivo que contiene los certificados CA para verificar el certificado del servidor LDAP.</dd>
+                        <dt id="tls_cacert_dir"><a class="permalink" href="#tls_cacert_dir"><b>tls_cacert_dir</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El directorio que contiene los certificados CA para verificar el certificado del servidor LDAP.</dd>
+                        <dt id="tls_random_file"><a class="permalink" href="#tls_random_file"><b>tls_random_file</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El archivo que contiene datos aleatorios para la inicialización de TLS.</dd>
+                        <dt id="tls_session_cache_database"><a class="permalink" href="#tls_session_cache_database"><b>tls_session_cache_database</b>
+                            (No predeterminado)</a></dt>
+                        <dd>El archivo de base de datos para el almacenamiento en caché de sesiones TLS.</dd>
+                        <dt id="result_format"><a class="permalink" href="#result_format"><b>result_format</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Una cadena de formato para procesar los resultados de la búsqueda LDAP. El nombre de atributo
+                            se sustituirá en esta cadena. Por ejemplo:<code>%u@%d</code>. Este parámetro solo se
+                            utiliza cuando se busca información de dirección de correo electrónico.</dd>
+                        <dt id="result_filter"><a class="permalink" href="#result_filter"><b>result_filter</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Para compatibilidad con versiones anteriores de clientes LDAP anteriores a la versión 2.2,
+                            <code>result_filter</code> se puede usar en lugar de<code>result_format</code>, cuando
+                            este último parámetro tampoco se establece. El nuevo nombre refleja mejor la función del
+                            parámetro. Esta interfaz de compatibilidad puede eliminarse en una versión futura.</dd>
+                        <dt id="alias_maps"><a class="permalink" href="#alias_maps"><b>alias_maps</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Una lista de mapas de alias para consultar para resolver alias de correo electrónico.</dd>
+                        <dt id="alias_member_limit"><a class="permalink" href="#alias_member_limit"><b>alias_member_limit</b>
+                            (<code>50</code>)</a></dt>
+                        <dd>El número máximo de miembros que se pueden devolver para una expansión de alias.</dd>
+                        <dt id="map_type"><a class="permalink" href="#map_type"><b>map_type</b>
+                            (<code>ldap</code>)</a></dt>
+                        <dd>El tipo de mapa a utilizar. Esto se establece automáticamente en<code>ldap</code>
+                            cuando se utiliza el prefijo<code>ldap:</code>.</dd>
+                    </dl>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="PARÁMETROS_LDAP_SASL">PARÁMETROS LDAP SASL</h1>
+                    <p class="Pp">Los siguientes parámetros se utilizan para configurar la autenticación SASL con el
+                        servidor LDAP.</p>
+                    <dl class="Bl-tag">
+                        <dt id="sasl_mech_filter"><a class="permalink" href="#sasl_mech_filter"><b>sasl_mech_filter</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Un filtro para seleccionar los mecanismos SASL disponibles.</dd>
+                        <dt id="sasl_min_layer"><a class="permalink" href="#sasl_min_layer"><b>sasl_min_layer</b>
+                            (No predeterminado)</a></dt>
+                        <dd>La capa mínima de seguridad SASL requerida.</dd>
+                        <dt id="sasl_max_layer"><a class="permalink" href="#sasl_max_layer"><b>sasl_max_layer</b>
+                            (No predeterminado)</a></dt>
+                        <dd>La capa máxima de seguridad SASL permitida.</dd>
+                        <dt id="sasl_secprops"><a class="permalink" href="#sasl_secprops"><b>sasl_secprops</b>
+                            (No predeterminado)</a></dt>
+                        <dd>Propiedades de seguridad SASL para negociar.</dd>
+                    </dl>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="PARÁMETROS_LDAP_SSL_Y_STARTTLS">PARÁMETROS LDAP SSL Y STARTTLS</h1>
+                    <p class="Pp">Los siguientes parámetros se utilizan para configurar el uso de SSL/TLS con el servidor
+                        LDAP.</p>
+                    <dl class="Bl-tag">
+                        <dt id="tls_enable"><a class="permalink" href="#tls_enable"><b>tls_enable</b>
+                            (<code>no</code>)</a></dt>
+                        <dd>Habilitar el uso de SSL/TLS para la conexión LDAP.</dd>
+                        <dt id="tls_use_wrapper"><a class="permalink" href="#tls_use_wrapper"><b>tls_use_wrapper</b>
+                            (<code>no</code>)</a></dt>
+                        <dd>Usar el envoltorio <code class="Nm">openssl</code> para la conexión TLS.</dd>
+                    </dl>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="EJEMPLO">EJEMPLO</h1>
+                    <p class="Pp">A continuación, se muestra un ejemplo de archivo de configuración de cliente LDAP:</p>
+                    <pre>
+# /etc/postfix/ldap-users.cf
+server_host = ldap.example.com
+search_base = ou=users,dc=example,dc=com
+search_filter = (mail=%s)
+result_format = %u@%d
+                    </pre>
+                    <p class="Pp">Este archivo de configuración especificaría la consulta LDAP que se realizaría.
+                        Cuando un usuario envía un correo electrónico a<code>user@example.com</code>, el cliente
+                        LDAP de Postfix buscaría una entrada en el servidor LDAP<code>ldap.example.com</code>
+                        con el filtro<code>(mail=user@example.com)</code>. Si se encuentra una entrada,
+                        el campo<code>result_format</code> se aplicaría al resultado. En este ejemplo, si
+                        la entrada LDAP tuviera un campo<code>mail</code> de<code>user@example.com</code>,
+                        el resultado sería<code>user@example.com</code>.</p>
+                    <p class="Pp">Para buscar el atributo<code>maildrop</code> y construir una lista de destinatarios
+                        para la membresía de lista, el archivo de configuración se vería así:</p>
+                    <pre>
+# /etc/postfix/ldap-groups.cf
+server_host = ldap.example.com
+search_base = ou=groups,dc=example,dc=com
+search_filter = (cn=%s)
+result_format = %{maildrop}
+maildrop_attribute = maildrop
+                    </pre>
+                    <p class="Pp">Cuando un usuario envía un correo electrónico a una lista de correo definida en el
+                        LDAP (por ejemplo,<code>mailinglist@example.com</code>), el cliente LDAP de Postfix buscaría
+                        una entrada en el servidor LDAP<code>ldap.example.com</code> con el filtro
+                        <code>(cn=mailinglist@example.com)</code>. Si se encuentra una entrada, el atributo
+                        <code>maildrop</code> de esa entrada se leería y se trataría como una dirección RFC822
+                        a la que se entregará el mensaje.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="PARÁMETROS_OBSOLETOS_DE_MAIN.CF">PARÁMETROS OBSOLETOS DE MAIN.CF</h1>
+                    <p class="Pp">Para compatibilidad con versiones anteriores de Postfix 2.0 y anteriores, los
+                        parámetros LDAP también se pueden definir en<code>main.cf</code>. Especifique como
+                        fuente LDAP un nombre que no comience con una barra o un punto. Los parámetros LDAP
+                        serán entonces accesibles como el nombre que le ha dado a la fuente en su definición, un guión bajo
+                        y el nombre del parámetro. Por ejemplo, si el mapa se especifica como<code>&quot;ldap:<i>ldapsource</i>&quot;</code>, el parámetro
+                        <code>&quot;server_host&quot;</code> a continuación se definiría en<code>main.cf</code>
+                        como<code>&quot;<i>ldapsource</i>_server_host&quot;</code>.</p>
+                    <p class="Pp">Nota: con esta forma, las contraseñas para las fuentes LDAP se escriben en<code>main.cf</code>,
+                        que normalmente es legible por todos. El soporte para esta forma se eliminará en una futura versión
+                        de Postfix.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="OTRAS_CARACTERÍSTICAS_OBSOLETAS">OTRAS CARACTERÍSTICAS OBSOLETAS</h1>
+                    <dl class="Bl-tag">
+                        <dt id="result_filter"><a class="permalink" href="#result_filter"><b>result_filter
+                            (No predeterminado)</b></a></dt>
+                        <dd>Para compatibilidad con versiones anteriores de clientes LDAP anteriores a la versión 2.2,
+                            <code>result_filter</code> se puede usar en lugar de<code>result_format</code>, cuando
+                            este último parámetro tampoco se establece. El nuevo nombre refleja mejor la función del
+                            parámetro. Esta interfaz de compatibilidad puede eliminarse en una versión futura.</dd>
+                    </dl>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="VER_TAMBIÉN">VER TAMBIÉN</h1>
+                    <pre>postmap(1), Gestor de tablas de búsqueda de Postfix
+postconf(5), Parámetros de configuración
+mysql_table(5), Tablas de búsqueda de MySQL
+pgsql_table(5), Tablas de búsqueda de PostgreSQL</pre>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="ARCHIVOS_README">ARCHIVOS README</h1>
+                    <p class="Pp">Utilice<code>&quot;<b>postconf readme_directory</b>&quot;</code> o
+                        <code>&quot;<b>postconf html_directory</b>&quot;</code> para localizar esta información.</p>
+                    <pre>
+DATABASE_README, Resumen de tablas de búsqueda de Postfix
+LDAP_README, Guía del cliente LDAP de Postfix
+                    </pre>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="LICENCIA">LICENCIA</h1>
+                    <p class="Pp">La licencia de Secure Mailer debe distribuirse con este software.</p>
+                </section>
+                <section class="Sh">
+                    <h1 class="Sh" id="AUTOR(ES)">AUTOR(ES)</h1>
+                    <p class="Pp">Carsten Hoeger, Hery Rakotoarisoa, John Hensley, Keith Stevenson, LaMont Jones,
+                        Liviu Daia, Manuel Guesdon, Mike Mattice, Prabhat K Singh, Sami Haahtinen, Samuel Tardieu,
+                        Victor Duchovni, y muchos otros.</p>
+                </section>
+            </article>
+            <footer>
+                <div class="line"></div>
+                <p>
+                    <span class="date"></span>
+                    <span class="os"></span>
+                </p>
+            </footer>
+        </main>
+    </body>
+</html>

@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ndctl-inject-error(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ndctl-inject-error(1)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">NDCTL-INJECT-ERROR(1)</td>
+    <td class="head-vol">Manual de ndctl</td>
+    <td class="head-rtitle">NDCTL-INJECT-ERROR(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">ndctl-inject-error - inyecta errores de medios en un desplazamiento de espacio de nombres</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><i>ndctl inject-error</i> &lt;espacio de nombres&gt; [&lt;opciones&gt;]</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TEORA_DE_OPERACIN'><a class='permalink' href='#TEORA_DE_OPERACIN'>TEORÍA DE OPERACIÓN</a></h1>
+<p class="Pp">La capacidad de una REGIÓN NVDIMM (espacio contiguo de memoria persistente) se accede a través de uno o más dispositivos NAMESPACE. REGIÓN es el término de Linux para lo que ACPI y UEFI llaman un conjunto de intercalado DIMM, o un rango de direcciones físicas del sistema que se intercala (por el controlador de memoria) a través de uno o más módulos de memoria.</p>
+<p class="Pp">La especificación UEFI define el <i>Protocolo de Etiqueta NVDIMM</i> como la combinación de métodos de acceso al área de etiqueta y un formato de datos para el aprovisionamiento de uno o más objetos NAMESPACE a partir de una REGIÓN. Tenga en cuenta que el soporte de etiquetas es opcional y si Linux no detecta la capacidad de etiqueta, automáticamente instanciará un espacio de nombres "sin etiqueta" por región. Ejemplos de espacios de nombres sin etiqueta son los creados por la opción de línea de comandos <i>memmap=ss!nn</i> del kernel (ver el wiki de nvdimm en kernel.org), o NVDIMMs sin un <i>índice de espacio de nombres</i> válido en su área de etiqueta.</p>
+<div class="Bd-indent">
+<br/>
+<b>Nota</b>
+<p class="Pp">Los espacios de nombres sin etiqueta carecen de muchas de las características de sus
+    primos
+  <br/>
+  ricos en etiquetas. Por ejemplo, su tamaño no se puede modificar, ni se pueden
+    <em>destruir</em> completamente (es decir, recuperar el espacio). Una operación de destrucción pondrá a cero cualquier metadato específico del modo. Finalmente, para las operaciones de creación de espacios de nombres sin etiqueta, ndctl omite las comprobaciones de disponibilidad de capacidad de región y siempre satisface la solicitud utilizando la capacidad completa de la región. La única operación de reconfiguración compatible con un espacio de nombres sin etiqueta es el cambio de su <i>modo</i>.</p>
+</div>
+<p class="Pp">Un espacio de nombres se puede aprovisionar para operar en uno de 4 modos,
+    <i>fsdax</i>, <i>devdax</i>, <i>sector</i> y <i>raw</i>. Aquí están los modelos de uso esperados para estos modos:</p>
+<div class="Bd-indent">&#x2022;fsdax: El modo Filesystem-DAX es el modo predeterminado de un espacio de nombres al especificar
+  <i>ndctl create-namespace</i> sin opciones. Crea un dispositivo de bloque (/dev/pmemX[.Y]) que admite las capacidades DAX de los sistemas de archivos Linux (xfs y ext4 hasta la fecha). DAX elimina la caché de páginas de la ruta de I/O y permite que mmap(2) establezca mapeos directos a medios de memoria persistente. La capacidad DAX permite que las cargas de trabajo / conjuntos de trabajo que excederían la capacidad de la caché de páginas escalen hasta la capacidad de la memoria persistente. Las cargas de trabajo que caben en la caché de páginas o realizan transferencias de datos masivas pueden no ver beneficios de DAX. En caso de duda, elija este modo.</div>
+<div class="Bd-indent">&#x2022;devdax: El modo Device-DAX habilita capacidades de mapeo DAX mmap(2) similares a Filesystem-DAX. Sin embargo, en lugar de un dispositivo de bloque que puede admitir un sistema de archivos habilitado para DAX, este modo emite un único archivo de dispositivo de caracteres (/dev/daxX.Y). Use este modo para asignar memoria persistente a una máquina virtual, registrar memoria persistente para RDMA o cuando se necesiten mapeos gigantescos.</div>
+<div class="Bd-indent">&#x2022;sector: Use este modo para alojar sistemas de archivos heredados que no verifican los metadatos o aplicaciones que no están preparadas para sectores rotos después de un fallo. El uso esperado para este modo es para pequeños volúmenes de arranque. Este modo es compatible con otros sistemas operativos.</div>
+<div class="Bd-indent">&#x2022;raw: El modo Raw es efectivamente solo un disco de memoria que no admite DAX. Típicamente, esto indica un espacio de nombres que fue creado por herramientas u otro sistema operativo que no sabía cómo crear un espacio de nombres en modo <i>fsdax</i> o <i>devdax</i> de Linux. Este modo es compatible con otros sistemas operativos, pero nuevamente, no admite la operación DAX.</div>
+<p class="Pp">ndctl-inject-error se puede usar para solicitar a la plataforma que simule errores de medios en el espacio de direcciones NVDIMM para ayudar a depurar y desarrollar funciones relacionadas con el manejo de errores.</p>
+<p class="Pp">Por defecto, inyectar un error en realidad solo inyecta un error en los primeros
+    <i>n</i> bytes del bloque, donde <i>n</i> es el resultado de ndctl_cmd_ars_cap_get_size(). En otras palabras, solo inyectamos una
+    <i>unidad ars</i> por sector. Esto es suficiente para que Linux marque todo el sector como defectuoso, y aparecerá como tal en las diversas listas de
+    <i>bloques defectuosos</i> del kernel. Si se están inyectando múltiples bloques, solo se inyectarán los primeros
+    <i>n</i> bytes de cada bloque especificado como errores. Esto se puede anular con la opción --saturate, que forzará la inyección de todo el bloque como un error.</p>
+<div class="Bd-indent">
+<br/>
+<b>Advertencia</b>
+<p class="Pp">Estos comandos son PELIGROSOS y pueden causar pérdida de datos. Solo se
+  <br/>
+  proporcionan para fines de prueba y depuración.</p>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">Inyectar errores en namespace0.0 en el bloque 12 para 2 bloques (es decir, 12,
+    13)</p>
+<pre>ndctl inject-error --block=12 --count=2 namespace0.0</pre>
+<p class="Pp">Verificar el estado de los errores inyectados en namespace0.0</p>
+<pre>ndctl inject-error --status namespace0.0</pre>
+<p class="Pp">Desinyectar errores en el bloque 12 para 2 bloques en namespace0.0</p>
+<pre>ndctl inject-error --uninject --block=12 --count=2 namespace0.0</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES'><a class='permalink' href='#OPCIONES'>OPCIONES</a></h1>
+<p class="Pp">-B, --block=</p>
+<div class="Bd-indent">Desplazamiento de bloque del espacio de nombres en bloques de 512 bytes donde se inyectará el error.
+  <div class="Bd-indent">
+<pre>NOTA: El desplazamiento se interpreta de diferentes maneras según el "modo"
+del espacio de nombres. Para el modo "raw", el desplazamiento es el desplazamiento base del espacio de nombres. Para el modo "fsdax" (es decir, un espacio de nombres "pfn"), el desplazamiento es relativo a la parte visible por el usuario del espacio de nombres, y se tendrá en cuenta el desplazamiento introducido por los metadatos del kernel. Para un espacio de nombres en modo "sector" (es decir, un espacio de nombres "BTT"), el desplazamiento es relativo al espacio de nombres base, ya que los detalles de traducción de BTT son internos al kernel y no se pueden tener en cuenta al inyectar
+errores.</pre>
+</div>
+</div>
+<p class="Pp">-n, --count=</p>
+<div class="Bd-indent">Número de bloques a inyectar como errores. Esto también está en términos de bloques fijos de 512 bytes.</div>
+<p class="Pp">-d, --uninject</p>
+<div class="Bd-indent">Esta opción solicitará a la plataforma que elimine cualquier error inyectado para el desplazamiento de bloque y la cuenta especificados.
+  <div class="Bd-indent">
+<pre>ADVERTENCIA: Esto no borrará el seguimiento de bloques defectuosos interno del kernel;
+solo se pueden borrar haciendo una escritura en las ubicaciones afectadas.
+Por lo tanto, use la opción --clear solo si sabe exactamente lo que está haciendo. Para uso normal, los errores inyectados solo deben borrarse realizando escrituras. No espere tener los datos originales intactos después de inyectar un error y borrarlo usando --clear; se perderán, ya que la única forma "real" de borrar la ubicación del error es escribir en ella o ponerla a cero (truncar/agujerear).</pre>
+</div>
+</div>
+<p class="Pp">-t, --status</p>
+<div class="Bd-indent">Esta opción recuperará el estado de los errores inyectados.
+  Tenga en cuenta que esto no recuperará todos los errores conocidos/latentes (es decir, los no inyectados), y NO es equivalente a realizar un Barrido de Rango de Direcciones.</div>
+<p class="Pp">-N, --no-notify</p>
+<div class="Bd-indent">Esta opción solo es válida al inyectar errores. Por defecto, el comando de inyección de errores solicitará al firmware de la plataforma que active una notificación en el kernel, pidiéndole que actualice su estado de errores conocidos.
+  Con esta opción, el error todavía se inyectará, el kernel no recibirá una notificación y el error aparecerá como un error de medios latente cuando se acceda a la ubicación. Si el firmware de la plataforma no admite esta función, esto no tendrá ningún efecto.</div>
+<p class="Pp">-S, --saturate</p>
+<div class="Bd-indent">Esta opción fuerza la inyección o desinyección de errores para cubrir todo el rango de direcciones cubierto por el(los) bloque(s) especificado(s).</div>
+<p class="Pp">-v, --verbose</p>
+<div class="Bd-indent">Emitir mensajes de depuración para el proceso de inyección de errores</div>
+<p class="Pp">-u, --human</p>
+<div class="Bd-indent">Formatear números que representan tamaños de almacenamiento o desplazamientos como cadenas legibles por humanos con unidades en lugar de los datos numéricos crudos predeterminados, amigables para la máquina. Convertir otros campos numéricos a cadenas hexadecimales.</div>
+<p class="Pp">-r, --region=</p>
+<div class="Bd-indent">Un nombre de dispositivo <i>regionX</i> o un número de ID de región.
+  Restringir la operación a la(s) región(es) especificada(s). La palabra clave <i>all</i> se puede especificar para indicar la falta de restricción, sin embargo, esto es lo mismo que no proporcionar la opción --region en absoluto.</div>
+<p class="Pp">-b, --bus=</p>
+<div class="Bd-indent">Un número de ID de bus o una cadena de proveedor (por ejemplo,
+  "ACPI.NFIT"). Restringir la operación al(los) bus(es) especificado(s). La
+  palabra clave <i>all</i> se puede especificar para indicar la falta de restricción, sin embargo, esto es lo mismo que no proporcionar la opción --bus en absoluto.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DERECHOS_DE_AUTOR'><a class='permalink' href='#DERECHOS_DE_AUTOR'>DERECHOS DE AUTOR</a></h1>
+<p class="Pp">Copyright &#x00A9; 2016 - 2022, Intel Corporation. Licencia GPLv2:
+    GNU GPL versión 2 <i></i> <a href='http://gnu.org/licenses/gpl.html'>http://gnu.org/licenses/gpl.html</a>. Esto es
+    software libre: puede libremente</p>
+</div>
+</section>
+                
+            </article>
+        </main>
+    </body>
+</html>
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en">
+  <head>
+    <title>ndctl-inject-error.1</title>
+    <link rel="stylesheet" type="text/css" href="/css/manual.css" />
+  </head>
+  <body>
+    <article>
+      <h1>ndctl-inject-error.1</h1>
+      <section class="Sh">
+        <h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+        <p class="Pp">ndctl-inject-error - inject an error into a persistent memory device</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+        <p class="Pp"><b>ndctl inject-error</b> [<i>-d LIBNDCTL_DEVICE</i>] [<i>--force</i>] [<i>--bus=</i><i>BUS</i>] [<i>--device=</i><i>DEVICE</i>] [<i>--type=</i><i>TYPE</i>] [<i>--location=</i><i>LOCATION</i>] [<i>--num-errors=</i><i>NUM_ERRORS</i>] [<i>--interval=</i><i>INTERVAL</i>]</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="THEORY_OF_OPERATION"><a class="permalink" href="#THEORY_OF_OPERATION">THEORY OF OPERATION</a></h1>
+        <p class="Pp">The <a href="ndctl-inject-error.1.html">ndctl-inject-error</a> command is used to inject errors into a persistent memory (PMEM) device. This can be useful for testing error handling mechanisms and other fault-tolerance features of the system.</p>
+        <p class="Pp">The command supports injecting various types of errors, such as correctable errors (CE) and uncorrectable errors (UCE). The type of error to inject can be specified using the <i>--type</i> option.</p>
+        <p class="Pp">The command also allows specifying the target device, bus, and location for the error injection. The <i>--bus</i>, <i>--device</i>, and <i>--location</i> options can be used for this purpose. If no specific device is provided, the command may attempt to inject errors into all available PMEM devices.</p>
+        <p class="Pp">The <i>--num-errors</i> option controls the number of errors to inject, and the <i>--interval</i> option specifies the time interval between injected errors.</p>
+        <p class="Pp">The <i>--force</i> option can be used to override certain safety checks and force the error injection, even if it might lead to data corruption or instability.</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
+        <p class="Pp">Inject a single correctable error (CE) into the PMEM device with ID 0:</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error --bus=0 --device=0 --type=ce --num-errors=1</pre>
+        </div>
+        <p class="Pp">Inject 10 uncorrectable errors (UCE) into all PMEM devices with a 1-second interval:</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error --type=uce --num-errors=10 --interval=1</pre>
+        </div>
+        <p class="Pp">Force injection of a correctable error into a specific device (use with caution):</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error -d namespace0.0 --type=ce --force</pre>
+        </div>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h1>
+        <dl class="Bl Lx">
+          <dt><b>-d</b> <i>LIBNDCTL_DEVICE</i></dt>
+          <dd>Specify the libndctl device name to inject errors into. This can be a specific device name like <tt>namespace0.0</tt> or a general path like <tt>/dev/pmem0</tt>.</dd>
+          <dt><b>--force</b></dt>
+          <dd>Force the error injection. This option may override safety checks and could potentially lead to data loss or system instability. Use with extreme caution.</dd>
+          <dt><b>--bus=</b><i>BUS</i></dt>
+          <dd>Specify the bus number of the PMEM device.</dd>
+          <dt><b>--device=</b><i>DEVICE</i></dt>
+          <dd>Specify the device number of the PMEM device.</dd>
+          <dt><b>--type=</b><i>TYPE</i></dt>
+          <dd>Specify the type of error to inject. Supported types may include <tt>ce</tt> (correctable error) and <tt>uce</tt> (uncorrectable error). Check the documentation for supported values.</dd>
+          <dt><b>--location=</b><i>LOCATION</i></dt>
+          <dd>Specify the error location within the device, if supported by the hardware and driver.</dd>
+          <dt><b>--num-errors=</b><i>NUM_ERRORS</i></dt>
+          <dd>The number of errors to inject. Defaults to 1 if not specified.</dd>
+          <dt><b>--interval=</b><i>INTERVAL</i></dt>
+          <dd>The interval in seconds between injecting errors. This is only applicable when injecting more than one error.</dd>
+        </dl>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+        <p class="Pp">Copyright (c) 2016-2019, Intel Corporation. This is open source software, you can redistribute and/or modify it under the terms of the GNU General Public License, Version 2, as published by the Free Software Foundation. This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE ALSO</a></h1>
+        <p class="Pp">ndctl-list(1)</p>
+      </section>
+    </article>
+    <table class="foot">
+      <tr>
+        <td class="foot-date">2024-07-18</td>
+        <td class="foot-os">ndctl</td>
+      </tr>
+    </table>
+  </body>
+</html>
+```
+
+```html
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+    "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" lang="es" xml:lang="es">
+  <head>
+    <title>ndctl-inject-error.1</title>
+    <link rel="stylesheet" type="text/css" href="/css/manual.css" />
+  </head>
+  <body>
+    <article>
+      <h1>ndctl-inject-error.1</h1>
+      <section class="Sh">
+        <h1 class="Sh" id="NOMBRE"><a class="permalink" href="#NOMBRE">NOMBRE</a></h1>
+        <p class="Pp">ndctl-inject-error - inyecta un error en un dispositivo de memoria persistente</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="SINOPSIS"><a class="permalink" href="#SINOPSIS">SINOPSIS</a></h1>
+        <p class="Pp"><b>ndctl inject-error</b> [<i>-d LIBNDCTL_DEVICE</i>] [<i>--force</i>] [<i>--bus=</i><i>BUS</i>] [<i>--device=</i><i>DEVICE</i>] [<i>--type=</i><i>TYPE</i>] [<i>--location=</i><i>LOCATION</i>] [<i>--num-errors=</i><i>NUM_ERRORS</i>] [<i>--interval=</i><i>INTERVAL</i>]</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="TEORIA_DE_OPERACION"><a class="permalink" href="#TEORIA_DE_OPERACION">TEORÍA DE OPERACIÓN</a></h1>
+        <p class="Pp">El comando <a href="ndctl-inject-error.1.html">ndctl-inject-error</a> se utiliza para inyectar errores en un dispositivo de memoria persistente (PMEM). Esto puede ser útil para probar mecanismos de manejo de errores y otras características de tolerancia a fallos del sistema.</p>
+        <p class="Pp">El comando soporta la inyección de varios tipos de errores, como errores corregibles (CE) y errores incorregibles (UCE). El tipo de error a inyectar se puede especificar usando la opción <i>--type</i>.</p>
+        <p class="Pp">El comando también permite especificar el dispositivo de destino, el bus y la ubicación para la inyección de errores. Las opciones <i>--bus</i>, <i>--device</i> y <i>--location</i> se pueden usar para este propósito. Si no se proporciona un dispositivo específico, el comando puede intentar inyectar errores en todos los dispositivos PMEM disponibles.</p>
+        <p class="Pp">La opción <i>--num-errors</i> controla el número de errores a inyectar, y la opción <i>--interval</i> especifica el intervalo de tiempo entre los errores inyectados.</p>
+        <p class="Pp">La opción <i>--force</i> se puede usar para anular ciertas verificaciones de seguridad y forzar la inyección de errores, incluso si esto pudiera provocar corrupción de datos o inestabilidad.</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="EJEMPLOS"><a class="permalink" href="#EJEMPLOS">EJEMPLOS</a></h1>
+        <p class="Pp">Inyectar un único error corregible (CE) en el dispositivo PMEM con ID 0:</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error --bus=0 --device=0 --type=ce --num-errors=1</pre>
+        </div>
+        <p class="Pp">Inyectar 10 errores incorregibles (UCE) en todos los dispositivos PMEM con un intervalo de 1 segundo:</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error --type=uce --num-errors=10 --interval=1</pre>
+        </div>
+        <p class="Pp">Forzar la inyección de un error corregible en un dispositivo específico (usar con precaución):</p>
+        <div class="Bd Lx">
+          <pre>ndctl inject-error -d namespace0.0 --type=ce --force</pre>
+        </div>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="OPCIONES"><a class="permalink" href="#OPCIONES">OPCIONES</a></h1>
+        <dl class="Bl Lx">
+          <dt><b>-d</b> <i>LIBNDCTL_DEVICE</i></dt>
+          <dd>Especifica el nombre del dispositivo libndctl en el que inyectar errores. Puede ser un nombre de dispositivo específico como <tt>namespace0.0</tt> o una ruta general como <tt>/dev/pmem0</tt>.</dd>
+          <dt><b>--force</b></dt>
+          <dd>Forzar la inyección de errores. Esta opción puede anular las comprobaciones de seguridad y potencialmente provocar pérdida de datos o inestabilidad del sistema. Usar con extrema precaución.</dd>
+          <dt><b>--bus=</b><i>BUS</i></dt>
+          <dd>Especifica el número de bus del dispositivo PMEM.</dd>
+          <dt><b>--device=</b><i>DEVICE</i></dt>
+          <dd>Especifica el número de dispositivo del dispositivo PMEM.</dd>
+          <dt><b>--type=</b><i>TYPE</i></dt>
+          <dd>Especifica el tipo de error a inyectar. Los tipos soportados pueden incluir <tt>ce</tt> (error corregible) y <tt>uce</tt> (error incorregible). Consulte la documentación para ver los valores soportados.</dd>
+          <dt><b>--location=</b><i>LOCATION</i></dt>
+          <dd>Especifica la ubicación del error dentro del dispositivo, si es soportado por el hardware y el controlador.</dd>
+          <dt><b>--num-errors=</b><i>NUM_ERRORS</i></dt>
+          <dd>El número de errores a inyectar. Por defecto es 1 si no se especifica.</dd>
+          <dt><b>--interval=</b><i>INTERVAL</i></dt>
+          <dd>El intervalo en segundos entre la inyección de errores. Esto solo es aplicable cuando se inyectan más de un error.</dd>
+        </dl>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+        <p class="Pp">Copyright (c) 2016-2019, Intel Corporation. Este es software de código abierto, usted puede redistribuirlo y/o modificarlo bajo los términos de la Licencia Pública General de GNU, Versión 2, publicada por la Free Software Foundation. Este programa se distribuye con la esperanza de que sea útil, pero SIN NINGUNA GARANTÍA; incluso sin la garantía implícita de COMERCIABILIDAD o IDONEIDAD PARA UN PROPÓSITO PARTICULAR. Consulte la Licencia Pública General de GNU para obtener más detalles.</p>
+      </section>
+      <section class="Sh">
+        <h1 class="Sh" id="VER_TAMBIEN"><a class="permalink" href="#VER_TAMBIEN">VER TAMBIÉN</a></h1>
+        <p class="Pp">ndctl-list(1)</p>
+      </section>
+    </article>
+    <table class="foot">
+      <tr>
+        <td class="foot-date">2024-07-18</td>
+        <td class="foot-os">ndctl</td>
+      </tr>
+    </table>
+  </body>
+</html>

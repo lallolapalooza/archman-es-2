@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>libxdp(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">libxdp(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libxdp/">libxdp</a></p>
+<p class="lic">Licencias: GPL, LGPL, BSD2</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">libxdp(3)</td>
+    <td class="head-vol">libxdp - biblioteca para cargar programas XDP</td>
+    <td class="head-rtitle">libxdp(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">libxdp - biblioteca para adjuntar programas XDP y usar sockets AF_XDP</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Este directorio contiene los archivos para la biblioteca <i>libxdp</i>
+    para adjuntar programas XDP a interfaces de red y usar sockets AF_XDP. La
+    biblioteca es bastante ligera y se basa en <i>libbpf</i> para hacer el
+    trabajo pesado de procesar archivos de objetos eBPF, etc.</p>
+<p class="Pp"><i>Libxdp</i> proporciona dos características principales sobre
+    <i>libbpf</i>. La primera es la capacidad de cargar múltiples programas XDP
+    en secuencia en un solo dispositivo de red (lo que no es compatible de forma
+    nativa con el kernel). Esta compatibilidad se basa en la funcionalidad
+    <i>freplace</i> del kernel, que hace posible adjuntar un programa eBPF como
+    reemplazo de una función global en otro programa eBPF (ya cargado). La
+    segunda característica principal son las funciones auxiliares para configurar
+    sockets AF_XDP, así como para leer y escribir paquetes desde estos
+    sockets.</p>
+<p class="Pp">Parte de la funcionalidad proporcionada por libxdp depende de
+    características específicas del kernel; consulte la sección &quot;Compatibilidad de
+    características del kernel&quot; a continuación para obtener más
+    detalles.</p>
+<section class="Ss">
+<h2 class="Ss" id='Usando_libxdp_desde_una_aplicacion'><a class='permalink' href='#Usando_libxdp_desde_una_aplicacion'>Usando libxdp desde una aplicación</a></h2>
+<p class="Pp">El uso básico de libxdp desde una aplicación es bastante
+    sencillo. El siguiente ejemplo carga y luego descarga un programa XDP de la
+    interfaz 'lo':</p>
+<div class="Bd-indent">
+<pre>#define IFINDEX 1
+struct xdp_program *prog;
+int err;
+prog = xdp_program__open_file(&quot;my-program.o&quot;, &quot;section_name&quot;, NULL);
+err = xdp_program__attach(prog, IFINDEX, XDP_MODE_NATIVE, 0);
+if (!err)
+    xdp_program__detach(prog, IFINDEX, XDP_MODE_NATIVE, 0);
+xdp_program__close(prog);
+<i></i></pre>
+</div>
+<p class="Pp">La estructura <i>xdp_program</i> es una estructura opaca que
+    representa un solo programa XDP. <i>libxdp</i> contiene funciones para
+    crear dicha estructura, ya sea desde un archivo de objeto BPF en disco,
+    desde un objeto BPF de <i>libbpf</i>, o desde un identificador de un programa
+    que ya está cargado en el kernel:</p>
+<div class="Bd-indent">
+<pre>struct xdp_program *xdp_program__from_bpf_obj(struct bpf_object *obj,
+                                              const char *section_name);
+struct xdp_program *xdp_program__find_file(const char *filename,
+                                           const char *section_name,
+                                           struct bpf_object_open_opts *opts);
+struct xdp_program *xdp_program__open_file(const char *filename,
+                                           const char *section_name,
+                                           struct bpf_object_open_opts *opts);
+struct xdp_program *xdp_program__from_fd(int fd);
+struct xdp_program *xdp_program__from_id(__u32 prog_id);
+struct xdp_program *xdp_program__from_pin(const char *pin_path);
+<i></i></pre>
+</div>
+<p class="Pp">Las funciones que abren un archivo u objeto BPF necesitan el nombre
+    de la función del programa XDP, así como el nombre del archivo u objeto, ya
+    que un archivo ELF puede contener múltiples programas XDP. La función
+    <i>xdp_program__find_file()</i> toma un nombre de archivo sin ruta y buscará
+    el objeto en <i>LIBXDP_OBJECT_PATH</i>, que por defecto es
+    <i>/usr/lib/bpf</i> (o <i>/usr/lib64/bpf</i> en sistemas que usan una ruta
+    de bibliotecas dividida). Esto es útil para aplicaciones que distribuyen
+    archivos de objetos eBPF precompilados.</p>
+<p class="Pp">La función <i>xdp_program__attach()</i> adjuntará el programa a
+    una interfaz, construyendo un programa despachador para ejecutarlo. Se pueden
+    adjuntar múltiples programas a la vez con
+    <i>xdp_program__attach_multi()</i>; se ordenarán según su prioridad de
+    ejecución, y la ejecución de un programa a otro procederá en función de las
+    acciones de llamada en cadena definidas para cada programa (ver la sección
+    **Metadatos del programa** a continuación). Debido a que el proceso de carga
+    implica modificar el tipo de adjunto del programa, las funciones de adjunto
+    solo funcionan con objetos <i>struct</i> <i>xdp_program</i> que aún no se
+    han cargado en el kernel.</p>
+<p class="Pp">Al usar las funciones de adjunto para adjuntar a una interfaz que
+    ya tiene un programa XDP cargado, libxdp intentará agregar el programa a la
+    lista de programas cargados. Sin embargo, esto puede fallar, ya sea debido a
+    la falta de compatibilidad del kernel, o porque el programa ya adjunto no se
+    cargó usando un despachador compatible con libxdp. Si falta la compatibilidad
+    del kernel para el adjunto incremental (fusionado en el kernel 5.10), la única
+    manera de ejecutar múltiples programas en una sola interfaz es adjuntarlos
+    todos al mismo tiempo con <i>xdp_program__attach_multi()</i>. Si el programa
+    existente no es un despachador XDP, ese programa tendrá que ser desadjuntado
+    de la interfaz antes de que libxdp pueda adjuntar uno nuevo. Esto se puede
+    hacer llamando a <i>xdp_program__detach()</i> con una referencia al programa
+    cargado; pero tenga en cuenta que esto, por supuesto, romperá cualquier
+    aplicación que dependa de ese otro programa XDP.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Metadatos_del_programa'><a class='permalink' href='#Metadatos_del_programa'>Metadatos del programa</a></h1>
+<p class="Pp">Para admitir múltiples programas XDP en la misma interfaz,
+    <i>libxdp</i> utiliza dos metadatos para cada programa XDP: prioridad de
+    ejecución y acciones de llamada en cadena.</p>
+<section class="Ss">
+<h2 class="Ss" id='Prioridad_de_ejecucion'><a class='permalink' href='#Prioridad_de_ejecucion'>Prioridad de ejecución</a></h2>
+<p class="Pp">Esta es la prioridad del programa y es un entero simple que se usa
+    para ordenar los programas al cargar múltiples programas en la misma
+    interfaz. Los programas que desean ejecutarse temprano (como un filtro de
+    paquetes) deben establecer valores bajos para esto, mientras que los
+    programas que desean ejecutarse más tarde (como un reenviador de paquetes o
+    un contador) deben establecer valores más altos. Tenga en cuenta que los
+    programas posteriores solo se ejecutan si los programas anteriores terminan
+    con un código de retorno que forma parte de sus acciones de llamada en
+    cadena (ver abajo). Si no se especifica, el valor de prioridad predeterminado
+    es 50.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Acciones_de_llamada_en_cadena'><a class='permalink' href='#Acciones_de_llamada_en_cadena'>Acciones de llamada en cadena</a></h2>
+<p class="Pp">Estos son los códigos de retorno del programa que el programa indica
+    para los paquetes que deben continuar procesándose. Si el programa devuelve
+    una de estas acciones, se ejecutarán los programas posteriores en la cadena de
+    llamadas, mientras que si devuelve cualquier otra acción, el procesamiento se
+    interrumpirá y el despachador XDP devolverá el veredicto
+    inmediatamente. Si no se establece, esto se limita por defecto a
+    XDP_PASS, que es probablemente el valor que la mayoría de los programas
+    deberían usar.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Especificando_metadatos'><a class='permalink' href='#Especificando_metadatos'>Especificando metadatos</a></h2>
+<p class="Pp">Los metadatos descritos anteriormente se especifican como información
+    BTF incrustada en el archivo ELF que contiene el programa XDP. El archivo
+    <i>xdp_helpers.h</i> incluido con libxdp contiene macros auxiliares para
+    incluir esta información, que se puede usar de la siguiente manera:</p>
+<div class="Bd-indent">
+<pre>#include &lt;bpf/bpf_helpers.h&gt;
+#include &lt;xdp/xdp_helpers.h&gt;
+struct {
+        __uint(priority, 10);
+        __uint(XDP_PASS, 1);
+        __uint(XDP_DROP, 1);
+} XDP_RUN_CONFIG(my_xdp_func);
+<i></i></pre>
+</div>
+<p class="Pp">Este ejemplo especifica que el programa XDP en <i>my_xdp_func</i>
+    debe tener prioridad 10 y que sus acciones de llamada en cadena son
+    <i>XDP_PASS</i> y <i>XDP_DROP</i>. En un archivo fuente con múltiples
+    programas XDP en el mismo archivo, se puede incluir una definición como la
+    anterior para cada programa (función XDP principal). Cualquier programa que
+    no especifique información de configuración utilizará los valores
+    predeterminados descritos anteriormente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Inspeccionando_y_modificando_metadatos'><a class='permalink' href='#Inspeccionando_y_modificando_metadatos'>Inspeccionando y modificando metadatos</a></h2>
+<p class="Pp"><i>libxdp</i> expone las siguientes funciones que una aplicación
+    puede usar para inspeccionar y modificar los metadatos de un programa XDP. La
+    modificación solo es posible antes de que un programa se adjunte a una
+    interfaz. Estas funciones no modificarán la información BTF en sí, sino que
+    los nuevos valores se almacenarán como parte del adjunto del programa.</p>
+<div class="Bd-indent">
+<pre>unsigned int xdp_program__run_prio(const struct xdp_program *xdp_prog);
+int xdp_program__set_run_prio(struct xdp_program *xdp_prog,
+                              unsigned int run_prio);
+bool xdp_program__chain_call_enabled(const struct xdp_program *xdp_prog,
+                                     enum xdp_action action);
+int xdp_program__set_chain_call_enabled(struct xdp_program *prog,
+                                        unsigned int action,
+                                        bool enabled);
+int xdp_program__print_chain_call_actions(const struct xdp_program *prog,
+                                          char *buf,
+                                          size_t buf_len);
+<i></i></pre>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='El_programa_despachador'><a class='permalink' href='#El_programa_despachador'>El programa despachador</a></h1>
+<p class="Pp">Para admitir programas no descargados múltiples en la misma
+    interfaz de red, <i>libxdp</i> utiliza un <b>programa despachador</b>, que
+    es un pequeño programa envoltorio que llamará a cada programa componente en
+    orden, esperará el código de retorno y luego realizará una llamada en cadena
+    a</p>
+</div>
+</section>
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+el siguiente programa basado en la llamada en cadena
+    de acciones del programa anterior (ver la sección <b>Metadatos del programa</b>
+    arriba).</p>
+<p class="Pp">Si bien las aplicaciones que usan <i>libxdp</i> no necesitan conocer
+    los detalles del programa de distribución para simplemente cargar un programa
+    XDP en una interfaz, <i>libxdp</i> expone el programa de distribución y sus
+    programas componentes adjuntos, que se pueden usar para enumerar los
+    programas actualmente adjuntos a una interfaz.</p>
+<p class="Pp">La estructura utilizada para esto es <i>struct xdp_multiprog</i>,
+    que solo se puede construir a partir de los programas cargados en una
+    interfaz basada en ifindex. La API para obtener una referencia a multiprog e
+    iterar a través de los programas adjuntos se ve así:</p>
+<div class="Bd-indent">
+<pre>struct xdp_multiprog *xdp_multiprog__get_from_ifindex(int ifindex);
+struct xdp_program *xdp_multiprog__next_prog(const struct xdp_program *prog,
+                                             const struct xdp_multiprog *mp);
+void xdp_multiprog__close(struct xdp_multiprog *mp);
+int xdp_multiprog__detach(struct xdp_multiprog *mp, int ifindex);
+enum xdp_attach_mode xdp_multiprog__attach_mode(const struct xdp_multiprog *mp);
+struct xdp_program *xdp_multiprog__main_prog(const struct xdp_multiprog *mp);
+struct xdp_program *xdp_multiprog__hw_prog(const struct xdp_multiprog *mp);
+bool xdp_multiprog__is_legacy(const struct xdp_multiprog *mp);
+<i></i></pre>
+</div>
+<p class="Pp">Si se adjunta un programa no descargado a la interfaz que
+    <i>libxdp</i> no reconoce como programa de distribución, aún se devolverá una
+    estructura <i>xdp_multiprog</i>, y <i>xdp_multiprog__is_legacy()</i>
+    devolverá true para ese programa (tenga en cuenta que esto también es válido
+    si solo se carga un programa descargado). Se puede obtener una referencia a
+    ese programa XDP (regular) mediante <i>xdp_multiprog__main_prog()</i>. Si
+    el programa adjunto a la interfaz **es** un programa de distribución,
+    <i>xdp_multiprog__main_prog()</i> devolverá una referencia al propio programa
+    de distribución, lo cual es principalmente útil para obtener otros datos
+    sobre ese programa (como el ID del programa). Se puede adquirir una
+    referencia a un programa descargado utilizando <i>xdp_multiprog_hw_prog()</i
+    >. La función <i>xdp_multiprog__attach_mode()</i> devuelve el modo de
+    adjunto del programa no descargado; se debe verificar si se adjunta un
+    programa descargado a través de <i>xdp_multiprog_hw_prog()</i>.</p>
+<section class="Ss">
+<h2 class="Ss" id='Pinning_in_bpffs'><a class='permalink' href='#Pinning_in_bpffs'>Fijación en bpffs</a></h2>
+<p class="Pp">El kernel desvinculará automáticamente los programas componentes del
+    distribuidor una vez que desaparezca la última referencia a ellos. Para evitar
+    que esto suceda, <i>libxdp</i> fijará las referencias de los programas
+    componentes en <i>bpffs</i> antes de adjuntar el distribuidor a la interfaz
+    de red. Las rutas generadas para la fijación son las siguientes:</p>
+<dl class="Bl-tag">
+  <dt>&#x2014;</dt>
+  <dd>/sys/fs/bpf/xdp/dispatch-IFINDEX-DID - programa distribuidor para IFINDEX
+      con ID de programa BPF DID</dd>
+  <dt>&#x2014;</dt>
+  <dd>/sys/fs/bpf/xdp/dispatch-IFINDEX-DID/prog0-prog - programa componente 0,
+      referencia de programa</dd>
+  <dt>&#x2014;</dt>
+  <dd>/sys/fs/bpf/xdp/dispatch-IFINDEX-DID/prog0-link - programa componente 0,
+      referencia de enlace bpf</dd>
+  <dt>&#x2014;</dt>
+  <dd>/sys/fs/bpf/xdp/dispatch-IFINDEX-DID/prog1-prog - programa componente 1,
+      referencia de programa</dd>
+  <dt>&#x2014;</dt>
+  <dd>/sys/fs/bpf/xdp/dispatch-IFINDEX-DID/prog1-link - programa componente 1,
+      referencia de enlace bpf</dd>
+  <dt>&#x2014;</dt>
+  <dd>etc., hasta diez programas componentes
+      </dd>
+</dl>
+<p class="Pp">Si está configurada, la variable de entorno <i>LIBXDP_BPFFS</i>
+    anulará la ubicación de <i>bpffs</i>, pero el subdirectorio <i>xdp</i> siempre
+    se usa. Si no hay un <i>bpffs</i> montado, libxdp consultará la variable de
+    entorno <i>LIBXDP_BPFFS_AUTOMOUNT</i>. Si está configurada como <i>1</i>,
+    libxdp intentará montar automáticamente un bpffs. Si no, libxdp volverá a
+    cargar un solo programa sin distribuidor, como si el kernel no soportara las
+    funciones necesarias para la adjunción multiprog.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Using_AF_XDP_sockets'><a class='permalink' href='#Using_AF_XDP_sockets'>Usando sockets AF_XDP</a></h1>
+<p class="Pp">Libxdp implementa funciones auxiliares para configurar sockets AF_XDP,
+    así como para leer y escribir paquetes desde estos sockets. Los sockets AF_XDP
+    se pueden usar para redirigir paquetes al espacio de usuario a altas tasas
+    desde un programa XDP. Tenga en cuenta que esta funcionalidad solía residir
+    en libbpf, pero ahora se ha trasladado a libxdp, ya que encaja mejor en esta
+    biblioteca. A partir de la versión 1.0 de libbpf, se eliminará el soporte
+    para sockets AF_XDP y todo el desarrollo futuro se realizará en libxdp.</p>
+<p class="Pp">Para obtener una descripción general de los sockets AF_XDP, consulte
+    este artículo de Linux Plumbers
+    (<a href='http://vger.kernel.org/lpc_net2018_talks/lpc18_pres_af_xdp_perf-v3.pdf'>http://vger.kernel.org/lpc_net2018_talks/lpc18_pres_af_xdp_perf-v3.pdf</a>)
+    y la documentación del kernel de Linux
+    (Documentation/networking/af_xdp.rst o
+    <a href='https://www.kernel.org/doc/html/latest/networking/af_xdp.html'>https://www.kernel.org/doc/html/latest/networking/af_xdp.html</a>).</p>
+<p class="Pp">Como ejemplo de cómo usar la interfaz, consulte los programas
+    AF_XDP-example y AF_XDP-forwarding en el repositorio bpf-examples:
+    <a href='https://github.com/xdp-project/bpf-examples'>https://github.com/xdp-project/bpf-examples</a>.</p>
+<section class="Ss">
+<h2 class="Ss" id='Control_path'><a class='permalink' href='#Control_path'>Ruta de control</a></h2>
+<p class="Pp">Libxdp proporciona funciones auxiliares para crear y destruir umems y
+    sockets como se muestra a continuación. Lo primero que generalmente querrá
+    hacer un usuario es crear un área de umem. Esta es el área que contendrá todos
+    los paquetes recibidos y los que se van a enviar. Después de eso, se pueden
+    crear sockets AF_XDP vinculados a este umem. Estos pueden ser sockets que
+    tienen propiedad exclusiva de ese umem a través de xsk_socket__create() o
+    compartidos con otros sockets usando xsk_socket__create_shared. Hay una
+    opción llamada XSK_LIBBPF_FLAGS__INHIBIT_PROG_LOAD que se puede establecer en
+    el campo libxdp_flags (también llamado libbpf_flags por razones de
+    compatibilidad). Esto hará que libxdp no cargue ningún programa XDP ni
+    establezca mapas BPF, lo cual es imprescindible si los usuarios desean
+    agregar su propio programa XDP.</p>
+<p class="Pp">Si ya existe un socket creado con socket(AF_XDP, SOCK_RAW, 0) no
+    vinculado ni asociado a ningún umem, el descriptor de archivo de este socket
+    se puede usar en los parámetros opts de xsk_umem__create_opts(), que es una
+    forma recomendada de crear umem.</p>
+<div class="Bd-indent">
+<pre>struct xsk_umem *xsk_umem__create_opts(void *umem_area,
+                                       struct xsk_ring_prod *fill,
+                                       struct xsk_ring_cons *comp,
+                                       struct xsk_umem_opts *opts);
+int xsk_umem__create(struct xsk_umem **umem,
+                     void *umem_area, __u64 size,
+                     struct xsk_ring_prod *fill,
+                     struct xsk_ring_cons *comp,
+                     const struct xsk_umem_config *config);
+int xsk_umem__create_with_fd(struct xsk_umem **umem,
+                             int fd, void *umem_area, __u64 size,
+                             struct xsk_ring_prod *fill,
+                             struct xsk_ring_cons *comp,
+                             const struct xsk_umem_config *config);
+int xsk_socket__create(struct xsk_socket **xsk,
+                       const char *ifname, __u32 queue_id,
+                       struct xsk_umem *umem,
+                       struct xsk_ring_cons *rx,
+                       struct xsk_ring_prod *tx,
+                       const struct xsk_socket_config *config);
+int xsk_socket__create_shared(struct xsk_socket **xsk_ptr,
+                              const char *ifname,
+                              __u32 queue_id, struct xsk_umem *umem,
+                              struct xsk_ring_cons *rx,
+                              struct xsk_ring_prod *tx,
+                              struct xsk_ring_prod *fill,
+                              struct xsk_ring_cons *comp,
+                              const struct xsk_socket_config *config);
+int xsk_umem__delete(struct xsk_umem *umem);
+void xsk_socket__delete(struct xsk_socket *xsk);
+<i></i></pre>
+</div>
+<p class="Pp">También hay dos funciones auxiliares para obtener el descriptor de
+    archivo de un umem o un socket. Estos son necesarios cuando se utilizan
+    syscalls estándar de Linux como poll(), recvmsg(), sendto(), etc.</p>
+<div class="Bd-indent">
+<pre>int xsk_umem__fd(const struct xsk_umem *umem);
+int xsk_socket__fd(const struct xsk_socket *xsk);
+<i></i></pre>
+</div>
+<p class="Pp">La ruta de control también proporciona dos API para configurar
+    sockets AF_XDP cuando el proceso que va a usar el socket AF_XDP no tiene
+    privilegios. Estas dos funciones realizan las operaciones que requieren
+    privilegios y se pueden ejecutar desde alguna forma de proceso de control que
+    tenga los privilegios necesarios. El xsk_socket__create ejecutado en el
+    proceso no privilegiado omitirá estos dos pasos. Para ver un ejemplo de
+    cómo usarlos, consulte el programa AF_XDP-example en el repositorio
+    bpf-examples:
+    <a href='https://github.com/xdp-project/bpf-examples/tree/main/AF_XDP-example'>https://github.com/xdp-project/bpf-examples/tree/main/AF_XDP-example</a>.</p>
+<div class="Bd-indent">
+<pre>int xsk_setup_xdp_prog(int ifindex, int *xsks_map_fd);
+int xsk_socket__update_xskmap(struct xsk_socket *xsk, int xsks_map_fd);
+<i></i></pre>
+</div>
+<p class="Pp">Para reducir aún más el nivel de privilegios requerido, se puede
+    crear previamente un socket AF_XDP con socket(AF_XDP, SOCK_RAW, 0) y pasarlo
+    a un proceso no privilegiado. Este socket se puede usar en
+    xsk_umem__create_opts() y más tarde en xsk_socket__create() con el umem
+    creado. xsk_socket__create_shared() aún requeriría privilegios para la
+    creación del socket AF_XDP.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Data_path'><a class='permalink' href='#Data_path'>Ruta de datos</a></h2>
+<p class="Pp">Por razones de rendimiento, todas las funciones de ruta de datos son
+    funciones static inline que se encuentran en el archivo de encabezado xsk.h
+    para que puedan optimizarse en el binario de la aplicación de destino para
+    obtener el mejor rendimiento posible. Hay cuatro anillos FIFO de dos tipos
+    principales: anillos de productor (fill y Tx) y anillos de consumidor (Rx y
+    completion). Los anillos de productor utilizan funciones xsk_ring_prod y los
+    anillos de consumidor utilizan funciones xsk_ring_cons. Para los anillos de
+    productor, se comienza <i>reservando</i> uno o más espacios en un anillo de
+    productor y luego, cuando se han completado, se <i>envían</i> para que el
+    kernel actúe sobre ellos. Para un anillo de consumidor, se <i>inspecciona</i>
+    si hay algún paquete nuevo en el anillo y, si es así, se pueden leer del
+    anillo. Una vez que se termina de leerlos, se <i>liberan</i> al kernel para
+    que pueda usarlos para paquetes nuevos. También hay una operación de
+    <i>cancelación</i> para los anillos de consumidor si la aplicación no desea
+    consumir todos los paquetes recibidos con la operación de inspección.</p>
+<div class="Bd-indent">
+<pre>__u32 xsk_ring_prod__reserve(struct xsk_ring_prod *prod, __u32 nb, __u32 *idx);
+void xsk_ring_prod__submit(struct xsk_ring_prod *prod, __u32 nb);
+__u32 xsk_ring_cons__peek(struct xsk_ring_cons *cons, __u32 nb, __u32 *idx);
+void xsk_ring_cons__cancel(struct xsk_ring_cons *cons, __u32 nb);
+void xsk_ring_cons__release(struct xsk_ring_cons *cons, __u32 nb);
+<i></i></pre>
+</div>
+<p class="Pp">Las siguientes funciones se utilizan para leer y escribir los
+    descriptores de los anillos. xsk_ring_prod__fill_addr() y
+    xsk_ring_prod__tx_desc() **escriben** entradas en los anillos fill y Tx.</p>gs
+    respectivamente, mientras que xsk_ring_cons__comp_addr y xsk_ring_cons__rx_desc
+    <b>leen</b> entradas de los anillos de finalización y Rx, respectivamente. El
+    <i>idx</i> es el parámetro devuelto en las llamadas a xsk_ring_prod__reserve o
+    xsk_ring_cons__peek. Para avanzar a la siguiente entrada, simplemente haga
+    <i>idx++</i>.</p>
+<div class="Bd-indent">
+<pre>__u64 *xsk_ring_prod__fill_addr(struct xsk_ring_prod *fill, __u32 idx);
+struct xdp_desc *xsk_ring_prod__tx_desc(struct xsk_ring_prod *tx, __u32 idx);
+const __u64 *xsk_ring_cons__comp_addr(const struct xsk_ring_cons *comp, __u32 idx);
+const struct xdp_desc *xsk_ring_cons__rx_desc(const struct xsk_ring_cons *rx, __u32 idx);
+<i></i></pre>
+</div>
+<p class="Pp">Las funciones xsk_umem se utilizan para obtener un puntero a los datos del paquete
+    en sí, siempre ubicados dentro del umem. En el modo alineado por defecto, puede obtener la
+    variable addr directamente del descriptor Rx. Pero en modo no alineado, necesita usar las tres
+    últimas funciones a continuación, ya que el desplazamiento utilizado se transporta en los 16 bits
+    superiores de la dirección. Por lo tanto, no puede usar la dirección directamente desde el
+    descriptor en el caso no alineado.</p>
+<div class="Bd-indent">
+<pre>void *xsk_umem__get_data(void *umem_area, __u64 addr);
+__u64 xsk_umem__extract_addr(__u64 addr);
+__u64 xsk_umem__extract_offset(__u64 addr);
+__u64 xsk_umem__add_offset_to_addr(__u64 addr);
+<i></i></pre>
+</div>
+<p class="Pp">Hay una función más en el plano de datos que comprueba si la bandera
+    need_wakeup está establecida. Se recomienda encarecidamente el uso de esta
+    bandera y debe habilitarse estableciendo el bit <i>XDP_USE_NEED_WAKEUP</i> en
+    el campo <i>xdp_bind_flags</i> que se proporciona a las llamadas a
+    xsk_socket_create_[shared](). Si esta función devuelve verdadero, entonces
+    necesita llamar a <i>recvmsg()</i>, <i>sendto()</i> o <i>poll()</i> dependiendo
+    de la situación. <i>recvmsg()</i> si está **recibiendo**, o
+    <i>sendto()</i> si está **enviando**. <i>poll()</i> se puede usar para
+    ambos casos y también proporciona la capacidad de dormir, como con cualquier
+    otro socket. Pero tenga en cuenta que poll es una operación más lenta que las
+    otras dos.</p>
+<div class="Bd-indent">
+<pre>int xsk_ring_prod__needs_wakeup(const struct xsk_ring_prod *r);
+<i></i></pre>
+</div>
+<p class="Pp">Para obtener un ejemplo de cómo usar todas estas API, consulte los
+    programas AF_XDP-example y AF_XDP-forwarding en el repositorio
+    bpf-examples: <a href='https://github.com/xdp-project/bpf-examples'>https://github.com/xdp-project/bpf-examples</a>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Kernel_and_BPF_program_feature_compatibility'><a class='permalink' href='#Kernel_and_BPF_program_feature_compatibility'>Compatibilidad de características del kernel y programas BPF</a></h1>
+<p class="Pp">Las características expuestas por libxdp dependen de ciertas versiones
+    del kernel y características BPF para funcionar. Para obtener el máximo
+    beneficio de todas las características, libxdp debe usarse con el kernel 5.10 o
+    posterior, a menos que las confirmaciones mencionadas a continuación se hayan
+    portado. Sin embargo, libxdp sondeará el kernel y recurrirá transparentemente
+    a procedimientos de carga heredados, por lo que es posible utilizar la
+    biblioteca con versiones anteriores, aunque algunas características no estarán
+    disponibles, como se detalla a continuación.</p>
+<p class="Pp">La capacidad de adjuntar múltiples programas BPF a una única interfaz
+    depende de la característica del kernel "extensión de programa BPF" que se
+    introdujo con el commit be8704ff07d2 ("bpf: Introduce dynamic program
+    extensions") en el kernel principal y apareció por primera vez en la
+    versión 5.6 del kernel. Para adjuntar **incrementalmente** múltiples
+    programas, se necesita un refinamiento adicional agregado por el commit
+    4a1e7c0c63e0 ("bpf: Soporte para adjuntar programas freplace a múltiples
+    puntos de adjunción"); esto apareció por primera vez en la versión 5.10 del
+    kernel principal. La funcionalidad depende de la característica "trampolines
+    BPF", que está disponible en las arquitecturas que la soportan.</p>
+<p class="Pp">La matriz de soporte es la siguiente:</p>
+<dl class="Bl-tag">
+  <dt>&#x2014;</dt>
+  <dd>Los kernels anteriores a 5.6 solo pueden adjuntar un único programa XDP a
+      cada interfaz.</dd>
+  <dt>&#x2014;</dt>
+  <dd>Los kernels 5.6+ pueden adjuntar múltiples programas si todos se adjuntan
+      al mismo tiempo.</dd>
+  <dt>&#x2014;</dt>
+  <dd>Los kernels 5.10+ tienen soporte completo para multiprog XDP en arquitecturas
+      que soportan trampolines BPF.</dd>
+  <dt>&#x2014;</dt>
+  <dd>En arquitecturas sin soporte de trampolines BPF, solo se puede adjuntar un
+      único programa a cada interfaz.</dd>
+</dl>
+<p class="Pp">Para cargar programas AF_XDP, el soporte del kernel para sockets AF_XDP
+    debe incluirse y habilitarse en la compilación del kernel. Además, al usar
+    sockets AF_XDP, también se carga un programa XDP en la interfaz. El programa
+    XDP utilizado para esto por libxdp requiere la capacidad de realizar búsquedas
+    en mapas en mapas XSK, que se introdujo con el commit fada7fdc83c0 ("bpf:
+    Permitir bpf_map_lookup_elem() en un xskmap") en el kernel 5.3. Esto significa
+    que la versión mínima requerida del kernel para usar AF_XDP es el kernel 5.3;
+    sin embargo, para que el programa XDP AF_XDP coexista con otros programas, se
+    aplican las mismas restricciones de multiprog que se describen arriba.</p>
+<p class="Pp">Tenga en cuenta que algunas distribuciones de Linux portan características a
+    versiones anteriores del kernel, especialmente en kernels empresariales; por
+    ejemplo, los kernels de Red Hat Enterprise Linux incluyen todo lo necesario
+    para que libxdp funcione desde RHEL 8.5.</p>
+<p class="Pp">Finalmente, los programas XDP cargados utilizando la instalación
+    multiprog deben incluir información de tipo (usando el Formato de Tipo BPF,
+    BTF). Para obtener esto, compile los programas con una versión reciente de
+    Clang/LLVM (versión 10+), y habilite la información de depuración al compilar
+    (usando la opción <i>-g</i>).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">Por favor, informe cualquier error en Github:
+    <a href='https://github.com/xdp-project/xdp-tools/issues'>https://github.com/xdp-project/xdp-tools/issues</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORES</a></h1>
+<p class="Pp">libxdp y esta página man fueron escritas por Toke
+    H&#x00F8;iland-J&#x00F8;rgensen. El soporte y la documentación de AF_XDP fueron
+    aportados por Magnus Karlsson.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">16 de septiembre de 2025</td>
+    <td class="foot-os">v1.5.7</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libxdp/">extra/libxdp</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.5.7-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/xdp-project/xdp-tools">https://github.com/xdp-project/xdp-tools</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL, LGPL, BSD2</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libxdp/">/listing/extra/libxdp/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#Program_metadata">Metadatos del programa</a></li>
+        
+            <li><a href="#The_dispatcher_program">El programa despachador</a></li>
+        
+            <li><a href="#Using_AF_XDP_sockets">Uso de sockets AF_XDP</a></li>
+        
+            <li><a href="#Kernel_and_BPF_program_feature_compatibility">Compatibilidad de características del kernel y programas BPF</a></li>
+        
+            <li><a href="#BUGS">BUGS</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/libxdp.3.es.txt">txt</a>, 
+        
+            <a href="/man/libxdp.3.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

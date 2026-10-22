@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ne_ssl_set_verify(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ne_ssl_set_verify(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/neon/">neon</a></p>
+<p class="lic">Licencias: LGPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">NE_SSL_SET_VERIFY(3)</td>
+    <td class="head-vol">Referencia de la API de neon</td>
+    <td class="head-rtitle">NE_SSL_SET_VERIFY(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">ne_ssl_set_verify - registrar una función de devolución de llamada para la verificación de certificados SSL</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" SINOPSIS"><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>#include &lt;ne_session.h&gt;</pre>
+<p class="Pp HP"><b>typedef int
+    ne_ssl_verify_fn(void&#x00A0;*</b><i>userdata</i><b>,
+    int&#x00A0;</b><i>failures</i><b>,
+    const&#x00A0;ne_ssl_certificate&#x00A0;*</b><i>cert</i><b>);</b></p>
+<p class="Pp HP"><b>void
+    ne_ssl_set_verify(ne_session&#x00A0;*</b><i>session</i><b>,
+    ne_ssl_verify_fn&#x00A0;</b><i>verify_fn</i><b>,
+    void&#x00A0;*</b><i>userdata</i><b>);</b></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" DESCRIPCIÓN"><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Para habilitar la verificación manual de certificados SSL, se puede registrar una función de devolución de llamada usando <b>ne_ssl_set_verify</b>. Si no se registra dicha función, cuando se establece una conexión a un servidor SSL que no presenta un certificado firmado por una CA de confianza (ver ne_ssl_trust_cert), o si el certificado presentado es inválido de alguna manera, la conexión fallará.</p>
+<p class="Pp">Cuando se invoca la función de devolución de llamada, el parámetro <i>failures</i> proporciona una máscara de bits que indica en qué forma falló la verificación automática del certificado. El valor es igual al OR a nivel de bits de una o más de las siguientes constantes (y se garantiza que no será cero):</p>
+<p class="Pp"><b>NE_SSL_NOTYETVALID</b></p>
+<div class="Bd-indent">El certificado aún no es válido.</div>
+<p class="Pp"><b>NE_SSL_EXPIRED</b></p>
+<div class="Bd-indent">El certificado ha caducado.</div>
+<p class="Pp"><b>NE_SSL_IDMISMATCH</b></p>
+<div class="Bd-indent">El nombre de host utilizado para la sesión no coincide con el nombre de host al que se emitió el certificado.</div>
+<p class="Pp"><b>NE_SSL_UNTRUSTED</b></p>
+<div class="Bd-indent">La Autoridad Certificadora que firmó el certificado no es de confianza.</div>
+<p class="Pp">Tenga en cuenta que si se presenta alguno de los fallos <b>NE_SSL_IDMISMATCH</b> o <b>NE_SSL_UNTRUSTED</b>, la conexión puede haber sido interceptada por un tercero y no se debe asumir que es "segura".</p>
+<p class="Pp">El parámetro <i>cert</i> pasado a la función de devolución de llamada representa el certificado presentado por el servidor. Si el servidor presentó una cadena de certificados, la cadena se puede acceder utilizando ne_ssl_cert_signedby. El objeto <i>cert</i> proporcionado no es válido después de que la función de devolución de llamada regrese.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" VALOR_DE_RETORNO"><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp">La función de devolución de llamada de verificación debe devolver cero para indicar que el certificado debe ser confiable; y distinto de cero en caso contrario (en cuyo caso, la conexión fallará).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" EJEMPLOS"><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">El siguiente código implementa una función de devolución de llamada de verificación de ejemplo, utilizando la función <b>dump_cert</b> de ne_ssl_cert_subject para mostrar información de certificación. Nótese que el nombre de host del servidor utilizado para la sesión se pasa como parámetro <i>userdata</i> a la función de devolución de llamada.</p>
+<div class="Bd-indent">
+<pre>static int
+my_verify(void *userdata, int failures, const ne_ssl_certificate *cert)
+{
+  const char *hostname = userdata;
+  dump_cert(cert);
+  puts(&quot;Fallo la verificación del certificado - ¡la conexión puede haber sido &quot;
+       &quot;interceptada por un tercero!&quot;);
+  if (failures &amp; NE_SSL_IDMISMATCH) { 
+    const char *id = ne_ssl_cert_identity(cert);
+    if (id) 
+      printf(&quot;El certificado del servidor fue emitido para '%s' y no para '%s'.\n&quot;,
+             id, hostname);
+    else
+      printf(&quot;El certificado no fue emitido para '%s'\n&quot;, hostname);
+  }
+  if (failures &amp; NE_SSL_UNTRUSTED)
+    puts(&quot;El certificado no está firmado por una Autoridad Certificadora de confianza.&quot;);
+  /* ... comprobar fallos de validez ... */
+  if (prompt_user())
+    return 1; /* fallar la verificación */
+  else
+    return 0; /* confiar en el certificado de todos modos */
+}
+int
+main(...)
+{
+  ne_session *sess = ne_session_create(&quot;https&quot;, &quot;some.host.name&quot;, 443);
+  ne_ssl_set_verify(sess, my_verify, &quot;some.host.name&quot;);
+  ...
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" VER_TAMBIÉN"><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp">ne_ssl_trust_cert, ne_ssl_readable_dname, ne_ssl_cert_subject</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" COPYRIGHT"><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright &#x00A9; 2001-2025 Joe Orton</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">11/25/2025</td>
+    <td class="foot-os">neon</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/neon/">extra/neon</a></dd>
+        <dt>Versión:</dt>
+        <dd>0.36.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://notroj.github.io/neon/">https://notroj.github.io/neon/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>LGPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/neon/">/listing/extra/neon/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ne_ssl_set_verify.3.es.txt">txt</a>, 
+        
+            <a href="/man/ne_ssl_set_verify.3.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

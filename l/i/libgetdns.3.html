@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>libgetdns(3) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">libgetdns(3)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">libgetdns(3)</td>
+    <td class="head-vol">getdns</td>
+    <td class="head-rtitle">libgetdns(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Pp">libgetdns -- an implementation of a modern asynchronous DNS API by
+    and for application developers</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LIBRARY"><a class="permalink" href="#LIBRARY">LIBRARY</a></h1>
+<p class="Pp">DNS Resolver library (libgetdns, -lgetdns)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<p class="Pp"><b>libgetdns</b></p>
+<p class="Pp">This man page describes the getdns library, the general concepts
+    behind the API and some of the common elements of the public interface to
+    the library. Each of the public entry points and more complex data types are
+    captured in separate man pages.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp">getdns is modern asynchronous DNS API intended to be useful to
+    application developers and operating system distributors as a way of making
+    all types of DNS information easily available in many types of programs. The
+    major features of this new API are:</p>
+<div class="Bd-indent">
+<br/>
+ Full support for event-driven programming
+<br/>
+ Supports DNSSEC in multiple ways
+<br/>
+ Mirroring of the resolution in getaddrinfo()
+<br/>
+ Easily supports all RRtypes, even those yet to be defined</div>
+<p class="Pp">Each of the entry points is offered with both asynchronous and
+    synchronous signatures. The asynchronous functions rely on event handling
+    and callback via libevent. Functions are thread safe.</p>
+<p class="Pp">A context structure maintains DNS query and response data and is
+    used to maintain state during calls to the public entry points.</p>
+<p class="Pp">The project page for this implementation is at</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd><a href="http://getdnsapi.net">http://getdnsapi.net</a>
+      </dd>
+</dl>
+<p class="Pp">The specification is maintained at</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd><a href="http://getdnsapi.net/spec">http://getdnsapi.net/spec</a>
+      </dd>
+</dl>
+<p class="Pp">The git repository for this implementation is at</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd><a href="http://github.com/getdnsapi/getdns">http://github.com/getdnsapi/getdns</a>
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DATA_STRUCTURES"><a class="permalink" href="#DATA_STRUCTURES">DATA STRUCTURES</a></h1>
+<p class="Pp">The API uses a few data structures to pass data into and return
+    data from the public entry points.</p>
+<dl class="Bl-tag">
+  <dt id="list"><a class="permalink" href="#list">list</a></dt>
+  <dd>an ordered list, the members of the list can be any of the four data
+      types.</dd>
+  <dt id="dict"><a class="permalink" href="#dict">dict</a></dt>
+  <dd>a name-value pair. The name is a string literal, and the value can be any
+      of the four data types. The order of the name-value pairs in a dict is not
+      important.</dd>
+  <dt id="int"><a class="permalink" href="#int">int</a></dt>
+  <dd>an integer compatible with uint32_t.</dd>
+  <dt id="bindata"><a class="permalink" href="#bindata">bindata</a></dt>
+  <dd>a struct used to hold binary data defined as { size_t size; uint8_t
+      *binary_stuff; }.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ASYNCHRONOUS_USE"><a class="permalink" href="#ASYNCHRONOUS_USE">ASYNCHRONOUS USE</a></h1>
+<p class="Pp">The getdns specification emphasizes the asynchronous nature of the
+    API and allows implementations to define their own approach. This page
+    documents this implementation's decisions and facilities provided to the
+    developer.</p>
+<p class="Pp">This implementation provides asynchronous support via the
+    following mechanisms:</p>
+<div class="Bd-indent">File Descriptor Polling
+<br/>
+Event Loop Integrations:
+<div class="Bd-indent">libevent
+<br/>
+libuv
+<br/>
+libev</div>
+Custom Event Loop Integrations</div>
+<p class="Pp">All functions and types discussed in this page are declared in
+    getdns_extra.h</p>
+<section class="Ss">
+<h2 class="Ss" id="Build-in_Event_loop"><a class="permalink" href="#Build-in_Event_loop">Build-in Event loop</a></h2>
+<p class="Pp">The library has an built in event loop that can be used if none of
+    the extensions for external event loops are used. The library will execute
+    requests and dispatch callbacks with a call to <i>getdns_context_run().</i>
+    If an event loop extension is used, this will run the extension's
+  eventloop.</p>
+<p class="Pp HP">void getdns_context_run(getdns_context *context)</p>
+<p class="Pp">Run the context's event loop until nothing more to do.</p>
+<p class="Pp HP">uint32_t
+    getdns_context_get_num_pending_requests(getdns_context* context, struct
+    timeval* next_timeout)</p>
+<p class="Pp">Get the number of outstanding asynchronous requests for a given
+    context as well as the the amount of time until the next timeout. The
+    next_timeout struct can be NULL. If supplied and the number of outstanding
+    requests is &gt; 0, then the timeout represents the relative time until the
+    next timeout.</p>
+<p class="Pp HP">getdns_return_t getdns_context_process_async(getdns_context*
+    context)</p>
+<p class="Pp">Inform the context to process its outstanding requests. Users
+    should call this when either a timeout has occurred or the file descriptor
+    signals that it is ready. User callbacks are fired during this call.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Included_Event_Loop_Integrations"><a class="permalink" href="#Included_Event_Loop_Integrations">Included Event Loop Integrations</a></h2>
+<p class="Pp">A number of applications achieve asynchronous behavior by
+    leveraging event loop abstraction libraries. If the build system discovers a
+    supported event loop, the event loop extension is built in addition to the
+    getdns library. Extensions are built as an additional shared library. The
+    following event loop libraries are supported:</p>
+<p class="Pp"><b>libevent1 and libevent2</b></p>
+<p class="Pp">The libevent extension allows a context to attach to a event_base.
+    The event loop is then run like any other application using libevent via
+    event_base_dispatch or event_base_loop and expect getdns callbacks to
+  fire.</p>
+<p class="Pp">Note that if both libevent1 and libevent2 reside on system, the
+    extension uses libevent2.</p>
+<div class="Bd-indent">Extension library: libgetdns_ext_event.[shared_lib_ext]
+<br/>
+Extension header: getdns/getdns_ext_libevent.h</div>
+<p class="Pp"><b>libuv</b></p>
+<p class="Pp">The libuv extension allows a context to attach to a uv_loop_s. The
+    event loop can then be run like any other application using libuv via uv_run
+    and expect getdns callbacks to fire.</p>
+<div class="Bd-indent">Extension library: libgetdns_ext_uv.[shared_lib_ext]
+<br/>
+Extension header: getdns_ext_libuv.h</div>
+<p class="Pp"><b>libev</b></p>
+<p class="Pp">The libev extension allows a context to attach to a ev_loop. The
+    event loop can then be run like any other application using libev via ev_run
+    and expect getdns callbacks to fire.</p>
+<div class="Bd-indent">Extension library: libgetdns_ext_ev.[shared_lib_ext]
+<br/>
+Extension header: getdns_ext_libev.h</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="getdns_context_event_loop_extension_functions"><a class="permalink" href="#getdns_context_event_loop_extension_functions">getdns_context event loop extension functions</a></h2>
+<p class="Pp">The following are functions used by the extension entry point to
+    attach to a particular context.</p>
+<p class="Pp">The application sets an event loop extension on a context. The
+    extension_data is optional data that is passed into the extension methods.
+    If an event loop is already set on a context then it is cleaned up. All
+    outstanding requests are also canceled.</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>getdns_return_t getdns_extension_set_eventloop(struct getdns_context*
+      context, getdns_eventloop_extension* extension, void* extension_data);
+      </dd>
+</dl>
+<p class="Pp">The application gets the extension data associated with a
+  context.</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>void* getdns_context_get_extension_data(struct getdns_context* context);
+      </dd>
+</dl>
+<p class="Pp">When no more work must be done the application detaches an event
+    loop from a context</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>getdns_return_t getdns_extension_detach_eventloop(struct getdns_context*
+      context);
+          </dd>
+</dl>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNCHRONOUS_USE"><a class="permalink" href="#SYNCHRONOUS_USE">SYNCHRONOUS USE</a></h1>
+<p class="Pp">There are four synchronous functions parallel to the four getdns
+    async functions, except that there is no callback parameter. When an
+    application calls one of these synchronous functions, the API gathers all
+    the required information and then returns the result. The value returned is
+    exactly the same as the response returned in the callback if you had used
+    the async version of the function.</p>
+<p class="Pp">When you are done with the data in the response, call
+    getdns_free_sync_request_memory so that the API can free the memory from its
+    internal pool.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXTENSIONS"><a class="permalink" href="#EXTENSIONS">EXTENSIONS</a></h1>
+<p class="Pp">Applications may populate an extension dictionary when making a
+    call to the public entry points. To use an extension add it to the extension
+    dictionary prior to making the call to the public entry point and set the
+    value depending on the behavior you expect. These extensions include:</p>
+<p class="Pp">
+<!-- This is a placeholder. -->
+</p>
+</div>
+</section>
+
+                
+            </article>
+        </main>
+    </body>
+</html>
+<p class="Pp HP">&quot;dnssec_return_status&quot; (int)</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para incluir el estado DNSSEC de cada
+    registro DNS en el árbol de respuestas (replies_tree)</p>
+<p class="Pp HP">&quot;dnssec_return_only_secure&quot; (int)</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para que solo se devuelvan en las listas
+    <i>replies_tree</i> y <i>replies_full</i> los registros que la API pueda validar
+    como seguros con DNSSEC</p>
+<p class="Pp HP">&quot;dnssec_return_validation_chain&quot; (int)</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para que el conjunto de registros
+    adicionales relacionados con DNSSEC necesarios para la validación se devuelva
+    en el objeto de respuesta como la lista denominada <i>additional_dnssec</i> en
+    el nivel superior del objeto de respuesta</p>
+<p class="Pp HP">&quot;return_both_v4_and_v6&quot; (int)</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para que los resultados de los registros
+    A y AAAA para el nombre consultado se incluyan en el objeto de respuesta.</p>
+<p class="Pp HP">&quot;add_opt_parameters&quot; (dict)</p>
+<p class="Pp">TBD (complicado)</p>
+<p class="Pp HP">&quot;add_warning_for_bad_dns&quot;</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para que cada respuesta en el
+    <i>replies_tree</i> contenga un nombre adicional cuyo tipo de datos sea una lista,
+    <i>bad_dns</i>, que contiene cero o más enteros que indican los tipos de DNS
+    incorrecto encontrados en la respuesta.</p>
+<div class="Bd-indent">
+<br/>
+GETDNS_BAD_DNS_CNAME_IN_TARGET: el tipo de consulta no permite que un CNAME apunte a
+  un CNAME
+<br/>
+GETDNS_BAD_DNS_ALL_NUMERIC_LABEL: una o más etiquetas son completamente numéricas
+<br/>
+GETDNS_BAD_DNS_CNAME_RETURNED_FOR_OTHER_TYPE: el tipo de consulta para algo que no sea CNAME
+  devolvió un CNAME</div>
+<p class="Pp HP">&quot;specify_class&quot; (int)</p>
+<p class="Pp">Establecer en el número de clase DNS (distinto de la clase Internet (IN))
+    deseado en la consulta.</p>
+<p class="Pp HP">&quot;return_call_reporting&quot; (int)</p>
+<p class="Pp">Establecer en GETDNS_EXTENSION_TRUE para agregar el nombre
+    <i>call_reporting</i> (lista) al nivel superior del objeto de respuesta, que
+    incluye un diccionario por cada llamada realizada a la API. TBD: más detalles</p>
+<p class="Pp">Esta implementación de la API getdns tiene licencia según la licencia BSD.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DNSSEC'><a class='permalink' href='#DNSSEC'>DNSSEC</a></h1>
+<p class="Pp">Si una aplicación desea que la API realice la validación DNSSEC para una
+    solicitud, debe establecer una o más extensiones relacionadas con DNSSEC. Tenga
+    en cuenta que, de forma predeterminada, ninguna de estas extensiones está
+    establecida y la API no realizará DNSSEC. Tenga en cuenta que obtener resultados
+    DNSSEC puede llevar más tiempo en algunas circunstancias.</p>
+<p class="Pp">Para devolver el estado DNSSEC de cada registro DNS en la lista
+    replies_tree, use la extensión dnssec_return_status. El valor de la extensión
+    (un entero) se establece en GETDNS_EXTENSION_TRUE para que el estado devuelto
+    tenga el nombre dnssec_status (un entero) agregado a los otros nombres en el
+    diccionario del registro ("header", "question", etc.). Los valores para ese
+    nombre son GETDNS_DNSSEC_SECURE, GETDNS_DNSSEC_BOGUS,
+    GETDNS_DNSSEC_INDETERMINATE y GETDNS_DNSSEC_INSECURE. Por lo tanto, una
+    respuesta podría verse así:</p>
+<pre>{     # Esta es la primera respuesta
+      &quot;dnssec_status&quot;: GETDNS_DNSSEC_INDETERMINATE,
+      &quot;header&quot;: { &quot;id&quot;: 23456, &quot;qr&quot;: 1, &quot;opcode&quot;: 0, ... },
+      . . .</pre>
+<p class="Pp">Si en lugar de devolver el estado, desea ver solo resultados seguros,
+    use la extensión dnssec_return_only_secure. El valor de la extensión (un
+    entero) se establece en GETDNS_EXTENSION_TRUE para que solo se devuelvan en las
+    listas replies_tree y replies_full los registros que la API pueda validar como
+    seguros con DNSSEC. No se agregan nombres adicionales al diccionario del
+    registro; el cambio es que algunos registros podrían no aparecer en los
+    resultados. Cuando se establece esta opción de contexto, si la API recibe
+    respuestas DNS pero ninguna se determina como segura, el código de error en el
+    nivel superior del objeto de respuesta es GETDNS_RESPSTATUS_NO_SECURE_ANSWERS.</p>
+<p class="Pp">Las aplicaciones que deseen realizar su propia validación querrán
+    tener los registros relacionados con DNSSEC para una respuesta particular. Use
+    la extensión dnssec_return_validation_chain. El valor de la extensión (un
+    entero) se establece en GETDNS_EXTENSION_TRUE para que se devuelva un conjunto de
+    registros adicionales relacionados con DNSSEC necesarios para la validación en
+    el objeto de respuesta. Este conjunto se presenta como validation_chain (una
+    lista) en el nivel superior del objeto de respuesta. Esta lista incluye todos
+    los diccionarios de registros de recursos para todos los registros de recursos
+    (DS, DNSKEY y sus RRSIG) que son necesarios para realizar la validación desde la
+    raíz hacia abajo. Por lo tanto, una respuesta podría verse así:</p>
+<pre>{     # Este es el objeto de respuesta
+    &quot;validation_chain&quot;:
+    [ { &quot;name&quot;: &lt;datos binarios para .&gt;,
+    &quot;type&quot;: GETDNS_RRTYPE_DNSKEY,
+    &quot;rdata&quot;: { &quot;flags&quot;: 256, . . . },
+      . . . 
+    },
+    { &quot;name&quot;: &lt;datos binarios para .&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DNSKEY,
+      &quot;rdata&quot;: { &quot;flags&quot;: 257, . . . },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para .&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_RRSIG,
+      &quot;rdata&quot;: { &quot;signers_name&quot;: &lt;datos binarios para .&gt;,
+                 &quot;type_covered&quot;: GETDNS_RRTYPE_DNSKEY,
+                 . . .
+               },
+    },
+    { &quot;name&quot;: &lt;datos binarios para com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DS,
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_RRSIG
+      &quot;rdata&quot;: { &quot;signers_name&quot;: &lt;datos binarios para .&gt;,
+                 &quot;type_covered&quot;: GETDNS_RRTYPE_DS,
+                 . . .
+               },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DNSKEY
+      &quot;rdata&quot;: { &quot;flags&quot;: 256, . . . },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DNSKEY
+      &quot;rdata&quot;: { &quot;flags&quot;: 257, . . . },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_RRSIG
+      &quot;rdata&quot;: { &quot;signers_name&quot;: &lt;datos binarios para com.&gt;,
+                 &quot;type_covered&quot;: GETDNS_RRTYPE_DNSKEY,
+                 . . .
+               },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para example.com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DS,
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para example.com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_RRSIG
+      &quot;rdata&quot;: { &quot;signers_name&quot;: &lt;datos binarios para com.&gt;,
+                 &quot;type_covered&quot;: GETDNS_RRTYPE_DS,
+                 . . .
+               },
+      . . .
+    },
+    { &quot;name&quot;: &lt;datos binarios para example.com.&gt;,
+      &quot;type&quot;: GETDNS_RRTYPE_DNSKEY
+      &quot;rdata&quot;: { &quot;flags&quot;: 257, ... },
+      . . .
+    },
+    . . .
+  ]
+  &quot;replies_tree&quot;:
+  [
+  . . .</pre>
+<p class="Pp">Si una solicitud está utilizando un contexto en el que la resolución
+    mediante stub está activada, y esa solicitud también tiene especificadas alguna
+    de las extensiones dnssec_return_status, dnssec_return_only_secure o
+    dnssec_return_validation_chain, la API no realizará la solicitud y en su lugar
+    devolverá un error de GETDNS_RETURN_DNSSEC_WITH_STUB_DISALLOWED.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPT_RESOURCE_RECORDS'><a class='permalink' href='#OPT_RESOURCE_RECORDS'>REGISTROS   OPT DE RECURSOS</a></h1>
+<p class="Pp">Para búsquedas que necesitan un registro de recursos OPT en la sección de
+    Datos Adicionales, use la extensión add_opt_parameters. El valor de la extensión
+    (un diccionario) contiene los parámetros; estos se describen con más detalle en el
+    RFC 2671. Son:</p>
+<p class="Pp HP"><i>maximum_udp_payload_size</i> (un entero) entre 512 y 65535; si no
+    se especifica, esto se toma de los contextos DNS</p>
+<p class="Pp HP"><i>extended_rcode</i> (un entero) entre 0 y 255; si no se
+    especifica, esto se toma de los contextos DNS</p>
+<p class="Pp HP"><i>version</i> (un entero) entre 0 y 255; si no se especifica,
+    esto por defecto es 0</p>
+<p class="Pp HP"><i>do_bit</i> (un entero) entre 0 y 1; si no se especifica, esto
+    se toma de los contextos DNS</p>
+<p class="Pp HP"><i>options</i> (una lista) contiene diccionarios para cada opción
+    que se especificará. Cada vez en la lista contiene dos nombres: option_code (un
+    entero) y option_data (datos binarios). La API analiza todo el conjunto de
+    opciones en datos de registro (RDATA) formateados correctamente para el registro
+    de recursos.</p>
+<p class="Pp">Es muy importante tener en cuenta que el registro de recursos OPT
+    especificado en la extensión add_opt_parameters podría no ser el mismo que la
+    API envía en la consulta. Por ejemplo, si la aplicación también incluye alguna
+    de las extensiones DNSSEC, la API se asegurará de que el registro de recursos OPT
+    establezca el registro de recursos apropiadamente, realizando los cambios
+    necesarios en la configuración de add_opt_parameters.</p>
+<p class="Pp">El uso de esta extensión puede entrar en conflicto con los valores del
+    contexto DNS. Por ejemplo, el valor predeterminado para un sistema operativo
+    podría ser un tamaño de paquete máximo de 65535, pero la extensión podría
+    especificar 1550. En tal caso, la API respetará los valores indicados en la
+    extensión, pero respetará los valores del contexto DNS si no se proporcionan
+    valores en la extensión.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESPONSE_DATA'><a class='permalink' href='#RESPONSE_DATA'>DATOS   DE RESPUESTA</a></h1>
+<p class="Pp">La función de devolución de llamada contiene un puntero a un objeto de
+    respuesta. Un objeto de respuesta es siempre un diccionario. El objeto de
+    respuesta siempre contiene al menos tres nombres: replies_full (una lista) y
+    replies_tree (una lista), y status (un entero). replies_full es una lista de
+    respuestas DNS (cada una son datos binarios) tal como aparecen en el cable.
+    replies_tree es una lista de respuestas DNS (cada una es un diccionario) con las
+    diversas partes de la respuesta analizadas. status es un código de estado para la
+    consulta.</p>
+<p class="Pp">Debido a que la API puede extenderse en el futuro, un objeto de
+    respuesta también podría contener nombres distintos de replies_full,
+    replies_tree y status. De manera similar, cualquiera de los diccionarios
+    descritos aquí podría extenderse en versiones posteriores de la API. Por lo
+    tanto, una aplicación que utiliza la API no debe asumir que conoce todos los
+    nombres posibles en un diccionario.</p>
+<p class="Pp">A continuación se enumeran los códigos de estado para los objetos de
+    respuesta. Tenga en cuenta que, si el estado es que no hay respuestas para la
+    consulta, las listas en replies_full y replies_tree tendrán cero longitud.</p>
+<p class="Pp HP"><b>GETDNS_RESPSTATUS_GOOD</b> Se devolvió al menos una respuesta</p>
+<p class="Pp HP"><b>GETDNS_RESPSTATUS_NO_NAME</b> Las consultas para el nombre
+    produjeron todas respuestas negativas</p>
+<p class="Pp HP"><b>GETDNS_RESPSTATUS_ALL_TIMEOUT</b> Todas las consultas para el
+    nombre expiraron</p>
+<p class="Pp HP"><b>GETDNS_RESPSTATUS_NO_SECURE_ANSWERS</b> Se especificó la
+    configuración del contexto para obtener solo respuestas seguras, y se recibió
+    al menos una respuesta DNS, pero ninguna respuesta DNS se determinó como segura
+    a través de DNSSEC.</p>
+<p class="Pp">El nivel superior de replies_tree puede tener opcionalmente los
+    siguientes nombres: canonical_name (datos binarios), intermediate_aliases
+    (una lista), answer_ipv4_address (datos binarios), answer_ipv6_address
+    (datos binarios) y answer_type (un entero).</p>
+<p class="Pp">El valor de canonical_name es el nombre que la API utilizó para su
+    búsqueda. Está en formato de presentación FQDN. Los valores en la lista
+    intermediate_aliases son nombres de dominio de cualquier CNAME o DNAME no
+    sintetizado encontrado al resolver la consulta original. La lista podría tener
+    cero entradas si no hubo CNAME en el camino. Estos pueden ser útiles, por
+    ejemplo, para comparaciones de nombres al seguir las reglas en RFC 612</p>
+<section class="Sh">
+<h1 class="Sh" id="RESPUESTA_DE_DATOS">RESPUESTA DE DATOS</h1>
+<p class="Pp">El valor de <code class="Nm">answer_ipv4_address</code> y
+    <code class="Nm">answer_ipv6_address</code> son las direcciones del servidor
+    desde el que se recibió la respuesta. El valor de <code class="Nm">answer_type</code>
+    es el tipo de servicio de nombres que generó la respuesta. Los valores son:</p>
+<div class="Bd-indent">
+<br/>
+ GETDNS_NAMETYPE_DNS
+<br/>
+ DNS Normal (RFC 1035)
+<br/>
+ GETDNS_NAMETYPE_WINS
+<br/>
+ El servicio de nombres WINS (se necesita alguna referencia)</div>
+<p class="Pp">Si la llamada fue <code class="Nm">getdns_address</code> o
+    <code class="Nm">getdns_address_sync</code>, el nivel superior de
+    <code class="Nm">replies_tree</code> tiene un nombre adicional,
+    <code class="Nm">just_address_answers</code> (una lista). El valor de
+    <code class="Nm">just_address_answers</code> es una lista que contiene todos
+    los registros A y AAAA de las secciones de respuesta de cualquiera de las
+    respuestas, en el orden en que aparecen en las respuestas. Cada elemento de
+    la lista es un diccionario con al menos dos nombres: <code class="Nm">address_type</code>
+    (cuyo valor es un <code class="Nm">bindata</code>; actualmente es
+    &quot;IPv4&quot; o &quot;IPv6&quot;) y <code class="Nm">address_data</code>
+    (cuyo valor es un <code class="Nm">bindata</code>). Tenga en cuenta que la
+    extensión <code class="Nm">dnssec_return_only_secure</code> afecta lo que
+    aparecerá en la lista <code class="Nm">just_address_answers</code>. Si el
+    DNS devuelve otros tipos de direcciones, esos tipos también aparecerán en
+    esta lista.</p>
+<p class="Pp">La API puede facilitar el descubrimiento de servicios a través de
+    registros SRV. Si la llamada fue <code class="Nm">getdns_service</code> o
+    <code class="Nm">getdns_service_sync</code>, el nivel superior de
+    <code class="Nm">replies_tree</code> tiene un nombre adicional,
+    <code class="Nm">srv_addresses</code> (una lista). La lista está ordenada
+    por prioridad y peso según el algoritmo de ponderación en la RFC 2782, con
+    el valor de prioridad más bajo primero. Cada elemento de la lista es un
+    diccionario con al menos dos nombres: <code class="Nm">port</code> y
+    <code class="Nm">domain_name</code>. Si la API pudo determinar la dirección
+    del nombre de dominio de destino (por ejemplo, desde su caché o desde la
+    sección Adicional de las respuestas), el diccionario para un elemento también
+    contendrá <code class="Nm">address_type</code> (cuyo valor es un
+    <code class="Nm">bindata</code>; actualmente es &quot;IPv4&quot; o
+    &quot;IPv6&quot;) y <code class="Nm">address_data</code> (cuyo valor es un
+    <code class="Nm">bindata</code>). Tenga en cuenta que la extensión
+    <code class="Nm">dnssec_return_only_secure</code> afecta lo que aparecerá
+    en la lista <code class="Nm">srv_addresses</code>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ESTRUCTURA_DEL_ÁRBOL_DE_RESPUESTAS_DNS"><a class='permalink' href='#ESTRUCTURA_DEL_ÁRBOL_DE_RESPUESTAS_DNS'>ESTRUCTURA DEL ÁRBOL DE RESPUESTAS DNS</a></h1>
+<p class="Pp">Los nombres en cada entrada de la lista <code class="Nm">replies_tree</code>
+    para las respuestas DNS incluyen <code class="Nm">header</code> (un diccionario),
+    <code class="Nm">question</code> (un diccionario), <code class="Nm">answer</code>
+    (una lista), <code class="Nm">authority</code> (una lista) y
+    <code class="Nm">additional</code> (una lista), que corresponden a las
+    secciones en el formato del mensaje DNS. Las listas <code class="Nm">answer</code>,
+    <code class="Nm">authority</code> y <code class="Nm">additional</code>
+    contienen cero o más diccionarios cada una, y cada diccionario en cada lista
+    representa un registro de recursos.</p>
+<p class="Pp">Los nombres en el diccionario <code class="Nm">header</code> son
+    todos los campos de la Sección 4.1.1 de la RFC 1035. Son: <code class="Nm">id</code>,
+    <code class="Nm">qr</code>, <code class="Nm">opcode</code>, <code class="Nm">aa</code>,
+    <code class="Nm">tc</code>, <code class="Nm">rd</code>, <code class="Nm">ra</code>,
+    <code class="Nm">z</code>, <code class="Nm">rcode</code>, <code class="Nm">qdcount</code>,
+    <code class="Nm">ancount</code>, <code class="Nm">nscount</code> y
+    <code class="Nm">arcount</code>. Todos son enteros.</p>
+<p class="Pp">Los nombres en el diccionario <code class="Nm">question</code> son
+    los tres campos de la Sección 4.1.2 de la RFC 1035: <code class="Nm">qname</code>
+    (un <code class="Nm">bindata</span>), <code class="Nm">qtype</code> (un entero)
+    y <code class="Nm">qclass</code> (un entero).</p>
+<p class="Pp">Los registros de recursos son un poco diferentes a las cabeceras y
+    las secciones de preguntas, ya que la parte RDATA a menudo tiene su propia
+    estructura. Los otros nombres en los diccionarios de registros de recursos son
+    <code class="Nm">name</code> (un <code class="Nm">bindata</span>),
+    <code class="Nm">type</code> (un entero), <code class="Nm">class</code> (un
+    entero), <code class="Nm">ttl</code> (un entero) y <code class="Nm">rdata</code>
+    (un diccionario); no hay un nombre equivalente al campo RDLENGTH.</p>
+<p class="Pp">El diccionario <code class="Nm">rdata</code> tiene nombres
+    diferentes para cada tipo de respuesta. Hay una lista completa de los tipos
+    definidos en la API. Para los nombres que terminan en &quot;-obsolete&quot;
+    o &quot;-unknown&quot;, el <code class="Nm">bindata</code> es todo el campo
+    RDATA. Por ejemplo, el <code class="Nm">rdata</code> de un registro A tiene
+    un nombre <code class="Nm">ipv4_address</code> (un <code class="Nm">bindata</span>);
+    el <code class="Nm">rdata</code> de un registro SRV tiene los nombres
+    <code class="Nm">priority</code> (un entero), <code class="Nm">weight</code>
+    (un entero), <code class="Nm">port</code> (un entero) y <code class="Nm">target</code>
+    (un <code class="Nm">bindata</span>).</p>
+<p class="Pp">Cada diccionario <code class="Nm">rdata</code> también tiene un
+    campo <code class="Nm">rdata_raw</code> (un <code class="Nm">bindata</span>).
+    Esto es útil para tipos no definidos en esta versión de la API. También puede
+    ser valioso si una versión posterior de la API permite analizadores
+    adicionales. Por lo tanto, realizar una consulta de tipos no conocidos por la
+    API aún devolverá un resultado: un <code class="Nm">rdata</code> solo con un
+    <code class="Nm">rdata_raw</code>.</p>
+<p class="Pp">Se espera que extensiones posteriores de la API den nombres
+    diferentes a algunos tipos de DNS. También es posible que extensiones
+    posteriores cambien los nombres de algunos de los tipos de DNS enumerados
+    anteriormente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="FUNCIONES_DE_DEVOLUCIÓN_DE_LLAMADA"><a class='permalink' href='#FUNCIONES_DE_DEVOLUCIÓN_DE_LLAMADA'>FUNCIONES DE DEVOLUCIÓN DE LLAMADA</a></h1>
+<p class="Pp">Una llamada a las funciones asíncronas de <code class="Nm">getdns</code>
+    generalmente devuelve antes de que ocurra cualquier E/S de red o de
+    archivo. Después de que la API procesa toda la información necesaria, llama
+    a la función de devolución de llamada que fue pasada por la aplicación. La
+    función de devolución de llamada puede ser llamada en cualquier momento,
+    incluso antes de que la función que la llamó haya regresado. La API garantiza
+    que la devolución de llamada se llamará exactamente una vez, a menos que la
+    función que la llamó devolviera un error, en cuyo caso la función de
+    devolución de llamada nunca se llama.</p>
+<p class="Pp">La función de llamada <code class="Nm">getdns</code> llama a la
+    devolución de llamada con los parámetros definidos de la siguiente
+    manera:</p>
+<p class="Pp"><code>typedef void (*getdns_callback_t)(</code></p>
+<div class="Bd-indent">
+<code class="Nm">getdns_context_t</code> context,
+<br/>
+<code class="Nm">uint16_t</code> callback_type,
+<br/>
+<code class="Nm">getdns_dict *</code>response,
+<br/>
+<code class="Nm">void *</code>userarg,
+<br/>
+<code class="Nm">getdns_transaction_t</code> transaction_id)</div>
+<p class="Pp HP"><i>context</i> consulte getdns_context (3)</p>
+<p class="Pp HP"><i>callback_type</i> Suministra la razón de la devolución de
+    llamada.</p>
+<div class="Bd-indent">
+<p class="Pp"><b>GETDNS_CALLBACK_COMPLETE</b> La respuesta contiene los datos
+    solicitados</p>
+<p class="Pp"><b>GETDNS_CALLBACK_CANCEL</b> El programa que llama canceló la
+    devolución de llamada; response es NULL</p>
+<p class="Pp"><b>GETDNS_CALLBACK_TIMEOUT</b> La acción solicitada expiró;
+    response es NULL</p>
+<p class="Pp"><b>GETDNS_CALLBACK_ERROR</b> La acción solicitada tuvo un error;
+    response es NULL</p>
+</div>
+<p class="Pp HP"><i>response</i> Un objeto de respuesta con los datos de la
+    respuesta. Esto se describe en la sección titulada &quot;DATOS DE
+    RESPUESTA&quot; en otra parte de esta página del manual. El objeto de
+    respuesta es parte del espacio de memoria de la API y será liberado por la
+    API cuando la devolución de llamada regrese.</p>
+<p class="Pp HP"><i>userarg</i> Idéntico al userarg pasado a la función que
+    llama.</p>
+<p class="Pp HP"><i>transaction_id</i> El identificador de transacción asignado
+    por la función que llama, utilizado para asociar una respuesta DNS con una
+    solicitud DNS específica.</p>
+<p class="Pp">Para cancelar una devolución de llamada pendiente, use la
+    siguiente función.</p>
+<div class="Bd-indent">
+<br/>
+<code class="Nm">getdns_return_t</code>
+<br/>
+<b>getdns_cancel_callback</b> (<code class="Nm">getdns_context_t</code> context,
+<code class="Nm">getdns_transaction_t</code> transaction_id)</div>
+<p class="Pp">Esto hace que la API llame a la devolución de llamada con un
+    <code class="Nm">callback_type</code> de GETDNS_CALLBACK_CANCEL si la
+    devolución de llamada para este transaction_id aún no ha sido llamada. El
+    código de devolución de llamada para la cancelación debe limpiar cualquier
+    memoria relacionada con la llamada identificada, como la desasignación de
+    memoria para el userarg. <code class="Nm">getdns_cancel_callback()</code>
+    puede regresar inmediatamente, incluso antes de que la devolución de llamada
+    complete su trabajo y regrese. Llamar a
+    <code class="Nm">getdns_cancel_callback()</code> con un transaction_id de
+    una devolución de llamada que ya ha sido llamada o un transaction_id
+    desconocido devuelve GETDNS_RETURN_UNKNOWN_TRANSACTION; de lo contrario,
+    <code class="Nm">getdns_cancel_callback()</code> devuelve GETDNS_RETURN_GOOD.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ARCHIVOS"><a class='permalink' href='#ARCHIVOS'>ARCHIVOS</a></h1>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EJEMPLOS"><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">TBD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DIAGNÓSTICOS"><a class='permalink' href='#DIAGNÓSTICOS'>DIAGNÓSTICOS</a></h1>
+<p class="Pp">TBD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VER_TAMBIÉN"><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/getdns_address.3.en'>getdns_address(3)</a>, <a href='/man/getdns_bindata.3.en'>getdns_bindata(3)</a>,
+    <a href='/man/getdns_context.3.en'>getdns_context(3)</a>, <a href='/man/getdns_convert.3.en'>getdns_convert(3)</a>, <a href='/man/getdns_dict.3.en'>getdns_dict(3)</a>,
+    <a href='/man/getdns_general.3.en'>getdns_general(3)</a>, <a href='/man/getdns_hostname.3.en'>getdns_hostname(3)</a>, <a href='/man/getdns_list.3.en'>getdns_list(3)</a>,
+    <a href='/man/getdns_root_trust_anchor.3.en'>getdns_root_trust_anchor(3)</a> <a href='/man/getdns_service.3.en'>getdns_service(3)</a>
+    <a href='/man/getdns_validate_dnssec.3.en'>getdns_validate_dnssec(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="INFORMACIÓN_DE_PROBLEMAS"><a class='permalink' href='#INFORMACIÓN_DE_PROBLEMAS'>INFORMACIÓN DE PROBLEMAS</a></h1>
+<p class="Pp">Los informes de errores deben enviarse a getdns-bugs@getdns.net</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTORES"><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp">La API de getdns fue documentada por Paul Hoffman. Esta
+    implementación de la API de getdns fue escrita por:</p>
+<div class="Bd-indent">
+<br/>
+Craig Despeaux, Verisign Inc.
+<br/>
+John Dickinson, Sinodun
+<br/>
+Sara Dickinson, Sinodun
+<br/>
+Neel Goyal, Verisign Inc.
+<br/>
+Shumon Huque, Verisign Labs
+<br/>
+Olaf Kolkman, NLnet Labs
+<br/>
+Allison Mankin, Verisign Inc. - Verisign Labs.
+<br/>
+Melinda Shore, No Mountain Software LLC
+<br/>
+Willem Toorop, NLnet Labs
+<br/>
+Gowri Visweswaran, Verisign Labs
+<br/>
+Wouter Wijngaards, NLnet Labs
+<br/>
+Glen Wiley, Verisign Inc.</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">diciembre de 2015</td>
+    <td class="foot-os">getdns 1.7.3</td>
+  </tr>
+</table>
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <title>getdns(3) - Arch Linux</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        
+        <main>
+            <aside>
+                <details>
+    <summary>Table of contents</summary>
+    <nav>
+        <ul>
+            <li><a href="#NAME">NAME</a></li>
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+            <li><a href="#RETURN_VALUES">RETURN VALUES</a></li>
+            <li><a href="#EXAMPLE">EXAMPLE</a></li>
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+            <li><a href="#AUTHORS">AUTHORS</a></li>
+        </ul>
+    </nav>
+</details>
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/libgetdns.3.en.txt">txt</a>, 
+        
+            <a href="/man/libgetdns.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            <article>
+                <h1>libgetdns(3)</h1>
+                <p>
+                    This is a placeholder for the actual man page content.
+                    The real content would go here, describing the libgetdns library functions.
+                </p>
+            </article>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

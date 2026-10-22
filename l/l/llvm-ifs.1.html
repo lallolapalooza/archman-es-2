@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>llvm-ifs(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">llvm-ifs(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/llvm/">llvm</a></p>
+<p class="lic">Licencias: Apache-2.0 WITH LLVM-exception</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LLVM-IFS(1)</td>
+    <td class="head-vol">LLVM</td>
+    <td class="head-rtitle">LLVM-IFS(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">llvm-ifs - herramienta de creación de stubs de objetos compartidos</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>llvm-ifs</b> [<i>opciones</i>] <i>entradas</i></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>llvm-ifs</b> es una herramienta que produce conjuntamente stubs de
+    objetos compartidos legibles por humanos en formato de texto (.ifs) y stubs de
+    objetos compartidos enlazables (.so) a partir de objetos compartidos ELF o de
+    stubs en formato de texto. Los stubs en formato de texto son útiles para
+    monitorizar cambios en la ABI del objeto compartido. Los stubs de objetos
+    compartidos enlazables se pueden utilizar para evitar relinks innecesarios
+    cuando la ABI de las bibliotecas compartidas no cambia.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FORMATOS_IFS'><a class='permalink' href='#FORMATOS_IFS'>FORMATOS IFS</a></h1>
+<p class="Pp">Aquí hay un ejemplo de la representación de texto (IFS) de un objeto
+    compartido producido por <b>llvm-ifs</b>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>--- !ifs-v1
+IFSVersion: 3.0
+SoName: libtest.so /* Opcional */
+Target: x86_64-unknown-linux-gnu   /* Opcional, formato 1, mismo formato que el triple de destino de llvm */
+Target: { Arch: x86_64, Endianness: little, Bitwidth: 64 } /* Opcional, formato 2 */
+NeededLibs:
+  - libc.so.6
+Symbols:
+  - { Name: sym0, Type: Notype }
+  - { Name: sym1, Type: Object, Size: 0 }
+  - { Name: sym2, Type: Func, Weak: false }
+  - { Name: sym3, Type: TLS }
+  - { Name: sym4, Type: Unknown, Warning: foo }
+...</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>IFSVersion</b>: Versión del archivo IFS para compatibilidad con el lector.</li>
+  <li><b>SoName</b> (opcional): Nombre del archivo de objeto compartido que se
+      está stubbando.</li>
+  <li><b>Target</b> (opcional): La arquitectura, endianness y bitwidth del objeto
+      compartido. Puede estar en formato explícito o en formato de triple LLVM
+      implícito. Puede ser opcional y puede ser anulado mediante opciones de
+      línea de comandos.</li>
+  <li><b>NeededLibs</b>: La lista de los objetos compartidos externos de los que
+      depende esta biblioteca.</li>
+  <li><b>Symbols</b>: Una colección de todos los datos necesarios para enlazar
+      objetos para cada símbolo, ordenados por nombre en orden ascendente.</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>Name</b>: Nombre del símbolo.</li>
+  <li><b>Type</b>: Si el símbolo es un objeto, función, sin tipo, almacenamiento
+      de hilo local (TLS) o desconocido. Los tipos de símbolos no soportados
+      explícitamente se mapean como desconocidos para mejorar la relación señal-ruido.</li>
+  <li><b>Size</b>: El tamaño del símbolo en cuestión, no aplicable a funciones,
+      y es opcional para símbolos sin tipo.</li>
+  <li><b>Undefined</b>: Si el símbolo está definido o no en este archivo de
+      objeto compartido.</li>
+  <li><b>Weak</b>: Si el símbolo debe tratarse como débil o no.</li>
+  <li><b>Warning</b> (opcional): Texto de advertencia a mostrar cuando se enlaza
+      contra este símbolo.</li>
+</ul>
+</div>
+</div>
+<p class="Pp">Este formato de texto basado en YAML contiene todo lo necesario para
+    generar un objeto compartido ELF enlazable y un archivo TAPI de Apple. El
+    orden de los símbolos está ordenado, por lo que estos archivos se pueden comparar
+    fácilmente utilizando herramientas diff. Si el contenido del archivo cambia,
+    indica un cambio potencialmente incompatible con la ABI.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FORMATO_STUB_ELF'><a class='permalink' href='#FORMATO_STUB_ELF'>FORMATO STUB ELF</a></h1>
+<p class="Pp">Un archivo ELF mínimo que puede ser utilizado por el enlazador debe
+    tener las siguientes secciones correctamente pobladas:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Encabezado ELF.</li>
+  <li>Encabezados de sección.</li>
+  <li>Tabla de símbolos dinámicos (sección <b>.dynsym</b>).</li>
+  <li>Tabla de cadenas dinámicas (sección <b>.dynstr</b>).</li>
+  <li>Tabla dinámica (sección <b>.dynamic</b>).</li>
+</ul>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Entrada <b>DT_SYMTAB</b>.</li>
+  <li>Entrada <b>DT_STRTAB</b>.</li>
+  <li>Entrada <b>DT_STRSZ</b>.</li>
+  <li>Entradas <b>DT_NEEDED</b>. (opcional)</li>
+  <li>Entrada <b>DT_SONAME</b>. (opcional)</li>
+</ul>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Tabla de cadenas de encabezado de sección (sección <b>.shstrtab</b>)</dd>
+</dl>
+</div>
+<p class="Pp">Este archivo ELF puede tener problemas de compatibilidad con
+    herramientas de análisis ELF que dependen de los encabezados del programa. Los
+    enlazadores como LLD funcionan bien con un archivo ELF mínimo de este tipo sin
+    errores.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES'><a class='permalink' href='#OPCIONES'>OPCIONES</a></h1>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="formato-entrada"><a class="permalink" href="#formato-entrada"><b>--input-format=[IFS|ELF|OtrosFormatosDeArchivoObjeto]</b></a></dt>
+  <dd>Especifica el formato del archivo de entrada. Actualmente, solo se admiten
+      archivos IFS de texto y archivos de objeto compartido ELF. Esta bandera es
+      opcional ya que el formato de entrada se puede inferir.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="salida-elf"><a class="permalink" href="#salida-elf"><b>--output-elf=&lt;nombre-archivo-salida&gt;</b></a></dt>
+  <dd>Especifica el archivo de salida para el stub del objeto compartido ELF.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="salida-ifs"><a class="permalink" href="#salida-ifs"><b>--output-ifs=&lt;nombre-archivo-salida&gt;</b></a></dt>
+  <dd>Especifica el archivo de salida para el IFS de texto.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="salida-tbd"><a class="permalink" href="#salida-tbd"><b>--output-tbd=&lt;nombre-archivo-salida&gt;</b></a></dt>
+  <dd>Especifica el archivo de salida para el tbd de formato Apple TAPI.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="arquitectura-x86_64-aarch64"><a class="permalink" href="#arquitectura-x86_64-aarch64"><b>--arch=[x86_64|AArch64|...]</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al leer un archivo IFS que no
+      define la <b>Arch</b> (arquitectura). Esta bandera define la arquitectura
+      del archivo de salida, y puede ser cualquier cadena soportada por el campo
+      'e_machine' de ELF. Si el valor entra en conflicto con el archivo IFS, se
+      informará un error y el programa se detendrá.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="endianness-little-big"><a class="permalink" href="#endianness-little-big"><b>--endianness=[little|big]</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al leer un archivo IFS que no
+      define el <b>Endianness</b>. Esta bandera define el endianness del archivo de
+      salida. Si el valor entra en conflicto con el archivo IFS, se informará un
+      error y el programa se detendrá.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="bitwidth-32-64"><a class="permalink" href="#bitwidth-32-64"><b>--bitwidth=[32|64]</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al leer un archivo IFS que no
+      define el <b>BitWidth</b>. Esta bandera define el ancho de bits del archivo
+      de salida. Si el valor entra en conflicto con el archivo IFS de entrada,
+      se informará un error y el programa se detendrá.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="target-target"><a class="permalink" href="#target-target"><b>--target=&lt;triple
+    de destino&gt;</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al leer un archivo IFS que no
+      define ninguna información de destino. Esta bandera define la
+      arquitectura, el endianness y el ancho de bits del archivo de salida
+      utilizando el triple de destino de llvm. Esta bandera no se puede usar
+      simultáneamente con otras banderas relacionadas con el destino.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="hint-ifs-target"><a class="permalink" href="#hint-ifs-target"><b>--hint-ifs-target=&lt;triple
+    de destino&gt;</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al leer un objeto compartido
+      ELF y generar un archivo IFS. Por defecto, llvm-ifs utilizará los campos
+      '<b>Arch</b>, <b>Endianness</b> y <b>BitWidth</b>' para reflejar la
+      información del destino del archivo de objeto de entrada. Usar esta bandera
+      le indicará a llvm-ifs el triple de destino esperado en el archivo IFS de
+      salida. Si el valor coincide con la información de destino del archivo de
+      objeto, este valor se utilizará en el campo 'Target:' del IFS generado. Si
+      entra en conflicto con el archivo de objeto de entrada, se informará un
+      error y el programa se detendrá.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="hint-ifs-target-2"><a class="permalink" href="#hint-ifs-target-2"><b>--hint-ifs-target</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al generar un archivo IFS. Esta
+      bandera elimina el campo <b>Arch</b> del archivo IFS para que pueda ser
+      anulado posteriormente.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="strip-ifs-endianness"><a class="permalink" href="#strip-ifs-endianness"><b>--strip-ifs-endianness</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al generar un archivo IFS. Esta
+      bandera elimina el campo <b>Endianness</b> del archivo IFS para que pueda ser
+      anulado posteriormente.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="strip-ifs-bitwidth"><a class="permalink" href="#strip-ifs-bitwidth"><b>--strip-ifs-bitwidth</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al generar un archivo IFS. Esta
+      bandera elimina el campo <b>BitWidth</b> del archivo IFS para que pueda ser
+      anulado posteriormente.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="strip-ifs-target"><a class="permalink" href="#strip-ifs-target"><b>--strip-ifs-target</b></a></dt>
+  <dd>Esta bandera es opcional y solo debe usarse al generar un archivo IFS.
+      Esta bandera elimina el campo
+<section class="Sh">
+<h1 class="Sh" id="OPTIONS">OPCIONES</h1>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="c"><a class="permalink" href="#c"><b>-c</b></a></dt>
+<dd>Esto genera un archivo ELF stub para el archivo de entrada dado.  El formato
+        de salida es el formato ELF stub estándar (como lo describe el archivo
+        especificado por la opción <b>--output</b>).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="emit-symbol-table"><a class="permalink" href="#emit-symbol-table"><b>--emit-symbol-table</b></a></dt>
+<dd>Cuando esta opción está activada, llvm-ifs generará una tabla de símbolos para
+        el archivo de salida. Por defecto, no se genera ninguna tabla de símbolos.
+        Esto es útil para fines de depuración o si el archivo de salida será
+        procesado posteriormente por otra herramienta que requiera una tabla de
+        símbolos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="help"><a class="permalink" href="#help"><b>-help</b></a></dt>
+<dd>Muestra un resumen de las opciones de la línea de comandos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="o"><a class="permalink" href="#o"><b>-o</b></a> <i>archivo</i></dt>
+<dd>Especifica el nombre del archivo de salida. Si no se especifica, se utilizará
+        la salida estándar.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="output"><a class="permalink" href="#output"><b>--output</b></a> <i>archivo</i></dt>
+<dd>Esto especifica el archivo de entrada para llvm-ifs. Si no se especifica, se
+        utilizará la entrada estándar. El archivo de entrada debe estar en el
+        formato especificado por la opción <b>--input-format</b>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="input-format"><a class="permalink" href="#input-format"><b>--input-format</b></a> <i>formato</i></dt>
+<dd>Especifica el formato del archivo de entrada. Los formatos válidos son
+        "elf" y "text". El valor predeterminado es "elf".</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="output-format"><a class="permalink" href="#output-format"><b>--output-format</b></a> <i>formato</i></dt>
+<dd>Especifica el formato del archivo de salida. Los formatos válidos son
+        "elf-stub" y "ifs". El valor predeterminado es "ifs".</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="parse-dfs"><a class="permalink" href="#parse-dfs"><b>--parse-dfs</b></a></dt>
+<dd>Cuando esta opción está activada, llvm-ifs intentará analizar el campo
+        &quot;Target&quot; del archivo IFS de entrada. Esto es útil para permitir que el
+        campo &quot;Target&quot; sea sobrescrito posteriormente.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="write-if-changed"><a class="permalink" href="#write-if-changed"><b>--write-if-changed</b></a></dt>
+<dd>Cuando esta opción está activada, llvm-ifs solo escribirá el archivo de salida
+        si no existe previamente o si el contenido es diferente del archivo
+        existente.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+<dt id="strip-size"><a class="permalink" href="#strip-size"><b>--strip-size</b></a></dt>
+<dd>Cuando esta opción está activada, llvm-ifs eliminará el campo de tamaño del
+        archivo ifs de salida. Esto es útil para objetos compartidos que solo
+        pretenden enlazarse con código independiente de posición que no necesita
+        relocalizaciones de copia, o donde el tamaño de un objeto no es una parte
+        útil de la abi que rastrear.</dd>
+</dl>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ESTADO_DE_SALIDA">ESTADO DE SALIDA</h1>
+<p class="Pp">Si <b>llvm-ifs</b> tiene éxito, saldrá con 0. De lo contrario, si ocurre
+    un error, saldrá con un valor distinto de cero.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Autor">Autor</h1>
+<p class="Pp">Mantenido por el LLVM Team (<a href="https://llvm.org/">https://llvm.org/</a>).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Copyright">Copyright</h1>
+<p class="Pp">2003-2025, LLVM Project</p>
+</section>
+</div>
+<table class="foot">
+<tr>
+<td class="foot-date">2025-11-19</td>
+<td class="foot-os">21</td>
+</tr>
+</table>
+</section>
+</article>
+<aside id="sidebar">
+<section class="search">
+<form action="/search" class="search direct-search" role="search">
+<input type="search" placeholder="Buscar página de manual" name="q" value=""/>
+<input type="submit" name="go" value="Ir"/>
+</form>
+</section>
+<section class="package-info">
+<p>Información del paquete:</p>
+<dl>
+<dt>Nombre del paquete:</dt>
+<dd><a href="https://www.archlinux.org/packages/extra/x86_64/llvm/">extra/llvm</a></dd>
+<dt>Versión:</dt>
+<dd>21.1.6-1</dd>
+<dt>Upstream:</dt>
+<dd><a href="https://llvm.org/">https://llvm.org/</a></dd>
+<dt>Licencias:</dt>
+<dd>Apache-2.0 WITH LLVM-exception</dd>
+<dt>Manuales:</dt>
+<dd><a href="/listing/extra/llvm/">/listing/extra/llvm/</a></dd>
+</dl>
+</section>
+<details>
+<summary>Tabla de contenidos</summary>
+<nav class="toc">
+<ul>
+<li><a href="#NOMBRE">NOMBRE</a></li>
+<li><a href="#SINOPSIS">SINOPSIS</a></li>
+<li><a href="#DESCRIPCION">DESCRIPCION</a></li>
+<li><a href="#FORMATOS_IFS">FORMATOS IFS</a></li>
+<li><a href="#FORMATO_STUB_ELF">FORMATO STUB ELF</a></li>
+<li><a href="#OPCIONES">OPCIONES</a></li>
+<li><a href="#ESTADO_DE_SALIDA">ESTADO DE SALIDA</a></li>
+<li><a href="#Autor">Autor</a></li>
+<li><a href="#Copyright">Copyright</a></li>
+</ul>
+</nav>
+</details>
+<nav class="other-formats">
+<p>Otros formatos:
+<a href="/man/llvm-ifs.1.en.txt">txt</a>,
+<a href="/man/llvm-ifs.1.en.raw">raw</a>
+</p>
+</nav>
+</aside>
+</main>
+<footer>
+
+<p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+excepto por el contenido de las páginas de manual, que tienen su propia licencia
+especificada en el paquete correspondiente de Arch Linux.
+</p>
+</footer>
+</body>
+</html>

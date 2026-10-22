@@ -1,0 +1,1155 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>parallel_design(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">parallel_design(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/any/parallel/">parallel</a></p>
+<p class="lic">Licencias: GPL-3.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PARALLEL_DESIGN(7)</td>
+    <td class="head-vol">parallel</td>
+    <td class="head-rtitle">PARALLEL_DESIGN(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='Diseño_de_GNU_Parallel'><a class='permalink' href='#Diseño_de_GNU_Parallel'>Diseño   de GNU Parallel</a></h1>
+<p class="Pp">Este documento describe las decisiones de diseño tomadas en el desarrollo de GNU <b>parallel</b> y el razonamiento detrás de ellas. Dará una visión general de por qué parte del código tiene el aspecto que tiene, y ayudará a los nuevos mantenedores a entender mejor el código.</p>
+<section class="Ss">
+<h2 class="Ss" id='Programa_en_un_archivo'><a class='permalink' href='#Programa_en_un_archivo'>Programa   en un archivo</a></h2>
+<p class="Pp">GNU <b>parallel</b> es un script de Perl en un solo archivo. Es orientado a objetos, pero a diferencia de los scripts normales de Perl, cada clase no está en su propio archivo. Esto se debe a la experiencia del usuario: El objetivo es que, en un apuro, el usuario pueda hacer que GNU <b>parallel</b> funcione simplemente copiando un solo archivo: No hay necesidad de meterse con variables de entorno como PERL5LIB.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Elección_del_lenguaje_de_programación'><a class='permalink' href='#Elección_del_lenguaje_de_programación'>Elección   del lenguaje de programación</a></h2>
+<p class="Pp">GNU <b>parallel</b> está diseñado para poder ejecutarse en sistemas antiguos. Eso significa que no puede depender de que se instale un compilador, y especialmente no de un compilador de un lenguaje que tenga menos de 20 años.</p>
+<p class="Pp">El objetivo es que puedas usar GNU <b>parallel</b> en cualquier sistema, incluso si no tienes permitido instalar software adicional.</p>
+<p class="Pp">De todos los sistemas que he experimentado, todavía no he visto un sistema que tuviera GCC instalado y que no tuviera Perl. Lo mismo ocurre con Rust, Go, Haskell y otros lenguajes más jóvenes. Sin embargo, he visto sistemas con Perl sin ninguno de los compiladores mencionados.</p>
+<p class="Pp">La mayoría de los sistemas modernos también tienen Python2 o Python3 instalados, pero aún así no puedes estar seguro de qué versión, y dado que Python2 no puede ejecutarse bajo Python3, Python no es una opción.</p>
+<p class="Pp">Perl tiene el beneficio adicional de que implementar la cadena de reemplazo {= perlexpr =} fue bastante fácil.</p>
+<p class="Pp">La principal desventaja es que Perl es lento. Por lo tanto, hay una sobrecarga de 3-10 ms/trabajo y 1 ms/MB de salida (e incluso más si usas <b>--tag</b>).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estilo_antiguo_de_Perl'><a class='permalink' href='#Estilo_antiguo_de_Perl'>Estilo   antiguo de Perl</a></h2>
+<p class="Pp">GNU <b>parallel</b> utiliza algunas construcciones antiguas y obsoletas. Esto se debe al objetivo de poder ejecutarse en instalaciones antiguas. Actualmente, el objetivo es CentOS 3.9 y Perl 5.8.0.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Escalabilidad_hacia_arriba_y_hacia_abajo'><a class='permalink' href='#Escalabilidad_hacia_arriba_y_hacia_abajo'>Escalabilidad   hacia arriba y hacia abajo</a></h2>
+<p class="Pp">El sistema más pequeño en el que se prueba GNU <b>parallel</b> es un ASUS WL500gP de 32 MB. El más grande es una máquina de 2 TB con 128 núcleos. Escala hasta alrededor de 100 máquinas, dependiendo de la duración de cada trabajo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Retroceso_exponencial'><a class='permalink' href='#Retroceso_exponencial'>Retroceso   exponencial</a></h2>
+<p class="Pp">GNU <b>parallel</b> espera activamente (busy waits). Esto se debe a que la razón por la que un trabajo no se inicia puede deberse a la carga promedio (al usar <b>--load</b>), y por lo tanto no tendría sentido simplemente esperar a que un trabajo termine. En cambio, la carga promedio debe ser reevaluada regularmente. La carga promedio no es la única razón: <b>--timeout</b> tiene un problema similar.</p>
+<p class="Pp">Para no consumir demasiada CPU, GNU <b>parallel</b> duerme durante períodos de tiempo cada vez más largos si no sucede nada, hasta un máximo de 1 segundo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Compatibilidad_de_la_shell'><a class='permalink' href='#Compatibilidad_de_la_shell'>Compatibilidad   de la shell</a></h2>
+<p class="Pp">El objetivo es que GNU <b>parallel</b> funcione igual de bien en cualquier shell. Sin embargo, en la práctica, GNU <b>parallel</b> se desarrolla en <b>bash</b> y, por lo tanto, las pruebas en otras shells se limitan a los errores reportados.</p>
+<p class="Pp">Cuando se encuentra una incompatibilidad, a menudo no hay una solución fácil: Arreglar el problema en <b>csh</b> a menudo lo rompe en <b>bash</b>. En estos casos, la solución suele ser usar un pequeño script de Perl y llamarlo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='env_parallel'><a class='permalink' href='#env_parallel'>env_parallel</a></h2>
+<p class="Pp"><b>env_parallel</b> es un script de shell ficticio que se ejecutará si <b>env_parallel</b> no es un alias o una función y le dirá al usuario cómo activar el alias/función para las shells compatibles.</p>
+<p class="Pp">El alias o función copiará el entorno actual y ejecutará el comando con GNU <b>parallel</b> en la copia del entorno.</p>
+<p class="Pp">El problema es que no se puede acceder a todo el entorno actual dentro de Perl. Por ejemplo, alias, funciones y variables de shell no exportadas.</p>
+<p class="Pp">La idea es, por lo tanto, tomar el entorno y ponerlo en <b>$PARALLEL_ENV</b>, que GNU <b>parallel</b> antepondrá a cada comando.</p>
+<p class="Pp">La única forma de tener acceso al entorno es directamente desde la shell, por lo que el programa debe estar escrito en un script de shell que se cargará (sourced) y deberá lidiar con el dialecto de la shell relevante.</p>
+<p class="Pp"><i>env_parallel.*</i></p>
+<p class="Pp">Estos son los archivos que implementan el alias o la función <b>env_parallel</b> para una shell dada. Se podría argumentar que deberían colocarse en algún lugar poco visible bajo /usr/lib, pero al colocarlos en tu PATH, se vuelve trivial encontrar la ruta a ellos y cargarlos (source):</p>
+<pre>source `which env_parallel.foo`</pre>
+<p class="Pp">La belleza es que se pueden colocar en cualquier lugar del PATH sin que el usuario tenga que conocer la ubicación. Por lo tanto, si el PATH del usuario incluye /afs/bin/i386_fc5 o /usr/pkg/parallel/bin o /usr/local/parallel/20161222/sunos5.6/bin, los archivos se pueden colocar en el directorio que tenga más sentido para el administrador del sistema.</p>
+<p class="Pp"><i>env_parallel.bash / env_parallel.sh / env_parallel.ash / env_parallel.dash / env_parallel.zsh / env_parallel.ksh / env_parallel.mksh</i></p>
+<p class="Pp"><b>env_parallel.(bash|sh|ash|dash|ksh|mksh|zsh)</b> define la función <b>env_parallel</b>. Utiliza <b>alias</b> y <b>typeset</b> para volcar la configuración (con algunas excepciones) en <b>$PARALLEL_ENV</b> antes de ejecutar GNU <b>parallel</b>.</p>
+<p class="Pp">Después de que GNU <b>parallel</b> finaliza, <b>$PARALLEL_ENV</b> se elimina.</p>
+<p class="Pp"><i>env_parallel.csh</i></p>
+<p class="Pp"><b>env_parallel.csh</b> tiene dos propósitos: Si <b>env_parallel</b> no es un alias: convertirlo en un alias que establece <b>$PARALLEL</b> con argumentos y llama a <b>env_parallel.csh</b>.</p>
+<p class="Pp">Si <b>env_parallel</b> es un alias, entonces <b>env_parallel.csh</b> utiliza <b>$PARALLEL</b> como los argumentos para GNU <b>parallel</b>.</p>
+<p class="Pp">Exporta el entorno escribiendo una definición de variable en un archivo para cada variable. Las definiciones de alias se añaden a este archivo. Finalmente, el archivo se coloca en <b>$PARALLEL_ENV</b>.</p>
+<p class="Pp">Luego se llama a GNU <b>parallel</b> y se elimina <b>$PARALLEL_ENV</b>.</p>
+<p class="Pp"><i>env_parallel.fish</i></p>
+<p class="Pp">Primero, todas las definiciones de funciones se generan usando un bucle y <b>functions</b>.</p>
+<p class="Pp">Volcar las definiciones de variables escalares es más difícil.</p>
+<p class="Pp"><b>fish</b> puede representar caracteres no imprimibles de (al menos) 2 maneras. Para evitar problemas, todos los escalares se convierten a codificación \XX.</p>
+<p class="Pp">Luego se crean comandos para generar las definiciones y se separan por NUL.</p>
+<p class="Pp">Esto se canaliza a un script de Perl que codifica todos los valores. Los elementos de la lista se añadirán con dos espacios.</p>
+<p class="Pp">Finalmente, \n se convierte en \1 porque las variables de <b>fish</b> no pueden contener \n. GNU <b>parallel</b> posteriormente convertirá todos los \1 de <b>$PARALLEL_ENV</b> a \n.</p>
+<p class="Pp">Todo esto se guarda en <b>$PARALLEL_ENV</b>.</p>
+<p class="Pp">Se llama a GNU <b>parallel</b> y se elimina <b>$PARALLEL_ENV</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='parset_(compatible_con_sh,_ash,_dash,_bash,_zsh,_ksh,_mksh)'><a class='permalink' href='#parset_(compatible_con_sh,_ash,_dash,_bash,_zsh,_ksh,_mksh)'>parset   (compatible con sh, ash, dash, bash, zsh, ksh, mksh)</a></h2>
+<p class="Pp"><b>parset</b> es una función de shell. Esta es la razón por la que <b>parset</b> puede establecer variables: se ejecuta en la shell que lo está llamando.</p>
+<p class="Pp">También es la razón por la que <b>parset</b> no funciona cuando los datos se canalizan hacia él: <b>... | parset ...</b> hace que <b>parset</b> se inicie en una subshell, y, por lo tanto, cualquier cambio en el entorno no puede regresar a la shell que lo llama.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ranuras_de_trabajo'><a class='permalink' href='#Ranuras_de_trabajo'>Ranuras   de trabajo</a></h2>
+<p class="Pp">La forma más fácil de explicar lo que hace GNU <b>parallel</b> es suponer que hay un número de ranuras de trabajo, y cuando una ranura queda disponible, un trabajo de la cola se ejecutará en esa ranura. Pero originalmente GNU <b>parallel</b> no modelaba las ranuras de trabajo en el código. Las ranuras de trabajo se han añadido para hacer posible el uso de <b>{%}</b> como cadena de reemplazo.</p>
+<p class="Pp">Si bien el número de secuencia del trabajo se puede calcular de forma</p>
+</div>
+</section>
+                
+            </article>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+avanza, el trabajo
+    el slot solo se puede calcular en el momento en que un slot queda
+    disponible. Por lo tanto, se ha implementado como una pila con evaluación
+    perezosa: Si sacas uno de una pila vacía, la pila se extiende en uno.
+    Cuando un trabajo termina, se vuelve a colocar el slot de trabajo
+    disponible en la pila.</p>
+<p class="Pp">Esta implementación también significa que si vuelves a ejecutar
+    los mismos trabajos, no puedes asumir que los trabajos obtendrán los mismos
+    slots. Y si usas ejecuciones remotas, no puedes asumir que un slot de trabajo
+    dado permanecerá en el mismo servidor remoto. Esto se duplica ya que el
+    número de slots de trabajo se puede ajustar sobre la marcha (dando a
+    <b>--jobs</b> un nombre de archivo).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Rsync_protocol_version'><a class='permalink' href='#Rsync_protocol_version'>Versión del protocolo Rsync</a></h2>
+<p class="Pp"><b>rsync</b> 3.1.x utiliza el protocolo 31, que no es compatible
+    con la versión 2.5.7. Eso significa que no puedes enviar un archivo a un
+    sistema remoto usando el protocolo 31 de <b>rsync</b> si el sistema remoto
+    utiliza 2.5.7. <b>rsync</b> no retrocede automáticamente al protocolo 30.</p>
+<p class="Pp">GNU <b>parallel</b> no requiere el protocolo 31, por lo que si la
+    versión de <b>rsync</b> es >= 3.1.0, se añade <b>--protocol 30</b> para
+    forzar a los <b>rsync</b> más nuevos a hablar con la versión 2.5.7.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Compression'><a class='permalink' href='#Compression'>Compresión</a></h2>
+<p class="Pp">GNU <b>parallel</b> almacena la salida en archivos temporales.
+    <b>--compress</b> comprime los datos almacenados en búfer. Esto es un poco
+    complicado porque no debería haber archivos que limpiar si GNU <b>parallel</b>
+    es interrumpido por un corte de energía.</p>
+<p class="Pp">GNU <b>parallel</b> primero selecciona un programa de compresión.
+    Si el usuario no ha seleccionado uno, se utiliza el primero de estos que esté
+    en <span class="Li">$PATH</span>: <b>pzstd lbzip2 pbzip2 zstd pixz
+    lz4 pigz lzop plzip lzip gzip lrz pxz bzip2 lzma xz clzip</b>. Están
+    ordenados por velocidad en una máquina de 128 núcleos.</p>
+<p class="Pp">Esquemáticamente, la configuración es la siguiente:</p>
+<pre>comando iniciado por parallel | comprimir &gt; archivo_temporal
+cattail archivo_temporal | descomprimir | parallel que lee la salida</pre>
+<p class="Pp">La configuración se duplica tanto para la salida estándar (stdout)
+    como para el error estándar (stderr).</p>
+<p class="Pp">GNU <b>parallel</b> canaliza la salida del comando ejecutado hacia
+    el programa de compresión, que guarda los datos en un archivo temporal. GNU
+    <b>parallel</b> registra el PID del programa de compresión. Al mismo tiempo,
+    se inicia un pequeño script de Perl (llamado <b>cattail</b> arriba): Básicamente
+    hace <b>cat</b> seguido de <b>tail -f</b>, pero también elimina el archivo
+    temporal tan pronto como se lee el primer byte y verifica continuamente si el
+    PID del programa de compresión está muerto. Si el programa de compresión está
+    muerto, <b>cattail</b> lee el resto del archivo temporal y sale.</p>
+<p class="Pp">Como la mayoría de los programas de compresión escriben una cabecera
+    al inicio, el archivo temporal en la práctica es eliminado por
+    <b>cattail</b> después de unos 40 ms.</p>
+<p class="Pp">Más detalladamente funciona así:</p>
+<pre>bash ( comando ) |
+  sh ( emptywrapper ( bash ( compound compress ) &gt;archivo_temporal ) )
+cattail ( rm archivo_temporal; compound decompress ) &lt; archivo_temporal</pre>
+<p class="Pp">Esta configuración compleja sirve para asegurar que el programa de
+    compresión solo se inicie si hay entrada. Esto significa que cada trabajo
+    causará la ejecución de 8 procesos. Si se combina con <b>--keep-order</b>,
+    estos procesos se ejecutarán hasta que se imprima el trabajo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Wrapping'><a class='permalink' href='#Wrapping'>Envoltura</a></h2>
+<p class="Pp">El comando dado por el usuario puede ser envuelto en múltiples
+    plantillas. Las plantillas pueden ser envueltas en otras plantillas.</p>
+<dl class="Bl-tag">
+  <dt><b>$COMMAND</b><b></b></dt>
+  <dd>el comando a ejecutar.</dd>
+  <dt><b>$INPUT</b><b></b></dt>
+  <dd>la entrada a ejecutar.</dd>
+  <dt><b>$SHELL</b><b></b></dt>
+  <dd>el shell que inició GNU Parallel.</dd>
+  <dt><b>$SSHLOGIN</b><b></b></dt>
+  <dd>el inicio de sesión ssh.</dd>
+  <dt><b>$WORKDIR</b><b></b></dt>
+  <dd>el directorio de trabajo.</dd>
+  <dt><b>$FILE</b><b></b></dt>
+  <dd>el archivo del que leer partes.</dd>
+  <dt><b>$STARTPOS</b><b></b></dt>
+  <dd>la posición del primer byte desde la que leer de
+      <span class="Li"><b>$FILE</b></span><b></b>.</dd>
+  <dt><b>$LENGTH</b><b></b></dt>
+  <dd>el número de bytes a leer de
+      <span class="Li"><b>$FILE</b></span><b></b>.</dd>
+  <dt id="shellquote"><a class="permalink" href="#shellquote">--shellquote</a></dt>
+  <dd>echo *Comilla doble* <span class="Li"><i>$INPUT</i></span></dd>
+  <dt id="nice"><a class="permalink" href="#nice">--nice <i>pri</i></a></dt>
+  <dd>Remoto: Ver <b>El wrapper del sistema remoto</b>.
+    <p class="Pp">Local: <b>setpriority(0,0,$nice)</b></p>
+  </dd>
+  <dt id="cat"><a class="permalink" href="#cat">--cat</a></dt>
+  <dd>
+    <pre>cat &gt; {}; $COMMAND {};
+perl -e '$bash = shift;
+  $csh = shift;
+  for(@ARGV) { unlink;rmdir; }
+  if($bash =~ s/h//) { exit $bash;  }
+  exit $csh;' &quot;$?h&quot; &quot;$status&quot; {};
+</pre>
+    <p class="Pp">{} se establece en
+        <span class="Li"><b>$PARALLEL_TMP</b></span><b></b>, que es un archivo
+        temporal. El script de Perl guarda el valor de salida, elimina el archivo
+        temporal y devuelve el valor de salida, independientemente de si el shell
+        es <b>bash</b>/<b>ksh</b>/<b>zsh</b> (usando $?) o
+        <b>*csh</b>/<b>fish</b> (usando <span class="Li">$status</span>).</p>
+  </dd>
+  <dt id="fifo"><a class="permalink" href="#fifo">--fifo</a></dt>
+  <dd>
+    <pre>perl -e '($s,$c,$f) = @ARGV;
+  # mkfifo $PARALLEL_TMP
+  system &quot;mkfifo&quot;, $f;
+  # spawn $shell -c $command &amp;
+  $pid = fork || exec $s, &quot;-c&quot;, $c;
+  open($o,&quot;&gt;&quot;,$f) || die $!;
+  # cat &gt; $PARALLEL_TMP
+  while(sysread(STDIN,$buf,131072)){
+     syswrite $o, $buf;
+  }
+  close $o;
+  # waitpid to get the exit code from $command
+  waitpid $pid,0;
+  # Cleanup
+  unlink $f;
+  exit $?/256;' $SHELL -c $COMMAND $PARALLEL_TMP
+</pre>
+    <p class="Pp">Esta es una forma elaborada de: mkfifo {}; ejecuta
+        <span class="Li"><b>$COMMAND</b></span><b></b> en segundo plano usando
+        <b></b><span class="Li"><b>$SHELL</b></span><b></b>; copia STDIN a {};
+        espera a que se complete el proceso en segundo plano; elimina {} y sale
+        con el código de salida de <b></b><span class="Li"><b>$COMMAND</b></span><b></b>.</p>
+    <p class="Pp">Se hace de esta manera para ser compatible con
+        <b>*csh</b>/<b>fish</b>.</p>
+  </dd>
+  <dt id="pipepart"><a class="permalink" href="#pipepart">--pipepart</a></dt>
+  <dd>
+    <pre>&lt; $FILE perl -e 'while(@ARGV) {
+    sysseek(STDIN,shift,0) || die;
+    $left = shift;
+    while($read =
+          sysread(STDIN,$buf,
+                  ($left &gt; 131072 ? 131072 : $left))){
+      $left -= $read;
+      syswrite(STDOUT,$buf);
+    }
+  }' $STARTPOS $LENGTH
+</pre>
+    <p class="Pp">Esto leerá <span class="Li"><b>$LENGTH</b></span><b></b> bytes
+        de <b></b><span class="Li"><b>$FILE</b></span><b></b> comenzando en
+        <b></b><span class="Li"><b>$STARTPOS</b></span><b></b> y lo enviará a
+        STDOUT.</p>
+  </dd>
+  <dt id="sshlogin"><a class="permalink" href="#sshlogin">--sshlogin
+    $SSHLOGIN</a></dt>
+  <dd>
+    <pre>ssh $SSHLOGIN &quot;$COMMAND&quot;
+</pre>
+  </dd>
+  <dt id="transfer"><a class="permalink" href="#transfer">--transfer</a></dt>
+  <dd>
+    <pre>ssh $SSHLOGIN mkdir -p ./$WORKDIR;
+rsync --protocol 30 -rlDzR \
+      -essh ./{} $SSHLOGIN:./$WORKDIR;
+ssh $SSHLOGIN &quot;$COMMAND&quot;
+</pre>
+    <p class="Pp">Lea sobre <b>--protocol 30</b> en la sección <b>Versión del
+        protocolo Rsync</b>.</p>
+  </dd>
+  <dt id="transferfile"><a class="permalink" href="#transferfile">--transferfile
+    <i>archivo</i></a></dt>
+  <dd>&lt;&lt;en curso&gt;&gt;</dd>
+  <dt id="basefile"><a class="permalink" href="#basefile">--basefile</a></dt>
+  <dd>&lt;&lt;en curso&gt;&gt;</dd>
+  <dt id="return"><a class="permalink" href="#return">--return
+    <i>archivo</i></a></dt>
+  <dd>
+    <pre>$COMMAND; _EXIT_status=$?; mkdir -p $WORKDIR;
+rsync --protocol 30 \
+  --rsync-path=cd\ ./$WORKDIR\;\ rsync \
+  -rlDzR -essh $SSHLOGIN:./$FILE ./$WORKDIR;
+exit $_EXIT_status;
+</pre>
+    <p class="Pp">El <b>--rsync-path=cd ...</b> es necesario porque las versiones
+        antiguas de <b>rsync</b> no soportan <b>--no-implied-dirs</b>.</p>
+    <p class="Pp">El truco <span class="Li"><b>$_EXIT_status</b></span><b></b>
+        es posponer el valor de salida. Esto lo hace incompatible con
+        <b>*csh</b> y debería corregirse en el futuro. ¿Quizás un wrapper
+        'sh -c' es suficiente?</p>
+  </dd>
+  <dt id="cleanup"><a class="permalink" href="#cleanup">--cleanup</a></dt>
+  <dd><span class="Li">$RETURN</span> es el wrapper de <b>--return</b>
+        <pre>$COMMAND; _EXIT_status=$?; $RETURN;
+ssh $SSHLOGIN \(rm\ -f\ ./$WORKDIR/{}\;\
+                rmdir\ ./$WORKDIR\ \&gt;\&amp;/dev/null\;\);
+exit $_EXIT_status;
+</pre>
+    <p class="Pp"><span class="Li"><b>$_EXIT_status</b></span><b></b>: ver
+        <b>--return</b> arriba.</p>
+  </dd>
+  <dt id="pipe"><a class="permalink" href="#pipe">--pipe</a></dt>
+  <dd>
+    <pre>perl -e 'if(sysread(STDIN, $buf, 1)) {
+      open($fh, &quot;|-&quot;, &quot;@ARGV&quot;) || die;
+      syswrite($fh, $buf);
+      # Alinear hasta un bloque de 128k
+      if($read = sysread(STDIN, $buf, 131071)) {
+          syswrite($fh, $buf);
+      }
+      while($read = sysread(STDIN, $buf, 131072)) {
+          syswrite($fh, $buf);
+      }
+      close $fh;
+      exit ($?&amp;127 ? 128+($?&amp;127) : 1+$?&gt;&gt;8)
+  }' $SHELL -c $COMMAND
+</pre>
+    <p class="Pp">Este pequeño wrapper asegura que
+        <span class="Li"><b>$COMMAND</b></span><b></b> nunca se ejecutará si
+        no hay datos.</p>
+  </dd>
+  <dt id="tmux"><a class="permalink" href="#tmux">--tmux</a></dt>
+  <dd>&lt;&lt;TODO Corregir con '-quoting&gt;&gt; mkfifo /tmp/tmx3cMEV &amp;&amp;
+    <br/>
+     sh -c 'tmux -S /tmp/tmsaKpv1 new-session -s p334310 -d &quot;sleep .2&quot;
+      &gt;/dev/null 2&gt;&amp;1'; tmux -S /tmp/tmsaKpv1 new-window -t p334310 -n
+      wc\ 10 \(wc\ 10\)\;\ perl\ -e\ \'while\(\$t++\&lt;3\)\{\ print\
+      \$ARGV\[0\],\&quot;\\n\&quot;\ \}\'\ \$\?h/\$status\ \&gt;\&gt;\
+      /tmp/tmx3cMEV\&amp;echo\ wc\\\ 10\;\ echo\ \Job\ finished\ at:\
+      \`date\`\;sleep\ 10; exec perl -e
+      '$/=&quot;/&quot;;$_=&lt;&gt;;$c=&lt;&gt;;unlink
+      <span class="Li">$ARGV</span>; /(\d+)h/ and exit($1);exit$c' /tmp/tmx3cMEV
+    <p class="Pp">mkfifo <i>tmpfile.tmx</i>; tmux -S &lt;tmpfile.tms&gt;
+        new-session -s p<i>PID</i> -d 'sleep .2' &gt;&amp;/dev/null; tmux -S
+        &lt;tmpfile.tms&gt; new-window -t p<i>PID</i> -n &lt;&lt;entrada con comillas
+        del shell&gt;&gt; \(&lt;&lt;entrada con comillas del shell&gt;&gt;\)\;\ perl\ -e\
+        \'while\(\$t++\&lt;3\)\{\ print\ \$ARGV\[0\],\&quot;\\n\&quot;\ \}\'\
+        \$\?h/\$status\ \&gt;\&gt;\ <i>tmpfile.tmx</i>\&amp;echo\ &lt;&lt;entrada
+        con doble comilla del shell&gt;&gt;\;echo\ \Job\ finished\ at:\ \`date\`\;sleep\
+        10; exec perl -e '$/=&quot;/&quot;;$_=&lt;&gt;;$c=&lt;&gt;;unlink
+        <span class="Li">$ARGV</span>; /(\d+)h/ and exit($1);exit$c'
+        <i>tmpfile.tmx</i></p>
+    <p class="Pp">Primero se crea una FIFO (.tmx). Se utiliza para comunicar el
+        valor de salida. Luego se crea una nueva sesión de tmux. Esto puede
+        fallar si ya existe una sesión, por lo que se ignora la salida. Si todos
+        los slots de trabajo terminan al mismo tiempo, tmux cerrará la sesión. Se
+        crea un socket temporal (.tms) para evitar una condición de carrera en
+        tmux. Se limpia cuando GNU <b>parallel</b> termina.</p>
+    <p class="Pp">La entrada se utiliza como nombre de las ventanas en
+        <b>tmux</b>. Cuando el trabajo dentro de <b>tmux</b> termina, el valor de
+        salida se imprime en la FIFO (.tmx). Esta FIFO es abierta por <b>perl</b>
+        fuera de <b>tmux</b>, y <b>perl</b> elimina la FIFO. <b>Perl</b> se bloquea
+        hasta que se lee el primer valor de la FIFO, y este valor se utiliza como
+        valor de salida.</p>
+    <p class="Pp">
+Para que sea compatible con <b>csh</b> y <b>bash</b>, el valor de salida se imprime como: $?h/$status y esto es analizado por <b>perl</b>.</p>
+    <p class="Pp">Hay un error que hace necesario imprimir el valor de salida 3 veces.</p>
+    <p class="Pp">Otro error en <b>tmux</b> requiere que la longitud del título y el comando de tmux no tengan ciertos límites. Cuando se está dentro de estos límites, se agregan 75 '\ ' al título para forzarlo a estar fuera de los límites.</p>
+    <p class="Pp">Puede mapear los límites malos usando:</p>
+        <pre>perl -e 'sub r { int(rand(shift)).($_[0] &amp;&amp; &quot;\t&quot;.r(@_)) } print map { r(@ARGV).&quot;\n&quot; } 1..10000' 1600 1500 90 |
+  perl -ane '$F[0]+$F[1]+$F[2] &lt; 2037 and print ' |
+  parallel --colsep '\t' --tagstring '{1}\t{2}\t{3}' tmux -S /tmp/p{%}-'{=3 $_=&quot;O&quot;x$_ =}' \
+    new-session -d -n '{=1 $_=&quot;O&quot;x$_ =}' true'\ {=2 $_=&quot;O&quot;x$_ =};echo $?;rm -f /tmp/p{%}-O*'
+perl -e 'sub r { int(rand(shift)).($_[0] &amp;&amp; &quot;\t&quot;.r(@_)) } print map { r(@ARGV).&quot;\n&quot; } 1..10000' 17000 17000 90 |
+  parallel --colsep '\t' --tagstring '{1}\t{2}\t{3}' \
+tmux -S /tmp/p{%}-'{=3 $_=&quot;O&quot;x$_ =}' new-session -d -n '{=1 $_=&quot;O&quot;x$_ =}' true'\ {=2 $_=&quot;O&quot;x$_ =};echo $?;rm /tmp/p{%}-O*'
+&gt; value.csv 2&gt;/dev/null
+R -e 'a&lt;-read.table(&quot;value.csv&quot;);X11();plot(a[,1],a[,2],col=a[,4]+5,cex=0.1);Sys.sleep(1000)'
+</pre>
+    <p class="Pp">Para <b>tmux 1.8</b>, 17000 se puede reducir a 2100.</p>
+    <p class="Pp">Las áreas interesantes son título 0..1000 con (título + comando completo) en 996..1127 y 9331..9636.</p>
+  </dd>
+</dl>
+<p class="Pp">El orden del encapsulado es importante:</p>
+<ul class="Bl-bullet">
+  <li><span class="Li">$PARALLEL_ENV</span>, que se establece en env_parallel.*, debe
+      anteponerse al comando primero, ya que el comando puede contener variables
+      o funciones exportadas.</li>
+  <li><b>--nice</b>/<b>--cat</b>/<b>--fifo</b> deben hacerse en la máquina remota.</li>
+  <li><b>--pipepart</b>/<b>--pipe</b> deben hacerse en la máquina local dentro de
+      <b>--tmux</b>.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Opciones_de_conveniencia_--nice_--basefile_--transfer_--return_--cleanup_--tmux_--group_--compress_--cat_--fifo_--workdir_--tag_--tagstring'><a class='permalink' href='#Opciones_de_conveniencia_--nice_--basefile_--transfer_--return_--cleanup_--tmux_--group_--compress_--cat_--fifo_--workdir_--tag_--tagstring'>Opciones de conveniencia --nice --basefile --transfer --return --cleanup --tmux --group --compress --cat --fifo --workdir --tag --tagstring</a></h2>
+<p class="Pp">Todas estas son opciones de conveniencia que facilitan la realización de una
+    tarea. Pero, lo que es más importante: están probadas para funcionar también en casos extremos.
+    Tome <b>--nice</b> como ejemplo:</p>
+<pre>nice parallel command ...</pre>
+<p class="Pp">funcionará bien. Pero cuando se ejecuta de forma remota, necesita mover el
+    comando nice para que se ejecute en el servidor:</p>
+<pre>parallel -S server nice command ...</pre>
+<p class="Pp">Y esto volverá a funcionar bien, siempre que ejecute un solo comando. Cuando ejecute un comando compuesto, necesita que nice se aplique a todo el comando, y se vuelve aún más difícil:</p>
+<pre>parallel -S server -q nice bash -c 'command1 ...; cmd2 | cmd3'</pre>
+<p class="Pp">No es imposible, pero al usar <b>--nice</b>, GNU
+    <b>parallel</b> hará lo correcto por usted. De manera similar al transferir
+    archivos: se vuelve difícil cuando los nombres de archivo contienen espacios, :, `, *, u otros caracteres especiales.</p>
+<p class="Pp">Para ejecutar los comandos en una sesión de <b>tmux</b>, básicamente solo
+    necesita citar el comando. Para comandos simples eso es fácil, pero cuando
+    los comandos contienen caracteres especiales, se vuelve mucho más difícil de
+    hacer correctamente.</p>
+<p class="Pp"><b>--compress</b> no solo comprime la salida estándar (stdout) sino
+    también el error estándar (stderr); y lo hace en archivos, que están abiertos pero
+    eliminados, por lo que una falla no dejará estos archivos activos.</p>
+<p class="Pp"><b>--cat</b> y <b>--fifo</b> son fáciles de hacer manualmente, hasta que
+    desea limpiar el archivo temporal y conservar el código de salida del comando.</p>
+<p class="Pp">El verdadero problema surge cuando intenta combinar varios de estos: Hacerlo
+    correctamente para todos los casos extremos es casi imposible de hacer
+    manualmente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">--shard</h2>
+<p class="Pp">La forma sencilla de implementar el sharding sería:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>iniciar n trabajos,</dd>
+  <dt>2.</dt>
+  <dd>dividir cada línea en columnas,</dd>
+  <dt>3.</dt>
+  <dd>seleccionar los datos de la columna relevante</dd>
+  <dt>4.</dt>
+  <dd>calcular un valor hash a partir de los datos</dd>
+  <dt>5.</dt>
+  <dd>tomar el módulo n del valor hash</dd>
+  <dt>6.</dt>
+  <dd>pasar la línea completa al slot de trabajo que tiene el valor calculado</dd>
+</dl>
+<p class="Pp">Desafortunadamente, Perl es bastante lento para calcular el valor hash (y algo lento para dividir en columnas).</p>
+<p class="Pp">Una solución es usar un lenguaje compilado para la división y el hashing, pero eso iría en contra de los criterios de diseño de no depender de un compilador.</p>
+<p class="Pp">Afortunadamente, esas tareas se pueden paralelizar. Por lo tanto, GNU
+    <b>parallel</b> inicia n sharders que realizan los pasos 2-6, y pasa bloques de
+    100k a cada uno de ellos en un modo de asignación por turnos. Para asegurarse
+    de que estos sharders calculen el hash de la misma manera, <span class="Li">$PERL_HASH_SEED</span> se
+    establece en el mismo valor para todos los sharders.</p>
+<p class="Pp">Ejecutar n sharders presenta un nuevo problema: en lugar de tener n
+    salidas (una para cada valor calculado), ahora tiene n salidas para cada uno de
+    los n valores, lo que da un total de n*n salidas; y necesita fusionar estas n*n
+    salidas en n salidas.</p>
+<p class="Pp">Esto se puede hacer simplemente ejecutando 'parallel -j0 --lb cat :::
+    outputs_for_one_value', pero eso es bastante ineficiente, ya que genera un
+    proceso por cada archivo. En su lugar, se ejecuta el código central de 'parcat',
+    que también es un poco más rápido.</p>
+<p class="Pp">Todos los sharders y parcats se comunican a través de tuberías con nombre que
+    se eliminan tan pronto como se abren.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Shell_shock'><a class='permalink' href='#Shell_shock'>Shell shock</a></h2>
+<p class="Pp">El error shell shock en <b>bash</b> no afectó a GNU
+    <b>parallel</b>, pero las soluciones sí. <b>bash</b> introdujo primero
+    funciones en variables llamadas: <b><i>BASH_FUNC_myfunc()</i></b><i></i> y
+    más tarde lo cambió a <i>BASH_FUNC_myfunc%%</i>. Al transferir funciones, GNU
+    <b>parallel</b> lee la función y la convierte en una definición de función,
+    que se copia al sistema remoto y se ejecuta antes de que se ejecute el comando
+    real. Por lo tanto, GNU <b>parallel</b> necesita saber cómo leer la
+    función.</p>
+<p class="Pp">A partir de la versión 20150122, GNU <b>parallel</b> prueba tanto la
+    versión con () como la versión con %%, y la definición de función funciona en
+    versiones de <b>bash</b> anteriores y posteriores a shell shock.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='El_envoltorio_del_sistema_remoto'><a class='permalink' href='#El_envoltorio_del_sistema_remoto'>El envoltorio del sistema remoto</a></h2>
+<p class="Pp">El envoltorio del sistema remoto realiza algunas inicializaciones antes de
+    iniciar el comando en el sistema remoto.</p>
+<p class="Pp"><i>Hacer que las comillas no sean necesarias codificando todo en hexadecimal</i></p>
+<p class="Pp">Cuando ejecuta <b>ssh server foo</b>, <b>foo</b> debe citarse una vez:</p>
+<pre>ssh server &quot;echo foo; echo bar&quot;</pre>
+<p class="Pp">Si ejecuta <b>ssh server1 ssh server2 foo</b>, <b>foo</b> debe citarse
+    dos veces:</p>
+<pre>ssh server1 ssh server2 \'&quot;echo foo; echo bar&quot;\'</pre>
+<p class="Pp">GNU <b>parallel</b> evita esto empaquetando todo en valores hexadecimales
+    y ejecutando un comando que no necesita comillas:</p>
+<pre>perl -X -e GNU_Parallel_worker,eval+pack+q/H10000000/,join+q//,@ARGV</pre>
+<p class="Pp">Este comando lee hexadecimal de la línea de comandos y lo convierte en bytes
+    que luego se evalúan como una expresión de Perl.</p>
+<p class="Pp">La cadena <b>GNU_Parallel_worker</b> no es necesaria. Simplemente está
+    ahí para que el usuario sepa que este proceso es GNU <b>parallel</b>
+    trabajando.</p>
+<p class="Pp"><i>Ctrl-C y error estándar (stderr)</i></p>
+<p class="Pp">Si el usuario presiona Ctrl-C, espera que los trabajos se detengan. Esto
+    funciona sin problemas si los trabajos se ejecutan localmente. Desafortunadamente,
+    no es tan simple si los trabajos se ejecutan de forma remota.</p>
+<p class="Pp">Si los trabajos remotos se ejecutan en un tty usando <b>ssh -tt</b>, Ctrl-C
+    funciona, pero toda la salida al error estándar (stderr) se envía a la salida
+    estándar (stdout). Esto no es lo que el usuario espera.</p>
+<p class="Pp">Si los trabajos remotos se ejecutan sin un tty usando <b>ssh</b> (sin
+    <b>-tt</b>), la salida al error estándar (stderr) se mantiene en stderr, pero
+    Ctrl-C no mata los trabajos remotos. Esto no es lo que el usuario espera.</p>
+<p class="Pp">Entonces, lo que se necesita es una forma de tener ambos. Parece que la razón
+    por la que Ctrl-C no mata los trabajos remotos es porque el shell no propaga la
+    señal de colgar desde <b>sshd</b>. Pero cuando <b>sshd</b> muere, el padre
+    del shell de inicio se convierte en <b>init</b> (identificador de proceso 1).
+    Por lo tanto, al ejecutar un envoltorio de Perl para monitorear el ppid y matar
+    al hijo si el ppid se convierte en 1, Ctrl-C funciona y stderr se mantiene en
+    stderr.</p>
+<p class="Pp">Ctrl-C, sin embargo, mata la conexión ssh, por lo que se pierde cualquier
+    salida de un proceso remoto que muere.</p>
+<p class="Pp">Para poder matar a todos los (bis)*nietos, se inicia un nuevo grupo de
+    procesos.</p>
+<p class="Pp"><i>--nice</i></p>
+<p class="Pp">El <b>nice</b> del proceso remoto se realiza mediante
+    <b>setpriority(0,0,$nice)</b>. Algunos sistemas antiguos no implementan esto y
+    <b>--nice</b> no es compatible en ellos.</p>
+<p class="Pp"><i>Estableciendo </i><span class="Li"><i>$PARALLEL_TMP</i></span></p>
+<p class="Pp"><span class="Li"><b>$PARALLEL_TMP</b></span><b></b> es utilizado por
+    <b>--fifo</b> y <b>--cat</b> y debe apuntar a un archivo inexistente en
+    <b></b><span class="Li"><b>$TMPDIR</b></span><b></b>. Este nombre de archivo se
+    calcula en el sistema remoto.</p>
+<p class="Pp"><i>El envoltorio</i></p>
+<p class="Pp">El envoltorio se ve así:</p>
+<pre>$shell = $PARALLEL_SHELL || $SHELL;
+$tmpdir = $TMPDIR || $PARALLEL_REMOTE_TMPDIR;
+$nice = $opt::nice;
+$termseq = $opt::termseq;
+# Comprobar que $tmpdir se puede escribir
+-w $tmpdir ||
+    die(&quot;$tmpdir no se puede escribir.&quot;.
+      &quot; Establecer PARALLEL_REMOTE_TMPDIR&quot;);
+# Establecer $PARALLEL_TMP a un nombre de archivo inexistente en $TMPDIR
+do {
+    $ENV{PARALLEL_TMP} = $tmpdir.&quot;/par&quot;.
+      join&quot;&quot;, map { (0..9,&quot;a&quot;..&quot;z&quot;,&quot;A&quot;..&quot;Z&quot;)[rand(62)] } (1..5);
+} while(-e $ENV{PARALLEL_TMP});
+# Establecer $script a un nombre de archivo inexistente en $TMPDIR
+do {
+    $script = $tmpdir.&quot;/par&quot;.
+      join&quot;&quot;, map { (0..9,&quot;a&quot;..&quot;z&quot;,&quot;A&quot;..&quot;Z&quot;)[rand(62)] } (1..5);
+} while(-e $script);
+# Crear un script a partir del código hexadecimal
+# que se elimina a sí mismo y ejecuta los comandos
+open($fh,&quot;&gt;&quot;,$script) || die;
+# ' necesario debido a rc-shell
+print($fh(&quot;rm \'$script\'\n&quot;,$bashfunc.$cmd));
+close $fh;
+my $parent = getppid;
+my $done = 0;
+$SIG{CHLD} = sub { $done = 1; };
+$pid = fork;
+unless($pid) {
+    # Crear un grupo de procesos propio para poder matarlo con HUP más tarde
+    eval { setpgrp };
+    # Establecer valor nice
+    eval { setpriority(0,0,$nice) };
+    # Ejecutar el script
+    exec($shell,$script);
+    die(&quot;exec fallido: $!&quot;);
+}
+while((not $done) and (getppid == $parent)) {
+    # El ppid no se ha cambiado, por lo que sshd está activo
+    # Duerme exponencialmente hasta 1 segundo
+    $s = $s &lt; 1 ? 0.001 + $s * 1.03 : $s;
+    select(undef, undef, undef, $s);
+}
+if(not $done) {
+    # sshd está muerto: el usuario presionó Ctrl-C
+    # Matar según --termseq
+    my @term_seq = split/,/,$termseq;
+    if(not @term_seq) {
+      @term_seq
+</pre>= ("TERM",200,"TERM",100,"TERM",50,"KILL",25);
+    }
+    while(@term_seq && kill(0,-$pid)) {
+      kill(shift @term_seq, -$pid);
+      select(undef, undef, undef, (shift @term_seq)/1000);
+    }
+}
+wait;
+exit ($? &amp; 127 ? 128 + ($? &amp; 127) : 1 + ($? &gt;&gt; 8));
+</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Transferring_of_variables_and_functions">Transferencia de variables y funciones</h2>
+<p class="Pp">La transferencia de variables y funciones dadas por <b>--env</b> se realiza ejecutando un script de Perl de forma remota que llama al comando real. El script de Perl establece <span class="Li"><b>$ENV</b></span><b>{</b><i>variable</i><b>}</b> al valor correcto antes de ejecutar un shell que ejecuta la definición de la función seguida del comando real.</p>
+<p class="Pp">La función <b>env_parallel</b> copia el entorno actual completo en la variable de entorno <b>PARALLEL_ENV</b>. Esta variable es recogida por GNU <b>parallel</b> y se utiliza para crear el script de Perl mencionado anteriormente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Base64_encoded_bzip2">bzip2 codificado en Base64</h2>
+<p class="Pp"><b>csh</b> limita las palabras de los comandos a 1024 caracteres. Esto a menudo es demasiado poco cuando GNU <b>parallel</b> codifica variables de entorno y envuelve el comando con diferentes plantillas. Todas estas se combinan y entrecomillan en una sola palabra, que a menudo es más larga que 1024 caracteres.</p>
+<p class="Pp">Cuando la línea a ejecutar tiene más de 1000 caracteres, GNU <b>parallel</b> codifica la línea a ejecutar. La codificación comprime la línea a ejecutar con <b>bzip2</b>, la convierte a base64, divide la base64 en bloques de 1000 caracteres (para que <b>csh</b> no falle) y la antepone con este script de Perl que decodifica, descomprime y evalúa la línea.</p>
+<pre>@GNU_Parallel=("use","IPC::Open3;","use","MIME::Base64");
+eval "@GNU_Parallel";
+$SIG{CHLD}="IGNORE";
+# Busca bzip2. No encontrado => usa la ruta predeterminada
+my $zip = (grep { -x $_ } "/usr/local/bin/bzip2")[0] || "bzip2";
+# $in = stdin en $zip, $out = stdout de $zip
+my($in, $out, $eval);
+open3($in, $out, "&gt;&amp;STDERR", $zip, "-dc");
+if (my $perlpid = fork) {
+    close $in;
+    $eval = join "", &lt;$out&gt;;
+    close $out;
+} else {
+    close $out;
+    # Canaliza base64 decodificado a 'bzip2 -dc'
+    print $in (decode_base64(join "", @ARGV));
+    close $in;
+    exit;
+}
+wait;
+eval $eval;</pre>
+<p class="Pp">Perl y <b>bzip2</b> deben estar instalados en el sistema remoto, pero una pequeña prueba mostró que <b>bzip2</b> está instalado por defecto en todas las plataformas que ejecutan GNU <b>parallel</b>, por lo que esto no es un gran problema.</p>
+<p class="Pp">La ventaja adicional de esto es que ahora se pueden transferir entornos mucho más grandes, ya que estarán por debajo del límite de 131072 caracteres de <b>bash</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Which_shell_to_use">¿Qué shell usar?</h2>
+<p class="Pp">Diferentes shells se comportan de manera diferente. Un comando que funciona en <b>tcsh</b> puede no funcionar en <b>bash</b>. Por lo tanto, es importante que se utilice el shell correcto cuando GNU <b>parallel</b> ejecuta comandos.</p>
+<p class="Pp">GNU <b>parallel</b> se esfuerza por utilizar el shell correcto. Si GNU <b>parallel</b> se llama desde <b>tcsh</b>, utilizará <b>tcsh</b>. Si se llama desde <b>bash</b>, utilizará <b>bash</b>. Lo hace examinando el proceso (abuelo)*padre: Si el proceso (abuelo)*padre es un shell, usa ese shell; de lo contrario, examina el padre de este (abuelo)*padre. Si ninguno de los (abuelo)*padres son shells, entonces se utiliza <span class="Li">$SHELL</span>.</p>
+<p class="Pp">Esto hará lo correcto si se llama desde:</p>
+<ul class="Bl-bullet">
+  <li>un shell interactivo</li>
+  <li>un script de shell</li>
+  <li>un script de Perl en `` o usando <b>system</b> si se llama como una cadena única.</li>
+</ul>
+<p class="Pp">Si bien estos cubren la mayoría de los casos, hay situaciones en las que fallará:</p>
+<ul class="Bl-bullet">
+  <li>Cuando se ejecuta usando <b>exec</b>.</li>
+  <li>Cuando se ejecuta como el último comando usando <b>-c</b> desde otro shell (porque algunos shells usan <b>exec</b>):
+        <pre>zsh% bash -c "parallel 'echo {} is not run in bash; \
+     set | grep BASH_VERSION' ::: This"
+</pre>
+    <p class="Pp">Puede solucionar esto añadiendo '&amp;&amp; true':</p>
+        <pre>zsh% bash -c "parallel 'echo {} is run in bash; \
+     set | grep BASH_VERSION' ::: This &amp;&amp; true"
+</pre>
+  </li>
+  <li>Cuando se ejecuta en un script de Perl usando <b>system</b> con <b>parallel</b> como la primera cadena:
+        <pre>#!/usr/bin/perl
+system("parallel",'setenv a {}; echo $a'," ::: ",2);
+</pre>
+    <p class="Pp">Aquí depende de qué shell se utilice para llamar al script de Perl. Si el script de Perl se llama desde <b>tcsh</b> funcionará bien, pero si se llama desde <b>bash</b> fallará, porque el comando <b>setenv</b> no es conocido por <b>bash</b>.</p>
+  </li>
+</ul>
+<p class="Pp">Si GNU <b>parallel</b> adivina mal en estas situaciones, establezca el shell usando <span class="Li"><b>$PARALLEL_SHELL</b></span><b></b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Always_running_commands_in_a_shell">Ejecutar siempre comandos en un shell</h2>
+<p class="Pp">Si el comando es un comando simple sin redirección ni configuración de variables, el comando *podría* ejecutarse sin iniciar un shell. Por ejemplo, este simple <b>grep</b> que coincide con 'ls ' o ' wc &gt;&gt; c':</p>
+<pre>parallel "grep -E 'ls | wc &gt;&gt; c' {}" ::: foo</pre>
+<p class="Pp">podría ejecutarse como:</p>
+<pre>system("grep","-E","ls | wc &gt;&gt; c","foo");</pre>
+<p class="Pp">Sin embargo, tan pronto como el comando sea un poco más complejo, *debe* iniciarse un shell:</p>
+<pre>parallel "grep -E 'ls | wc &gt;&gt; c' {} | wc &gt;&gt; c" ::: foo
+parallel "LANG=C grep -E 'ls | wc &gt;&gt; c' {}" ::: foo</pre>
+<p class="Pp">Es imposible saber cómo interpretar '| wc &gt;&gt; c' sin analizar la cadena (¿es '|' una tubería en el shell o una alternancia en una expresión regular de <b>grep</b>? ¿Es 'LANG=C' un comando en <b>csh</b> o la configuración de una variable en <b>bash</b>? ¿Es '&gt;&gt;' una redirección o parte de una expresión regular?).</p>
+<p class="Pp">Además de esto, los scripts de envoltura a menudo requerirán que se inicie un shell.</p>
+<p class="Pp">La desventaja es que necesita entrecomillar los caracteres especiales del shell dos veces:</p>
+<pre>parallel echo '*' ::: Esto expandirá el asterisco
+parallel echo "'*'" ::: Esto no lo hará
+parallel "echo '*'" ::: Esto no lo hará
+parallel echo '\*' ::: Esto no lo hará
+parallel echo '\'*'\'' ::: Esto no lo hará
+parallel -q echo '*' ::: Esto no lo hará</pre>
+<p class="Pp"><b>-q</b> entrecomillará todos los caracteres especiales, por lo que la redirección no funcionará: esto imprime '* &gt; out.1' y *no* guarda '*' en el archivo out.1:</p>
+<pre>parallel -q echo "*" "&gt;" out.{} ::: 1</pre>
+<p class="Pp">GNU <b>parallel</b> intenta cumplir con el Principio de la Menor Sorpresa (POLA), y el requisito de usar <b>-q</b> es difícil de entender cuando no se ve el panorama completo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Quoting">Entrecomillado</h2>
+<p class="Pp">El entrecomillado depende del shell. Para la mayoría de los shells, el entrecomillado '- se utiliza para cadenas que contienen caracteres especiales.</p>
+<p class="Pp">Para <b>tcsh</b>/<b>csh</b>, el salto de línea se entrecomilla como \ seguido de un salto de línea. Otros caracteres especiales también se entrecomillan con \.</p>
+<p class="Pp">Para <b>rc</b>, todo se entrecomilla usando '.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">--pipepart vs. --pipe</h2>
+<p class="Pp">Aunque <b>--pipe</b> y <b>--pipepart</b> parecen muy similares para el usuario, se implementan de manera muy diferente.</p>
+<p class="Pp">Con <b>--pipe</b>, GNU <b>parallel</b> lee los bloques de la entrada estándar (stdin), que luego se pasan al comando en la entrada estándar (stdin); por lo tanto, cada bloque es procesado por el propio GNU <b>parallel</b>. Esta es la razón por la que <b>--pipe</b> alcanza un máximo de alrededor de 500 MB/seg.</p>
+<p class="Pp"><b>--pipepart</b>, por otro lado, primero identifica en qué posiciones de bytes comienzan los bloques y cuánto duran. Lo hace buscando en el archivo por el tamaño de un bloque y luego leyendo hasta que encuentra el final de un bloque. La búsqueda explica por qué GNU <b>parallel</b> no conoce el número de línea y por qué <b>-L/-l</b> y <b>-N</b> no funcionan.</p>
+<p class="Pp">Con un tamaño de bloque y archivo razonable, esta búsqueda es más de 1000 veces más rápida que leer el archivo completo. Las posiciones de bytes se pasan luego a un pequeño script que lee de la posición X a Y y envía la salida a la salida estándar (stdout). Este pequeño script se antepone al comando y el comando completo se ejecuta como si GNU <b>parallel</b> hubiera estado en su modo normal. El script se ve así:</p>
+<pre>&lt; file perl -e 'while(@ARGV) {
+   sysseek(STDIN,shift,0) || die;
+   $left = shift;
+   while($read = sysread(STDIN,$buf,
+                         ($left &gt; 131072 ? 131072 : $left))){
+     $left -= $read; syswrite(STDOUT,$buf);
+   }
+}' startbyte length_in_bytes</pre>
+<p class="Pp">Ofrece 1 GB/s por núcleo.</p>
+<p class="Pp">En lugar del script, se intentó usar <b>dd</b>, pero muchas versiones de <b>dd</b> no admiten la lectura de un byte a otro y podrían causar datos parciales. Vea este ejemplo sorprendente:</p>
+<pre>yes | dd bs=1024k count=10 | wc</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">Ajuste de --block-size</h2>
+<p class="Pp">Cada vez que GNU <b>parallel</b> detecta un registro más grande que <b>--block-size</b>, aumenta el tamaño del bloque en un 30%. Un <b>--block-size</b> pequeño da un rendimiento muy pobre; al aumentar exponencialmente el tamaño del bloque, el rendimiento no se verá afectado.</p>
+<p class="Pp">GNU <b>parallel</b> desperdiciará potencia de CPU si <b>--block-size</b> no contiene un registro completo, porque intenta encontrar un registro completo y fallará. Por lo tanto, la recomendación es usar un <b>--block-size</b> &gt; 2 registros, para que siempre obtenga al menos un registro completo cuando lea un bloque.</p>
+<p class="Pp">Si usa <b>-N</b>, entonces <b>--block-size</b> debe ser lo suficientemente grande como para contener N+1 registros.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Automatic_--block-size_computation">Cálculo automático de --block-size</h2>
+<p class="Pp">Con <b>--pipepart</b>, GNU <b>parallel</b> puede calcular <b>--block-size</b> automáticamente. Un <b>--block-size</b> de <b>-1</b> usará un tamaño de bloque para que cada ranura de trabajo reciba aproximadamente 1 bloque. <b>--block -2</b> pasará 2 bloques a cada ranura de trabajo y <b>-</b><i>n</i> pasará <i>n</i> bloques a cada ranura de trabajo.</p>
+<p class="Pp">Esto se puede hacer porque <b>--pipepart</b> lee de archivos, y podemos calcular el tamaño total de la entrada.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">--jobs y --onall</h2>
+<p class="Pp">Al ejecutar los mismos comandos en muchos servidores, ¿qué debería significar <b>--jobs</b>? ¿Es el número de servidores en los que ejecutar en paralelo? ¿Es el número de trabajos ejecutados en paralelo en cada servidor?</p>
+<p class="Pp">GNU <b>parallel</b> permite que <b>--jobs</b> represente el número de servidores en los que ejecutar en paralelo. Esto es para hacer posible ejecutar una secuencia de comandos (que no se puede paralelizar) en cada servidor, pero ejecutar la misma secuencia en múltiples servidores.</p>
+</section>
+<section class="Ss">
+<h2 c<section class="Ss">
+<h2 class="Ss">--shuf</h2>
+<p class="Pp">Al usar <b>--shuf</b> para mezclar los trabajos, todos los trabajos
+    se leen, luego se mezclan y finalmente se ejecutan. Al usar SQL, esto hace que
+    el <b>--sqlmaster</b> sea la parte que mezcla los trabajos. Los
+    <b>--sqlworker</b> simplemente ejecutan según el número de secuencia.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">--csv</h2>
+<p class="Pp"><b>--pipepart</b> es incompatible con <b>--csv</b> porque puedes
+    tener registros como:</p>
+<pre>a,b,c
+a,&quot;
+a,b,c
+a,b,c
+a,b,c
+&quot;,c
+a,b,c</pre>
+<p class="Pp">Aquí el segundo registro contiene un campo multilínea que parece
+    registros. Dado que <b>--pipepart</b> no lee el archivo completo al buscar
+    terminadores de registro, puede comenzar a leer dentro de este campo
+    multilínea, lo que sería incorrecto.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Buffering_on_disk'><a class='permalink' href='#Buffering_on_disk'>Almacenamiento en búfer en disco</a></h2>
+<p class="Pp">GNU <b>parallel</b> almacena la salida en búfer, porque si la salida
+    no se almacena en búfer, tienes que ser ridículamente cuidadoso con los
+    tamaños para evitar la mezcla de salidas (ver el excelente ejemplo en
+    <a href='https://catern.com/posts/pipes.html'>https://catern.com/posts/pipes.html</a>).</p>
+<p class="Pp">GNU <b>parallel</b> almacena en búfer en disco en
+    <span class="Li">$TMPDIR</span> usando archivos, que se eliminan tan pronto
+    como se crean, pero que permanecen abiertos. Por lo tanto, incluso si GNU
+    <b>parallel</b> se interrumpe por un corte de energía, no habrá archivos que
+    limpiar después. Otra ventaja es que el sistema de archivos es consciente de
+    que estos archivos se perderán en caso de un fallo, por lo que no es necesario
+    sincronizarlos al disco.</p>
+<p class="Pp">Esto da la extraña situación de que un disco puede estar completamente
+    utilizado, pero no hay archivos visibles en él.</p>
+<p class="Pp"><i>Almacenamiento parcial en búfer en memoria</i></p>
+<p class="Pp">Al usar los formatos de salida SQL y CSV, GNU Parallel tiene que
+    leer toda la salida en memoria. Cuando se ejecuta normalmente, solo leerá la
+    salida de un solo trabajo. Pero al usar <b>--linebuffer</b>, cada línea
+    impresa también se almacenará en búfer en memoria, para todos los trabajos
+    que se estén ejecutando actualmente.</p>
+<p class="Pp">Si la memoria es escasa, no utilice el formato de salida SQL/CSV con
+    <b>--linebuffer</b>.</p>
+<p class="Pp"><i>Comparación con el almacenamiento en búfer en memoria</i></p>
+<p class="Pp"><b>gargs</b> es una herramienta de paralelización que almacena en
+    búfer en memoria. Por lo tanto, es una forma útil de comparar las ventajas y
+    desventajas del almacenamiento en búfer en memoria con el almacenamiento en
+    búfer en disco.</p>
+<p class="Pp">En un sistema con 6 GB de RAM libre y 6 GB de swap libre, se probaron
+    con diferentes tamaños:</p>
+<pre>echo /dev/zero | gargs &quot;head -c $size {}&quot; &gt;/dev/null
+echo /dev/zero | parallel &quot;head -c $size {}&quot; &gt;/dev/null</pre>
+<p class="Pp">Los resultados son:</p>
+<pre>JobRuntime      Command
+     0.344      parallel_test 1M
+     0.362      parallel_test 10M
+     0.640      parallel_test 100M
+     9.818      parallel_test 1000M
+    23.888      parallel_test 2000M
+    30.217      parallel_test 2500M
+    30.963      parallel_test 2750M
+    34.648      parallel_test 3000M
+    43.302      parallel_test 4000M
+    55.167      parallel_test 5000M
+    67.493      parallel_test 6000M
+   178.654      parallel_test 7000M
+   204.138      parallel_test 8000M
+   230.052      parallel_test 9000M
+   255.639      parallel_test 10000M
+   757.981      parallel_test 30000M
+     0.537      gargs_test 1M
+     0.292      gargs_test 10M
+     0.398      gargs_test 100M
+     3.456      gargs_test 1000M
+     8.577      gargs_test 2000M
+    22.705      gargs_test 2500M
+   123.076      gargs_test 2750M
+    89.866      gargs_test 3000M
+   291.798      gargs_test 4000M</pre>
+<p class="Pp">GNU <b>parallel</b> está prácticamente limitado por la velocidad del
+    disco: hasta 6 GB de datos se escriben en el disco pero se almacenan en
+    caché, por lo que la lectura es rápida. Por encima de 6 GB, tanto la escritura
+    como la lectura de datos se realizan desde el disco. Cuando se ejecuta el
+    trabajo de 30000 MB, el sistema de disco es lento, pero utilizable: si no
+    estás usando el disco, casi no lo notas.</p>
+<p class="Pp"><b>gargs</b> tiene una ventaja de velocidad hasta 2500 M, donde choca
+    contra un muro. Luego, el sistema comienza a usar intercambio de forma
+    descontrolada y queda completamente inutilizable. A 5000 M se queda sin
+    memoria.</p>
+<p class="Pp">Puedes hacer que GNU <b>parallel</b> se comporte de manera similar a
+    <b>gargs</b> si apuntas <span class="Li">$TMPDIR</span> a un sistema de
+    archivos tmpfs: será más rápido para salidas pequeñas, pero puede colapsar
+    tu sistema para salidas más grandes y hacer que pierdas salida.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Disk_full'><a class='permalink' href='#Disk_full'>Disco lleno</a></h2>
+<p class="Pp">GNU <b>parallel</b> almacena en búfer en disco. Si el disco está
+    lleno, los datos pueden perderse. Para comprobar si el disco está lleno, GNU
+    <b>parallel</b> escribe un archivo de 8193 bytes cada segundo. Si este archivo
+    se escribe correctamente, se elimina inmediatamente. Si no se escribe
+    correctamente, el disco está lleno. El tamaño 8193 se eligió porque 8192
+    daba resultados incorrectos en algunos sistemas de archivos, mientras que
+    8193 hacía lo correcto en todos los sistemas de archivos probados.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Memory_usage'><a class='permalink' href='#Memory_usage'>Uso de memoria</a></h2>
+<p class="Pp">Normalmente, GNU <b>parallel</b> utiliza alrededor de 17 MB de RAM
+    constantemente, sin importar cuántos trabajos o cuánta salida haya. Hay
+    algunas cosas que hacen que el uso de memoria aumente:</p>
+<ul class="Bl-bullet">
+  <li>Múltiples fuentes de entrada. GNU <b>parallel</b> lee una fuente de entrada
+      solo una vez. Esto es por diseño, ya que una fuente de entrada puede ser un
+      flujo (por ejemplo, FIFO, tubería, entrada estándar (stdin)) que no se puede
+      rebobinar y leer de nuevo. Al leer una única fuente de entrada, la memoria
+      se libera tan pronto como el trabajo se completa, manteniendo así el uso
+      de memoria constante.
+    <p class="Pp">Pero al leer múltiples fuentes de entrada, GNU <b>parallel</b>
+        conserva los valores ya leídos para generar todas las combinaciones con
+        otras fuentes de entrada.</p>
+  </li>
+  <li>Calcular el número de trabajos. <b>--bar</b>, <b>--eta</b> y <b>--halt
+      xx%</b> usan <b>total_jobs()</b> para calcular el número total de trabajos.
+      Esto lo hace generando las estructuras de datos para todos los trabajos.
+      Todas estas estructuras de datos de trabajos se almacenarán en memoria y
+      ocuparán alrededor de 400 bytes por trabajo.</li>
+  <li>Almacenamiento en búfer de una línea completa. <b>--linebuffer</b> leerá
+      una línea completa por trabajo en ejecución. Una línea de salida muy larga
+      (por ejemplo, 1 GB sin \n) aumentará temporalmente el uso de RAM: desde que
+      se lee el principio de la línea hasta que se imprime la línea.</li>
+  <li>Almacenamiento en búfer de la salida completa de un solo trabajo. Esto
+      ocurre al usar <b>--results *.csv/*.tsv</b> o <b>--sql*</b>. Aquí, GNU
+      <b>parallel</b> leerá toda la salida de un solo trabajo y la guardará como
+      csv/tsv o SQL.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Argument_separators_:::_::::_:::+_::::+'><a class='permalink' href='#Argument_separators_:::_::::_:::+_::::+'>Separadores de argumentos ::: :::: :::+ ::::+</a></h2>
+<p class="Pp">El separador de argumentos <b>:::</b> se eligió porque nunca he visto
+    <b>:::</b> utilizado en ningún comando. La opción natural <b>--</b> sería una
+    mala idea, ya que no es improbable que el comando plantilla contenga
+    <b>--</b>. He visto <b>::</b> utilizado en lenguajes de programación para
+    separar clases, y no quería que el usuario se confundiera pensando que el
+    separador tenía algo que ver con clases.</p>
+<p class="Pp"><b>:::</b> también crea una separación visual, lo cual es bueno si
+    hay varios <b>:::</b>.</p>
+<p class="Pp">Cuando se eligió <b>:::</b>, <b>::::</b> surgió como una extensión
+    bastante natural.</p>
+<p class="Pp">Al vincular fuentes de entrada, fue necesario decidir alguna forma de
+    indicar la vinculación de <b>:::</b> y <b>::::</b>. Se eligieron
+    <b>:::+</b> y <b>::::+</b>, para que fueran similares a <b>:::</b> y
+    <b>::::</b>.</p>
+<p class="Pp">En 2022 me di cuenta de que <b>///</b> habría sido una opción aún
+    mejor, porque no se puede tener un archivo llamado <b>///</b>, mientras que
+    SÍ se puede tener un archivo llamado <b>:::</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Perl_replacement_strings,_{=_=},_and_--rpl'><a class='permalink' href='#Perl_replacement_strings,_{=_=},_and_--rpl'>Cadenas de reemplazo de Perl, {= =}, y --rpl</a></h2>
+<p class="Pp">Las abreviaturas para las cadenas de reemplazo hacen que un comando
+    parezca más críptico. Diferentes usuarios necesitarán diferentes cadenas de
+    reemplazo. En lugar de inventar más abreviaturas, obtienes cadenas de
+    reemplazo más flexibles si pueden ser programadas por el usuario.</p>
+<p class="Pp">El lenguaje Perl se eligió porque GNU <b>parallel</b> está escrito en
+    Perl y fue fácil y razonablemente rápido ejecutar el código proporcionado por
+    el usuario.</p>
+<p class="Pp">Si un usuario necesita la misma cadena de reemplazo programada una y
+    otra vez, puede que quiera crear su propia abreviatura para ella. Para eso
+    sirve <b>--rpl</b>. Funciona tan bien que incluso las propias abreviaturas
+    de GNU <b>parallel</b> se implementan usando <b>--rpl</b>.</p>
+<p class="Pp">En el código Perl, los bigramas <b>{=</b> y <b>=}</b> rara vez
+    existen. Parecen un par coincidente y se pueden introducir en todos los
+    teclados. Esto los convirtió en buenos candidatos para encerrar la expresión
+    de Perl en las cadenas de reemplazo. Se rechazó otro candidato ,, y ,,
+    porque no parecen un par coincidente. Se creó <b>--parens</b>, para que los
+    usuarios aún puedan usar ,, y ,, si lo desean: <b>--parens ,,,,</b></p>
+<p class="Pp">Sin embargo, internamente, <b>{=</b> y <b>=}</b> se reemplazan por
+    \257&lt; y \257&gt;. Esto es para simplificar la creación de expresiones
+    regulares. Solo necesitas mirar un carácter hacia adelante y nunca tener que
+    mirar hacia atrás.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Test_suite'><a class='permalink' href='#Test_suite'>Suite de pruebas</a></h2>
+<p class="Pp">GNU <b>parallel</b> utiliza su propio marco de pruebas. Esto se debe
+    en gran medida a razones históricas. Maneja razonablemente bien las pruebas
+    que dependen de cuánto tiempo dura una prueba determinada (por ejemplo, más
+    de 10 segundos es un éxito, pero menos es un fallo). Paraleliza la mayoría
+    de las pruebas, pero es fácil forzar que una prueba se ejecute como la única
+    prueba (lo que puede ser importante para problemas de tiempo). Maneja
+    razonablemente bien las pruebas que fallan intermitentemente. Detecta qué
+    pruebas fallaron y las empuja al principio, por lo que al ejecutar la suite
+    de pruebas nuevamente, las pruebas que fallaron más recientemente se ejecutan
+    primero.</p>
+<p class="Pp">Si GNU <b>parallel</b> adoptara un marco de pruebas real, esos
+    elementos serían importantes.</p>
+<p class="Pp">Dado que muchas pruebas dependen del hardware en el que se ejecutan,
+    estas pruebas fallan cuando se ejecutan en un hardware diferente al para el
+    que se escribió la prueba.</p>
+<p class="Pp">Cuando se corrigen la mayoría de los errores, se agrega una prueba para
+    que no vuelva a aparecer. Sin embargo, a veces es difícil crear el entorno
+    en el que se manifiesta el error, especialmente si el error solo aparece a
+    veces. Uno de los problemas más difíciles fue hacer que una máquina comenzara
+    a usar intercambio sin llevarla al límite.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Median_run_time'><a class='permalink' href='#Median_run_time'>Tiempo de ejecución mediano</a></h2>
+<p class="Pp">Usar un porcentaje para <b>--timeout</b> hace que GNU <b>parallel</b>
+    calcule el tiempo de ejecución mediano de un trabajo. La mediana es un mejor
+    indicador del tiempo de ejecución esperado que el promedio, porque a menudo
+    habrá valores atípicos que tardarán mucho más que el tiempo de ejecución
+    normal.</p>
+<p class="Pp">Para evitar mantener todos los tiempos de ejecución en memoria, se
+    realizó una implementación de remedian (Rousseeuw et al).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Error_messages_and_warnings'><a class='permalink' href='#Error_messages_and_warnings'>Mensajes de error y advertencias</a></h2>
+<p class="Pp">Mensajes de error como: ERROR, Not found, y 42 no son muy útiles.
+    GNU <b>parallel</b> se esfuerza por...</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Design_of_GNU_Parallel'><a class='permalink' href='#Design_of_GNU_Parallel'>Diseño de GNU Parallel</a></h1>
+<p class="Pp">If you have encountered an error then it is likely that the error
+    message tells you what is wrong. The error message is usually accompanied
+    by an exit code. If the exit code is 2 then it means that the command line
+    arguments were wrong.</p>
+<ul class="Bl-bullet">
+  <li>¿Qué salió mal?</li>
+  <li>¿Por qué salió mal?</li>
+  <li>¿Qué se puede hacer al respecto?</li>
+</ul>
+<p class="Pp">Desafortunadamente, no siempre es posible predecir la causa raíz del
+    error.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Determine_number_of_CPUs'><a class='permalink' href='#Determine_number_of_CPUs'>Determinar el número de CPU</a></h2>
+<p class="Pp">CPU es un término ambiguo. Puede significar el número de zócalos
+    rellenos (es decir, el número de chips físicos). Puede significar el número
+    de núcleos (es decir, el número de núcleos de cómputo físicos). Puede
+    significar el número de núcleos de hyperthreading (es decir, el número de
+    núcleos virtuales, algunos de los cuales pueden tener hyperthreading).</p>
+<p class="Pp">En ark.intel.com, Intel utiliza los términos *núcleos* e
+    *hilos* para el número de núcleos físicos y el número de núcleos con
+    hyperthreading, respectivamente.</p>
+<p class="Pp">GNU <b>parallel</b> utiliza *CPU* como el número de unidades de
+    cómputo y los términos *zócalos*, *núcleos* e *hilos* para especificar
+    cómo se calcula el número de unidades de cómputo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Computation_of_load'><a class='permalink' href='#Computation_of_load'>Cálculo de la carga</a></h2>
+<p class="Pp">Contrariamente a lo obvio, <b>--load</b> no utiliza la carga
+    promedio. Esto se debe a que la carga promedio aumenta demasiado lentamente.
+    En su lugar, utiliza <b>ps</b> para enumerar el número de hilos en estado
+    corriendo o bloqueado (estado D, O o R). Esto proporciona una carga instantánea.</p>
+<p class="Pp">Dado que el cálculo remoto de la carga puede ser lento, se genera
+    un proceso para ejecutar <b>ps</b> y colocar el resultado en un archivo, que
+    luego se utiliza la próxima vez.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Killing_jobs'><a class='permalink' href='#Killing_jobs'>Matar trabajos</a></h2>
+<p class="Pp">GNU <b>parallel</b> mata trabajos. Puede ser debido a
+    <b>--memfree</b>, <b>--halt</b>, o cuando GNU <b>parallel</b> encuentra una
+    condición de la que no puede recuperarse. Cada trabajo se inicia como su
+    propio grupo de procesos. De esta manera, cualquier hijo (o nieto) también
+    será eliminado. El grupo de procesos se elimina con la especificación
+    mencionada en <b>--termseq</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='SQL_interface'><a class='permalink' href='#SQL_interface'>Interfaz SQL</a></h2>
+<p class="Pp">GNU <b>parallel</b> utiliza el DBURL de GNU <b>sql</b> para
+    proporcionar el software de base de datos, nombre de usuario, contraseña,
+    host, puerto, base de datos y tabla en una sola cadena.</p>
+<p class="Pp">El DBURL debe apuntar a un nombre de tabla. La tabla se eliminará y
+    se creará. La razón para no reutilizar una tabla existente es que el usuario
+    puede haber agregado más fuentes de entrada que requerirían más columnas en
+    la tabla. Al anteponer '+' al DBURL, la tabla no se eliminará.</p>
+<p class="Pp">Las columnas de la tabla son similares a joblog con la adición de
+    <b>V1</b> .. <b>Vn</b> que son valores de las fuentes de entrada, y Stdout y
+    Stderr que son la salida del estándar de salida y del error estándar,
+    respectivamente.</p>
+<p class="Pp">La columna Signal ha sido renombrada a _Signal debido a que Signal
+    es una palabra reservada en MySQL.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Logo'><a class='permalink' href='#Logo'>Logo</a></h2>
+<p class="Pp">El logo está inspirado en la ilusión de la pared del café. La
+    fuente es DejaVu Sans.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Citation_notice'><a class='permalink' href='#Citation_notice'>Aviso de citación</a></h2>
+<p class="Pp">Para más detalles: Ver
+    <a href='https://git.savannah.gnu.org/cgit/parallel.git/tree/doc/citation-notice-faq.txt'>https://git.savannah.gnu.org/cgit/parallel.git/tree/doc/citation-notice-faq.txt</a></p>
+<p class="Pp">Financiar un proyecto de software libre es difícil. GNU
+    <b>parallel</b> no es una excepción. Además, parece que cuanto menos visible
+    es un proyecto, más difícil es obtener financiación. Y la naturaleza de GNU
+    <b>parallel</b> es que nunca será visto por "el tipo con la chequera", sino
+    solo por las personas que realizan el trabajo real.</p>
+<p class="Pp">Este problema ha sido abordado por otros, aunque no se ha encontrado
+    una solución: <a href='https://www.slideshare.net/NadiaEghbal/consider-the-maintainer'>https://www.slideshare.net/NadiaEghbal/consider-the-maintainer</a>
+    <a href='https://www.numfocus.org/blog/why-is-numpy-only-now-getting-funded/'>https://www.numfocus.org/blog/why-is-numpy-only-now-getting-funded/</a></p>
+<p class="Pp">Antes de implementar el aviso de citación, se discutió con los
+    usuarios: <a href='https://lists.gnu.org/archive/html/parallel/2013-11/msg00006.html'>https://lists.gnu.org/archive/html/parallel/2013-11/msg00006.html</a></p>
+<p class="Pp">Tener que dedicar 10 segundos a ejecutar <b>parallel
+    --citation</b> una vez, sin duda no es una solución ideal, pero hasta ahora
+    nadie ha propuesto una solución ideal, ni para financiar GNU
+    <b>parallel</b> ni otro software libre.</p>
+<p class="Pp">Si crees que tienes la solución perfecta, deberías probarla y, si
+    funciona, publicarla en la lista de correo. Sin embargo, es poco probable que
+    se prioricen las ideas que impliquen trabajo y que no se hayan probado.</p>
+<p class="Pp">Ejecutar <b>parallel --citation</b> una sola vez tarda menos de 10
+    segundos y silenciará el aviso de citación para futuras ejecuciones. Esto es
+    comparable a las herramientas gráficas donde tienes que hacer clic en una
+    casilla que dice "No volver a mostrar". Pero si eso es demasiado problema para
+    ti, ¿por qué no usar una de las alternativas en su lugar? Ver una lista en:
+    <b>man parallel_alternatives</b>.</p>
+<p class="Pp">Dado que la solicitud de citación no es un requisito legal, esto es
+    aceptable bajo GPLv3 y fue aclarado con el propio Richard M. Stallman. Por
+    lo tanto, no cae bajo esto:
+    <a href='https://www.gnu.org/licenses/gpl-faq.en.html#RequireCitation'>https://www.gnu.org/licenses/gpl-faq.en.html#RequireCitation</a></p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Ideas_for_new_design'><a class='permalink' href='#Ideas_for_new_design'>Ideas para un nuevo diseño</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Multiple_processes_working_together'><a class='permalink' href='#Multiple_processes_working_together'>Múltiples procesos trabajando juntos</a></h2>
+<p class="Pp">Open3 es lento. La impresión es lenta. Sería bueno si no ataran
+    recursos, sino que se ejecutaran en hilos separados.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">--rrs en remoto usando un envoltorio de perl</h2>
+<p class="Pp">... | perl -pe '$/=$recend$recstart;BEGIN{ if(substr($_) eq
+    <span class="Li">$recstart</span>) substr($_)=&quot;&quot; } eof and
+    substr($_) eq <span class="Li">$recend</span>) substr($_)=&quot;&quot;</p>
+<p class="Pp">Debería ser posible escribir un filtro que eliminara los separadores
+    de registro sobre la marcha en lugar de dentro de GNU
+    <b>parallel</b>. Esto podría entonces usar más CPU.</p>
+<p class="Pp">¿Eso requerirá el doble de memoria para el tamaño del registro?</p>
+<p class="Pp">¿Eso requerirá el doble de memoria para el tamaño del bloque?</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Historical_decisions'><a class='permalink' href='#Historical_decisions'>Decisiones históricas</a></h1>
+<p class="Pp">Estas decisiones fueron relevantes para versiones anteriores de GNU
+    <b>parallel</b>, pero no para la versión actual. Se conservan aquí como
+    registro histórico.</p>
+<section class="Ss">
+<h2 class="Ss">--tollef</h2>
+<p class="Pp">Puede leer sobre la historia de GNU <b>parallel</b> en
+    <a href='https://www.gnu.org/software/parallel/history.html'>https://www.gnu.org/software/parallel/history.html</a></p>
+<p class="Pp"><b>--tollef</b> se incluyó para hacer que el cambio de GNU
+    <b>parallel</b> fuera compatible con el paralelo de moreutils (que está hecho
+    por Tollef Fog Heen). Esto se hizo para que los usuarios de ese paralelo
+    pudieran portar fácilmente su uso a GNU <b>parallel</b>: simplemente establezca
+    <b>PARALLEL=&quot;--tollef&quot;</b> y eso sería todo.</p>
+<p class="Pp">Pero varias distribuciones optaron por hacer
+    <b>--tollef</b> global (poniéndolo en /etc/parallel/config) sin informar a
+    los usuarios, y eso causó mucha confusión cuando las personas probaban los
+    ejemplos de la página man de GNU <b>parallel</b> y estos no funcionaban. Los
+    usuarios se frustraron porque la distribución no les dejó claro que había
+    hecho global <b>--tollef</b>.</p>
+<p class="Pp">Así que para disminuir la frustración y el soporte resultante,
+    <b>--tollef</b> fue obsoleto el 20130222 y eliminado un año después.</p>
+</section>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-11-23</td>
+    <td class="foot-os">20251122</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/any/parallel/">extra/parallel</a></dd>
+        <dt>Versión:</dt>
+        <dd>20251122-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.gnu.org/software/parallel/">https://www.gnu.org/software/parallel/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-3.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/parallel/">/listing/extra/parallel/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#Design_of_GNU_Parallel">Diseño de GNU Parallel</a></li>
+        
+            <li><a href="#Ideas_for_new_design">Ideas para un nuevo diseño</a></li>
+        
+            <li><a href="#Historical_decisions">Decisiones históricas</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/parallel_design.7.es.txt">txt</a>, 
+        
+            <a href="/man/parallel_design.7.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

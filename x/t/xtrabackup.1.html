@@ -1,0 +1,2986 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>xtrabackup(1) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">xtrabackup(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/xtrabackup/">xtrabackup</a></p>
+<p class="lic">Licencias: GPL-2.0-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">XTRABACKUP(1)</td>
+    <td class="head-vol">Percona XtraBackup</td>
+    <td class="head-rtitle">XTRABACKUP(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">xtrabackup - Documentación de Percona XtraBackup 8.0</p>
+<p class="Pp">El binario <i>xtrabackup</i> es un programa C compilado que está
+    enlazado con las bibliotecas de <i>InnoDB</i> y las bibliotecas de cliente
+    estándar de <i>MySQL</i>.</p>
+<p class="Pp"><i>xtrabackup</i> permite realizar copias de seguridad punto a punto
+    de tablas <i>InnoDB</i> / <i>XtraDB</i> junto con las definiciones de
+    esquema, tablas <i>MyISAM</i> y otras partes del servidor.</p>
+<p class="Pp">Las bibliotecas de <i>InnoDB</i> proporcionan la funcionalidad para
+    aplicar un registro a los archivos de datos. Las bibliotecas de cliente de
+    <i>MySQL</i> se utilizan para analizar las opciones de línea de comandos y
+    el archivo de configuración.</p>
+<p class="Pp">La herramienta se ejecuta en modo <b>--backup</b> o <b>--prepare</b>,
+    correspondientes a las dos funciones principales que realiza. Existen varias
+    variaciones de estas funciones para realizar diferentes tareas, y hay dos
+    modos menos utilizados, <b>--stats</b> y <b>--print-param</b>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OTHER_TYPES_OF_BACKUPS'><a class='permalink' href='#OTHER_TYPES_OF_BACKUPS'>OTROS TIPOS DE COPIAS DE SEGURIDAD</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Incremental_Backups'><a class='permalink' href='#Incremental_Backups'>Copias de Seguridad Incrementales</a></h2>
+<p class="Pp"><i>xtrabackup</i> admite copias de seguridad incrementales. Copia
+    solo los datos que han cambiado desde la última copia de seguridad completa.
+    Puede realizar muchas copias de seguridad incrementales entre cada copia de
+    seguridad completa, por lo que puede configurar un proceso de copia de
+    seguridad como una copia completa una vez por semana y una incremental todos
+    los días, o copias completas todos los días e incrementales cada hora.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Las copias de seguridad incrementales en el motor de
+  almacenamiento MyRocks no determinan si una copia de seguridad completa o
+  incremental anterior contiene los mismos archivos. <b>Percona XtraBackup</b>
+  copia todos los archivos de MyRocks cada vez que realiza una copia de
+  seguridad.</div>
+</div>
+<p class="Pp">Las copias de seguridad incrementales funcionan porque cada página
+    de InnoDB (generalmente de 16 kb de tamaño) contiene un número de secuencia
+    de registro, o LSN. El LSN es el número de versión del sistema para toda la
+    base de datos. El LSN de cada página muestra cuán recientemente se modificó.
+    Una copia de seguridad incremental copia cada página cuyo LSN sea más nuevo
+    que el LSN de la copia de seguridad incremental o completa anterior. Hay dos
+    algoritmos en uso para encontrar el conjunto de tales páginas a copiar. El
+    primero, disponible con todos los tipos y versiones de servidor, es verificar
+    directamente el LSN de la página leyendo todas las páginas de datos. El
+    segundo, disponible con <i>Percona Server for MySQL</i>, es habilitar la
+    función de <i>seguimiento de páginas modificadas</i> en el servidor, que
+    notará las páginas a medida que se modifican. Esta información se escribirá
+    luego en un archivo separado y compacto, llamado archivo de mapa de bits.
+    El binario <i>xtrabackup</i> usará ese archivo para leer solo las páginas de
+    datos que necesita para la copia de seguridad incremental, lo que podría
+    ahorrar muchas solicitudes de lectura. Este último algoritmo está habilitado
+    por defecto si el binario <i>xtrabackup</i> encuentra el archivo de mapa de
+    bits. Es posible especificar <b>--incremental-force-scan</b> para leer todas
+    las páginas incluso si los datos del mapa de bits están disponibles.</p>
+<p class="Pp">Las copias de seguridad incrementales en realidad no comparan los
+    archivos de datos con los archivos de datos de la copia de seguridad anterior.
+    De hecho, puede usar <b>--incremental-lsn</b> para realizar una copia de
+    seguridad incremental sin tener la copia de seguridad anterior, si conoce su
+    LSN. Las copias de seguridad incrementales simplemente leen las páginas y
+    comparan su LSN con el LSN de la última copia de seguridad. Sin embargo, aún
+    necesita una copia de seguridad completa para restaurar los cambios
+    incrementales; sin una copia de seguridad completa como base, las copias de
+    seguridad incrementales son inútiles.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Creating_an_Incremental_Backup'><a class='permalink' href='#Creating_an_Incremental_Backup'>Creación de una Copia de Seguridad Incremental</a></h2>
+<p class="Pp">Para realizar una copia de seguridad incremental, comience con una
+    copia de seguridad completa como de costumbre. El binario <i>xtrabackup</i>
+    escribe un archivo llamado <b>xtrabackup_checkpoints</b> en el directorio de
+    destino de la copia de seguridad. Este archivo contiene una línea que muestra
+    el <b>to_lsn</b>, que es el LSN de la base de datos al final de la copia de
+    seguridad. Cree la copia de seguridad completa con un comando como el
+    siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --target-dir=/data/backups/base --datadir=/var/lib/mysql/</pre>
+</div>
+</div>
+<p class="Pp">Si examina el archivo <b>xtrabackup_checkpoints</b>, debería ver un
+    contenido similar al siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>backup_type = full-backuped
+from_lsn = 0
+to_lsn = 1291135</pre>
+</div>
+</div>
+<p class="Pp">Ahora que tiene una copia de seguridad completa, puede realizar una
+    copia de seguridad incremental basada en ella. Utilice un comando como el
+    siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --target-dir=/data/backups/inc1 \
+--incremental-basedir=/data/backups/base --datadir=/var/lib/mysql/</pre>
+</div>
+</div>
+<p class="Pp">El directorio <b>/data/backups/inc1/</b> ahora debería contener
+    archivos delta, como <b>ibdata1.delta</b> y <b>test/table1.ibd.delta</b>.
+    Estos representan los cambios desde el <b>LSN 1291135</b>. Si examina el
+    archivo <b>xtrabackup_checkpoints</b> en este directorio, debería ver algo
+    similar a lo siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>backup_type = incremental
+from_lsn = 1291135
+to_lsn = 1291340</pre>
+</div>
+</div>
+<p class="Pp">El significado debería ser autoevidente. Ahora es posible utilizar
+    este directorio como base para otra copia de seguridad incremental:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --target-dir=/data/backups/inc2 \
+--incremental-basedir=/data/backups/inc1 --datadir=/var/lib/mysql/</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Preparing_the_Incremental_Backups'><a class='permalink' href='#Preparing_the_Incremental_Backups'>Preparación de las Copias de Seguridad Incrementales</a></h2>
+<p class="Pp">El paso <b>--prepare</b> para las copias de seguridad incrementales
+    no es el mismo que para las copias de seguridad normales. En las copias de
+    seguridad normales, se realizan dos tipos de operaciones para hacer que la
+    base de datos sea consistente: las transacciones confirmadas se reproducen
+    desde el archivo de registro contra los archivos de datos, y las transacciones
+    no confirmadas se deshacen. Debe omitir la reversión de las transacciones no
+    confirmadas al preparar una copia de seguridad, ya que las transacciones que
+    no estaban confirmadas en el momento de su copia de seguridad pueden estar en
+    progreso, y es probable que se confirmen en la próxima copia de seguridad
+    incremental. Debe usar la opción <b>--apply-log-only</b> para evitar la fase
+    de reversión.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Si no usa la opción <b>--apply-log-only</b> para
+  evitar la fase de reversión, sus copias de seguridad incrementales serán
+  inútiles. Después de que las transacciones hayan sido deshechas, no se podrán
+  aplicar copias de seguridad incrementales posteriores.</div>
+</div>
+<p class="Pp">Comenzando con la copia de seguridad completa que creó, puede
+    prepararla y luego aplicar las diferencias incrementales. Recuerde que tiene
+    las siguientes copias de seguridad:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>/data/backups/base
+/data/backups/inc1
+/data/backups/inc2</pre>
+</div>
+</div>
+<p class="Pp">Para preparar la copia de seguridad base, necesita ejecutar
+    <b>--prepare</b> como de costumbre, pero evitando la fase de reversión:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base</pre>
+</div>
+</div>
+<p class="Pp">La salida debería terminar con algún texto como el siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>101107 20:49:43  InnoDB: Shutdown completed; log sequence number 1291135</pre>
+</div>
+</div>
+<p class="Pp">El número de secuencia de registro debe coincidir con el
+    <b>to_lsn</b> de la copia de seguridad base, que vio anteriormente.</p>
+<p class="Pp">Esta copia de seguridad es en realidad segura para restaurar tal
+    como está ahora, aunque se omitió la fase de reversión. Si la restaura e
+    inicia <i>MySQL</i>, <i>InnoDB</i> detectará que la fase de reversión no se
+    realizó, y lo hará en segundo plano, como suele hacer para la recuperación
+    ante fallos al iniciar. Le notificará que la base de datos no se cerró
+    normalmente.</p>
+<p class="Pp">Para aplicar la primera copia de seguridad incremental a la copia de
+    seguridad completa, debe usar el siguiente comando:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>xtrabackup --prepare --apply-log-only --target-dir=/data/backups/base \
+--incremental-dir=/data/backups/inc1</pre>
+</div>
+</div>
+<p class="Pp">Esto aplica los archivos delta a los archivos en
+    <b>/data/backups/base</b>, lo que los actualiza hasta el momento de la copia
+    de seguridad incremental. Luego aplica el registro de rehacer como de
+    costumbre al resultado. Los datos finales están en
+    <b>/data/backups/base</b>, no en el directorio incremental. Debería ver alguna
+    salida como la siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>incremental backup from 1291135 is enabled.
+xtrabackup: cd to /data/backups/base/
+xtrabackup: This target seems to be already prepared.
+xtrabackup: xtrabackup_logfile detected: size=2097152, start_lsn=(1291340)
+Applying /data/backups/inc1/ibdata1.delta ...
+Applying /data/backups/inc1/test/table1.ibd.delta ...
+.... snip
+101107 20:56:30  InnoDB: Shutdown completed; log sequence number 1291340</pre>
+</div>
+</div>
+<p class="Pp">Nuevamente, el LSN debe coincidir con lo que vio de su inspección
+    anterior de la primera copia de seguridad incremental. Si restaura los
+    archivos de <b>/data/backups/base</b>, debería ver el estado de los datos</p>
+</div>
+</section>
+</section>
+                
+            </article>
+            
+        </main>
+    </body>
+</html>
+base según
+    la primera copia de seguridad incremental.</p>
+<p class="Pp">Preparar la segunda copia de seguridad incremental es un proceso similar:
+    aplique las diferencias a la copia de seguridad base (modificada), y avanzará sus datos
+    en el tiempo hasta el punto de la segunda copia de seguridad incremental:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>xtrabackup --prepare --target-dir=/data/backups/base \
+--incremental-dir=/data/backups/inc2</pre>
+</div>
+</div>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><b>--apply-log-only</b> debe usarse al fusionar todos
+  los incrementales excepto el último. Es por eso que la línea anterior no contiene
+  la opción <b>--apply-log-only</b>. Incluso si se usara <b>--apply-log-only</b>
+  en el último paso, la copia de seguridad seguiría siendo consistente, pero en ese caso
+  el servidor realizaría la fase de reversión.</div>
+</div>
+<p class="Pp">Si desea evitar el aviso de que <i>InnoDB</i> no se apagó normalmente,
+    cuando haya aplicado las diferencias deseadas a la copia de seguridad base, puede ejecutar
+    <b>--prepare</b> nuevamente sin deshabilitar la fase de reversión.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Restoring_Incremental_Backups'><a class='permalink' href='#Restoring_Incremental_Backups'>Restauración de Copias de Seguridad Incrementales</a></h2>
+<p class="Pp">Después de preparar las copias de seguridad incrementales, el directorio base
+    contiene los mismos datos que la copia de seguridad completa. Para restaurar esta copia de seguridad,
+    puede usar este comando: <b>xtrabackup --copy-back --target-dir=BASE-DIR</b></p>
+<p class="Pp">Es posible que deba cambiar la propiedad como se detalla en
+    restoring_a_backup.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Incremental_Streaming_Backups_Using_xbstream'><a class='permalink' href='#Incremental_Streaming_Backups_Using_xbstream'>Copias de Seguridad Incrementales en Streaming Usando xbstream</a></h2>
+<p class="Pp">Las copias de seguridad incrementales en streaming se pueden realizar con la
+    opción de streaming <i>xbstream</i>. Actualmente, las copias de seguridad se empaquetan en formato
+    personalizado de <b>xbstream</b>. Con esta función, también debe realizar una copia de seguridad BASE.
+    Realizando una copia de seguridad base.INDENT 0.0</p>
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --target-dir=/data/backups</pre>
+</div>
+<br/>
+<br/>
+Realizando una copia de seguridad local.INDENT 0.0
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --incremental-lsn=LSN-number --stream=xbstream --target-dir=./ &gt; incremental.xbstream</pre>
+</div>
+<br/>
+<br/>
+Desempaquetando la copia de seguridad.INDENT 0.0
+<div class="Bd-indent">
+<pre>$ xbstream -x &lt; incremental.xbstream</pre>
+</div>
+<br/>
+<br/>
+Realizando una copia de seguridad local y transmitiéndola al servidor remoto y desempaquetándola.INDENT 0.0
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --incremental-lsn=LSN-number --stream=xbstream --target-dir=./
+$ ssh user@hostname &quot; cat - | xbstream -x -C &gt; /backup-dir/&quot;</pre>
+</div>
+<br/>
+<br/>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Partial_Backups'><a class='permalink' href='#Partial_Backups'>Copias de Seguridad Parciales</a></h2>
+<p class="Pp"><i>xtrabackup</i> admite la creación de copias de seguridad parciales cuando la opción
+    innodb_file_per_table está habilitada. Hay tres formas de crear copias de seguridad parciales:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>coincidiendo los nombres de las tablas con una expresión regular</dd>
+  <dt>2.</dt>
+  <dd>proporcionando una lista de nombres de tablas en un archivo</dd>
+  <dt>3.</dt>
+  <dd>proporcionando una lista de bases de datos</dd>
+</dl>
+</div>
+<p class="Pp"><b>ADVERTENCIA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">No copie la copia de seguridad preparada.
+<p class="Pp">La restauración de copias de seguridad parciales debe realizarse importando las tablas,
+    no utilizando la opción <i>--copy-back</i>. No se recomienda ejecutar copias de seguridad incrementales
+    después de ejecutar una copia de seguridad parcial.</p>
+<p class="Pp">Aunque hay algunos escenarios en los que la restauración se puede hacer copiando
+    los archivos, esto puede provocar inconsistencias en la base de datos en muchos casos y no es una forma
+    recomendada de hacerlo.</p>
+</div>
+</div>
+<p class="Pp">A efectos de esta página del manual, asumiremos que hay una base de datos llamada
+    <b>test</b> que contiene las tablas llamadas <b>t1</b> y <b>t2</b>.</p>
+<p class="Pp"><b>ADVERTENCIA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Si alguna de las tablas coincidentes o listadas se elimina durante
+  la copia de seguridad, <i>xtrabackup</i> fallará.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Creating_Partial_Backups'><a class='permalink' href='#Creating_Partial_Backups'>Creación de Copias de Seguridad Parciales</a></h2>
+<p class="Pp">Existen múltiples formas de especificar qué parte del total de datos
+    se está respaldando:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Use la opción <b>--tables</b> para listar los nombres de las tablas</li>
+  <li>Use la opción <b>--tables-file</b> para listar las tablas en un archivo</li>
+  <li>Use la opción <b>--databases</b> para listar las bases de datos</li>
+  <li>Use la opción <b>--databases-file</b> para listar las bases de datos</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">La opción <i>--tables</i></h2>
+<p class="Pp">El primer método implica la opción <i>--tables</i> de xtrabackup.
+    El valor de la opción es una expresión regular que se compara con el nombre de la base de datos
+    completamente calificado y el nombre de la tabla en el formato
+    <b>nombrebasedatos.nombretabla</b>.</p>
+<p class="Pp">Para respaldar solo tablas en la base de datos <b>test</b>, use el
+    siguiente comando:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
+--tables=&quot;^test[.].*&quot;</pre>
+</div>
+</div>
+<p class="Pp">Para respaldar solo la tabla <b>test.t1</b>, use el siguiente
+    comando:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --datadir=/var/lib/mysql --target-dir=/data/backups/ \
+--tables=&quot;^test[.]t1&quot;</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">La opción <i>--tables-file</i></h2>
+<p class="Pp">La opción <b>--tables-file</b> especifica un archivo que puede contener
+    múltiples nombres de tablas, un nombre de tabla por línea en el archivo. Solo las tablas
+    nombradas en el archivo se respaldarán. Los nombres se comparan exactamente,
+    sensibles a mayúsculas y minúsculas, sin coincidencia de patrones o expresiones regulares. Los nombres de las tablas
+    deben estar completamente calificados en formato
+    <b>nombrebasedatos.nombretabla</b>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ echo &quot;mydatabase.mytable&quot; &gt; /tmp/tables.txt
+$ xtrabackup --backup --tables-file=/tmp/tables.txt</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Las opciones <i>--databases</i> y <i>--databases-file</i></h2>
+<p class="Pp">La opción ` --databases` acepta una lista separada por espacios de las
+    bases de datos y tablas a respaldar en formato
+    <b>nombrebasedatos[.nombretabla]</b>. Además de esta lista, asegúrese de especificar las
+    bases de datos <b>mysql</b>, <b>sys</b> y</p>
+<p class="Pp"><b>performance_schema</b>. Estas bases de datos son necesarias al restaurar las bases de datos
+    usando <i>xtrabackup --copy-back</i>.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Las tablas procesadas durante el paso --prepare también pueden
+  agregarse a la copia de seguridad, incluso si no están listadas explícitamente por el parámetro, si
+  se crearon después de que comenzó la copia de seguridad.</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --databases='mysql sys performance_schema test ...'</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">La opción <b>--databases-file</b></h2>
+<p class="Pp">La opción <i>--databases-file</i> especifica un archivo que puede
+    contener múltiples bases de datos y tablas en formato
+    <b>nombrebasedatos[.nombretabla]</b>, un nombre de elemento por línea en el archivo. Los nombres se comparan exactamente,
+    sensibles a mayúsculas y minúsculas, sin coincidencia de patrones o expresiones regulares.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Las tablas procesadas durante el paso --prepare también pueden
+  agregarse a la copia de seguridad, incluso si no están listadas explícitamente por el parámetro, si
+  se crearon después de que comenzó la copia de seguridad.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Preparing_Partial_Backups'><a class='permalink' href='#Preparing_Partial_Backups'>Preparación de Copias de Seguridad Parciales</a></h2>
+<p class="Pp">El procedimiento es análogo a restaurar tablas individuales: aplique
+    los registros y use la opción <i>--export</i>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --prepare --export --target-dir=/path/to/partial/backup</pre>
+</div>
+</div>
+<p class="Pp">Cuando use la opción <i>--prepare</i> en una copia de seguridad parcial, verá advertencias sobre tablas que no existen. Esto se debe a que estas
+    tablas existen en el diccionario de datos dentro de InnoDB, pero los archivos
+    .ibd correspondientes no existen. No se copiaron en el directorio de copia de seguridad.
+    Estas tablas se eliminarán del diccionario de datos y, cuando restaure
+    la copia de seguridad e inicie InnoDB, ya no existirán y no causarán errores ni advertencias en el archivo de registro.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">No se encontró ningún archivo asociado con el ID del tablespace: 5
+<p class="Pp">Use --innodb-directories para encontrar los archivos del tablespace. Si eso falla, use --innodb-force-recovery=1 para ignorar esto y perder permanentemente todos los cambios en los tablespaces faltantes.</p>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Restoring_Partial_Backups'><a class='permalink' href='#Restoring_Partial_Backups'>Restauración de Copias de Seguridad Parciales</a></h2>
+<p class="Pp">La restauración debe realizarse restaurando tablas individuales de
+    la copia de seguridad parcial en el servidor.</p>
+<p class="Pp">También se puede hacer copiando la copia de seguridad preparada a un
+    directorio de datos &quot;limpio&quot; (en ese caso, asegúrese de incluir la
+    base de datos <b>mysql</b>) al directorio de datos al que está moviendo la copia de seguridad. Se puede crear una base de datos del sistema con lo siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ sudo mysql --initialize --user=mysql</pre>
+</div>
+</div>
+<p class="Pp">Una vez que inicie el servidor, es posible que vea que mysql se queja de tablespaces faltantes:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>2021-07-19T12:42:11.077200Z 1 [Warning] [MY-012351] [InnoDB] Tablespace 4, name 'test1/t1', file './d2/test1.ibd' is missing!
+2021-07-19T12:42:11.077300Z 1 [Warning] [MY-012351] [InnoDB] Tablespace 4, name 'test1/t1', file './d2/test1.ibd' is missing!</pre>
+</div>
+</div>
+<p class="Pp">Para limpiar la base de datos huérfana del diccionario de datos,
+    debe crear manualmente el directorio de la base de datos faltante y luego <b>DROP</b>
+    esta base de datos desde el servidor.</p>
+<p class="Pp">Ejemplo de creación de la base de datos faltante:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ mkdir /var/lib/mysql/test1/d2</pre>
+</div>
+</div>
+<p class="Pp">Ejemplo de eliminación de la base de datos del servidor:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mysql&gt; DROP DATABASE d2;
+Query OK, 2 rows affected (0.5 sec)</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ADVANCED_FEATURES'><a class='permalink' href='#ADVANCED_FEATURES'>CARACTERÍSTICAS AVANZADAS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Analyzing_Table_Statistics'><a class='permalink' href='#Analyzing_Table_Statistics'>Análisis de Estadísticas de Tablas</a></h2>
+<p class="Pp">El binario <i>xtrabackup</i> puede analizar archivos de datos InnoDB en modo de solo lectura
+    para proporcionar estadísticas sobre ellos. Para hacer esto, debe usar la opción
+    <b>--stats</b>. Puede combinar esto con la opción <b>--tables</b>
+    para limitar los archivos a examinar. También utiliza la opción <b>--use-memory</b>.</p>
+<p class="Pp">Puede realizar el análisis en un servidor en ejecución, con cierta probabilidad
+    de errores debido a que los datos cambian durante el análisis. O bien, puede analizar
+    una copia de seguridad de la base de datos. De cualquier manera, para usar la función de estadísticas,
+    necesita una copia limpia de la base de datos, incluidos los archivos de registro de tamaño correcto.</p>
+</section>
+es,
+    necesitas ejecutar con <b>--prepare</b> dos veces para usar esta funcionalidad
+    en una copia de seguridad.</p>
+<p class="Pp">El resultado de ejecutar en una copia de seguridad puede ser
+    similar a lo siguiente:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>&lt;ESTADÍSTICAS DEL ÍNDICE&gt;
+  tabla: test/tabla1, índice: PRIMARY, id de espacio: 12, página raíz 3
+  estadísticas estimadas en el diccionario:
+    valores clave: 25265338, páginas hoja 497839, páginas de tamaño 498304
+  estadísticas reales:
+     páginas de nivel 2: páginas=1, datos=5395 bytes, datos/páginas=32%
+     páginas de nivel 1: páginas=415, datos=6471907 bytes, datos/páginas=95%
+        páginas hoja: registros=25958413, páginas=497839, datos=7492026403 bytes, datos/páginas=91%</pre>
+</div>
+</div>
+<p class="Pp">Esto se puede interpretar de la siguiente manera:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>La primera línea simplemente muestra el nombre de la tabla e índice y sus
+      identificadores internos. Si ves un índice llamado <b>GEN_CLUST_INDEX</b>,
+      ese es el índice agrupado de la tabla, creado automáticamente porque no
+      creaste explícitamente una <b>CLAVE PRIMARIA</b>.</li>
+  <li>La información de estadísticas estimadas en el diccionario es similar a los
+      datos que se recopilan a través de <b>ANALYZE TABLE</b> dentro de
+      <i>InnoDB</i> para almacenarse como estadísticas de cardinalidad
+      estimada y pasarse al optimizador de consultas.</li>
+  <li>La información de estadísticas reales es el resultado de escanear las
+      páginas de datos y calcular información exacta sobre el índice.</li>
+  <li><b>Las páginas de nivel &lt;X&gt;</b>: la salida significa que la línea
+      muestra información sobre las páginas en ese nivel del árbol del índice.
+      Cuanto mayor sea <b>&lt;X&gt;</b>, más lejos estará de las páginas hoja,
+      que son el nivel 0. La primera línea es la página raíz.</li>
+  <li>La salida de <b>páginas hoja</b> muestra las páginas hoja, por supuesto.
+      Aquí es donde se almacenan los datos de la tabla.</li>
+  <li>La salida de <b>páginas externas</b>: (no mostrada) muestra páginas
+      externas grandes que contienen valores demasiado largos para caber en la
+      fila misma, como valores largos de <b>BLOB</b> y <b>TEXT</b>.</li>
+  <li><b>registros</b> es el número real de registros (filas) en las páginas
+      hoja.</li>
+  <li><b>páginas</b> es el recuento de páginas.</li>
+  <li><b>datos</b> es el tamaño total de los datos en las páginas, en bytes.</li>
+  <li><b>datos/páginas</b> se calcula como (<b>datos</b> / (<b>páginas</b> *
+      <b>TAMAÑO_PÁGINA</b>)) * 100%. Nunca alcanzará el 100% debido al espacio
+      reservado para las cabeceras y pies de página.</li>
+</ul>
+</div>
+<p class="Pp">Se publica un ejemplo más detallado en una <i>publicación</i>
+    del blog de rendimiento de MySQL.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Script_to_Format_Output'><a class='permalink' href='#Script_to_Format_Output'>Script   para Formatear la Salida</a></h2>
+<p class="Pp">El siguiente script se puede utilizar para resumir y tabular la
+    salida de la información de estadísticas:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>tabulate-xtrabackup-stats.pl
+#!/usr/bin/env perl
+use strict;
+use warnings FATAL =&gt; 'all';
+my $script_version = &quot;0.1&quot;;
+my $PG_SIZE = 16_384; # InnoDB por defecto usa páginas de 16k, cambia si es necesario.
+my ($cur_idx, $cur_tbl);
+my (%idx_stats, %tbl_stats);
+my ($max_tbl_len, $max_idx_len) = (0, 0);
+while ( my $line = &lt;&gt; ) {
+   if ( my ($t, $i) = $line =~ m/tabla: (.*), índice: (.*), id de espacio:/ ) {
+      $t =~ s!/!.!;
+      $cur_tbl = $t;
+      $cur_idx = $i;
+      if ( length($i) &gt; $max_idx_len ) {
+         $max_idx_len = length($i);
+      }
+      if ( length($t) &gt; $max_tbl_len ) {
+         $max_tbl_len = length($t);
+      }
+   }
+   elsif ( my ($kv, $lp, $sp) = $line =~ m/valores clave: (\d+), \D*(\d+), \D*(\d+)/ ) {
+      @{$idx_stats{$cur_tbl}-&gt;{$cur_idx}}{qw(est_kv est_lp est_sp)} = ($kv, $lp, $sp);
+      $tbl_stats{$cur_tbl}-&gt;{est_kv} += $kv;
+      $tbl_stats{$cur_tbl}-&gt;{est_lp} += $lp;
+      $tbl_stats{$cur_tbl}-&gt;{est_sp} += $sp;
+   }
+   elsif ( my ($l, $pages, $bytes) = $line =~ m/(?:nivel (\d+)|hoja) pages:.*pages=(\d+), data=(\d+) bytes/ ) {
+      $l ||= 0;
+      $idx_stats{$cur_tbl}-&gt;{$cur_idx}-&gt;{real_pages} += $pages;
+      $idx_stats{$cur_tbl}-&gt;{$cur_idx}-&gt;{real_bytes} += $bytes;
+      $tbl_stats{$cur_tbl}-&gt;{real_pages} += $pages;
+      $tbl_stats{$cur_tbl}-&gt;{real_bytes} += $bytes;
+   }
+}
+my $hdr_fmt = &quot;%${max_tbl_len}s %${max_idx_len}s %9s %10s %10s\n&quot;;
+my @headers = qw(TABLA ÍNDICE PÁGINAS_TOTALES PÁGINAS_LIBRES PCT_LLENO);
+printf $hdr_fmt, @headers;
+my $row_fmt = &quot;%${max_tbl_len}s %${max_idx_len}s %9d %10d %9.1f%%\n&quot;;
+foreach my $t ( sort keys %tbl_stats ) {
+   my $tbl = $tbl_stats{$t};
+   printf $row_fmt, $t, &quot;&quot;, $tbl-&gt;{est_sp}, $tbl-&gt;{est_sp} - $tbl-&gt;{real_pages},
+      $tbl-&gt;{real_bytes} / ($tbl-&gt;{real_pages} * $PG_SIZE) * 100;
+   foreach my $i ( sort keys %{$idx_stats{$t}} ) {
+      my $idx = $idx_stats{$t}-&gt;{$i};
+      printf $row_fmt, $t, $i, $idx-&gt;{est_sp}, $idx-&gt;{est_sp} - $idx-&gt;{real_pages},
+         $idx-&gt;{real_bytes} / ($idx-&gt;{real_pages} * $PG_SIZE) * 100;
+   }
+}</pre>
+</div>
+</div>
+Ejemplo de Salida del Script
+<p class="Pp">La salida del script de Perl anterior, cuando se ejecuta contra el
+    ejemplo que se muestra en la publicación del blog mencionada anteriormente,
+    aparecerá de la siguiente manera:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>          TABLA           ÍNDICE PÁGINAS_TOTALES PÁGINAS_LIBRES   PCT_LLENO
+art.link_out104                    832383      38561      86.8%
+art.link_out104         PRIMARY    498304         49      91.9%
+art.link_out104       domain_id     49600       6230      76.9%
+art.link_out104     domain_id_2     26495       3339      89.1%
+art.link_out104 from_message_id     28160        142      96.3%
+art.link_out104    from_site_id     38848       4874      79.4%
+art.link_out104   revert_domain    153984      19276      71.4%
+art.link_out104    site_message     36992       4651      83.4%</pre>
+</div>
+</div>
+<p class="Pp">Las columnas son la tabla y el índice, seguidas por el número total
+    de páginas en ese índice, el número de páginas no ocupadas realmente por
+    datos, y el número de bytes de datos reales como un porcentaje del tamaño
+    total de las páginas de datos reales. La primera línea en la salida anterior,
+    en la que la columna <b>ÍNDICE</b> está vacía, es un resumen de toda la
+    tabla.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Working_with_Binary_Logs'><a class='permalink' href='#Working_with_Binary_Logs'>Trabajando   con Registros Binarios</a></h2>
+<p class="Pp">El binario <b>xtrabackup</b> se integra con la tabla
+    <b>log_status</b>. Esta integración permite a <b>xtrabackup</b> imprimir la
+    posición del registro binario correspondiente a la copia de seguridad, para
+    que pueda usar esta posición del registro binario para aprovisionar una nueva
+    réplica o realizar una recuperación a un punto en el tiempo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Finding_the_Binary_Log_Position'><a class='permalink' href='#Finding_the_Binary_Log_Position'>Encontrando   la Posición del Registro Binario</a></h2>
+<p class="Pp">Puede encontrar la posición del registro binario correspondiente a
+    una copia de seguridad después de que se haya tomado la copia de seguridad. Si
+    su copia de seguridad proviene de un servidor con el registro binario
+    habilitado, <b>xtrabackup</b> crea un archivo llamado
+    <b>xtrabackup_binlog_info</b> en el directorio de destino. Este archivo
+    contiene el nombre del archivo del registro binario y la posición del punto
+    exacto en el que se tomó la copia de seguridad.</p>
+<p class="Pp">La salida es similar a la siguiente durante la etapa de copia de
+    seguridad:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>210715 14:14:59 Copia de seguridad creada en el directorio '/backup/'
+Posición del registro binario de MySQL: nombre de archivo 'binlog.000002', posición '156'
+. . .
+210715 14:15:00 completado OK!</pre>
+</div>
+</div>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">A partir de Percona XtraBackup 8.0.26-18.0, xtrabackup
+    ya no crea el archivo <b>xtrabackup_binlog_pos_innodb</b>. Este cambio se
+    debe a que MySQL y Percona Server ya no actualizan la información del
+    registro binario en la sección global del sistema de transacciones de
+    <b>ibdata</b>. Debe confiar en <b>xtrabackup_binlog_info</b> independientemente
+    del motor de almacenamiento en uso.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Recuperación a un Punto en el Tiempo</h2>
+<p class="Pp">Para realizar una recuperación a un punto en el tiempo a partir de
+    una copia de seguridad de <b>xtrabackup</b>, debe preparar y restaurar la
+    copia de seguridad, y luego reproducir los registros binarios desde el punto
+    mostrado en el archivo <b>xtrabackup_binlog_info</b>.</p>
+<p class="Pp">Un procedimiento más detallado se encuentra aquí.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Setting_Up_a_New_Replication_Replica'><a class='permalink' href='#Setting_Up_a_New_Replication_Replica'>Configuración   de una Nueva Réplica de Replicación</a></h2>
+<p class="Pp">Para configurar una nueva réplica, debe preparar la copia de
+    seguridad y restaurarla en el directorio de datos de su nueva réplica de
+    replicación. Si está utilizando la versión 8.0.22 o anterior, en su comando
+    <b>CHANGE MASTER TO</b>, use el nombre de archivo y la posición del registro
+    binario que se muestran en el archivo
+    <b>xtrabackup_binlog_info</b> para iniciar la replicación.</p>
+<p class="Pp">Si está utilizando la versión 8.0.23 o posterior, use
+    <i>CHANGE_REPLICATION_SOURCE_TO y las opciones apropiadas</i>.
+    <b>CHANGE_MASTER_TO</b> está obsoleto.</p>
+<p class="Pp">Un procedimiento más detallado se encuentra en
+    ../howtos/setting_up_replication.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Restoring_Individual_Tables'><a class='permalink' href='#Restoring_Individual_Tables'>Restauración   de Tablas Individuales</a></h2>
+<p class="Pp"><i>Percona XtraBackup</i> puede exportar una tabla que esté contenida
+    en su propio archivo <i>.ibd</i>. Con <i>Percona XtraBackup</i>, puede
+    exportar tablas individuales de cualquier base de datos <i>InnoDB</i> e
+    importarlas en <i>Percona Server for MySQL</i> con <i>XtraDB</i> o
+    <i>MySQL</i> 8.0. La fuente no tiene que ser <i>XtraDB</i> o <i>MySQL</i>
+    8.0, pero el destino sí. Este método solo funciona en archivos
+    <i>.ibd</i> individuales.</p>
+<p class="Pp">El siguiente ejemplo exporta e importa la siguiente tabla:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>CREATE TABLE export_test (
+a int(11) DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=latin1;</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Exporting_the_Table'><a class='permalink' href='#Exporting_the_Table'>Exportación   de la Tabla</a></h2>
+<p class="Pp">Se creó la tabla en modo
+    <i>innodb_file_per_table</i>, por lo que después de tomar una copia de
+    seguridad como de costumbre con la opción <i>--backup</i>, el archivo
+    <i>.ibd</i> existe en el directorio de destino:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ find /data/backups/mysql/ -name export_test.*
+/data/backups/mysql/test/export_test.ibd</pre>
+</div>
+</div>
+<p class="Pp">cuando prepare la copia de seguridad, agregue la opción
+    <i>--export</i> al comando. Aquí hay un ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --prepare --export --target-dir=/data/backups/mysql/</pre>
+</div>
+</div>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Si restaura una tabla de tablespace InnoDB cifrada, agregue
+    el archivo keyring:
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --prepare --export --target-dir=/tmp/table \
+--keyring-file-data=/var/lib/mysql-keyring/keyring</pre>
+</div>
+</div>
+</div>
+</div>
+<p class="Pp">Ahora debería ver un archivo <i>.exp</i> en el directorio de
+    destino:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ find /data/backups/mysql/ -name export_test.*
+/data/backups/mysql/test/export_test.exp
+/data/backups/mysql/test/export_test.ibd
+/data/backups/mysql/test/export_test.cfg</pre>
+</div>
+</div>
+<p class="Pp">Estos tres archivos son los únicos necesarios para importar la tabla
+    a un servidor que ejecute <i>Percona Server for MySQL</i> con <i>XtraDB</i>
+    o <i>MySQL</i> 8.0. En caso de que el servidor utilice el cifrado de
+    tablespace <i>InnoDB</i>, se agrega un archivo <i>.cfp</i> adicional que
+    contiene la clave de transferencia y una clave de tablespace cifrada.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div clas<section class="Sh">
+<h1 class="Sh" id="Metadatos_del_Diccionario_InnoDB"><a class="permalink" href="#Metadatos_del_Diccionario_InnoDB">Metadatos del Diccionario InnoDB</a></h1>
+<div class="Bd-indent">El archivo de metadatos <i>.cfg</i> contiene un volcado del diccionario <i>InnoDB</i> en un formato especial. Este formato es diferente al del archivo <i>.exp</i> que se utiliza en <i>XtraDB</i> para el mismo propósito. No se requiere un archivo <i>.cfg</i> para importar un tablespace a <i>MySQL</i> 8.0 o Percona Server para MySQL 8.0.
+<p class="Pp">Un tablespace se importa correctamente incluso si la tabla proviene de otro servidor, pero <i>InnoDB</i> realiza una validación del esquema si el archivo <i>.cfg</i> correspondiente se encuentra en el mismo directorio.</p>
+</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id="Importar_la_Tabla"><a class="permalink" href="#Importar_la_Tabla">Importar la Tabla</a></h2>
+<p class="Pp">En el servidor de destino que ejecuta <i>Percona Server para MySQL</i> con <i>XtraDB</i> y la opción <i>innodb_import_table_from_xtrabackup</i> habilitada, o <i>MySQL</i> 8.0, cree una tabla con la misma estructura y luego siga estos pasos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Ejecute el comando <b>ALTER TABLE test.export_test DISCARD TABLESPACE;</b>. Si ve el siguiente error, habilite <i>innodb_file_per_table</i> y cree la tabla nuevamente.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Error"><a class="permalink" href="#Error">Error</a></dt>
+  <dd>
+  <p class="Pp">ERROR 1030 (HY000): Got error -1 from storage engine</p>
+  </dd>
+</dl>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>2.</dt>
+  <dd>Copie los archivos exportados al subdirectorio <b>test/</b> del directorio de datos del servidor de destino.</dd>
+  <dt>3.</dt>
+  <dd>Ejecute <b>ALTER TABLE test.export_test IMPORT TABLESPACE;</b></dd>
+</dl>
+</div>
+<p class="Pp">La tabla se importa y puede ejecutar un <b>SELECT</b> para ver los datos importados.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Copia_de_seguridad_del_volcado_LRU"><a class="permalink" href="#Copia_de_seguridad_del_volcado_LRU">Copia de seguridad del volcado LRU</a></h2>
+<p class="Pp"><i>Percona XtraBackup</i> incluye un volcado guardado del grupo de búferes en una copia de seguridad para reducir el tiempo de calentamiento. Restaura el estado del grupo de búferes del archivo <b>ib_buffer_pool</b> después de reiniciar. <i>Percona XtraBackup</i> detecta <b>ib_buffer_pool</b> y lo copia de seguridad automáticamente. [imagen]</p>
+<p class="Pp">Si la opción de restauración del búfer está habilitada en <b>my.cnf</b>, el grupo de búferes estará en estado caliente después de restaurar la copia de seguridad.</p>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Documentacion_MySQL"><a class="permalink" href="#Documentacion_MySQL"><b>Documentación de <i>MySQL</i>: Guardar y restaurar el estado del grupo de búferes</b></a></dt>
+  <dd><a href="https://dev.mysql.com/doc/refman/8.0/en/innodb-preload-buffer-pool.html">https://dev.mysql.com/doc/refman/8.0/en/innodb-preload-buffer-pool.html</a></dd>
+</dl>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Copias_de_seguridad_en_streaming"><a class="permalink" href="#Copias_de_seguridad_en_streaming">Copias de seguridad en streaming</a></h2>
+<p class="Pp"><b>Percona XtraBackup</b> admite el modo de streaming. El modo de streaming envía una copia de seguridad a <b>STDOUT</b> en formato <i>xbstream</i> en lugar de copiar los archivos al directorio de copia de seguridad.</p>
+<p class="Pp">Este método le permite utilizar otros programas para filtrar la salida de la copia de seguridad, lo que proporciona una mayor flexibilidad para el almacenamiento de la copia de seguridad. Por ejemplo, la compresión se logra canalizando la salida a una utilidad de compresión. Uno de los beneficios de las copias de seguridad en streaming y el uso de tuberías de Unix es que las copias de seguridad se pueden cifrar automáticamente.</p>
+<p class="Pp">Para utilizar la función de streaming, debe usar la opción <b>--stream</b>, proporcionando el formato del stream (<b>xbstream</b>) y dónde almacenar los archivos temporales:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --stream=xbstream --target-dir=/tmp</pre>
+</div>
+</div>
+<p class="Pp"><i>xtrabackup</i> utiliza <i>xbstream</i> para enviar todos los archivos de datos a <b>STDOUT</b>, en un formato especial <b>xbstream</b>. Después de terminar de enviar todos los archivos de datos a <b>STDOUT</b>, detiene xtrabackup y también envía el archivo de registro guardado.</p>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Mas_informacion_sobre_xbstream"><a class="permalink" href="#Mas_informacion_sobre_xbstream"><b>Más información sobre <i>xbstream</i></b></a></dt>
+  <dd>xbstream_binary</dd>
+</dl>
+</div>
+</div>
+</div>
+<p class="Pp">Cuando la compresión está habilitada, <i>xtrabackup</i> comprime los datos de salida, excepto los archivos meta y no InnoDB que no se comprimen, utilizando el algoritmo de compresión especificado. El único algoritmo actualmente compatible es <b>quicklz</b>. Los archivos resultantes tienen el formato de archivo <i>qpress</i>, es decir, cada archivo *.qp producido por xtrabackup es esencialmente un archivo qpress de un solo archivo y puede ser extraído y descomprimido por el <i>archiver de archivos qpress</i> que está disponible en los repositorios de Percona Software.</p>
+<p class="Pp">Usando <i>xbstream</i> como opción de stream, las copias de seguridad se pueden copiar y comprimir en paralelo. Esta opción puede mejorar significativamente la velocidad del proceso de copia de seguridad. En caso de que las copias de seguridad estuvieran comprimidas y cifradas, deben ser descifradas antes de ser descomprimidas.</p>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Tarea</td>
+    <td style="border-right-style: solid;">Comando</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Transmitir la copia de seguridad a un archivo llamado <b>backup.xbstream</b></td>
+    <td style="border-right-style: solid;"><b>xtrabackup --backup --stream=xbstream --target-dir=./ &gt; backup.xbstream</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Transmitir la copia de seguridad a un archivo <i>comprimido</i> llamado <b>backup.xbstream</b></td>
+    <td style="border-right-style: solid;"><b>xtrabackup --backup --stream=xbstream --compress --target-dir=./ &gt; backup.xbstream</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Cifrar la copia de seguridad</td>
+    <td style="border-right-style: solid;">$ xtrabackup --backup --stream=xbstream ./ &gt; backup.xbstream gzip - | openssl des3 -salt -k "password" &gt; backup.xbstream.gz.des3</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Desempaquetar la copia de seguridad en el directorio actual</td>
+    <td style="border-right-style: solid;"><b>xbstream -x &lt; backup.xbstream</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Enviar la copia de seguridad comprimida directamente a otro host y desempaquetarla</td>
+    <td style="border-right-style: solid;"><b>xtrabackup --backup --compress --stream=xbstream --target-dir=./ | ssh user@otherhost "xbstream -x"</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Enviar la copia de seguridad a otro servidor usando <b>netcat</b>.</td>
+    <td style="border-right-style: solid;">En el host de destino: 0.0 3.5 $ nc -l 9999 | cat - &gt; /data/backups/backup.xbstream 168u 168u En el host de origen: 0.0 3.5 $ xtrabackup --backup --stream=xbstream ./ | nc desthost 9999 168u 168u</td>
+  </tr>
+</table>
+<br/>
+<br/>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Enviar la copia de seguridad a otro servidor usando una línea de comandos:</td>
+    <td style="border-right-style: solid;">$ ssh <i>user@desthost</i> "( nc -l 9999 &gt; /data/backups/backup.xbstream &amp; )" &amp;&amp; xtrabackup --backup --stream=xbstream ./ | nc desthost 9999</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Limitar el rendimiento a 10 MB/seg usando la herramienta <b>pipe viewer</b> [1]</td>
+    <td style="border-right-style: solid;">$ xtrabackup --backup --stream=xbstream ./ | pv -q -L10m ssh <i>user@desthost</i> "cat - &gt; /data/backups/backup.xbstream"</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Verificación de la suma de control de la copia de seguridad durante la transmisión:</td>
+    <td style="border-right-style: solid;">En el host de destino: 0.0 3.5 $ nc -l 9999 | tee &gt;(sha1sum &gt; destination_checksum) &gt; /data/backups/backup.xbstream 168u 168u En el host de origen: 0.0 3.5 $ xtrabackup --backup --stream=xbstream ./ | tee &gt;(sha1sum &gt; source_checksum) | nc desthost 9999 168u 168u Compare las sumas de control en el host de origen: 0.0 3.5 $ cat source_checksum 65e4f916a49c1f216e0887ce54cf59bf3934dbad - 168u 168u Compare las sumas de control en el host de destino: 0.0 3.5 $ cat destination_checksum 65e4f916a49c1f216e0887ce54cf59bf3934dbad - 168u 168u</td>
+  </tr>
+</table>
+<br/>
+<br/>
+<br/>
+<br/>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Compresión paralela con copia de seguridad paralela:</td>
+    <td style="border-right-style: solid;"><b>xtrabackup --backup --compress --compress-threads=8 --stream=xbstream --parallel=4 --target-dir=./ &gt; backup.xbstream</b></td>
+  </tr>
+</table>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="NOTAS_AL_PIE"><a class="permalink" href="#NOTAS_AL_PIE">NOTAS AL PIE</a></h1>
+<dl class="Bl-tag">
+  <dt>[1]</dt>
+  <dd>Instalar desde el <i>sitio oficial</i> o desde el paquete de distribución (<b>apt install pv</b>)
+  <p class="Pp">Tenga en cuenta que la copia de seguridad transmitida deberá ser preparada antes de la restauración. El modo de streaming no prepara la copia de seguridad.</p>
+  </dd>
+</dl>
+<section class="Ss">
+<h2 class="Ss" id="Cifrado_de_copias_de_seguridad"><a class="permalink" href="#Cifrado_de_copias_de_seguridad">Cifrado de copias de seguridad</a></h2>
+<p class="Pp"><i>Percona XtraBackup</i> admite el cifrado y descifrado de copias de seguridad locales y en streaming con la opción <i>xbstream</i>, añadiendo otra capa de protección. El cifrado se implementa utilizando la biblioteca <b>libgcrypt</b> de GnuPG.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Creacion_de_copias_de_seguridad_cifradas"><a class="permalink" href="#Creacion_de_copias_de_seguridad_cifradas">Creación de copias de seguridad cifradas</a></h2>
+<p class="Pp">Para realizar una copia de seguridad cifrada, se deben especificar las siguientes opciones (las opciones <b>--encrypt-key</b> y <b>--encrypt-key-file</b> son mutuamente excluyentes, es decir, solo una de ellas debe proporcionarse):</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--encrypt</b></li>
+  <li>:option:` --encrypt-key`</li>
+  <li>:option:` --encrypt-key-file`</li>
+</ul>
+</div>
+<p class="Pp">Tanto la opción <b>--encrypt-key</b> como la opción <b>--encrypt-key-file</b> se pueden utilizar para especificar la clave de cifrado. Se puede generar una clave de cifrado con un comando como <b>openssl rand -base64 32</b></p>
+<p class="Pp">El resultado de este comando debería verse así:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=</pre>
+</div>
+</div>
+<p class="Pp">Este valor se puede utilizar como clave de cifrado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">La opción <b>--encrypt-key</b></h2>
+<p class="Pp">Un ejemplo del comando <i>xtrabackup</i> que utiliza la opción <b>--encrypt-key</b> debería verse así:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+">
+<pre>$  xtrabackup --backup --encrypt=AES256 --encrypt-key=&quot;U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=&quot; --target-dir=/data/backup</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">La opción <b>--encrypt-key-file</b></h2>
+<p class="Pp">Utilice la opción <b>--encrypt-key-file</b> de la siguiente manera:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --encrypt=AES256 --encrypt-key-file=/data/backups/keyfile --target-dir=/data/backup</pre>
+</div>
+</div>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Dependiendo del editor de texto que utilice para crear el
+  <b>KEYFILE</b>, el editor puede insertar automáticamente el carácter CRLF (fin de línea).
+  Esto provocará que el tamaño de la clave aumente y, por lo tanto, que sea inválida.
+  La forma recomendada de crear el archivo es usando la línea de comandos: <b>echo -n
+  &quot;U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=&quot; &gt;
+  /data/backups/keyfile</b>.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Optimizing_the_encryption_process'><a class='permalink' href='#Optimizing_the_encryption_process'>Optimizar el proceso de cifrado</a></h2>
+<p class="Pp">Hay dos nuevas opciones disponibles para copias de seguridad cifradas que pueden
+    utilizarse para acelerar el proceso de cifrado. Estas son <b>--encrypt-threads</b>
+    y <b>--encrypt-chunk-size</b>. Al utilizar la opción <b>--encrypt-threads</b>
+    se pueden especificar varios hilos para ser utilizados en el cifrado en paralelo.
+    La opción <b>--encrypt-chunk-size</b> se puede utilizar para especificar el tamaño
+    (en bytes) del búfer de cifrado de trabajo para cada hilo de cifrado
+    (el valor predeterminado es 64K).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Decrypting_Encrypted_Backups'><a class='permalink' href='#Decrypting_Encrypted_Backups'>Descifrar copias de seguridad cifradas</a></h2>
+<p class="Pp">Las copias de seguridad se pueden descifrar con xbcrypt. La siguiente línea de comandos
+    se puede utilizar para descifrar toda la carpeta:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ for i in `find . -iname &quot;*\.xbcrypt&quot;`; do xbcrypt -d --encrypt-key-file=/root/secret_key --encrypt-algo=AES256 &lt; $i &gt; $(dirname $i)/$(basename $i .xbcrypt) &amp;&amp; rm $i; done</pre>
+</div>
+</div>
+<p class="Pp">La opción <b>--decrypt</b> de <i>Percona XtraBackup</i> se ha implementado
+    y se puede utilizar para descifrar las copias de seguridad:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --decrypt=AES256 --encrypt-key=&quot;U2FsdGVkX19VPN7VM+lwNI0fePhjgnhgqmDBqbF3Bvs=&quot; --target-dir=/data/backup/</pre>
+</div>
+</div>
+<p class="Pp"><i>Percona XtraBackup</i> no elimina automáticamente los
+    archivos cifrados. Para limpiar el directorio de copias de seguridad, los usuarios deben
+    eliminar los archivos <b>*.xbcrypt</b>.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Se puede utilizar <b>--parallel</b> con la opción
+  <b>--decrypt</b> para descifrar varios archivos simultáneamente.</div>
+</div>
+<p class="Pp">Una vez descifrados los archivos, la copia de seguridad puede prepararse.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Preparing_Encrypted_Backups'><a class='permalink' href='#Preparing_Encrypted_Backups'>Preparar copias de seguridad cifradas</a></h2>
+<p class="Pp">Después de que las copias de seguridad hayan sido descifradas, pueden prepararse de la
+    misma manera que las copias de seguridad completas estándar con la opción <b>--prepare</b>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --prepare --target-dir=/data/backup/</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Restoring_Encrypted_Backups'><a class='permalink' href='#Restoring_Encrypted_Backups'>Restaurar copias de seguridad cifradas</a></h2>
+<p class="Pp"><i>xtrabackup</i> ofrece la opción <b>--copy-back</b> para restaurar
+    una copia de seguridad en el datadir del servidor:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --copy-back --target-dir=/data/backup/</pre>
+</div>
+</div>
+<p class="Pp">Copiará todos los archivos relacionados con los datos de vuelta al
+    datadir del servidor, determinado por el archivo de configuración <b>my.cnf</b>
+    del servidor. Debería comprobar la última línea de la salida para ver un mensaje de éxito:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>150318 11:08:13  xtrabackup: completed OK!</pre>
+</div>
+</div>
+<p class="Pp"><b>VEASE TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="GnuPG"><a class="permalink" href="#GnuPG"><b>Documentación de GnuPG:
+    biblioteca <b>libgcrypt</b></b></a></dt>
+  <dd><a href='http://www.gnupg.org/documentation/manuals/gcrypt/'>http://www.gnupg.org/documentation/manuals/gcrypt/</a></dd>
+</dl>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Opción <b>FLUSH</b> <b>TABLES</b> <b>WITH</b> <b>READ</b> <b>LOCK</b></h2>
+<p class="Pp">La opción <b>FLUSH TABLES WITH READ LOCK</b> realiza lo siguiente
+    con un bloqueo de lectura global:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Cierra todas las tablas abiertas</li>
+  <li>Bloquea todas las tablas de todas las bases de datos</li>
+</ul>
+</div>
+<p class="Pp">Libera el bloqueo con <b>UNLOCK TABLES</b>.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><b>FLUSH TABLES WITH READ LOCK</b> no impide
+  la inserción de filas en las tablas de registro.</div>
+</div>
+<p class="Pp">Para garantizar copias de seguridad consistentes, utilice la opción
+    <b>FLUSH TABLES WITH READ LOCK</b> antes de realizar una copia de seguridad de archivos no
+    InnoDB. La opción no afecta a las consultas de larga duración.</p>
+<p class="Pp">Las consultas de larga duración con <b>FLUSH TABLES WITH READ LOCK</b>
+    activado pueden dejar el servidor en modo de solo lectura hasta que las consultas finalicen.
+    Matar <b>FLUSH TABLES WITH READ LOCK</b> no ayuda si la base de datos se encuentra en el estado
+    <b>Waiting for table flush</b> o <b>Waiting for master to send event</b>. Para volver a la operación
+    normal, debe matar todas las consultas de larga duración.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Todo lo descrito en esta sección no tiene ningún efecto cuando se utilizan bloqueos de copia de seguridad.
+    <i>Percona XtraBackup</i> utilizará <i>bloqueos de copia de seguridad</i> cuando estén disponibles como una alternativa ligera a <b>FLUSH TABLES WITH READ</b>
+  <b>LOCK</b>. Esta función está disponible en <i>Percona Server for MySQL</i>
+  5.6+. <i>Percona XtraBackup</i> la utiliza automáticamente para copiar datos no InnoDB
+    para evitar bloquear consultas DML que modifican tablas InnoDB.</div>
+</div>
+<p class="Pp">Para evitar que esto suceda, se han implementado dos cosas:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><i>xtrabackup</i> espera un momento oportuno para emitir el bloqueo global</li>
+  <li><i>xtrabackup</i> mata todas las consultas o solo las consultas SELECT que
+      impiden la adquisición del bloqueo global</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Waiting_for_queries_to_finish'><a class='permalink' href='#Waiting_for_queries_to_finish'>Esperar a que finalicen las consultas</a></h2>
+<p class="Pp">Debe emitir un bloqueo global cuando no se estén ejecutando consultas largas.
+    Esperar a emitir el bloqueo global durante un período de tiempo prolongado no es un buen
+    método. La espera puede extender el tiempo necesario para realizar la copia de seguridad.
+    La opción <i>--ftwrl-wait-timeout</i> puede limitar el tiempo de espera. Si no se puede emitir
+    el bloqueo durante este tiempo, <i>xtrabackup</i> detiene la opción, sale con un mensaje de error
+    y la copia de seguridad no se realiza.</p>
+<p class="Pp">El valor predeterminado para esta opción es cero (0), lo que desactiva
+    la opción.</p>
+<p class="Pp">Otra posibilidad es especificar el tipo de consulta a esperar. En
+    este caso <b>--ftwrl-wait-query-type</b>. Los valores posibles son
+    <b>all</b> y <b>update</b>. Cuando se usa <b>all</b>, <i>xtrabackup</i> esperará a que todas
+    las consultas de larga duración (tiempo de ejecución superior al permitido por
+    <b>--ftwrl-wait-threshold</b>) finalicen antes de ejecutar <b>FLUSH TABLES WITH READ LOCK</b>.
+    Cuando se usa <b>update</b>, <i>xtrabackup</i> esperará a que las consultas <b>UPDATE/ALTER/REPLACE/INSERT</b>
+    finalicen.</p>
+<p class="Pp">El tiempo necesario para que una consulta específica se complete es difícil de predecir.
+    Suponemos que las consultas de larga duración no finalizarán de manera oportuna. Otras
+    consultas que se ejecutan durante un corto período de tiempo finalizan rápidamente.
+    <i>xtrabackup</i> utiliza el valor de la opción <i>--ftwrl-wait-threshold</i> para
+    especificar las consultas de larga duración y bloqueará un bloqueo global. Para utilizar
+    esta opción, el usuario de xtrabackup debe tener los privilegios <b>PROCESS</b> y <b>SUPER</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Killing_the_blocking_queries'><a class='permalink' href='#Killing_the_blocking_queries'>Matar las consultas de bloqueo</a></h2>
+<p class="Pp">La segunda opción es matar todas las consultas que impiden la adquisición del
+    bloqueo global. En este caso, todas las consultas que se ejecutan durante más tiempo que
+    <b>FLUSH TABLES WITH</b> <b>READ LOCK</b> son bloqueadores potenciales. Aunque todas las consultas
+    pueden ser matadas, se puede especificar tiempo adicional para que las consultas de corta
+    duración finalicen utilizando la opción <b>--kill-long-queries-timeout</b>. Esta opción especifica
+    el tiempo para que las consultas se completen, después de alcanzar el valor, todas las
+    consultas en ejecución serán matadas. El valor predeterminado es cero, lo que desactiva
+    esta función.</p>
+<p class="Pp">La opción <b>--kill-long-query-type</b> se puede utilizar para especificar
+    todas las consultas o solo las consultas <b>SELECT</b> que impiden que se adquiera el bloqueo
+    global. Para utilizar esta opción, el usuario de xtrabackup debe tener los privilegios
+    <b>PROCESS</b> y <b>SUPER</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Options_summary'><a class='permalink' href='#Options_summary'>Resumen de opciones</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--ftwrl-wait-timeout</b> (segundos) - cuánto tiempo esperar un momento
+      oportuno. El valor predeterminado es 0, no esperar.</li>
+  <li><b>--ftwrl-wait-query-type</b> - qué consultas largas deben finalizar
+      antes de ejecutar <b>FLUSH TABLES WITH READ LOCK</b>. El valor predeterminado es all.</li>
+  <li><b>--ftwrl-wait-threshold</b> (segundos) - cuánto tiempo debe ejecutarse una
+      consulta antes de considerarla de larga duración y un posible bloqueador del bloqueo
+    global.</li>
+  <li><b>--kill-long-queries-timeout</b> (segundos) - cuánto tiempo damos para
+      que las consultas se completen después de emitir <b>FLUSH TABLES WITH READ LOCK</b>
+      antes de empezar a matar. El valor predeterminado es <b>0</b>, no matar.</li>
+  <li><b>--kill-long-query-type</b> - qué consultas deben ser matadas una vez
+      expirado <b>kill-long-queries-timeout</b>.</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Example'><a class='permalink' href='#Example'>Ejemplo</a></h2>
+<p class="Pp">Ejecutar <i>xtrabackup</i> con las siguientes opciones hará que
+    <i>xtrabackup</i> no espere más de 3 minutos a que finalicen todas las consultas con más de
+    40 segundos de antigüedad.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$  xtrabackup --backup --ftwrl-wait-threshold=40 \
+--ftwrl-wait-query-type=all --ftwrl-wait-timeout=180 \
+--kill-long-queries-timeout=20 --kill-long-query-type=all \
+--target-dir=/data/backups/</pre>
+</div>
+</div>
+<p class="Pp">Después de emitir <b>FLUSH TABLES WITH READ LOCK</b>,
+    <i>xtrabackup</i> esperará 20 segundos para que se adquiera el bloqueo. Si el bloqueo
+    aún no se ha adquirido después de 20 segundos, matará todas las consultas que se ejecutan
+    durante más tiempo que <b>FLUSH TABLES WITH</b> <b>READ LOCK</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Accelerating_the_backup_process'><a class='permalink' href='#Accelerating_the_backup_process'>Acelerar el proceso de copia de seguridad</a></h2>
+<p class="Pp">Copiar con las opciones <b>--parallel</b> y <i>--compress-threads</i></p>
+<p class="Pp">Al realizar una copia de seguridad local o en streaming con la opción
+    <i>xbstream</i>, se pueden copiar varios archivos al mismo tiempo cuando se utiliza la
+    opción <b>--parallel</b>. Esta opción especifica el número de hilos creados por
+    <i>xtrabackup</i> para copiar archivos de datos.</p>
+<p class="Pp">Para aprovechar esto</p>
+<section class="Sh">
+<h1 class="Sh" id="Tuning_for_Performance"><a class="permalink" href="#Tuning_for_Performance">Tuning for Performance</a></h1>
+<p class="Pp">There are two options that can be used to tune
+    <i>xtrabackup</i> performance:</p>
+<ul class="Bl-bullet">
+  <li><b>--parallel</b></li>
+  <li><b>--compress-threads</b></li>
+  <li><b>--rsync</b></li>
+</ul>
+<p class="Pp">The <b>--parallel</b> Option</p>
+<p class="Pp">This option speeds up the backup process on servers with
+    multiple tablespaces. This is done by streaming backup copies of multiple
+    tablespaces in parallel.</p>
+<p class="Pp">For this option to be useful, the database must be configured
+    with either the <code class="Nm">innodb_file_per_table</code> option enabled,
+    or the shared tablespace must be stored in multiple <code class="Nm">ibdata</code>
+    files with the <code class="Nm">innodb_data_file_path</code> option. Having
+    multiple files for the database (or splitting one into many) does not have
+    a measurable impact on performance.</p>
+<p class="Pp">As this feature is implemented <b>at the file level</b>,
+    concurrent file transfer can sometimes increase I/O throughput when doing a
+    backup on highly fragmented data files, due to the overlap of a greater
+    number of random read requests. You should consider tuning the filesystem
+    also to obtain the maximum performance (e.g. checking fragmentation).</p>
+<p class="Pp">If the data is stored on a single file, this option will have no
+    effect.</p>
+<p class="Pp">To use this feature, simply add the option to a local backup, for
+    example:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --parallel=4 --target-dir=/path/to/backup</pre>
+</div>
+</div>
+<p class="Pp">By using the <i>xbstream</i> in streaming backups, you can
+    additionally speed up the compression process with the
+    <b>--compress-threads</b> option. This option specifies the number of
+    threads created by <i>xtrabackup</i> for for parallel data compression. The
+    default value for this option is 1.</p>
+<p class="Pp">To use this feature, simply add the option to a local backup, for
+    example:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --stream=xbstream --compress --compress-threads=4 --target-dir=./ &gt; backup.xbstream</pre>
+</div>
+</div>
+<p class="Pp">Before applying logs, compressed files will need to be
+    uncompressed.</p>
+<p class="Pp">The <b>--rsync</b> Option</p>
+<p class="Pp">In order to speed up the backup process and to minimize the time
+    <b>FLUSH TABLES</b> <b>WITH READ LOCK</b> is blocking the writes, the option
+    <b>--rsync</b> should be used. When this option is specified,
+    <i>xtrabackup</i> uses <b>rsync</b> to copy all non-InnoDB files instead of
+    spawning a separate <b>cp</b> for each file, which can be much faster for
+    servers with a large number of databases or tables. <i>xtrabackup</i> will
+    call the <b>rsync</b> twice, once before the <b>FLUSH</b> <b>TABLES WITH
+    READ LOCK</b> and once during to minimize the time the read lock is being
+    held. During the second <b>rsync</b> call, it will only synchronize the
+    changes to non-transactional data (if any) since the first call performed
+    before the <b>FLUSH TABLES WITH READ LOCK</b>. Note that <i>Percona
+    XtraBackup</i> will use <i>Backup locks</i> where available as a lightweight
+    alternative to <b>FLUSH TABLES WITH READ</b> <b>LOCK</b>. This feature is
+    available in <i>Percona Server for MySQL</i> 5.6+. <i>Percona XtraBackup</i>
+    uses this automatically to copy non-InnoDB data to avoid blocking DML
+    queries that modify InnoDB tables.</p>
+<p class="Pp"><b>NOTE:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">This option cannot be used together with the
+  <b>--stream</b> option.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Point-In-Time recovery</h2>
+<p class="Pp">Recovering up to particular moment in database's history can be
+    done with <i>xtrabackup</i> and the binary logs of the server.</p>
+<p class="Pp">Note that the binary log contains the operations that modified the
+    database from a point in the past. You need a full datadir as a base, and
+    then you can apply a series of operations from the binary log to make the
+    data match what it was at the point in time you want.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --backup --target-dir=/path/to/backup
+$ xtrabackup --prepare --target-dir=/path/to/backup</pre>
+</div>
+</div>
+<p class="Pp">For more details on these procedures, see creating_a_backup and
+    preparing_a_backup.</p>
+<p class="Pp">Now, suppose that some time has passed, and you want to restore
+    the database to a certain point in the past, having in mind that there is
+    the constraint of the point where the snapshot was taken.</p>
+<p class="Pp">To find out what is the situation of binary logging in the server,
+    execute the following queries:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mysql&gt; SHOW BINARY LOGS;
++------------------+-----------+
+| Log_name         | File_size |
++------------------+-----------+
+| mysql-bin.000001 |       126 |
+| mysql-bin.000002 |      1306 |
+| mysql-bin.000003 |       126 |
+| mysql-bin.000004 |       497 |
++------------------+-----------+</pre>
+</div>
+</div>
+<p class="Pp">and</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mysql&gt; SHOW MASTER STATUS;
++------------------+----------+--------------+------------------+
+| File             | Position | Binlog_Do_DB | Binlog_Ignore_DB |
++------------------+----------+--------------+------------------+
+| mysql-bin.000004 |      497 |              |                  |
++------------------+----------+--------------+------------------+</pre>
+</div>
+</div>
+<p class="Pp">The first query will tell you which files contain the binary log
+    and the second one which file is currently being used to record changes, and
+    the current position within it. Those files are stored usually in the
+    datadir (unless other location is specified when the server is started with
+    the <b>--log-bin=</b> option).</p>
+<p class="Pp">To find out the position of the snapshot taken, see the
+    <b>xtrabackup_binlog_info</b> at the backup's directory:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ cat /path/to/backup/xtrabackup_binlog_info
+mysql-bin.000003      57</pre>
+</div>
+</div>
+<p class="Pp">This will tell you which file was used at moment of the backup for
+    the binary log and its position. That position will be the effective one
+    when you restore the backup:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --copy-back --target-dir=/path/to/backup</pre>
+</div>
+</div>
+<p class="Pp">As the restoration will not affect the binary log files (you may
+    need to adjust file permissions, see restoring_a_backup), the next step is
+    extracting the queries from the binary log with <b>mysqlbinlog</b> starting
+    from the position of the snapshot and redirecting it to a file</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ mysqlbinlog /path/to/datadir/mysql-bin.000003 /path/to/datadir/mysql-bin.000004 \
+    --start-position=57 &gt; mybinlog.sql</pre>
+</div>
+</div>
+<p class="Pp">Note that if you have multiple files for the binary log, as in the
+    example, you have to extract the queries with one process, as shown
+  above.</p>
+<p class="Pp">Inspect the file with the queries to determine which position or
+    date corresponds to the point-in-time wanted. Once determined, pipe it to
+    the server. Assuming the point is <b>11-12-25 01:00:00</b>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ mysqlbinlog /path/to/datadir/mysql-bin.000003 /path/to/datadir/mysql-bin.000004 \
+    --start-position=57 --stop-datetime=&quot;11-12-25 01:00:00&quot; | mysql -u root -p</pre>
+</div>
+</div>
+<p class="Pp">and the database will be rolled forward up to that
+  Point-In-Time.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Making_Backups_in_Replication_Environments'><a class='permalink' href='#Making_Backups_in_Replication_Environments'>Making Backups in Replication Environments</a></h2>
+<p class="Pp">There are options specific to back up from a replication
+  replica.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">The <b>--slave-info</b> Option</h2>
+<p class="Pp">This option is useful when backing up a replication replica
+    server. It prints the binary log position and name of the source server. It
+    also writes this information to the <b>xtrabackup_slave_info</b> file as a
+    <b>CHANGE MASTER</b> statement.</p>
+<p class="Pp">This option is useful for setting up a new replica for this
+    source. You can start a replica server with this backup and issue the
+    statement saved in the <b>xtrabackup_slave_info</b> file. More details of
+    this procedure can be found in replication_howto.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">The <b>--safe-slave-backup</b> Option</h2>
+<p class="Pp">In order to assure a consistent replication state, this option
+    stops the replication SQL thread and waits to start backing up until
+    <b>Slave_open_temp_tables</b> in <b>SHOW STATUS</b> is zero. If there are no
+    open temporary tables, the backup will take place, otherwise the SQL thread
+    will be started and stopped until there are no open temporary tables. The
+    backup will fail if <b>Slave_open_temp_tables</b> does not become zero after
+    <b>--safe-slave-backup-timeout</b> seconds (defaults to 300 seconds). The
+    replication SQL thread will be restarted when the backup finishes.</p>
+<p class="Pp">Using this option is always recommended when taking backups from a
+    replica server.</p>
+<p class="Pp"><b>WARNING:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Make sure your replica is a true replica of the source
+  before using it as a source for backup. A good tool to validate a replica is
+  <i>pt-table-checksum</i>.</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Store_backup_history_on_the_server'><a class='permalink' href='#Store_backup_history_on_the_server'>Store backup history on the server</a></h2>
+<p class="Pp"><i>Percona XtraBackup</i> supports storing the backups history on
+    the server. This feature was implemented in <i>Percona XtraBackup</i> 2.2.
+    Storing backup history on the server was implemented to provide users with
+    additional information about backups that are being taken. Backup history
+    information will be stored in the <i>PERCONA_SCHEMA.XTRABACKUP_HISTORY</i>
+    table.</p>
+<p class="Pp">To use this feature the following options are available:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--history</b> =&lt;name&gt; : This option enables the history feature
+      and allows the user to specify a backup series name that will be placed
+      within the history record.</li>
+  <li><b>--incremental-history-name</b> =&lt;name&gt; : This option allows an
+      incremental backup to be made based on a specific history series by name.
+      <i>xtrabackup</i> will search the history table looking for the most
+      recent (highest <b>to_lsn</b>) backup in the series and take the
+      <b>to_lsn</b> value to use as it's starting lsn. This is mutually
+      exclusive with <b>--incremental-history-uuid</b>,
+      <b>--incremental-basedir</b> and <b>--incremental-lsn</b> options. If no
+      valid LSN can be found (no series by that name) <i>xtrabackup</i> will
+      return with an error.</li>
+  <li><b>--incremental-history-uuid</b> =&lt;uuid&gt; : Allows an incremental
+      backup to be made based on a specific history record identified by UUID.
+      <i>xtrabackup</i> will search the history table looking for the record
+      matching UUID and take the <b>to_lsn</b> value to use as it's starting
+      LSN. This options is mutually exclusive with <b>--incremental-basedir</b>,
+      <b>--incremental-lsn</b> and <b>--incremental-history-name</b> options. If
+      no valid LSN can be found (no record by that UUID or missing
+      <b>to_lsn</b>), <i>xtrabackup</i> will return with an error.</li>
+</ul>
+</div>
+<p class="Pp"><b>NOTE:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Backup that's currently being performed will <b>NOT</b>
+  exist in the xtrabackup_history table within the resulting backup set as the
+  record will not be added to that table until after the backup has been
+  taken.</div>
+</div>
+<p class="Pp">If you want access to backup history outside of your backup set in
+    the case of some catastrophic event, you will need to either perform a
+    <b>mysqldump</b>, partial backup or <b>SELECT</b> * on the history table
+    after <i>xtrabackup</i> completes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="TABLE_PERCONA_SCHEMA.XTRABACKUP_HISTORY"><a class="permalink" href="#TABLE_PERCONA_SCHEMA.XTRABACKUP_HISTORY">TABLE percona_schema.xtrabackup_history</a></h1>
+<p class="Pp">This table records information about backups made with the <b>--history</b>
+  option. The information is stored in the <b>percona_schema</b> database, so you
+  must have the <b>PERCONA_SCHEMA</b> database created and the user must have
+  appropriate privileges to view and use this table. XtraBackup creates this
+  table if it does not exist when the <b>--history</b> option is used.</p>
+<p class="Pp">For the necessary privileges, see pxb.privilege.
+  PERCONA_SCHEMA.XTRABACKUP_HISTORY table</p>
+<p class="Pp">This table contains the information about the previous server
+  backups. Information about the backups will only be written if the backup
+  was taken with <b>--history</b> option.</p>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Column Name</td>
+    <td style="border-right-style: solid;">Description</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">uuid</td>
+    <td style="border-right-style: solid;">Unique backup id</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">name</td>
+    <td style="border-right-style: solid;">User provided name of backup series.
+      There may be multiple entries with the same name used to identify related
+      backups in a series.</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">tool_name</td>
+    <td style="border-right-style: solid;">Name of tool used to take backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">tool_command</td>
+    <td style="border-right-style: solid;">Exact command line given to the tool
+      with --password and --encryption_key obfuscated</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">tool_version</td>
+    <td style="border-right-style: solid;">Version of tool used to take
+      backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">ibbackup_version</td>
+    <td style="border-right-style: solid;">Version of the xtrabackup binary used
+      to take backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">server_version</td>
+    <td style="border-right-style: solid;">Server version on which backup was
+      taken</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">start_time</td>
+    <td style="border-right-style: solid;">Time at the start of the backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">end_time</td>
+    <td style="border-right-style: solid;">Time at the end of the backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">lock_time</td>
+    <td style="border-right-style: solid;">Amount of time, in seconds, spent
+      calling and holding locks for <b>FLUSH TABLES WITH READ LOCK</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">binlog_pos</td>
+    <td style="border-right-style: solid;">Binlog file and position at end of
+      <b>FLUSH TABLES WITH READ LOCK</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">innodb_from_lsn</td>
+    <td style="border-right-style: solid;">LSN at beginning of backup which can
+      be used to determine prior backups</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">innodb_to_lsn</td>
+    <td style="border-right-style: solid;">LSN at end of backup which can be
+      used as the starting lsn for the next incremental</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">partial</td>
+    <td style="border-right-style: solid;">Is this a partial backup, if <b>N</b>
+      that means that it's the full backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">incremental</td>
+    <td style="border-right-style: solid;">Is this an incremental backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">format</td>
+    <td style="border-right-style: solid;">Description of result format
+      (<b>xbstream</b>)</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">compact</td>
+    <td style="border-right-style: solid;">Is this a compact backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">compressed</td>
+    <td style="border-right-style: solid;">Is this a compressed backup</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">encrypted</td>
+    <td style="border-right-style: solid;">Is this an encrypted backup</td>
+  </tr>
+  Limitations.INDENT 0.0
+</table>
+<ul class="Bl-bullet">
+  <li><b>--history</b> option must be specified only on the command line and not
+      within a configuration file in order to be effective.</li>
+  <li><b>--incremental-history-name</b> and <b>--incremental-history-uuid</b>
+      options must be specified only on the command line and not within a
+      configuration file in order to be effective.</li>
+</ul>
+<br/>
+<br/>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="IMPLEMENTATION"><a class="permalink" href="#IMPLEMENTATION">IMPLEMENTATION</a></h1>
+<section class="Ss">
+<h2 class="Ss" id="Implementation_Details"><a class="permalink" href="#Implementation_Details">Implementation
+  Details</a></h2>
+<p class="Pp">This page contains notes on various internal aspects of the
+  <i>xtrabackup</i> tool's operation.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="File_Permissions"><a class="permalink" href="#File_Permissions">File
+  Permissions</a></h2>
+<p class="Pp"><i>xtrabackup</i> opens the source data files in read-write mode,
+  although it does not modify the files. This means that you must run
+  <i>xtrabackup</i> as a user who has permission to write the data files. The
+  reason for opening the files in read-write mode is that <i>xtrabackup</i>
+  uses the embedded <i>InnoDB</i> libraries to open and read the files, and
+  <i>InnoDB</i> opens them in read-write mode because it normally assumes it
+  is going to write to them.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Tuning_the_OS_Buffers"><a class="permalink" href="#Tuning_the_OS_Buffers">Tuning
+  the OS Buffers</a></h2>
+<p class="Pp">Because <i>xtrabackup</i> reads large amounts of data from the
+  filesystem, it uses <b>posix_fadvise()</b> where possible, to instruct the
+  operating system not to try to cache the blocks it reads from disk. Without
+  this hint, the operating system would prefer to cache the blocks, assuming
+  that <b>xtrabackup</b> is likely to need them again, which is not the case.
+  Caching such large files can place pressure on the operating system's
+  virtual memory and cause other processes, such as the database server, to be
+  swapped out. The <b>xtrabackup</b> tool avoids this with the following hint
+  on both the source and destination files:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>posix_fadvise(file, 0, 0, POSIX_FADV_DONTNEED)</pre>
+</div>
+</div>
+<p class="Pp">In addition, xtrabackup asks the operating system to perform more
+  aggressive read-ahead optimizations on the source files:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>posix_fadvise(file, 0, 0, POSIX_FADV_SEQUENTIAL)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Copying_Data_Files"><a class="permalink" href="#Copying_Data_Files">Copying
+  Data Files</a></h2>
+<p class="Pp">When copying the data files to the target directory,
+  <i>xtrabackup</i> reads and writes 1 MB of data at a time. This is not
+  configurable. When copying the log file, <i>xtrabackup</i> reads and writes
+  512 bytes at a time. This is also not possible to configure, and matches
+  InnoDB's behavior (workaround exists in <i>Percona Server for MySQL</i>
+  because it has an option to tune <b>innodb_log_block_size</b> for
+  <i>XtraDB</i>, and in that case <i>Percona XtraBackup</i> will match the
+  tuning).</p>
+<p class="Pp">After reading from the files, <b>xtrabackup</b> iterates over the
+  1MB buffer a page at a time, and checks for page corruption on each page
+  with InnoDB's <b>buf_page_is_corrupted()</b> function. If the page is
+  corrupt, it re-reads and retries up to 10 times for each page. It skips this
+  check on the doublewrite buffer.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss"><i>xtrabackup</i> Exit Codes</h2>
+<p class="Pp">The <i>xtrabackup</i> binary exits with the traditional success
+  value of 0 after a backup when no error occurs. If an error occurs during
+  the backup, the exit value is 1.</p>
+<p class="Pp">In certain cases, the exit value can be something other than 0 or
+  1, due to the command-line option code included from the <i>MySQL</i>
+  libraries. An unknown command-line option, for example, will cause an exit
+  code of 255.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="REFERENCES"><a class="permalink" href="#REFERENCES">REFERENCES</a></h1>
+<section class="Ss">
+<h2 class="Ss">The <b>xtrabackup</b> Option Reference</h2>
+<p class="Pp">This page documents all of the command-line options for the
+  <b>xtrabackup</b> binary.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Modes_of_operation"><a class="permalink" href="#Modes_of_operation">Modes
+  of operation</a></h2>
+<p class="Pp">You invoke <i>xtrabackup</i> in one of the following modes:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><i>--backup</i> mode to make a backup in a target directory</li>
+  <li><i>--prepare</i> mode to restore data from a backup (created in
+    <i>--backup</i> mode)</li>
+  <li><i>--copy-back</i> to copy data from a backup to the location that
+    contained the original data; to move data instead of copying use the
+    alternate <i>--move-back</i> mode.</li>
+  <li><i>--stats</i> mode to scan the specified data files and print out index
+    statistics.</li>
+</ul>
+</div>
+<p class="Pp">When you intend to run <i>xtrabackup</i> in any of these modes,
+  use the following syntax:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup [--defaults-file=#] --backup|--prepare|--copy-back|--stats [OPTIONS]</pre>
+</div>
+</div>
+<p class="Pp">For example, the <i>--prepare</i> mode is applied as follows:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ xtrabackup --prepare --target-dir=/data/backup/mysql/</pre>
+</div>
+</div>
+<p class="Pp">For all modes, the default options are read from the
+  <b>xtrabackup</b> and <b>mysqld</b> configuration groups from the following
+  files in the given order:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd><b>/etc/my.cnf</b></dd>
+  <dt>2.</dt>
+  <dd><b>/etc/mysql/my.cnf</b></dd>
+  <dt>3.</dt>
+  <dd><b>/usr/etc/my.cnf</b></dd>
+  <dt>4.</dt>
+  <dd><b>~/.my.cnf</b>.</dd>
+</dl>
+</div>
+<p class="Pp">As the first parameter to <i>xtrabackup</i> (in place of the
+  <i>--defaults-file</i>, you may supply one of the following:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><i>--print-defaults</i> to have <i>xtrabackup</i> print the argument list
+    and exit.</li>
+  <li><i>--no-defaults</i> to forbid reading options from any file but the login
+    file.</li>
+  <li><i>--defaults-file</i> to read the default options from the given
+    file.</li>
+  <li><i>--defaults-extra-file</i> to read the specified additional file after
+    the global files have b</li>
+</ul>
+</div>
+</section>
+</section>
+<p>Se debe especificar la opción sólo una vez. Si usted pasa un valor de cero,
+    se desactiva la escritura de archivos de registro de transacciones y sólo se
+    escribe el archivo de copia de seguridad. El valor predeterminado es
+    500MB.</p>
+<ul>
+  <li><i>--defaults-file</i> para leer sólo las opciones predeterminadas del
+      archivo dado. Debe darse como la primera opción en la línea de comandos.
+      Debe ser un archivo real; no puede ser un enlace simbólico.</li>
+  <li><i>--defaults-extra-file</i> para leer este archivo después de que se
+      lean los archivos globales. Debe darse como la primera opción en la línea
+      de comandos.</li>
+  <li><i>--defaults-group</i> para leer el grupo dado del archivo de
+      configuración. Esto es usado por xtrabackup si usted usa la opción
+      <i>--defaults-group</i>. Es necesario para despliegues de
+      <b>mysqld_multi</b>.</li>
+  <li><i>--defaults-group-suffix</i> para leer los grupos de configuración con
+      el sufijo dado. El nombre de grupo efectivo se construye concatenando los
+      grupos de configuración predeterminados (<b>xtrabackup</b> y <b>mysqld</b>)
+      con el sufijo dado.</li>
+  <li><i>--login-path</i> para leer la ruta dada del archivo de inicio de
+      sesión.</li>
+</ul>
+</div>
+Opciones de InnoDB
+<p class="Pp">Hay un gran grupo de opciones de InnoDB que normalmente se leen
+    del archivo de configuración <b>my.cnf</b>, de modo que <i>xtrabackup</i>
+    inicia su InnoDB incrustado en la misma configuración que su servidor actual.
+    Normalmente no necesita especificarlas explícitamente. Estas opciones tienen
+    el mismo comportamiento en InnoDB y XtraDB. Ver <i>--innodb-miscellaneous</i>
+    para más información.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Options'><a class='permalink' href='#Options'>Opciones</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="apply"><a class="permalink" href="#apply"><b>--apply-log-only</b></a></dt>
+  <dd>Esta opción hace que sólo se realice la etapa de rehacer al preparar una
+      copia de seguridad. Es muy importante para copias de seguridad incrementales.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="backup"><a class="permalink" href="#backup"><b>--backup</b></a></dt>
+  <dd>Realiza una copia de seguridad y la coloca en <i>--target-dir</i>. Ver
+      Creación de una copia de seguridad.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--backup-lock-timeout</b></dt>
+  <dd>El tiempo de espera en segundos para los intentos de adquirir bloqueos de
+      metadatos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--backup-lock-retry-count</b></dt>
+  <dd>El número de intentos para adquirir bloqueos de metadatos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--backup-locks</b></dt>
+  <dd>Esta opción controla si se deben utilizar bloqueos de copia de seguridad en
+      lugar de <b>FLUSH TABLES WITH READ LOCK</b> en la etapa de copia de
+      seguridad. La opción no tiene efecto cuando los bloqueos de copia de
+      seguridad no son compatibles con el servidor. Esta opción está habilitada
+      por defecto, desactívala con <i>--no-backup-locks</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="check"><a class="permalink" href="#check"><b>--check-privileges</b></a></dt>
+  <dd>Esta opción verifica si <i>Percona XtraBackup</i> tiene todos los
+      privilegios requeridos. Si un privilegio faltante es requerido para la
+      operación actual, terminará e imprimirá un mensaje de error. Si un
+      privilegio faltante no es requerido para la operación actual, pero puede
+      ser necesario para alguna otra operación de XtraBackup, el proceso no se
+      abortará y se imprimirá una advertencia.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>xtrabackup: Error: privilegio requerido LOCK TABLES en *.* no encontrado
+xtrabackup: Advertencia: privilegio requerido REPLICATION CLIENT en *.* no encontrado</pre>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="close"><a class="permalink" href="#close"><b>--close-files</b></a></dt>
+  <dd>No mantener los archivos abiertos. Cuando <i>xtrabackup</i> abre un
+      tablespace, normalmente no cierra su manejador de archivo para manejar
+      correctamente las operaciones DDL. Sin embargo, si el número de tablespaces
+      es realmente enorme y no cabe en ningún límite, existe una opción para
+      cerrar los manejadores de archivo una vez que ya no se acceden.
+      <i>Percona XtraBackup</i> puede producir copias de seguridad inconsistentes
+      con esta opción habilitada. Úselo bajo su propio riesgo.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="compress"><a class="permalink" href="#compress"><b>--compress</b></a></dt>
+  <dd>Esta opción le indica a <i>xtrabackup</i> que comprima todos los datos
+      de salida, incluyendo el archivo de registro de transacciones y los
+      archivos de metadatos, utilizando el algoritmo de compresión
+      <b>quicklz</b> o <b>lz4</b>. <b>quicklz</b> se elige por defecto.
+    <p class="Pp">Al usar <b>--compress=quicklz</b> o <b>--compress</b>, los
+        archivos resultantes tienen el formato de archivo qpress, es decir, cada
+        archivo <b>*.qp</b> producido por <i>xtrabackup</i> es esencialmente
+        un archivo qpress de un solo archivo y puede ser extraído y descomprimido
+        por el archivador de archivos <i>qpress</i>.</p>
+    <p class="Pp"><b>--compress=lz4</b> produce archivos <b>*.lz4</b>. Puedes
+        extraer el contenido de estos archivos usando un programa como
+        <b>lz4</b>.</p>
+    <p class="Pp"><b>VER TAMBIÉN:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="QuickLZ"><a class="permalink" href="#QuickLZ"><b>QuickLZ</b></a></dt>
+  <dd><a href='http://www.quicklz.com'>http://www.quicklz.com</a></dd>
+  <dt id="LZ4"><a class="permalink" href="#LZ4"><b>LZ4</b></a></dt>
+  <dd><a href='https://lz4.github.io/lz4/'>https://lz4.github.io/lz4/</a></dd>
+</dl>
+</div>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--compress-chunk-size=#</b></dt>
+  <dd>Tamaño de los búferes de trabajo para los hilos de compresión en bytes. El
+      valor predeterminado es 64K.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--compress-threads=#</b></dt>
+  <dd>Esta opción especifica el número de hilos de trabajo utilizados por
+      <i>xtrabackup</i> para la compresión paralela de datos. Esta opción
+      predetermina a <b>1</b>. La compresión paralela (<i>--compress-threads</i>)
+      se puede utilizar junto con la copia de archivos paralela (<i>--parallel</i>).
+      Por ejemplo, <b>--parallel=4 --compress --compress-threads=2</b> creará 4
+      hilos de E/S que leerán los datos y los enviarán a 2 hilos de compresión.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="copy"><a class="permalink" href="#copy"><b>--copy-back</b></a></dt>
+  <dd>Copia todos los archivos de una copia de seguridad realizada previamente
+      desde el directorio de copia de seguridad a sus ubicaciones originales. Esta
+      opción no copiará los archivos existentes a menos que se especifique la
+      opción <i>--force-non-empty-directories</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="core"><a class="permalink" href="#core"><b>--core-file</b></a></dt>
+  <dd>Escribe un volcado de memoria en caso de señales fatales.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="databases=_"><a class="permalink" href="#databases=_"><b>--databases=#</b></a></dt>
+  <dd>Esta opción especifica una lista de bases de datos y tablas que deben ser
+      respaldadas. La opción acepta la lista con el formato
+      <b>&quot;nombre_basedatos1[.nombre_tabla1]</b> <b>nombre_basedatos2[.nombre_tabla2]
+      . . .&quot;</b>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="databases"><a class="permalink" href="#databases"><b>--databases-exclude=nombre</b></a></dt>
+  <dd>Excluye bases de datos basándose en el nombre. Funciona de la misma manera
+      que <i>--databases</i>, pero los nombres coincidentes se excluyen de la
+      copia de seguridad. Tenga en cuenta que esta opción tiene una prioridad
+      mayor que <i>--databases</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="databases~2"><a class="permalink" href="#databases~2"><b>--databases-file=#</b></a></dt>
+  <dd>Esta opción especifica la ruta al archivo que contiene la lista de bases
+      de datos y tablas que deben ser respaldadas. El archivo puede contener los
+      elementos de la lista en el formato <b>nombre_basedatos1[.nombre_tabla1]</b>,
+      un elemento por línea.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="datadir=DIRECTORY"><a class="permalink" href="#datadir=DIRECTORY"><b>--datadir=DIRECTORIO</b></a></dt>
+  <dd>El directorio de origen para la copia de seguridad. Debe ser el mismo que el
+      datadir de su servidor <i>MySQL</i>, por lo que debe leerse de
+      <b>my.cnf</b> si existe; de lo contrario, debe especificarlo en la línea
+      de comandos.
+    <p class="Pp">Cuando se combina con la opción <i>--copy-back</i> o
+        <i>--move-back</i>, <i>--datadir</i> se refiere al directorio de
+        destino.</p>
+    <p class="Pp">Una vez conectado al servidor, para realizar una copia de
+        seguridad necesitará permisos de <b>LECTURA</b> y <b>EJECUCIÓN</b> a nivel
+        de sistema de archivos en el datadir del servidor.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="debug"><a class="permalink" href="#debug"><b>--debug-sleep-before-unlock=#</b></a></dt>
+  <dd>Esta es una opción sólo para depuración utilizada por el conjunto de
+      pruebas de <i>xtrabackup</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="debug~2"><a class="permalink" href="#debug~2"><b>--debug-sync=nombre</b></a></dt>
+  <dd>El punto de sincronización de depuración. Esta opción sólo es utilizada por
+      el conjunto de pruebas de <i>xtrabackup</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="decompress"><a class="permalink" href="#decompress"><b>--decompress</b></a></dt>
+  <dd>Descomprime todos los archivos con la extensión <b>.qp</b> en una copia de
+      seguridad realizada previamente con la opción <i>--compress</i>. La
+      opción <i>--parallel</i> permitirá descomprimir varios archivos
+      simultáneamente. Para descomprimir, la utilidad qpress DEBE estar
+      instalada y accesible en el PATH. <i>Percona XtraBackup</i> no elimina
+      automáticamente los archivos comprimidos. Para limpiar el directorio de
+      copia de seguridad, los usuarios deben usar la opción
+      <i>--remove-original</i>.
+    <p class="Pp">La opción <i>--decompress</i> puede ser utilizada con
+        <i>xbstream</i> para descomprimir archivos qpress individuales.</p>
+    <p class="Pp">Si utilizó el algoritmo de compresión <b>lz4</b> para comprimir
+        los archivos (<b>--compress=lz4</b>), cambie el parámetro
+        <i>--decompress</i> en consecuencia: <b>--decompress=lz4</b>.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--decompress-threads=#</b></dt>
+  <dd>Fuerza a <i>xbstream</i> a usar el número especificado de hilos para la
+      descompresión.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="decrypt=ENCRYPTION"><a class="permalink" href="#decrypt=ENCRYPTION"><b>--decrypt=ALGORITMO-DE-CIFRADO</b></a></dt>
+  <dd>Descifra todos los archivos con la extensión <b>.xbcrypt</b> en una copia de
+      seguridad realizada previamente con la opción <i>--encrypt</i>. La opción
+      <i>--parallel</i> permitirá descifrar varios archivos simultáneamente.
+      <i>Percona XtraBackup</i> no elimina automáticamente los archivos cifrados.
+      Para limpiar el directorio de copia de seguridad, los usuarios deben usar la
+      opción <i>--remove-original</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="defaults"><a class="permalink" href="#defaults"><b>--defaults-extra-file=[MY.CNF]</b></a></dt>
+  <dd>Lee este archivo después de que se lean los archivos globales. Debe darse como
+      la primera opción en la línea de comandos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="defaults~2"><a class="permalink" href="#defaults~2"><b>--defaults-file=[MY.CNF]</b></a></dt>
+  <dd>Lee sólo las opciones predeterminadas del archivo dado. Debe darse como la
+      primera opción en la línea de comandos. Debe ser un archivo real; no puede
+      ser un enlace simbólico.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="defaults~3"><a class="permalink" href="#defaults~3"><b>--defaults-group=NOMBRE-GRUPO</b></a></dt>
+  <dd>Esta opción es para establecer el grupo que debe leerse del archivo de
+      configuración. Esto es usado por <i>xtrabackup</i> si usted usa la opción
+      <i>--defaults-group</i>. Es necesario para despliegues de
+      <b>mysqld_multi</b>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="defaults~4"><a class="permalink" href="#defaults~4"><b>--defaults-group-suffix=#</b></a></dt>
+  <dd>Lee también los grupos con concat(grupo, sufijo).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="dump"><a class="permalink" href="#dump"><b>--dump-innodb-buffer-pool</b></a></dt>
+  <dd>Esta opción controla si se debe realizar o no un nuevo volcado del contenido
+      del búfer de piscina.
+    <p class="Pp">Con <b>--dump-innodb-buffer-pool</b>, <i>xtrabackup</i>
+        realiza una solicitud al servidor para iniciar el búfer</p>
+  </dd>
+</dl>
+</div>
+[
+  {
+    "t": "option",
+    "name": "--dump-innodb-buffer-pool",
+    "description": "This option causes xtrabackup to dump the contents of the InnoDB buffer pool to disk. This can be used to speed up the restart of the server after a backup. When specified, xtrabackup dumps the buffer pool at the beginning of a backup provided the status variable <b>innodb_buffer_pool_dump_status</b> reports that the dump has been completed.",
+    "example": {
+      "command": "$ xtrabackup --backup --dump-innodb-buffer-pool --target-dir=/home/user/backup"
+    },
+    "default": "OFF",
+    "notes": "If <b>innodb_buffer_pool_dump_status</b> reports that there is running dump of buffer pool, <i>xtrabackup</i> waits for the dump to complete using the value of <i>--dump-innodb-buffer-pool-timeout</i>.\nThe file <b>ib_buffer_pool</b> stores tablespace ID and page ID data used to warm up the buffer pool sooner.",
+    "see_also": [
+      {
+        "name": "MySQL Documentation: Saving and Restoring the Buffer Pool State",
+        "url": "https://dev.mysql.com/doc/refman/5.7/en/innodb-preload-buffer-pool.html"
+      }
+    ]
+  },
+  {
+    "t": "option",
+    "name": "--dump-innodb-buffer-pool-timeout",
+    "description": "This option contains the number of seconds that <i>xtrabackup</i> should monitor the value of <b>innodb_buffer_pool_dump_status</b> to determine if buffer pool dump has completed.",
+    "notes": "This option is used in combination with <i>--dump-innodb-buffer-pool</i>. By default, it is set to <i>10</i> seconds.",
+    "default": "10"
+  },
+  {
+    "t": "option",
+    "name": "--dump-innodb-buffer-pool-pct",
+    "description": "This option contains the percentage of the most recently used buffer pool pages to dump.",
+    "notes": "This option is effective if <i>--dump-innodb-buffer-pool</i> option is set to <i>ON</i>. If this option contains a value, <i>xtrabackup</i> sets the <i>MySQL</i> system variable <b>innodb_buffer_pool_dump_pct</b>. As soon as the buffer pool dump completes or it is stopped (see <i>--dump-innodb-buffer-pool-timeout</i>), the value of the <i>MySQL</i> system variable is restored.",
+    "see_also": [
+      {
+        "name": "Changing the timeout for buffer pool dump",
+        "link": "--dump-innodb-buffer-pool-timeout"
+      },
+      {
+        "name": "MySQL Documentation: innodb_buffer_pool_dump_pct system variable",
+        "url": "https://dev.mysql.com/doc/refman/8.0/en/innodb-parameters.html#sysvar_innodb_buffer_pool_dump_pct"
+      }
+    ]
+  },
+  {
+    "t": "option",
+    "name": "--encrypt=ENCRYPTION_ALGORITHM",
+    "description": "This option instructs xtrabackup to encrypt backup copies of InnoDB data files using the algorithm specified in the ENCRYPTION_ALGORITHM. Currently supported algorithms are: <b>AES128</b>, <b>AES192</b> and <b>AES256</b>"
+  },
+  {
+    "t": "option",
+    "name": "--encrypt-key=ENCRYPTION_KEY",
+    "description": "A proper length encryption key to use. It is not recommended to use this option where there is uncontrolled access to the machine as the command line and thus the key can be viewed as part of the process info."
+  },
+  {
+    "t": "option",
+    "name": "--encrypt-key-file=ENCRYPTION_KEY_FILE",
+    "description": "The name of a file where the raw key of the appropriate length can be read from. The file must be a simple binary (or text) file that contains exactly the key to be used.",
+    "notes": "It is passed directly to the xtrabackup child process. See the <b>xtrabackup</b> documentation for more details."
+  },
+  {
+    "t": "option",
+    "name": "--encrypt-threads=#",
+    "description": "This option specifies the number of worker threads that will be used for parallel encryption/decryption. See the <b>xtrabackup</b> documentation for more details."
+  },
+  {
+    "t": "option",
+    "name": "--encrypt-chunk-size=#",
+    "description": "This option specifies the size of the internal working buffer for each encryption thread, measured in bytes. It is passed directly to the xtrabackup child process. See the <b>xtrabackup</b> documentation for more details."
+  },
+  {
+    "t": "option",
+    "name": "--export",
+    "description": "Create files necessary for exporting tables. See Restoring Individual Tables."
+  },
+  {
+    "t": "option",
+    "name": "--extra-lsndir=DIRECTORY",
+    "description": "(for --backup): save an extra copy of the <b>xtrabackup_checkpoints</b> and <b>xtrabackup_info</b> files in this directory."
+  },
+  {
+    "t": "option",
+    "name": "--force-non-empty-directories",
+    "description": "When specified, it makes <i>--copy-back</i> and <i>--move-back</i> option transfer files to non-empty directories. No existing files will be overwritten. If files that need to be copied/moved from the backup directory already exist in the destination directory, it will still fail with an error."
+  },
+  {
+    "t": "option",
+    "name": "--ftwrl-wait-timeout=SECONDS",
+    "description": "This option specifies time in seconds that xtrabackup should wait for queries that would block <b>FLUSH TABLES WITH READ LOCK</b> before running it. If there are still such queries when the timeout expires, xtrabackup terminates with an error. Default is <b>0</b>, in which case it does not wait for queries to complete and starts <b>FLUSH TABLES WITH READ LOCK</b> immediately. Where supported <i>xtrabackup</i> will automatically use <i>Backup Locks</i> as a lightweight alternative to <b>FLUSH TABLES WITH READ LOCK</b> to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.",
+    "default": "0"
+  },
+  {
+    "t": "option",
+    "name": "--ftwrl-wait-threshold=SECONDS",
+    "description": "This option specifies the query run time threshold which is used by xtrabackup to detect long-running queries with a non-zero value of <i>--ftwrl-wait-timeout</i>. <b>FLUSH TABLES WITH READ LOCK</b> is not started until such long-running queries exist. This option has no effect if <i>--ftwrl-wait-timeout</i> is <b>0</b>. Default value is <b>60</b> seconds. Where supported xtrabackup will automatically use <i>Backup Locks</i> as a lightweight alternative to <b>FLUSH TABLES WITH READ LOCK</b> to copy non-InnoDB data to avoid blocking DML queries that modify InnoDB tables.",
+    "default": "60"
+  },
+  {
+    "t": "option",
+    "name": "--ftwrl-wait-query-type=all|update",
+    "description": "This option specifies which types of queries are allowed to complete before xtrabackup will issue the global lock. Default is <b>all</b>.",
+    "default": "all"
+  },
+  {
+    "t": "option",
+    "name": "--galera-info",
+    "description": "This option creates the <b>xtrabackup_galera_info</b> file which contains the local node state at the time of the backup. Option should be used when performing the backup of <i>Percona XtraDB Cluster</i>. It has no effect when backup locks are used to create the backup."
+  },
+  {
+    "t": "option",
+    "name": "--generate-new-master-key",
+    "description": "Generate a new master key when doing a copy-back."
+  },
+  {
+    "t": "option",
+    "name": "--generate-transition-key",
+    "description": "<i>xtrabackup</i> needs to access the same keyring file or vault server during <i>prepare</i> and <i>copy-back</i> but it should not depend on whether the server keys have been purged.\n<i>--generate-transition-key</i> creates and adds to the keyring a transition key for <i>xtrabackup</i> to use if the master key used for encryption is not found because it has been rotated and purged."
+  },
+  {
+    "t": "option",
+    "name": "--get-server-public-key",
+    "description": "Get the server public key",
+    "see_also": [
+      {
+        "name": "MySQL Documentation: The --get-server-public-key Option",
+        "url": "https://dev.mysql.com/doc/refman/5.7/en/connection-options.html#option_general_get-server-public-key"
+      }
+    ]
+  },
+  {
+    "t": "option",
+    "name": "--help",
+    "description": "When run with this option or without any options <i>xtrabackup</i> displays information about how to run the program on the command line along with all supported options and variables with default values where appropriate."
+  },
+  {
+    "t": "option",
+    "name": "--history=NAME",
+    "description": "This option enables the tracking of backup history in the <b>PERCONA_SCHEMA.xtrabackup_history</b> table. An optional history series name may be specified that will be placed with the history record for the current backup being taken."
+  },
+  {
+    "t": "option",
+    "name": "--host=HOST",
+    "description": "This option accepts a string argument that specifies the host to use when connecting to the database server with TCP/IP. It is passed to the mysql child process without alteration. See <b>mysql --help</b> for details."
+  },
+  {
+    "t": "option",
+    "name": "--incremental",
+    "description": "This option tells <i>xtrabackup</i> to create an incremental backup. It is passed to the <i>xtrabackup</i> child process. When this option is specified, either <i>--incremental-lsn</i> or <i>--incremental-basedir</i> can also be given. If neither option is given, option <i>--incremental-basedir</i> is passed to <b>xtrabackup</b> by default, set to the first timestamped backup directory in the backup base directory.",
+    "see_also": []
+  }
+]
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="More~2"><a class="permalink" href="#More~2"><b>Más información sobre
+    copias de seguridad incrementales</b></a></dt>
+  <dd>Ver sección xb_incremental</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-basedir=DIRECTORIO</b></dt>
+  <dd>Al crear una copia de seguridad incremental, este es el directorio que contiene la
+      copia de seguridad completa que es el conjunto base para las copias de seguridad incrementales.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-dir=DIRECTORIO</b></dt>
+  <dd>Al preparar una copia de seguridad incremental, este es el directorio donde la
+      copia de seguridad incremental se combina con la copia de seguridad completa para crear una nueva copia de seguridad completa.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-force-scan</b></dt>
+  <dd>Al crear una copia de seguridad incremental, fuerza un escaneo completo de las páginas de datos
+      en la instancia que se está respaldando, incluso si los datos completos del mapa de páginas modificadas están disponibles.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-history-name=nombre</b></dt>
+  <dd>Esta opción especifica el nombre de la serie de copias de seguridad almacenada en el
+      registro de historial <b>PERCONA_SCHEMA.xtrabackup_history</b> en el que basar una
+      copia de seguridad incremental. <i>xtrabackup</i> buscará en la tabla de historial
+      buscando la copia de seguridad más reciente (con el <b>innodb_to_lsn</b> más alto) y exitosa
+      en la serie y tomará el valor de to_lsn para usarlo como el <b>lsn</b> de inicio
+      para la copia de seguridad incremental. Esto será mutuamente excluyente con
+      <i>--incremental-history-uuid</i>, <i>--incremental-basedir</i> y
+      <i>--incremental-lsn</i>. Si no se puede encontrar un lsn válido (ninguna serie con ese
+      nombre, ninguna copia de seguridad exitosa con ese nombre), <i>xtrabackup</i> devolverá
+      un error. Se utiliza con la opción <i>--incremental</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-history-uuid=nombre</b></dt>
+  <dd>Esta opción especifica el <i>UUID</i> del registro de historial específico
+      almacenado en <b>PERCONA_SCHEMA.xtrabackup_history</b> en el que basar una
+      copia de seguridad incremental. <i>--incremental-history-name</i>,
+      <i>--incremental-basedir</i> y <i>--incremental-lsn</i>. Si no se puede encontrar un lsn válido (ningún registro de éxito con ese
+      <i>UUID</i>), <i>xtrabackup</i> devolverá un error. Se utiliza con la opción --incremental.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--incremental-lsn=LSN</b></dt>
+  <dd>Al crear una copia de seguridad incremental, puede especificar el número de secuencia de registro
+      (LSN) en lugar de especificar <i>--incremental-basedir</i>. Para
+      bases de datos creadas en la versión 5.1 y posteriores, especifique el LSN como un solo entero de 64 bits.
+      <b>ATENCIÓN</b>: Si se especifica un valor LSN incorrecto (un error del usuario
+      que <i>Percona XtraBackup</i> no puede detectar), la copia de seguridad no será utilizable.
+      ¡Tenga cuidado!</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="innodb_=name_"><a class="permalink" href="#innodb_=name_"><b>--innodb[=nombre]</b></a></dt>
+  <dd>Esta opción se ignora para compatibilidad con opciones de MySQL.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="innodb"><a class="permalink" href="#innodb"><b>--innodb-miscellaneous</b></a></dt>
+  <dd>Hay un gran grupo de opciones de InnoDB que normalmente se leen del
+      archivo de configuración <b>my.cnf</b>, de modo que <i>xtrabackup</i> inicia su
+      InnoDB integrado en la misma configuración que su servidor actual. Normalmente
+      no necesita especificarlas explícitamente. Estas opciones tienen el mismo comportamiento en InnoDB y XtraDB:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>--innodb-adaptive-hash-index</li>
+  <li>--innodb-additional-mem-pool-size</li>
+  <li>--innodb-autoextend-increment</li>
+  <li>--innodb-buffer-pool-size</li>
+  <li>--innodb-buffer-pool-filename</li>
+  <li>--innodb-checksum-algorithm</li>
+  <li>--innodb-checksums</li>
+  <li>--innodb-data-file-path</li>
+  <li>--innodb-data-home-dir</li>
+  <li>--innodb-directories</li>
+  <li>--innodb-doublewrite-file</li>
+  <li>--innodb-doublewrite</li>
+  <li>--innodb-extra-undoslots</li>
+  <li>--innodb-fast-checksum</li>
+  <li>--innodb-file-io-threads</li>
+  <li>--innodb-file-per-table</li>
+  <li>--innodb-flush-log-at-trx-commit</li>
+  <li>--innodb-flush-method</li>
+</ul>
+</div>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>--innodb-io-capacity</li>
+  <li>--innodb-lock-wait-timeout</li>
+  <li>--innodb-log-block-size</li>
+  <li>--innodb-log-buffer-size</li>
+  <li>--innodb-log-checksums</li>
+  <li>--innodb-log-files-in-group</li>
+  <li>--innodb-log-file-size</li>
+  <li>--innodb-log-group-home-dir</li>
+  <li>--innodb-max-dirty-pages-pct</li>
+  <li>--innodb-open-files</li>
+  <li>--innodb-page-size</li>
+  <li>--innodb-read-io-threads</li>
+  <li>--innodb-redo-log-encrypt</li>
+  <li>--innodb-undo-directory</li>
+  <li>--innodb-undo-log-encrypt</li>
+  <li>--innodb-undo-tablespaces`</li>
+  <li>--innodb-use-native-aio</li>
+  <li>--innodb-write-io-threads</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="keyring"><a class="permalink" href="#keyring"><b>--keyring-file-data=NOMBRE_ARCHIVO</b></a></dt>
+  <dd>La ruta al archivo keyring. Combine esta opción con
+      <i>--xtrabackup-plugin-dir</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="kill"><a class="permalink" href="#kill"><b>--kill-long-queries-timeout=SEGUNDOS</b></a></dt>
+  <dd>Esta opción especifica el número de segundos que <i>xtrabackup</i> espera
+      entre el inicio de <b>FLUSH TABLES WITH READ LOCK</b> y la finalización de las consultas
+      que lo bloquean. El valor predeterminado es 0 segundos, lo que significa que <i>xtrabackup</i>
+      no intentará finalizar ninguna consulta. Para usar esta opción, el usuario de xtrabackup
+      debe tener los privilegios <b>PROCESS</b> y <b>SUPER</b>. Donde sea compatible,
+      <i>xtrabackup</i> utiliza automáticamente <i>Backup Locks</i> como una alternativa ligera
+      a <b>FLUSH TABLES WITH READ LOCK</b> para copiar datos no InnoDB y evitar bloquear consultas DML que modifican tablas InnoDB.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="kill~2"><a class="permalink" href="#kill~2"><b>--kill-long-query-type=all|select</b></a></dt>
+  <dd>Esta opción especifica qué tipos de consultas se deben finalizar para desbloquear
+      el bloqueo global. El valor predeterminado es "select".</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="lock"><a class="permalink" href="#lock"><b>--lock-ddl</b></a></dt>
+  <dd>Emitir <b>LOCK TABLES FOR BACKUP</b> si es compatible con el servidor
+      (de lo contrario, usar <b>LOCK INSTANCE FOR BACKUP</b>) al comienzo de la
+      copia de seguridad para bloquear todas las operaciones DDL.
+    <p class="Pp"><b>NOTA:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">Antes de <i>Percona XtraBackup</i> 8.0.22-15.0, el uso de
+  <i>safe-slave-backup</i> detiene el hilo réplica SQL después de las tablas InnoDB
+  y antes de que se respalden las tablas no InnoDB.
+<p class="Pp">A partir de <i>Percona XtraBackup</i> 8.0.22-15.0, el uso de la
+    opción <i>safe-slave-backup</i> detiene el hilo réplica SQL antes de copiar
+    los archivos InnoDB.</p>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="lock~2"><a class="permalink" href="#lock~2"><b>--lock-ddl-per-table</b></a></dt>
+  <dd>Bloquear DDL para cada tabla antes de que xtrabackup comience a copiarla y hasta que
+      la copia de seguridad se complete.
+    <p class="Pp"><b>NOTA:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">A partir de <i>Percona XtraBackup</i> 8.0.15, la
+  opción <i>--lock-ddl-per-table</i> está obsoleta. Utilice la opción <i>--lock-ddl</i>
+  en su lugar.</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="lock~3"><a class="permalink" href="#lock~3"><b>--lock-ddl-timeout</b></a></dt>
+  <dd>Si <b>LOCK TABLES FOR BACKUP</b> o <b>LOCK INSTANCE FOR BACKUP</b> no
+      devuelve dentro del tiempo de espera especificado, abortar la copia de seguridad.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="log"><a class="permalink" href="#log"><b>--log</b></a></dt>
+  <dd>Esta opción se ignora para <i>MySQL</i></dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--log-bin</b></dt>
+  <dd>El nombre base para la secuencia de registros.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--log-bin-index=nombre</b></dt>
+  <dd>Archivo que contiene los nombres de los archivos de registro binarios.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--log-copy-interval=#</b></dt>
+  <dd>Esta opción especifica el intervalo de tiempo entre las comprobaciones realizadas por el hilo de copia de registros en milisegundos (el valor predeterminado es 1 segundo).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="login"><a class="permalink" href="#login"><b>--login-path</b></a></dt>
+  <dd>Leer la ruta dada del archivo de inicio de sesión.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="move"><a class="permalink" href="#move"><b>--move-back</b></a></dt>
+  <dd>Mueve todos los archivos de una copia de seguridad realizada previamente desde el directorio de copia de seguridad
+      a sus ubicaciones originales. Como esta opción elimina los archivos de copia de seguridad, debe
+      utilizarse con precaución.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="no"><a class="permalink" href="#no"><b>--no-backup-locks</b></a></dt>
+  <dd>Deshabilita explícitamente la opción <i>--backup-locks</i>, que está habilitada por
+      defecto.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="no~2"><a class="permalink" href="#no~2"><b>--no-defaults</b></a></dt>
+  <dd>Las opciones predeterminadas solo se leen del archivo de inicio de sesión.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="no~3"><a class="permalink" href="#no~3"><b>--no-lock</b></a></dt>
+  <dd>Use esta opción para deshabilitar el bloqueo de tablas con <b>FLUSH TABLES WITH READ</b>
+      <b>LOCK</b>. Úsela solo si TODAS sus tablas son InnoDB y NO LE IMPORTA
+      la posición del registro binario de la copia de seguridad. Esta opción
+      no debe usarse si se están ejecutando declaraciones <b>DDL</b> o
+      si se están realizando actualizaciones en tablas no InnoDB (esto incluye las
+      tablas MyISAM del sistema en la base de datos <i>mysql</i>), de lo contrario, podría
+      generar una copia de seguridad inconsistente. Donde sea compatible, <i>xtrabackup</i>
+      utilizará automáticamente <i>Backup Locks</i> como una alternativa ligera a
+      <b>FLUSH TABLES WITH READ LOCK</b> para copiar datos no InnoDB y evitar bloquear
+      consultas DML que modifican tablas InnoDB. Si está considerando usar esto porque sus
+      copias de seguridad fallan al adquirir el bloqueo, esto podría deberse a que los eventos de replicación entrantes
+      están impidiendo que el bloqueo tenga éxito. Intente usar <i>--safe-slave-backup</i> para detener momentáneamente el hilo réplica de replicación, esto podría ayudar a que la copia de seguridad tenga éxito y no necesite usar esta opción.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="no~4"><a class="permalink" href="#no~4"><b>--no-server-version-check</b></a></dt>
+  <dd>Implementado en <i>Percona XtraBackup</i> 8.0.21.
+    <p class="Pp">La opción <b>--no-server-version-check</b> deshabilita la
+        verificación de la versión del servidor.</p>
+    <p class="Pp">El comportamiento predeterminado realiza una verificación que compara la versión del sistema de origen con la versión de <i>Percona XtraBackup</i>. Si la versión del sistema de origen es superior a la versión de XtraBackup, la copia de seguridad se aborta con un mensaje.</p>
+    <p class="Pp">Añadir la opción anula esta verificación y la copia de seguridad continúa, pero puede haber problemas con la copia de seguridad.</p>
+    <p class="Pp">Ver comparación para más información.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="no~5"><a class="permalink" href="#no~5"><b>--no-version-check</b></a></dt>
+  <dd>...</dd>
+</dl>
+</div>
+/b></a></dt>
+  <dd>Esta opción deshabilita la comprobación de versiones. Si no se pasa esta opción,
+      la comprobación automática de versiones está habilitada implícitamente cuando
+      <i>xtrabackup</i> se ejecuta en el modo <b>--backup</b>. Para deshabilitar la
+      comprobación de versiones, debes pasar explícitamente la opción
+      <b>--no-version-check</b> al invocar <i>xtrabackup</i>.
+    <p class="Pp">Cuando la comprobación automática de versiones está habilitada,
+        <i>xtrabackup</i> realiza una comprobación de versiones contra el servidor
+        en la etapa de copia de seguridad después de establecer una conexión con el
+        servidor. <i>xtrabackup</i> envía la siguiente información al servidor:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Tipo y versión de MySQL</li>
+  <li>Nombre del sistema operativo</li>
+  <li>Versión de Percona Toolkit</li>
+  <li>Versión de Perl</li>
+</ul>
+</div>
+<p class="Pp">Cada pieza de información tiene un identificador único. Este es un
+    valor hash MD5 que Percona Toolkit utiliza para obtener estadísticas sobre su
+    uso. Se trata de un UUID aleatorio; no se recopila ni almacena información
+    del cliente.</p>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="open"><a class="permalink" href="#open"><b>--open-files-limit=#</b></a></dt>
+  <dd>El número máximo de descriptores de archivo a reservar con setrlimit().</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="parallel=_"><a class="permalink" href="#parallel=_"><b>--parallel=#</b></a></dt>
+  <dd>Esta opción especifica el número de hilos a utilizar para copiar múltiples
+      archivos de datos de forma concurrente al crear una copia de seguridad. El
+      valor predeterminado es 1 (es decir, sin transferencia concurrente). En
+      <i>Percona XtraBackup</i> 2.3.10 y versiones posteriores, esta opción se
+      puede utilizar con la opción <i>--copy-back</i> para copiar los archivos
+      de datos del usuario en paralelo (los registros redo y los tablespaces del
+      sistema se copian en el hilo principal).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="password=PASSWORD"><a class="permalink" href="#password=PASSWORD"><b>--password=PASSWORD</b></a></dt>
+  <dd>Esta opción especifica la contraseña a utilizar al conectarse a la base de
+      datos. Acepta un argumento de cadena. Consulte <b>mysql --help</b> para
+      obtener más detalles.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="plugin"><a class="permalink" href="#plugin"><b>--plugin-load</b></a></dt>
+  <dd>Lista de plugins a cargar.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="port=PORT"><a class="permalink" href="#port=PORT"><b>--port=PORT</b></a></dt>
+  <dd>Esta opción acepta un argumento de cadena que especifica el puerto a usar
+      al conectarse al servidor de base de datos con TCP/IP. Se pasa al proceso
+      hijo <b>mysql</b> sin alteración. Consulte <b>mysql --help</b> para
+      obtener más detalles.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="prepare"><a class="permalink" href="#prepare"><b>--prepare</b></a></dt>
+  <dd>Hace que <b>xtrabackup</b> realice una recuperación en una copia de seguridad
+      creada con <i>--backup</i>, para que esté lista para su uso. Consulte
+      preparar una copia de seguridad.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="print"><a class="permalink" href="#print"><b>--print-defaults</b></a></dt>
+  <dd>Imprime la lista de argumentos del programa y sale. Debe proporcionarse como
+      la primera opción en la línea de comandos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="print~2"><a class="permalink" href="#print~2"><b>--print-param</b></a></dt>
+  <dd>Hace que <b>xtrabackup</b> imprima los parámetros que se pueden utilizar
+      para copiar los archivos de datos de vuelta a sus ubicaciones originales para
+      restaurarlos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="read"><a class="permalink" href="#read"><b>--read-buffer-size</b></a></dt>
+  <dd>Establece el tamaño del búfer de lectura de archivos de datos, el valor
+      proporcionado se escala hasta el tamaño de página. El valor predeterminado
+      es 10Mb.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rebuild"><a class="permalink" href="#rebuild"><b>--rebuild-indexes</b></a></dt>
+  <dd>Reconstruye los índices en una copia de seguridad compacta. Esta opción solo
+      tiene efecto cuando se proporcionan las opciones <i>--prepare</i> y
+      <i>--rebuild-threads</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rebuild~2"><a class="permalink" href="#rebuild~2"><b>--rebuild-threads=#</b></a></dt>
+  <dd>Utiliza el número de hilos dado para reconstruir los índices en una copia
+      de seguridad compacta. Esta opción solo tiene efecto con las opciones
+      <i>--prepare</i> y <i>--rebuild-indexes</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="remove"><a class="permalink" href="#remove"><b>--remove-original</b></a></dt>
+  <dd>Implementada en <i>Percona XtraBackup</i> 2.4.6, esta opción cuando se
+      especifica eliminará los archivos <b>.qp</b>, <b>.xbcrypt</b> y
+      <b>.qp.xbcrypt</b> después del descifrado y la descompresión.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rocksdb"><a class="permalink" href="#rocksdb"><b>--rocksdb-datadir</b></a></dt>
+  <dd>Directorio de datos de RocksDB</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rocksdb~2"><a class="permalink" href="#rocksdb~2"><b>--rocksdb-wal-dir</b></a></dt>
+  <dd>Directorio WAL de RocksDB.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rocksdb~3"><a class="permalink" href="#rocksdb~3"><b>--rocksdb-checkpoint-max-age</b></a></dt>
+  <dd>El checkpoint no puede tener una antigüedad superior a este número de
+      segundos cuando se completa la copia de seguridad.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rocksdb~4"><a class="permalink" href="#rocksdb~4"><b>--rocksdb-checkpoint-max-count</b></a></dt>
+  <dd>Completa la copia de seguridad incluso si el requisito de antigüedad del
+      checkpoint no se ha cumplido después de este número de checkpoints.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rollback"><a class="permalink" href="#rollback"><b>--rollback-prepared-trx</b></a></dt>
+  <dd>Fuerza la reversión de transacciones preparadas.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="rsync"><a class="permalink" href="#rsync"><b>--rsync</b></a></dt>
+  <dd>Utiliza la utilidad <b>rsync</b> para optimizar las transferencias de
+      archivos locales. Cuando se especifica esta opción, <i>xtrabackup</i> usa
+      <b>rsync</b> para copiar todos los archivos que no son de InnoDB en lugar de
+      generar un <b>cp</b> separado para cada archivo, lo que puede ser mucho más
+      rápido para servidores con un gran número de bases de datos o tablas. Esta
+      opción no se puede utilizar junto con <i>--stream</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="safe"><a class="permalink" href="#safe"><b>--safe-slave-backup</b></a></dt>
+  <dd>Cuando se especifica, xtrabackup detendrá el hilo SQL del réplica justo antes
+      de ejecutar <b>FLUSH TABLES WITH READ LOCK</b> y esperará para iniciar la
+      copia de seguridad hasta que <b>Slave_open_temp_tables</b> en <b>SHOW
+      STATUS</b> sea cero. Si no hay tablas temporales abiertas, se realizará la
+      copia de seguridad, de lo contrario, el hilo SQL se iniciará y detendrá hasta
+      que no haya tablas temporales abiertas. La copia de seguridad fallará si
+      <b>Slave_open_temp_tables</b> no se vuelve cero después de
+      <i>--safe-slave-backup-timeout</i> segundos. El hilo SQL de replicación se
+      reiniciará cuando finalice la copia de seguridad. Esta opción se implementa
+      para tratar con el <i>uso de tablas temporales en replicación</i> y no es
+      necesaria con la replicación basada en filas.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="safe~2"><a class="permalink" href="#safe~2"><b>--safe-slave-backup-timeout=SECONDS</b></a></dt>
+  <dd>Cuántos segundos debe esperar <i>--safe-slave-backup</i> para que
+      <b>Slave_open_temp_tables</b> sea cero. El valor predeterminado es 300
+      segundos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="secure"><a class="permalink" href="#secure"><b>--secure-auth</b></a></dt>
+  <dd>Rechaza la conexión del cliente al servidor si utiliza el protocolo antiguo
+      (anterior a 4.1.1). (Habilitado por defecto; usa --skip-secure-auth para
+      deshabilitar).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="server"><a class="permalink" href="#server"><b>--server-id=#</b></a></dt>
+  <dd>La instancia del servidor que se está respaldando.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="server~2"><a class="permalink" href="#server~2"><b>--server-public-key-path</b></a></dt>
+  <dd>La ruta del archivo de la clave pública RSA del servidor en formato PEM.
+    <p class="Pp"><b>VER TAMBIÉN:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="MySQL~4"><a class="permalink" href="#MySQL~4"><b><i>Documentación de
+    MySQL</i>: La opción --server-public-key-path</b></a></dt>
+  <dd><a href='https://dev.mysql.com/doc/refman/8.0/en/connection-options.html#option_general_server-public-key-path'>https://dev.mysql.com/doc/refman/8.0/en/connection-options.html#option_general_server-public-key-path</a></dd>
+</dl>
+</div>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="skip"><a class="permalink" href="#skip"><b>--skip-tables-compatibility-check</b></a></dt>
+  <dd>Ver <i>--tables-compatibility-check</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="slave"><a class="permalink" href="#slave"><b>--slave-info</b></a></dt>
+  <dd>Esta opción es útil al respaldar un servidor réplica de replicación. Imprime
+      la posición del log binario del servidor fuente. También escribe las
+      coordenadas del log binario en el archivo <b>xtrabackup_slave_info</b>
+      como un comando <b>CHANGE MASTER</b>. Se puede configurar una nueva réplica
+      para esta fuente iniciando un servidor réplica en esta copia de seguridad y
+      ejecutando un comando <b>CHANGE MASTER</b> con la posición del log binario
+      guardada en el archivo <b>xtrabackup_slave_info</b>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="socket"><a class="permalink" href="#socket"><b>--socket</b></a></dt>
+  <dd>Esta opción acepta un argumento de cadena que especifica el socket a usar
+      al conectarse al servidor de base de datos local con un socket de dominio
+      UNIX. Se pasa al proceso hijo mysql sin alteración. Consulte <b>mysql
+      --help</b> para obtener más detalles.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="ssl"><a class="permalink" href="#ssl"><b>--ssl</b></a></dt>
+  <dd>Habilita la conexión segura. Se puede encontrar más información en la
+      documentación del servidor MySQL sobre <i>--ssl</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-ca</b></dt>
+  <dd>Ruta del archivo que contiene la lista de CA SSL de confianza. Se puede
+      encontrar más información en la documentación del servidor MySQL sobre
+      <i>--ssl-ca</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-capath</b></dt>
+  <dd>Ruta del directorio que contiene certificados de CA SSL de confianza en
+      formato PEM. Se puede encontrar más información en la documentación del
+      servidor MySQL sobre <i>--ssl-capath</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-cert</b></dt>
+  <dd>Ruta del archivo que contiene el certificado X509 en formato PEM. Se puede
+      encontrar más información en la documentación del servidor MySQL sobre
+      <i>--ssl-cert</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-cipher</b></dt>
+  <dd>Lista de cifrados permitidos a utilizar para el cifrado de la conexión. Se
+      puede encontrar más información en la documentación del servidor MySQL
+      sobre <i>--ssl-cipher</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-crl</b></dt>
+  <dd>Ruta del archivo que contiene listas de revocación de certificados. Se puede
+      encontrar más información en la documentación del servidor MySQL sobre
+      <i>--ssl-crl</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-crlpath</b></dt>
+  <dd>Ruta del directorio que contiene los archivos de lista de revocación de
+      certificados. Se puede encontrar más información en la documentación del
+      servidor MySQL sobre <i>--ssl-crlpath</i>.</dd>
+</dl>
+</div></div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-fips-mode</b></dt>
+  <dd>Modo FIPS de SSL (solo se aplica a OpenSSL); los valores permitidos son:
+      <i>OFF</i>, <i>ON</i>, <i>STRICT</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-key</b></dt>
+  <dd>Ruta del archivo que contiene la clave X509 en formato PEM. Se puede encontrar
+      más información en la documentación del servidor MySQL <i>--ssl-key</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-mode</b></dt>
+  <dd>Estado de seguridad de la conexión al servidor. Se puede encontrar más
+      información en la documentación del servidor MySQL <i>--ssl-mode</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>--ssl-verify-server-cert</b></dt>
+  <dd>Verifica el valor del Common Name (Nombre Común) del certificado del servidor
+      con el nombre de host utilizado al conectarse al servidor. Se puede encontrar
+      más información en la documentación del servidor MySQL <i>--ssl-verify-server-cert</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="stats"><a class="permalink" href="#stats"><b>--stats</b></a></dt>
+  <dd>Hace que <b>xtrabackup</b> escanee los archivos de datos especificados e
+      imprima estadísticas de índices.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="stream=FORMAT"><a class="permalink" href="#stream=FORMAT"><b>--stream=FORMAT</b></a></dt>
+  <dd>Transmite todos los archivos de copia de seguridad a la salida estándar en
+      el formato especificado. Actualmente, esta opción solo admite el formato
+      <i>xbstream</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="strict"><a class="permalink" href="#strict"><b>--strict</b></a></dt>
+  <dd>Si se especifica esta opción, <i>xtrabackup</i> fallará con un error
+      cuando se pasen parámetros inválidos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tables=name"><a class="permalink" href="#tables=name"><b>--tables=name</b></a></dt>
+  <dd>Una expresión regular contra la que se compara el nombre completo de la
+      tabla, en formato <b>nombre_base_datos.nombre_tabla</b>. Si el nombre
+      coincide, la tabla se copia de seguridad. Ver copias de seguridad parciales.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tables"><a class="permalink" href="#tables"><b>--tables-compatibility-check</b></a></dt>
+  <dd>Habilita la advertencia de compatibilidad de motores. El valor predeterminado
+      es ON. Para deshabilitar la advertencia de compatibilidad de motores, use
+      <i>--skip-tables-compatibility-check</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tables~2"><a class="permalink" href="#tables~2"><b>--tables-exclude=name</b></a></dt>
+  <dd>Filtrado por regexp para nombres de tablas. Funciona de la misma manera que
+      <i>--tables</i>, pero los nombres coincidentes se excluyen de la copia de
+      seguridad. Tenga en cuenta que esta opción tiene una prioridad mayor que
+      <i>--tables</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tables~3"><a class="permalink" href="#tables~3"><b>--tables-file=name</b></a></dt>
+  <dd>Un archivo que contiene un nombre de tabla por línea, en formato
+      nombre_base_datos.nombre_tabla. La copia de seguridad se limitará a las
+      tablas especificadas.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="target"><a class="permalink" href="#target"><b>--target-dir=DIRECTORY</b></a></dt>
+  <dd>Esta opción especifica el directorio de destino para la copia de seguridad.
+      Si el directorio no existe, <b>xtrabackup</b> lo crea. Si el directorio
+      existe y está vacío, <b>xtrabackup</b> tendrá éxito. Sin embargo,
+      <b>xtrabackup</b> no sobrescribirá los archivos existentes; fallará con el
+      error del sistema operativo 17, <b>file exists</b>.
+    <p class="Pp">Si esta opción es una ruta relativa, se interpreta como relativa
+        al directorio de trabajo actual desde el que se ejecuta
+        <b>xtrabackup</b>.</p>
+    <p class="Pp">Para realizar una copia de seguridad, necesita permisos de
+        <b>LECTURA</b>, <b>ESCRITURA</b> y <b>EJECUCIÓN</b> a nivel del
+        sistema de archivos para el directorio que proporcione como valor de
+        <i>--target-dir</i>.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="innodb~2"><a class="permalink" href="#innodb~2"><b>--innodb-temp-tablespaces-dir=DIRECTORY</b></a></dt>
+  <dd>Directorio donde residen los archivos de tablespace temporales, esta ruta puede
+      ser absoluta.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="throttle=_"><a class="permalink" href="#throttle=_"><b>--throttle=#</b></a></dt>
+  <dd>Esta opción limita el número de fragmentos copiados por segundo. El tamaño
+      del fragmento es de <i>10 MB</i>. Para limitar el ancho de banda a
+      <i>10 MB/s</i>, establezca la opción en <i>1</i>:
+      <i>--throttle=1</i>.
+    <p class="Pp"><b>VER TAMBIÉN:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="More~3"><a class="permalink" href="#More~3"><b>Más información sobre
+    cómo limitar una copia de seguridad</b></a></dt>
+  <dd>throttling_backups</dd>
+</dl>
+</div>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tls"><a class="permalink" href="#tls"><b>--tls-ciphersuites</b></a></dt>
+  <dd>Cifrado TLS v1.3 a utilizar.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tls~2"><a class="permalink" href="#tls~2"><b>--tls-version</b></a></dt>
+  <dd>Versión TLS a utilizar, los valores permitidos son: <i>TLSv1</i>,
+      <i>TLSv1.1</i>, <i>TLSv1.2</i>, <i>TLSv1.3</i>.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="tmpdir=name"><a class="permalink" href="#tmpdir=name"><b>--tmpdir=name</b></a></dt>
+  <dd>Especifica el directorio que se utilizará para almacenar archivos temporales
+      durante la copia de seguridad</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="transition"><a class="permalink" href="#transition"><b>--transition-key=name</b></a></dt>
+  <dd>Esta opción se utiliza para habilitar el procesamiento de la copia de
+      seguridad sin acceder al servidor de bóveda de claves. En este caso,
+      <b>xtrabackup</b> deriva la clave de cifrado AES de la frase de contraseña
+      especificada y la utiliza para cifrar las claves de tablespace de los
+      tablespaces que se están copiando de seguridad.
+    <p class="Pp">Si <i>--transition-key</i> no tiene ningún valor,
+        <b>xtrabackup</b> lo solicitará. Se debe especificar la misma frase de
+        contraseña para el comando <i>--prepare</i>.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="use"><a class="permalink" href="#use"><b>--use-memory</b></a></dt>
+  <dd>Esta opción afecta la cantidad de memoria asignada para preparar una copia
+      de seguridad con <i>--prepare</i>, o analizar estadísticas con
+      <i>--stats</i>. Su propósito es similar a innodb_buffer_pool_size. No hace
+      lo mismo que la opción con nombre similar en la herramienta InnoDB Hot
+      Backup de Oracle. El valor predeterminado es 100 MB, y si tiene suficiente
+      memoria disponible, 1 GB a 2 GB es un buen valor recomendado. Se admiten
+      múltiplos proporcionando la unidad (por ejemplo, 1MB, 1M, 1GB, 1G).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="user=USERNAME"><a class="permalink" href="#user=USERNAME"><b>--user=USERNAME</b></a></dt>
+  <dd>Esta opción especifica el nombre de usuario de MySQL que se utiliza al
+      conectarse al servidor, si no es el usuario actual. La opción acepta un
+      argumento de cadena. Consulte mysql --help para obtener detalles.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="v"><a class="permalink" href="#v"><b>-v</b></a></dt>
+  <dd>Ver <i>--version</i></dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="version"><a class="permalink" href="#version"><b>--version</b></a></dt>
+  <dd>Esta opción imprime la versión de <i>xtrabackup</i> y sale.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="xtrabackup"><a class="permalink" href="#xtrabackup"><b>--xtrabackup-plugin-dir=DIRNAME</b></a></dt>
+  <dd>La ruta absoluta al directorio que contiene el plugin
+      <b>keyring</b>.
+    <p class="Pp"><b>VER TAMBIÉN:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Percona"><a class="permalink" href="#Percona"><b>Documentación de
+    <i>Percona Server for MySQL</i>: plugin keyring_vault con cifrado de datos en reposo</b></a></dt>
+  <dd><a href='https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin'>https://www.percona.com/doc/percona-server/LATEST/management/data_at_rest_encryption.html#keyring-vault-plugin</a></dd>
+  <dt id="MySQL~5"><a class="permalink" href="#MySQL~5"><b>Documentación de
+    <i>MySQL</i>: Uso del plugin keyring_file basado en archivos</b></a></dt>
+  <dd><a href='https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html'>https://dev.mysql.com/doc/refman/5.7/en/keyring-file-plugin.html</a></dd>
+</dl>
+</div>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<p class="Pp">Percona LLC y/o sus afiliados</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>DERECHOS DE AUTOR</a></h1>
+<p class="Pp">2009-2022, Percona LLC y/o sus afiliados</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">10 de agosto de 2025</td>
+    <td class="foot-os">8.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/xtrabackup/">extra/xtrabackup</a></dd>
+        <dt>Versión:</dt>
+        <dd>8.4.0_4-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.percona.com/software/mysql-database/percona-xtrabackup">https://www.percona.com/software/mysql-database/percona-xtrabackup</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/xtrabackup/">/listing/extra/xtrabackup/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#OTHER_TYPES_OF_BACKUPS">OTROS TIPOS DE COPIAS DE SEGURIDAD</a></li>
+        
+            <li><a href="#ADVANCED_FEATURES">CARACTERÍSTICAS AVANZADAS</a></li>
+        
+            <li><a href="#FOOTNOTES">NOTAS AL PIE</a></li>
+        
+            <li><a href="#IMPLEMENTATION">IMPLEMENTACIÓN</a></li>
+        
+            <li><a href="#REFERENCES">REFERENCIAS</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#COPYRIGHT">DERECHOS DE AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/xtrabackup.1.en.txt">txt</a>, 
+        
+            <a href="/man/xtrabackup.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas de manual, que tienen su propia licencia especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

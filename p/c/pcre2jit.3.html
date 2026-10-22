@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pcre2jit(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pcre2jit(3)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PCRE2JIT(3)</td>
+    <td class="head-vol">Manual de funciones de biblioteca</td>
+    <td class="head-rtitle">PCRE2JIT(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">PCRE2 - Expresiones regulares compatibles con Perl (API revisada)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SOPORTE_DE_COMPILADOR_JUST-IN-TIME_DE_PCRE2'><a class='permalink' href='#SOPORTE_DE_COMPILADOR_JUST-IN-TIME_DE_PCRE2'>SOPORTE   DE COMPILADOR JUST-IN-TIME DE PCRE2</a></h1>
+<p class="Pp">La compilación just-in-time (JIT) es una optimización de gran impacto que puede acelerar enormemente la coincidencia de patrones. Sin embargo, tiene el costo de un procesamiento adicional antes de realizar la coincidencia, por lo que es de mayor beneficio cuando el mismo patrón se va a hacer coincidir muchas veces. Esto no significa necesariamente muchas llamadas a una función de coincidencia; si el patrón no está anclado, los intentos de coincidencia pueden ocurrir muchas veces en varias posiciones del sujeto, incluso para una sola llamada. Por lo tanto, si la cadena sujeto es muy larga, aún puede valer la pena usar JIT incluso para coincidencias únicas. El soporte JIT está disponible para todas las bibliotecas PCRE2 de 8, 16 y 32 bits.</p>
+<p class="Pp">El soporte JIT se aplica solo a la función de coincidencia tradicional compatible con Perl. No se aplica cuando se utiliza la función de coincidencia DFA. El código para el soporte JIT fue escrito por Zoltan Herczeg.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DISPONIBILIDAD_DE_SOPORTE_JIT'><a class='permalink' href='#DISPONIBILIDAD_DE_SOPORTE_JIT'>DISPONIBILIDAD   DE SOPORTE JIT</a></h1>
+<p class="Pp">El soporte JIT es una característica opcional de PCRE2. La opción
+    &quot;configure&quot; --enable-jit (o una opción CMake equivalente) debe establecerse cuando se compila PCRE2 si desea utilizar JIT. El soporte está limitado a las siguientes plataformas de hardware:</p>
+<p class="Pp">
+  <br/>
+   ARM de 32 bits (v7 y Thumb2)
+  <br/>
+   ARM de 64 bits
+  <br/>
+   IBM s390x de 64 bits
+  <br/>
+   Intel x86 de 32 y 64 bits
+  <br/>
+   LoongArch de 64 bits
+  <br/>
+   MIPS de 32 y 64 bits
+  <br/>
+   Power PC de 32 y 64 bits
+  <br/>
+   RISC-V de 32 y 64 bits</p>
+<p class="Pp">Si se establece --enable-jit en una plataforma no compatible, la compilación falla.</p>
+<p class="Pp">Un programa cliente puede saber si se ha compilado el soporte JIT llamando a
+    <b>pcre2_config()</b> con la opción PCRE2_CONFIG_JIT. El resultado es uno si
+    PCRE2 se compiló con soporte JIT y cero en caso contrario. Sin embargo, tener
+    el código JIT disponible no garantiza que se utilizará para ninguna coincidencia
+    particular. Una razón para esto es que hay una serie de opciones y elementos
+    de patrón que no son compatibles con JIT (ver abajo). Otra razón es que en
+    algunos entornos JIT no puede obtener memoria ejecutable en la que construir
+    su código compilado. La única garantía de
+    <b>pcre2_config()</b> es que si devuelve cero, JIT definitivamente *no* se
+    utilizará.</p>
+<p class="Pp">A partir de la versión 10.45, existe una forma más informativa de
+    probar el soporte JIT. Si se llama a
+    <b>pcre2_compile_jit()</b> con la única opción PCRE2_JIT_TEST_ALLOC, devuelve
+    cero si JIT está disponible y tiene un asignador que funciona. De lo contrario,
+    devuelve PCRE2_ERROR_NOMEMORY si JIT está disponible pero no puede asignar
+    memoria ejecutable, o PCRE2_ERROR_JIT_UNSUPPORTED si el soporte JIT no se compiló.
+    El argumento del código se ignora, por lo que puede ser un valor NULL.</p>
+<p class="Pp">Un programa simple no necesita verificar la disponibilidad para
+    usar JIT cuando sea posible. La API está implementada de manera que recurre
+    al código interpretativo si JIT no está disponible o no se puede usar para
+    una coincidencia dada. Para programas que necesitan el mejor rendimiento
+    posible, existe una API de &quot;vía rápida&quot; específica de JIT.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_SIMPLE_DE_JIT'><a class='permalink' href='#USO_SIMPLE_DE_JIT'>USO   SIMPLE DE JIT</a></h1>
+<p class="Pp">Para utilizar el soporte JIT de la manera más sencilla, todo lo que
+    tiene que hacer es llamar a <b>pcre2_jit_compile()</b> después de compilar
+    con éxito un patrón con <b>pcre2_compile()</b>. Esta función tiene dos
+    argumentos: el primero es el puntero al patrón compilado que fue devuelto por
+    <b>pcre2_compile()</b>, y el segundo son cero o más de los siguientes bits de
+    opción: PCRE2_JIT_COMPLETE, PCRE2_JIT_PARTIAL_HARD o
+    PCRE2_JIT_PARTIAL_SOFT.</p>
+<p class="Pp">Si el soporte JIT no está disponible, una llamada a
+    <b>pcre2_jit_compile()</b> no hace nada y devuelve
+    PCRE2_ERROR_JIT_BADOPTION. De lo contrario, el patrón compilado se pasa al
+    compilador JIT, que lo convierte en código máquina que se ejecuta mucho más
+    rápido que el código interpretativo normal, pero produce exactamente los
+    mismos resultados. El valor devuelto por
+    <b>pcre2_jit_compile()</b> es cero en caso de éxito o un código de error
+    negativo.</p>
+<p class="Pp">Existe un límite al tamaño del patrón que JIT soporta, impuesto
+    por el tamaño de la pila de máquina que utiliza. Las reglas exactas no están
+    documentadas porque pueden cambiar en cualquier momento, en particular,
+    cuando se introducen nuevas optimizaciones. Si un patrón es demasiado grande,
+    una llamada a
+    <b>pcre2_jit_compile()</b> devuelve PCRE2_ERROR_NOMEMORY.</p>
+<p class="Pp">PCRE2_JIT_COMPLETE solicita al compilador JIT que genere código para
+    coincidencias completas. Si desea ejecutar coincidencias parciales utilizando
+    las opciones PCRE2_PARTIAL_HARD o PCRE2_PARTIAL_SOFT de
+    <b>pcre2_match()</b>, debe establecer una o ambas de las otras opciones,
+    además de, o en lugar de, PCRE2_JIT_COMPLETE. El compilador JIT genera
+    diferente código optimizado para cada uno de los tres modos (normal, parcial
+    suave, parcial duro). Cuando se llama a
+    <b>pcre2_match()</b>, se ejecuta el código apropiado si está disponible. De
+    lo contrario, el patrón se compara utilizando código interpretativo.</p>
+<p class="Pp">Puede llamar a
+    <b>pcre2_jit_compile()</b> varias veces para el mismo patrón compilado. No
+    hace nada si previamente ha compilado código para alguno de los bits de
+    opción. Por ejemplo, puede llamarla una vez con
+    PCRE2_JIT_COMPLETE y (quizás más tarde, cuando descubra que necesita
+    coincidencia parcial) de nuevo con PCRE2_JIT_COMPLETE y
+    PCRE2_JIT_PARTIAL_HARD. Esta vez ignorará
+    PCRE2_JIT_COMPLETE y solo compilará código para la coincidencia parcial. Si
+    se llama a
+    <b>pcre2_jit_compile()</b> sin ningún bit de opción establecido, devuelve
+    cero inmediatamente. Esta es una forma alternativa de probar si el soporte
+    JIT se ha compilado.</p>
+<p class="Pp">Actualmente, no es posible liberar código compilado por JIT,
+    excepto cuando todo el patrón compilado se libera llamando a
+    <b>pcre2_code_free()</b>.</p>
+<p class="Pp">En algunas circunstancias, es posible que necesite llamar a
+    funciones adicionales. Estas se describen en la sección titulada &quot;Control
+    de la pila JIT&quot; más abajo.</p>
+<p class="Pp">Existen algunas opciones de
+    <b>pcre2_match()</b> que no son compatibles con JIT, y también hay algunos
+    elementos de patrón que JIT no puede manejar. Los detalles se proporcionan a
+    continuación. En ambos casos, la coincidencia recurre automáticamente al
+    código interpretativo. Si desea saber si JIT se utilizó realmente para una
+    coincidencia particular, debe organizar que se configure una función de
+    retrollamada JIT como se describe en la sección titulada &quot;Control de la
+    pila JIT&quot; más abajo, incluso si no necesita proporcionar una pila JIT
+    no predeterminada. Dicha función de retrollamada se llama cada vez que el
+    código JIT está a punto de ejecutarse. Si las opciones en tiempo de coincidencia
+    no son adecuadas para la ejecución JIT, la función de retrollamada no se
+    obedece.</p>
+<p class="Pp">Si el compilador JIT encuentra un elemento no compatible, no se
+    genera ningún dato JIT. Puede averiguar si la compilación JIT fue exitosa
+    para un patrón compilado llamando a
+    <b>pcre2_pattern_info()</b> con la opción PCRE2_INFO_JITSIZE. Un resultado
+    distinto de cero significa que la compilación JIT fue exitosa. Un resultado
+    de 0 significa que el soporte JIT no está disponible, o el patrón no fue
+    procesado por
+    <b>pcre2_jit_compile()</b>, o el compilador JIT no pudo manejar el patrón.
+    Sin embargo, una compilación JIT exitosa no garantiza el uso de JIT en tiempo
+    de coincidencia, ya que hay algunas opciones en tiempo de coincidencia que
+    no son compatibles con JIT.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COINCIDENCIA_DE_SUJETOS_QUE_CONTIENEN_UTF_INVÁLIDO'><a class='permalink' href='#COINCIDENCIA_DE_SUJETOS_QUE_CONTIENEN_UTF_INVÁLIDO'>COINCIDENCIA   DE SUJETOS QUE CONTIENEN UTF INVÁLIDO</a></h1>
+<p class="Pp">Cuando un patrón se compila con la opción PCRE2_UTF, normalmente se
+    espera que las cadenas sujeto sean una secuencia válida de unidades de código
+    UTF. Por defecto, esto se verifica al inicio de la coincidencia y se genera
+    un error si se detecta UTF inválido. La opción PCRE2_NO_UTF_CHECK se puede
+    pasar a
+    <b>pcre2_match()</b> para omitir la verificación (para mejorar el
+    rendimiento) si está seguro de que una cadena sujeto es válida. Si se utiliza
+    esta opción con una cadena inválida, el resultado no está definido. El
+    programa que llama puede fallar, entrar en bucle o comportarse de otra manera
+    inadecuada.</p>
+<p class="Pp">Sin embargo, hay disponible una forma de ejecutar coincidencias en
+    cadenas que pueden contener secuencias UTF inválidas. Llamar a
+    <b>pcre2_compile()</b> con la opción PCRE2_MATCH_INVALID_UTF tiene dos
+    efectos: le dice al intérprete en
+    <b>pcre2_match()</b> que admita UTF inválido y, si posteriormente se llama a
+    <b>pcre2_jit_compile()</b>, el código JIT compilado también admite UTF
+    inválido. Los detalles sobre cómo funciona este soporte, tanto en el caso
+    JIT como en el interpretativo, se proporcionan en la documentación de
+    <b>pcre2unicode</b>.</p>
+<p class="Pp">También existe una opción obsoleta para
+    <b>pcre2_jit_compile()</b> llamada PCRE2_JIT_INVALID_UTF, que actualmente
+    solo existe por compatibilidad hacia atrás. Está suplantada por la opción
+    PCRE2_MATCH_INVALID_UTF de
+    <b>pcre2_compile()</b> y ya no debe usarse. Puede eliminarse en el futuro.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES_Y_ELEMENTOS_DE_PATRÓN_NO_SOPORTADOS'><a class='permalink' href='#OPCIONES_Y_ELEMENTOS_DE_PATRÓN_NO_SOPORTADOS'>OPCIONES   Y ELEMENTOS DE PATRÓN NO SOPORTADOS</a></h1>
+<p class="Pp">La siguiente lista describe las características que no son compatibles
+    con JIT. Si se encuentra alguna de ellas, la coincidencia recursiva al código
+    interpretativo.</p>
+<p class="Pp"><b>Opciones de<code>pcre2_compile()</code> que no son compatibles con JIT:</b></p>
+<p class="Pp">
+  <br/>
+   PCRE2_EXTENDED
+  <br/>
+   PCRE2_ALT_BSUX
+  <br/>
+   PCRE2_ANCHORED
+  <br/>
+   PCRE2_CASELESS
+  <br/>
+   PCRE2_DOLLAR_ENDONLY
+  <br/>
+   PCRE2_DOTALL
+  <br/>
+   PCRE2_DUPEND
+  <br/>
+   PCRE2_FIRSTLINE
+  <br/>
+   PCRE2_FUNC_CALLOUT
+  <br/>
+   PCRE2_IGNORECASE
+  <br/>
+   PCRE2_IMPLICIT_GV
+  <br/>
+   PCRE2_JIT_INVALID_UTF (obsoleto, ver arriba)
+  <br/>
+   PCRE2_NEWLINE_ANYCRLF
+  <br/>
+   PC2_NEWLINE_CR
+  <br/>
+   PCRE2_NEWLINE_LF
+  <br/>
+   PCRE2_NO_AUTO_CAPTURE
+  <br/>
+   PCRE2_NO_DOTSTAR_IS_NEWLINE
+  <br/>
+   PCRE2_NO_START_OPT
+  <br/>
+   PCRE2_OFFSET_LIMIT
+  <br/>
+   PCRE2_PARTIAL (esto es ignorado; ver abajo)
+  <br/>
+   PCRE2_PCRE10_COMPAT
+  <br/>
+   PCRE2_SINGLELINE
+  <br/>
+   PCRE2_STRICT
+  <br/>
+   PCRE2_UTF
+  <br/>
+   PCRE2_USE_OFFSET_LIMIT</p>
+<p class="Pp"><b>Opciones de<code>pcre2_match()</code> que no son compatibles con JIT:</b></p>
+<p class="Pp">
+  <br/>
+   PCRE2_ANCHORED
+  <br/>
+   PCRE2_COPY_MATCH_RECURSION_LEVEL
+  <br/>
+   PCRE2_NO_BACKTRACK
+  <br/>
+   PCRE2_PARTIAL_HARD
+  <br/>
+   PCRE2_PARTIAL_SOFT
+  <br/>
+   PCRE2_SUBSTITUTE_GLOBAL
+  <br/>
+   PCRE2_SUBSTITUTE_OVERWRITE
+  <br/>
+   PCRE2_SUBSTITUTE_UNFINDABLE</p>
+<p class="Pp">Los programas que utilizan JIT deben tener cuidado al usar el
+    anclaje porque las dos formas de anclaje (implícito y explícito) que se
+    utilizan para permitir que los patrones que no comienzan con un ancla coincidan
+    desde el principio de la cadena sujeto son ignoradas por el código JIT.</p>
+<p class="Pp">Cuando se especifica PCRE2_PARTIAL para
+    <b>pcre2_compile()</b>, la coincidencia podría fallar porque el patrón no
+    comienza al principio de la cadena sujeto. Para poder anclar el patrón, JIT
+    realiza una verificación oculta si el patrón no comienza con un ancla,
+    añadiendo internamente el comportamiento de PCRE2_ANCHORED. Esto significa
+    que si el patrón no es una coincidencia completa desde el principio de la
+    cadena, no se realizará ninguna coincidencia. El comportamiento de JIT se
+    elimina si el patrón comienza con un ancla explícita como `^`.</p>
+<p class="Pp">Para permitir que los patrones que no comienzan con un ancla
+    coincidan desde el principio de la cadena, JIT intenta añadir implícitamente
+    el comportamiento de PCRE2_ANCHORED. Sin embargo, esto puede fallar si el
+    patrón comienza con `\K` o si el patrón es un patrón que es imposible que
+    coincida al principio de la cadena, como `(?<!^)` o `a*`.</p>
+<p class="Pp"><b>Elementos de patrón no compatibles con JIT:</b></p>
+<p class="Pp">
+  <br/>
+   Recursión (p. ej., `(?R)`)
+  <br/>
+   Referencia a grupo de subexpresiones nombres (p. ej., `(?P&lt;nombre&gt;)`).
+  <br/>
+   Subexpresiones con nombre que se refieren a otras subexpresiones (p. ej., `(?&lt;name1&gt;(?&lt;name2&gt;a))`).
+  <br/>
+   Subexpresiones que contienen llamadas recursivas (p. ej., `(?R)`) o referencias a sí mismas.
+  <br/>
+   Subexpresiones que solo hacen coincidir en una posición, como `(a*)`.</p>
+<p class="Pp">Los elementos de patrón que son compatibles con JIT son la mayoría de
+    las características de Perl-compatible regular expressions. La implementación
+    de JIT se centra en las optimizaciones de velocidad más comunes y
+    beneficiosas.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONTROL_DE_LA_PILAS_JIT'><a class='permalink' href='#CONTROL_DE_LA_PILAS_JIT'>CONTROL   DE LA PILAS JIT</a></h1>
+<p class="Pp">El compilador JIT puede necesitar una pila más grande que el código
+    interpretativo. Por defecto, se asigna un tamaño de pila de 100.000 bytes.
+    Este tamaño se puede ajustar llamando a
+    <b>pcre2_jit_stack_assign()</b> en la fase de configuración (antes de
+    llamar a <b>pcre2_compile()</b>), o llamando a
+    <b>pcre2_match()</b> con la opción PCRE2_MATCH_USING_JIT_STACK. Para
+    hacer esto, el programa cliente debe configurar un puntero a un tipo
+    <code>pcre2_jit_stack</code>. El tamaño de pila se puede especificar en
+    bytes.</p>
+<p class="Pp">La función
+    <b>pcre2_jit_stack_assign()</b> devuelve un puntero a la nueva pila JIT. El
+    llamador es responsable de liberarla llamando a
+    <b>pcre2_jit_stack_free()</b> cuando ya no sea necesaria.</p>
+<p class="Pp">Una función de retrollamada opcional se puede registrar para
+    ser llamada justo antes de que el código JIT sea ejecutado. Esto se hace
+    configurando el campo <code>callout</code> de la estructura
+    <code>pcre2_jit_callback_array</code>. El puntero a esta estructura se pasa
+    en el argumento <code>callback_array</code> a
+    <b>pcre2_jit_stack_assign()</b>.</p>
+<p class="Pp">La función de retrollamada recibe tres argumentos: un puntero al
+    patrón compilado, un puntero a la pila JIT y un puntero a una estructura
+    de información de retrollamada. Esta estructura está definida por el tipo
+    <code>pcre2_jit_match_data</code> y contiene información sobre el estado actual
+    de la coincidencia, incluido el número de llamadas a la retrollamada, el
+    número de llamadas a la función JIT y la posición actual en la cadena sujeto.
+    La función de retrollamada puede devolver un valor para indicar si se debe
+    continuar la coincidencia. Si devuelve 0, la coincidencia continúa. Si
+    devuelve un valor distinto de cero, la coincidencia se detiene y se devuelve
+    un error.</p>
+<p class="Pp">Este mecanismo de retrollamada se puede utilizar para rastrear
+    la ejecución del código JIT, por ejemplo, para verificar si JIT se utilizó
+    realmente para una coincidencia particular.</p>
+<p class="Pp">Existe una tercera forma de configurar la pila JIT. Si no se
+    llama a
+    <b>pcre2_jit_stack_assign()</b>, pero el programa cliente pasa un puntero a
+    una pila JIT (creada y liberada por el programa cliente) en el campo
+    <code>user_jit_stack</code> de la estructura
+    <code>pcre2_match_context</code>, esta pila se utilizará. El uso de una pila
+    JIT definida por el usuario de esta manera puede ser más eficiente ya que
+    evita la asignación de memoria adicional.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DIRECTIVA_IMPORTANTE_SOBRE_LA_SEGURIDAD'><a class='permalink' href='#DIRECTIVA_IMPORTANTE_SOBRE_LA_SEGURIDAD'>DIRECTIVA   IMPORTANTE SOBRE LA SEGURIDAD</a></h1>
+<p class="Pp">El uso de JIT permite que el código se genere y ejecute en tiempo de
+    ejecución. Aunque PCRE2 realiza comprobaciones exhaustivas para garantizar
+    que el código generado sea seguro y no pueda dañar el sistema, los usuarios
+    deben ser conscientes de que este tipo de funcionalidad puede tener implicaciones
+    de seguridad. Si la entrada del usuario se utiliza para construir un patrón
+    que se compila con JIT, es posible que un atacante pueda inyectar código
+    malicioso. Por lo tanto, se recomienda encarecidamente que el código que
+    utiliza JIT siempre valide cuidadosamente la entrada del usuario para
+    prevenir tales ataques.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO'><a class='permalink' href='#EJEMPLO'>EJEMPLO</a></h1>
+<p class="Pp">A continuación se muestra un ejemplo de cómo utilizar la función JIT
+    para compilar un patrón y luego ejecutar una coincidencia:</p>
+<p class="Pp">
+  <div class="Bd Bgf">
+    <pre>
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;pcre2.h&gt;
+
+int main() {
+    pcre2_code *re;
+    PCRE2_SPANCHARED_SIZE_T erroroffset;
+    int errorcode;
+    PCRE2_SPANCHARED_SIZE_Tjit_size;
+    int jit_options = 0;
+    const char *pattern = &quot;([0-9]+)-([0-9]+)&quot;;
+    const char *subject = &quot;Product ID: 123-456&quot;;
+    pcre2_match_data *match_data;
+    PCRE2_SPANCHARED_SIZE_T subject_length = strlen(subject);
+    PCRE2_SPANCHARED_SIZE_T length;
+    PCRE2_SPANCHARED_SIZE_T *ovec;
+    int rc;
+    uint32_t options = PCRE2_UTF | PCRE2_ALT_BSUX;
+
+    /* Compile the pattern */
+    re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, options,
+        &amp;errorcode, &amp;erroroffset, NULL);
+
+    if (re == NULL) {
+        fprintf(stderr, &quot;pcre2_compile failed at offset %d: errorcode %d\n&quot;,
+            (int)erroroffset, errorcode);
+        return 1;
+    }
+
+    /* Try to compile the pattern with JIT support */
+    rc = pcre2_jit_compile(re, jit_options);
+
+    if (rc == PCRE2_ERROR_JIT_BADOPTION) {
+        printf(&quot;JIT compilation is not enabled or not supported.\n&quot;);
+    } else if (rc &lt; 0) {
+        fprintf(stderr, &quot;pcre2_jit_compile failed: %d\n&quot;, rc);
+        pcre2_code_free(re);
+        return 1;
+    } else {
+        printf(&quot;JIT compilation succeeded.\n&quot;);
+    }
+
+    /* Get JIT size to check if JIT compilation was successful */
+    if (pcre2_pattern_info(re, PCRE2_INFO_JITSIZE, &amp;jit_size, sizeof(jit_size)) == 0) {
+        if (jit_size == 0) {
+            printf(&quot;JIT compilation did not produce any code (pattern might be unsupported).\n&quot;);
+        } else {
+            printf(&quot;JIT code size: %zu bytes\n&quot;, (size_t)jit_size);
+        }
+    }
+
+    /* Allocate match data */
+    match_data = pcre2_match_data_create(1, NULL);
+    if (match_data == NULL) {
+        fprintf(stderr, &quot;pcre2_match_data_create failed\n&quot;);
+        pcre2_code_free(re);
+        return 1;
+    }
+
+    /* Perform the match */
+    rc = pcre2_match(re, subject, subject_length, 0, 0, match_data, NULL);
+
+    if (rc &lt; 0) {
+        fprintf(stderr, &quot;pcre2_match failed: %d\n&quot;, rc);
+        pcre2_match_data_free(match_data);
+        pcre2_code_free(re);
+        return 1;
+    }
+
+    /* Get the offsets of the captured substrings */
+    ovec = pcre2_get_ovector_pointer(match_data);
+    length = ovec[1] - ovec[0];
+    printf(&quot;Match found: starting at %zu, length %zu\n&quot;, (size_t)ovec[0], (size_t)length);
+
+    /* Free match data and compiled pattern */
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
+
+    return 0;
+}
+    </pre>
+  </div>
+</p>
+</div>
+</section>
+</section>
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id="OPCIONES_Y_ELEMENTOS_DE_PATRÓN_NO_SOPORTADOS">OPCIONES Y ELEMENTOS DE PATRÓN NO SOPORTADOS</h1>
+<p class="Pp">Las opciones de <b>pcre2_match()</b> que se soportan para la coincidencia JIT son PCRE2_COPY_MATCHED_SUBJECT, PCRE2_NOTBOL, PCRE2_NOTEOL, PCRE2_NOTEMPTY, PCRE2_NOTEMPTY_ATSTART, PCRE2_NO_UTF_CHECK, PCRE2_PARTIAL_HARD y PCRE2_PARTIAL_SOFT. Las opciones PCRE2_ANCHORED y PCRE2_ENDANCHORED no se soportan en el momento de la coincidencia.</p>
+<p class="Pp">Si la opción PCRE2_NO_JIT se pasa a <b>pcre2_match()</b>, deshabilita el uso de JIT, forzando la coincidencia por el código del intérprete.</p>
+<p class="Pp">Los únicos elementos de patrón no soportados son \C (coincidir una sola unidad de datos) cuando se ejecuta en un modo UTF, y una llamada de extracción inmediatamente antes de una condición de aserción en un grupo condicional.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VALORES_DE_RETORNO_DE_COINCIDENCIAS_JIT">VALORES DE RETORNO DE COINCIDENCIAS JIT</h1>
+<p class="Pp">Cuando un patrón coincide utilizando JIT, los valores de retorno son los mismos que los proporcionados por el código interpretativo de <b>pcre2_match()</b>, con la adición de un nuevo código de error: PCRE2_ERROR_JIT_STACKLIMIT. Esto significa que la memoria utilizada para la pila JIT fue insuficiente. Consulte &quot;Control de la pila JIT&quot; a continuación para una discusión sobre el uso de la pila JIT.</p>
+<p class="Pp">El código de error PCRE2_ERROR_MATCHLIMIT es devuelto por el código JIT si la búsqueda de un árbol de patrones muy grande se prolonga demasiado, al igual que ocurre en la misma circunstancia cuando no se usa JIT, pero los detalles de lo que se cuenta exactamente no son los mismos. El código de error PCRE2_ERROR_DEPTHLIMIT nunca se devuelve cuando se utiliza la coincidencia JIT.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CONTROL_DE_LA_PILACONTROL_DE_LA_PILA_JIT">CONTROL DE LA PILA JIT</h1>
+<p class="Pp">Cuando el código JIT compilado se ejecuta, necesita un bloque de memoria para usarlo como pila. Por defecto, utiliza 32KiB en la pila de la máquina. Sin embargo, algunos patrones grandes o complicados necesitan más que esto. El error PCRE2_ERROR_JIT_STACKLIMIT se da cuando no hay suficiente pila. Se proporcionan tres funciones para administrar bloques de memoria para usarlos como pilas JIT. Hay una discusión adicional sobre el uso de pilas JIT en la sección titulada &quot;Preguntas frecuentes sobre pilas JIT&quot; a continuación.</p>
+<p class="Pp">La función <b>pcre2_jit_stack_create()</b> crea una pila JIT. Sus argumentos son un tamaño inicial, un tamaño máximo y un contexto general (para funciones de asignación de memoria, o NULL para asignación de memoria estándar). Devuelve un puntero a una estructura opaca de tipo <b>pcre2_jit_stack</b>, o NULL si hay un error. La función <b>pcre2_jit_stack_free()</b> se utiliza para liberar una pila que ya no es necesaria. Si su argumento es NULL, esta función retorna inmediatamente, sin hacer nada. (Para los técnicamente inclinados: el espacio de direcciones se asigna mediante mmap o VirtualAlloc.) Un tamaño máximo de pila de 512KiB a 1MiB debería ser más que suficiente para cualquier patrón.</p>
+<p class="Pp">La función <b>pcre2_jit_stack_assign()</b> especifica qué pila debe usar el código JIT. Sus argumentos son los siguientes:</p>
+<p class="Pp">
+<br/>
+pcre2_match_context *mcontext
+<br/>
+pcre2_jit_callback callback
+<br/>
+void *data</p>
+<p class="Pp">El primer argumento es un puntero a un contexto de coincidencia. Cuando este se pasa posteriormente a una función de coincidencia, su información determina qué pila JIT se utiliza. Si este argumento es NULL, la función retorna inmediatamente, sin hacer nada. Hay tres casos para los valores de las otras dos opciones:</p>
+<p class="Pp">
+<br/>
+(1) Si <i>callback</i> es NULL y <i>data</i> es NULL, se utiliza un bloque interno de 32KiB
+<br/>
+en la pila de la máquina. Este es el valor predeterminado cuando se crea un contexto de coincidencia.</p>
+<p class="Pp">
+<br/>
+(2) Si <i>callback</i> es NULL y <i>data</i> no es NULL, <i>data</i> debe ser
+<br/>
+un puntero a una pila JIT válida, el resultado de llamar a
+<br/>
+<b>pcre2_jit_stack_create()</b>.</p>
+<p class="Pp">
+<br/>
+(3) Si <i>callback</i> no es NULL, debe apuntar a una función que se llama
+<br/>
+con <i>data</i> como argumento al inicio de la coincidencia, para configurar
+<br/>
+una pila JIT. Si el retorno de la función de devolución de llamada es NULL,
+<br/>
+se utiliza la pila interna de 32KiB; de lo contrario, el valor de retorno
+<br/>
+debe ser una pila JIT válida, el resultado de llamar a
+<br/>
+<b>pcre2_jit_stack_create()</b>.</p>
+<p class="Pp">Una función de devolución de llamada se obedece cada vez que el código JIT está a punto de ejecutarse; no se obedece cuando <b>pcre2_match()</b> se llama con opciones incompatibles para la coincidencia JIT. Por lo tanto, una función de devolución de llamada se puede utilizar para determinar si una operación de coincidencia fue ejecutada por JIT o por el intérprete.</p>
+<p class="Pp">Puede usar de forma segura la misma pila JIT para más de un patrón (ya sea asignándola directamente o mediante una devolución de llamada), siempre que los patrones coincidan secuencialmente en el mismo hilo. Actualmente, la única forma de configurar coincidencias no secuenciales en un hilo es usar llamadas de extracción: si una función de extracción inicia otra coincidencia, esa coincidencia debe usar una pila JIT diferente a la utilizada para la coincidencia (o coincidencias) actualmente suspendida.</p>
+<p class="Pp">En una aplicación multihilo, si no especifica una pila JIT, o si asigna o devuelve NULL de una devolución de llamada, eso es seguro para hilos, ya que cada hilo tiene su propia pila de máquina. Sin embargo, si asigna o devuelve una pila JIT no nula, esta debe ser una pila diferente para cada hilo para que la aplicación sea segura para hilos.</p>
+<p class="Pp">Estrictamente hablando, se permite aún más. Puede asignar la misma pila no nula a un contexto de coincidencia que es utilizado por cualquier número de patrones, siempre que no se utilicen para coincidencias por múltiples hilos al mismo tiempo. Por ejemplo, podría usar la misma pila en todos los patrones compilados, con un mutex global en la devolución de llamada para esperar hasta que la pila esté disponible para su uso. Sin embargo, esta es una solución ineficiente y no se recomienda.</p>
+<p class="Pp">Esta es una sugerencia sobre cómo podría operar un programa multihilo que necesita configurar pilas JIT no predeterminadas:</p>
+<p class="Pp">
+<br/>
+Durante la inicialización del hilo
+<br/>
+thread_local_var = pcre2_jit_stack_create(...)</p>
+<p class="Pp">
+<br/>
+Durante la salida del hilo
+<br/>
+pcre2_jit_stack_free(thread_local_var)</p>
+<p class="Pp">
+<br/>
+Use una función de devolución de llamada de una línea
+<br/>
+return thread_local_var</p>
+<p class="Pp">Todas las funciones descritas en esta sección no hacen nada si JIT no está disponible.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PREGUNTAS_FRECUENTES_SOBRE_PILAS_JIT">PREGUNTAS FRECUENTES SOBRE PILAS JIT</h1>
+<p class="Pp">(1) ¿Por qué necesitamos pilas JIT?</p>
+<p class="Pp">PCRE2 (y JIT) es un motor recursivo de búsqueda en profundidad, por lo que necesita una pila donde se apilen los datos locales del nodo actual antes de comprobar sus nodos hijos. Asignar una pila de máquina real en algunas plataformas es difícil. Por ejemplo, la cadena de pilas necesita actualizarse cada vez si extendemos la pila en PowerPC. Aunque es posible, el tiempo de sobrecarga de su actualización disminuye el rendimiento. Por lo tanto, realizamos la recursión en memoria.</p>
+<p class="Pp">(2) ¿Por qué no asignamos simplemente bloques de memoria con <b>malloc()</b>?</p>
+<p class="Pp">Los sistemas operativos modernos tienen una buena característica: pueden reservar un espacio de direcciones en lugar de asignar memoria. Podemos asignar de forma segura páginas de memoria dentro de este espacio de direcciones, por lo que la pila podría crecer sin mover los datos de memoria (esto es importante debido a los punteros). Por lo tanto, podemos asignar un espacio de direcciones de 1MiB y usar solo una página de memoria (generalmente 4KiB) si eso es suficiente. Sin embargo, aún podemos crecer hasta 1MiB en cualquier momento si es necesario.</p>
+<p class="Pp">(3) ¿Quién &quot;posee&quot; una pila JIT?</p>
+<p class="Pp">El propietario de la pila es el programa de usuario, no el patrón estudiado JIT ni nada más. El programa de usuario debe asegurarse de que si una pila está siendo utilizada por <b>pcre2_match()</b> (es decir, está asignada a un contexto de coincidencia que se pasa al patrón en ejecución), esa pila no debe ser utilizada por ningún otro hilo (para evitar sobrescribir la misma área de memoria). La mejor práctica para programas multihilo es asignar una pila para cada hilo y devolver esta pila a través de la función de devolución de llamada JIT.</p>
+<p class="Pp">(4) ¿Cuándo se debe liberar una pila JIT?</p>
+<p class="Pp">Puede liberar una pila JIT en cualquier momento, siempre que no sea utilizada nuevamente por <b>pcre2_match()</b>. Al asignar la pila a un contexto de coincidencia, solo se establece un puntero. No hay conteo de referencias ni ninguna otra magia. Puede liberar patrones compilados, contextos y pilas en cualquier orden, en cualquier momento. Simplemente *no* llame a <b>pcre2_match()</b> con un contexto de coincidencia que apunte a una pila ya liberada, ya que eso causará un SEGFAULT. (Tampoco libere una pila utilizada actualmente por <b>pcre2_match()</b> en otro hilo). También puede reemplazar la pila en un contexto en cualquier momento cuando no esté en uso. Debe liberar la pila anterior antes de asignar un reemplazo.</p>
+<p class="Pp">(5) ¿Debo asignar/liberar una pila cada vez antes/después de llamar a <b>pcre2_match()</b>?</p>
+<p class="Pp">No, porque esto es demasiado costoso en términos de recursos. Sin embargo, podría implementar alguna idea inteligente que libere la pila si no se usa durante, digamos, dos minutos. La devolución de llamada JIT puede ayudar a lograr esto sin mantener una lista de patrones.</p>
+<p class="Pp">(6) De acuerdo, la pila es para la asignación de memoria a largo plazo. ¿Pero qué sucede si un patrón causa un desbordamiento de pila con una pila de 1MiB? ¿Se mantiene ese 1MiB hasta que se libere la pila?</p>
+<p class="Pp">Especialmente en sistemas integrados, puede ser una buena idea liberar memoria a veces sin liberar la pila. Actualmente no hay una API para esto. Probablemente una llamada a una función que devuelva la memoria actualmente asignada para cualquier pila y otra que permita liberar memoria (encoger la pila) sería una buena idea si alguien necesita esto.</p>
+<p class="Pp">(7) Esto es demasiado complicado. ¿No hay una mejor solución para el manejo de pilas JIT?</p>
+<p class="Pp">No, gracias a Windows. Si se usaran hilos POSIX en todas partes, podríamos eliminar esta complicada API.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LIBERACION_DE_MEMORIA_ESPECULATIVA_JIT">LIBERACION DE MEMORIA ESPECULATIVA JIT</h1>
+<pre><b>void pcre2_jit_free_unused_memory(pcre2_general_context *<i>gcontext</i>);</b></pre>
+<p class="Pp">El asignador ejecutable JIT no libera toda la memoria cuando es posible. Espera nuevas asignaciones y mantiene algo de memoria libre para mejorar la velocidad de asignación. Sin embargo, en condiciones de poca memoria, podría ser mejor liberar toda la memoria posible. Puede hacer que esto suceda llamando a pcre2_jit_free_unused_memory(). Su argumento es un contexto general, para administración de memoria personalizada, o NULL para administración de memoria estándar.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CODIGO_DE_EJEMPLO">CODIGO DE EJEMPLO</h1>
+<p class="Pp">Este es un ejemplo de un solo hilo que especifica una pila JIT sin usar una devolución de llamada. Un programa real debería incluir verificación de errores después de todas las llamadas a funciones.</p>
+<p class="Pp">
+<br/>
+int rc;
+<br/>
+pcre2_code *re;
+<br/>
+pcre2_match_data *match_data;
+<br/>
+pcre2_match_context *mcontext;
+<br/>
+pcre2_jit_stack *jit_stack;</p>
+<p class="Pp">
+<br/>
+re = pcre2_compile(pattern, PCRE2_ZERO_TERMINATED, 0,
+<br/>
+&amp;errornumber, &amp;erroffset, NULL);
+<br/>
+rc = pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
+<br/>
+mcontext = pcre2_match_context_create(NULL);
+<br/>
+jit_stack = pcr</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO_DE_CÓDIGO'><a class='permalink' href='#EXAMPLE_CODE'>CÓDIGO DE EJEMPLO</a></h1>
+<p class="Pp">Aquí hay un ejemplo de cómo se usa la interfaz JIT. Se compila un patrón con la opción
+  <code class="Nm">PCRE2_JIT_COMPLETE</code>, se crea un contexto de JIT, se crea una pila JIT y se usa la función
+  <code class="Nm">pcre2_match()</code> para realizar la coincidencia. Tenga en cuenta que la coincidencia JIT se usa
+  automáticamente cuando está disponible y se especifica <code class="Nm">PCRE2_JIT_COMPLETE</code> o
+  <code class="Nm">PCRE2_JIT_PARTIAL</code> en las opciones de compilación.</p>
+<pre>
+  re = pcre2_compile(pattern, PCRE2_JIT_COMPLETE, &amp;errorcode, &amp;erroroffset, NULL);
+  if (re == NULL) {
+    /* Handle compilation error */
+    return 1;
+  }
+  mcontext = pcre2_match_context_create(NULL);
+  jit_stack = pcre2_jit_stack_create(32*1024, 512*1024, NULL);
+  pcre2_jit_stack_assign(mcontext, NULL, jit_stack);
+  match_data = pcre2_match_data_create(re, 10);
+  rc = pcre2_match(re, subject, length, 0, 0, match_data, mcontext);
+  /* Procesar resultado */</pre>
+<p class="Pp"><br/></p>
+<pre>
+  pcre2_code_free(re);
+  pcre2_match_data_free(match_data);
+  pcre2_match_context_free(mcontext);
+  pcre2_jit_stack_free(jit_stack);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='API_DE_RUTA_RÁPIDA_JIT'><a class='permalink' href='#JIT_FAST_PATH_API'>API DE RUTA RÁPIDA JIT</a></h1>
+<p class="Pp">Debido a que la API descrita anteriormente recurre a la coincidencia interpretada cuando JIT no está disponible, es conveniente para programas que están escritos para uso general en muchos entornos. Sin embargo, llamar a JIT a través de <b>pcre2_match()</b> tiene un impacto en el rendimiento. Los programas que están escritos para ser utilizados donde se sabe que JIT está disponible, y que necesitan el mejor rendimiento posible, pueden usar en su lugar una API de "ruta rápida" para llamar a la coincidencia JIT directamente en lugar de llamar a <b>pcre2_match()</b> (obviamente solo para patrones que han sido procesados con éxito por <b>pcre2_jit_compile()</b>).</p>
+<p class="Pp">La función de ruta rápida se llama <b>pcre2_jit_match()</b> y toma exactamente los mismos argumentos que <b>pcre2_match()</b>. Sin embargo, la cadena del sujeto debe especificarse con una longitud; PCRE2_ZERO_TERMINATED no es compatible. Los bits de opción no admitidos (por ejemplo, PCRE2_ANCHORED y PCRE2_ENDANCHORED) se ignoran, al igual que la opción PCRE2_NO_JIT. Los valores de retorno también son los mismos que para <b>pcre2_match()</b>, más PCRE2_ERROR_JIT_BADOPTION si se solicita un modo de coincidencia (parcial o completo) que no se compiló.</p>
+<p class="Pp">Cuando llama a <b>pcre2_match()</b>, además de verificar las opciones inválidas, se realizan una serie de otras comprobaciones de cordura en los argumentos. Por ejemplo, si el puntero del sujeto es NULL pero la longitud es distinta de cero, se produce un error inmediato. Además, a menos que se establezca PCRE2_NO_UTF_CHECK, se prueba la validez de una cadena de sujeto UTF. En aras de la velocidad, estas comprobaciones no ocurren en la ruta rápida JIT. Si se pasan datos UTF inválidos cuando no se estableció PCRE2_MATCH_INVALID_UTF para <b>pcre2_compile()</b>, el resultado no está definido. El programa puede fallar, entrar en un bucle o dar resultados incorrectos. En ausencia de PCRE2_MATCH_INVALID_UTF, debe llamar a <b>pcre2_jit_match()</b> en modo UTF solo si está seguro de que el sujeto es válido.</p>
+<p class="Pp">Omitir las comprobaciones de cordura y el envoltorio de <b>pcre2_match()</b> puede proporcionar mejoras de velocidad de más del 10%.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/pcre2api.3.en'>pcre2api(3)</a>, <a href='/man/pcre2unicode.3.en'>pcre2unicode(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<pre>Philip Hazel (FAQ de Zoltan Herczeg)
+Retirado del Servicio de Computación de la Universidad
+Cambridge, Inglaterra.</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REVISIÓN'><a class='permalink' href='#REVISION'>REVISIÓN</a></h1>
+<pre>Última actualización: 22 de agosto de 2024
+Copyright (c) 1997-2024 Universidad de Cambridge.</pre>
+</section>
+</section>

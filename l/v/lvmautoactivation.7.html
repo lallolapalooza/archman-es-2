@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>lvmautoactivation(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">lvmautoactivation(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LVMAUTOACTIVATION(7)</td>
+    <td class="head-vol">Manual de Información Miscelánea</td>
+    <td class="head-rtitle">LVMAUTOACTIVATION(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">lvmautoactivation &#x2014; Autoactivación de LVM</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La autoactivación es la activación de los LVs realizada automáticamente
+    por el sistema en respuesta a la conexión de dispositivos LVM a la máquina.
+    Cuando todos los PVs en un VG están conectados, el VG está completo y los LVs
+    en el VG se activan.</p>
+<p class="Pp">Se puede evitar la autoactivación de VGs, o LVs específicos, usando
+    vgchange o lvchange --setautoactivation&#x00A0;n. La opción
+    <b>auto_activation_volume_list</b> de <a href='/man/lvm.conf.5.en'>lvm.conf(5)</a>
+    es otra forma de limitar la autoactivación.</p>
+<section class="Ss">
+<h2 class="Ss" id='event_autoactivation'><a class='permalink' href='#event_autoactivation'>autoactivación basada en eventos</a></h2>
+<p class="Pp">La autoactivación de LVM está basada en &quot;eventos&quot;, en la que los
+    VGs completos se activan en respuesta a uevents que ocurren durante el inicio
+    del sistema o en cualquier momento posterior al inicio del sistema. Una forma
+    antigua de autoactivación era &quot;estática&quot;, en la que los VGs completos
+    se activaban en un punto fijo durante el inicio del sistema por un servicio
+    de systemd, y no en respuesta a eventos.</p>
+<p class="Pp">La autoactivación basada en eventos es impulsada por udev, las reglas
+    de udev y systemd. Cuando un dispositivo se conecta a una máquina, se genera
+    un uevent por el kernel para notificar al espacio de usuario del nuevo
+    dispositivo. systemd-udev ejecuta las reglas de udev para procesar el nuevo
+    dispositivo. Las reglas de udev utilizan blkid para identificar el dispositivo
+    como un PV de LVM y luego ejecutan la regla de udev específica de LVM para el
+    dispositivo, lo que desencadena la autoactivación.</p>
+<p class="Pp">Existen dos variaciones de autoactivación basada en eventos que pueden
+    ser utilizadas en un sistema, dependiendo de la regla de udev de LVM que se
+    instale (que se encuentra en <i>/lib/udev/rules.d/</i>). Lo siguiente resume
+    los pasos en cada regla que conducen a la autoactivación:</p>
+<p class="Pp"><b>69-dm-lvm-metad.rules</b></p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>se conecta el dispositivo /dev/nombre con mayor:menor X:Y a la máquina</dd>
+  <dt>&#x2022;</dt>
+  <dd>systemd/udev ejecuta blkid para identificar /dev/nombre como un PV de LVM</dd>
+  <dt>&#x2022;</dt>
+  <dd>la regla de udev 69-dm-lvm-metad.rules se ejecuta para /dev/nombre</dd>
+  <dt>&#x2022;</dt>
+  <dd>la regla de udev de LVM ejecuta el servicio systemd lvm2-pvscan@X:Y.service</dd>
+  <dt>&#x2022;</dt>
+  <dd>el servicio lvm2-pvscan ejecuta:
+    <br/>
+    pvscan --cache -aay --major X --minor Y</dd>
+  <dt>&#x2022;</dt>
+  <dd>pvscan lee el dispositivo, registra que el PV está en línea (ver
+      pvs_online), y comprueba si el VG está completo.</dd>
+  <dt>&#x2022;</dt>
+  <dd>si el VG está completo, pvscan crea el archivo temporal vgs_online y
+      activa el VG.</dd>
+  <dt>&#x2022;</dt>
+  <dd>la salida del comando de activación se puede ver desde systemctl status
+      lvm2-pvscan*</dd>
+</dl>
+<p class="Pp"><b>69-dm-lvm.rules</b></p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>se conecta el dispositivo /dev/nombre con mayor:menor X:Y a la máquina</dd>
+  <dt>&#x2022;</dt>
+  <dd>systemd/udev ejecuta blkid para identificar /dev/nombre como un PV de LVM</dd>
+  <dt>&#x2022;</dt>
+  <dd>la regla de udev 69-dm-lvm.rules se ejecuta para /dev/nombre</dd>
+  <dt>&#x2022;</dt>
+  <dd>la regla de udev de LVM ejecuta:
+    <br/>
+    pvscan --cache --listvg --checkcomplete --vgonline --autoactivation event
+      --udevoutput --journal=output /dev/nombre</dd>
+  <dt>&#x2022;</dt>
+  <dd>pvscan lee el dispositivo, registra que el PV está en línea (ver
+      pvs_online), y comprueba si el VG está completo.</dd>
+  <dt>&#x2022;</dt>
+  <dd>si el VG está completo, pvscan crea el archivo temporal vgs_online e
+      imprime el nombre del VG para que la regla de udev lo importe:
+      LVM_VG_NAME_COMPLETE='nombre_vg'</dd>
+  <dt>&#x2022;</dt>
+  <dd>si la regla de udev de LVM ve LVM_VG_NAME_COMPLETE de pvscan, activa el VG
+      usando un servicio transitorio de systemd llamado
+      lvm-activate-&lt;nombre_vg&gt;.</dd>
+  <dt>&#x2022;</dt>
+  <dd>el servicio lvm-activate-&lt;nombre_vg&gt; ejecuta
+    <br/>
+    vgchange -aay --autoactivation event &lt;nombre_vg&gt;</dd>
+  <dt>&#x2022;</dt>
+  <dd>la salida del comando de activación se puede ver desde journalctl -u
+      lvm-activate-&lt;nombre_vg&gt;</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='pvscan_options'><a class='permalink' href='#pvscan_options'>Opciones de pvscan</a></h2>
+<dl class="Bl-tag">
+  <dt id="cache"><a class="permalink" href="#cache"><b>--cache</b></a></dt>
+  <dd>Lee el argumento &lt;device&gt; (y solo ese dispositivo), y registra que el PV
+      está en línea creando el archivo <i>/run/lvm/pvs_online/&lt;pvid&gt;</i> que
+      contiene el nombre del VG y la información del dispositivo para el PV.</dd>
+  <dt id="aay"><a class="permalink" href="#aay"><b>-aay</b></a></dt>
+  <dd>Activa el VG desde el comando pvscan (incluye implícitamente --checkcomplete
+      y --vgonline).</dd>
+  <dt id="checkcomplete"><a class="permalink" href="#checkcomplete"><b>--checkcomplete</b></a></dt>
+  <dd>Comprueba si el VG está completo, es decir, si todos los PVs están presentes
+      en el sistema, comprobando los archivos de
+      <i>/run/lvm/pvs_online/&lt;pvid&gt;</i>.</dd>
+  <dt id="vgonline"><a class="permalink" href="#vgonline"><b>--vgonline</b></a></dt>
+  <dd>Crea <i>/run/lvm/vgs_online/&lt;nombre_vg&gt;</i> si el VG está completo
+      (se usa para asegurar que solo un comando realice la activación).</dd>
+  <dt id="autoactivation"><a class="permalink" href="#autoactivation"><b>--autoactivation
+    event</b></a></dt>
+  <dd>Informa al comando que se utiliza para la autoactivación basada en
+      eventos.</dd>
+  <dt id="listvg"><a class="permalink" href="#listvg"><b>--listvg</b></a></dt>
+  <dd>Imprime el nombre del VG usando el dispositivo.</dd>
+  <dt id="udevoutput"><a class="permalink" href="#udevoutput"><b>--udevoutput</b></a></dt>
+  <dd>Solo imprime la salida que puede ser importada por la regla de udev, usando
+      el formato de clave de entorno de udev, es decir, NOMBRE='valor'.</dd>
+  <dt id="journal=output"><a class="permalink" href="#journal=output"><b>--journal=output</b></a></dt>
+  <dd>Envía la salida estándar del comando al journal (cuando stdout está reservado
+      para la salida de udev).</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='run_files'><a class='permalink' href='#run_files'>Archivos en /run</a></h2>
+<p class="Pp">Los comandos de autoactivación utilizan una serie de archivos temporales
+    en <i>/run/lvm</i> (con la expectativa de que se borren entre reinicios).</p>
+<dl class="Bl-tag">
+  <dt id="pvs_online"><a class="permalink" href="#pvs_online"><b>pvs_online</b></a></dt>
+  <dd>pvscan --cache crea un archivo aquí para cada PV que se conecta. El archivo
+      se nombra con el PVID y contiene el nombre del VG y la información del
+      dispositivo. La existencia del archivo se utiliza para determinar cuándo
+      están presentes todos los PVs de un VG dado. La información del dispositivo
+      en estos archivos también se utiliza para optimizar la localización de los
+      dispositivos para un VG cuando se activa el VG.</dd>
+  <dt id="pvs_lookup"><a class="permalink" href="#pvs_lookup"><b>pvs_lookup</b></a></dt>
+  <dd>pvscan --cache crea un archivo aquí nombrado para un VG (si aún no existe).
+      El archivo contiene una lista de PVIDs en el VG. Esto es necesario cuando se
+      procesa un PV que no tiene metadatos de VG, en cuyo caso la lista de PVIDs
+      del archivo de búsqueda se utiliza para comprobar si el VG está
+      completo.</dd>
+  <dt id="vgs_online"><a class="permalink" href="#vgs_online"><b>vgs_online</b></a></dt>
+  <dd>El primer comando de activación (pvscan o vgchange) que cree un archivo aquí,
+      nombrado para el VG, activará el VG. Esto resuelve una condición de carrera
+      cuando comandos concurrentes intentan activar un VG al mismo tiempo.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='static_autoactivation'><a class='permalink' href='#static_autoactivation'>autoactivación estática</a></h2>
+<p class="Pp">lvm ya no proporciona un método de autoactivación estática.
+    Establecer event_activation=0 todavía deshabilita la autoactivación basada en
+    eventos. ADVERTENCIA: deshabilitar la activación de eventos sin una
+    alternativa puede impedir que un sistema arranque. Se podría escribir un
+    servicio systemd personalizado para ejecutar la autoactivación durante el
+    arranque del sistema, en cuyo caso deshabilitar la autoactivación de eventos
+    puede ser útil.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='lvm.conf_filter'><a class='permalink' href='#lvm.conf_filter'>Filtro de lvm.conf</a></h2>
+<p class="Pp">Se pueden usar enlaces simbólicos de dispositivos de <i>/dev/disk/</i>
+    en el filtro de <a href='/man/lvm.conf.5.en'>lvm.conf(5)</a> para protegerse
+    contra cambios en los nombres de dispositivos del kernel. Los prefijos
+    <i>/dev/disk/by-path/</i> o <i>/dev/disk/by-id/</i> deben incluirse en los
+    nombres de filtro; estos prefijos ayudan a lvm a detectar que se utilizan
+    nombres de enlaces simbólicos. Los filtros que contienen enlaces simbólicos
+    requieren una coincidencia especial por parte de los comandos ejecutados en la
+    regla de udev de lvm.</p>
+<p class="Pp">Se recomiendan enlaces simbólicos comunes, por ejemplo, que comienzan
+    con wwn-, scsi-, pci-, o lvm-pv-uuid-. Los enlaces simbólicos poco comunes o
+    personalizados creados por reglas de udev personalizadas pueden ser menos
+    fiables. Si una regla de udev personalizada crea enlaces simbólicos utilizados
+    en el filtro de lvm, entonces la regla de udev debe iniciarse antes que la regla
+    de lvm.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EJEMPLOS</a></h1>
+<p class="Pp">El VG &quot;vg&quot; contiene dos PVs:</p>
+<pre># pvs -o name,vgname,uuid /dev/sdb /dev/sdc
+&#x00A0; PV         VG PV UUID
+&#x00A0; /dev/sdb   vg 1uKpaT-lFOZ-NLHX-j4jI-OBi1-QpdE-HZ5hZY
+&#x00A0; /dev/sdc   vg 5J3tM8-aIPe-2vbd-DBe7-bvRq-TGj0-DaKV2G</pre>
+<p class="Pp">uso de --cache:</p>
+<pre># pvscan --cache /dev/sdb
+&#x00A0; pvscan[12922] PV /dev/sdb online.
+# pvscan --cache /dev/sdc
+&#x00A0; pvscan[12923] PV /dev/sdc online.</pre>
+<pre># cat /run/lvm/pvs_online/1uKpaTlFOZNLHXj4jIOBi1QpdEHZ5hZY
+8:16
+vg:vg
+dev:/dev/sdb
+# cat /run/lvm/pvs_online/5J3tM8aIPe</pre>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<html>
+    <head>
+        <meta charset='utf-8'>
+        <title>pvcreate(8) — archlinux</title>
+        <link rel='stylesheet' href='/style.css'>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+                <section class='Sh'>
+                    <h1 class='Sh' id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+                    <p class='Nm'>pvcreate — create a new physical volume</p>
+                </section>
+                <section class='Sh'>
+                    <h1 class='Sh' id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+                    <pre class='Nd'><b>pvcreate</b> [<i>options</i>] [<i>physicalvolume[s]</i>]</pre>
+                </section>
+                <section class='Sh'>
+                    <h1 class='Sh' id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+                    <p class='Nd'>Creates a Linux LVM 2 physical volume. This command initializes the specified
+                        device or whole disk for use by LVM. The device is marked with a partition
+                        type 0x8e (Linux LVM) although it can be a whole disk.</p>
+                    <p class='Nd'>The initial part of the device is overwritten to mark it as a physical
+                        volume. Use `pvremove(8)` to remove this initial marking.</p>
+                    <p class='Nd'>The size of the device is scanned and then stored in the LVM metadata
+                        area.</p>
+                    <p class='Nd'>If the device already contains an LVM physical volume, then the command
+                        fails unless the <b>--force</b> option is specified.</p>
+                    <p class='Nd'>If the device is a whole disk (e.g. `/dev/sda`), then LVM creates a partition
+                        of type 0x8e (Linux LVM) and places the metadata there. If the disk already
+                        has partitions, then the command fails unless the <b>--force</b> option is
+                        specified.</p>
+                    <p class='Nd'>If the device is a partition (e.g. `/dev/sda1`), then LVM creates the
+                        physical volume on that partition. If the partition already contains
+                        data, then the command fails unless the <b>--force</b> option is
+                        specified.</p>
+                    <p class='Nd'>The <b>--force</b> option should be used with caution, as it overwrites
+                        existing data and metadata. It can also be used to initialize a device
+                        that has remnants of an old LVM installation.</p>
+                    <p class='Nd'>For whole disk devices, LVM creates a single partition of type 0x8e (Linux
+                        LVM) spanning the entire disk and initializes it as a physical volume.
+                        This is the recommended way to use whole disks.</p>
+                </section>
+                <section class='Sh'>
+                    <h1 class='Sh' id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+                    <p class='Nd'>The following options are available:</p>
+                    <dl class='Sx'>
+                        <dt><b>--force</b></dt>
+                        <dd>Force the creation of the physical volume, even if the device already
+                            contains data or an LVM metadata area. Use with caution!</dd>
+                        <dt><b>-M</b>, <b>--metadata</b> <i>format</i></dt>
+                        <dd>Set the metadata format. Default is <b>lvm1</b>. For LVM 2, use <b>lvm2</b>.</dd>
+                        <dt><b>-y</b>, <b>--yes</b></dt>
+                        <dd>Assume “yes” to all questions. This can be used to automate the process.
+                            When using this option, LVM will not prompt for confirmation before
+                            creating the physical volume.</dd>
+                        <dt><b>--dataalignment</b> <i>offset</i></dt>
+                        <dd>Set the data alignment offset in bytes. If not specified, LVM uses the
+                            default value, which is usually 0 or 32 KiB, depending on the
+                            system.</dd>
+                        <dt><b>--metadatatype</b> <i>type</i></dt>
+                        <dd>Set the metadata type. Default is <b>lvm2</b>. Other supported types are
+                            <b>lvm1</b>.</dd>
+                        <dt><b>--metadatasize</b> <i>size</i></dt>
+                        <dd>Set the size of the metadata area in kilobytes. Default is 2048.</dd>
+                        <dt><b>--physicalvolumesize</b> <i>size</i></dt>
+                        <dd>Set the size of the physical volume in kilobytes. If not specified, the
+                            entire device is used.</dd>
+                        <dt><b>--uuid</b> <i>uuid</i></dt>
+                        <dd>Set the UUID of the physical volume. If not specified, a new UUID is
+                            generated.</dd>
+                        <dt><b>--longignore</b></dt>
+                        <dd>Ignore LVM metadata on the specified device. This option is useful when
+                            you want to use a device that may have LVM metadata on it but you
+                            don't want LVM to recognize it. This option is typically used with
+                            the <b>--force</b> option.</dd>
+                    </dl>
+                </section>
+                <section class='Sh'>
+                    <h1 class='Sh' id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EXAMPLES</a></h1>
+                    <pre># pvcreate /dev/sdb
+&#x00A0; Physical volume &quot;/dev/sdb&quot; successfully created.
+&#x00A0; You may need to run `pvscan --cache` to update the cache.</pre>
+                    <pre># pvcreate --force /dev/sdc
+&#x00A0; Physical volume &quot;/dev/sdc&quot; successfully created.</pre>
+                    <pre># pvcreate -M lvm2 -y /dev/sdd
+&#x00A0; Physical volume &quot;/dev/sdd&quot; successfully created.</pre>
+                    <pre># pvcreate --metadatasize 32768 /dev/sde
+&#x00A0; Physical volume &quot;/dev/sde&quot; successfully created.</pre>
+                    <pre># pvcreate --physicalvolumesize 102400 /dev/sdf
+&#x00A0; Physical volume &quot;/dev/sdf&quot; successfully created.</pre>
+                    <p class='Pp'>Create a physical volume on the first partition of the first SCSI
+                        disk:</p>
+                    <pre># pvcreate /dev/sda1</pre>
+                    <p class='Pp'>Create a physical volume on the entire first SCSI disk. LVM will create
+                        a partition of type 0x8e and initialize it:</p>
+                    <pre># pvcreate /dev/sda</pre>
+                    <p class='Pp'>Force creation of a physical volume on a disk that might already contain
+                        LVM metadata:</p>
+                    <pre># pvcreate --force /dev/sda</pre>
+                    <p class='Pp'>Create a physical volume with a specific UUID:</p>
+                    <pre># pvcreate --uuid 12345678-1234-1234-1234-123456789012 /dev/sdb</pre>
+                </section>
+                <section class='Sh'>
+                    <h1 class='Sh' id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE ALSO</a></h1>
+                    <p class='Pp'><a href='/man/lvm.8.en'>lvm(8)</a>, <a href='/man/lvm.conf.5.en'>lvm.conf(5)</a>, <a href='/man/pvremove.8.en'>pvremove(8)</a>, <a href='/man/pvscan.8.en'>pvscan(8)</a></p>
+                </section>
+            </article>
+            <aside id='sidebar'>
+                <section class='search'>
+                    <form action='/search' class='search direct-search' role='search'>
+                        <input type='search' placeholder='Search manual page' name='q' value='' />
+                        <input type='submit' name='go' value='Go' />
+                    </form>
+                </section>
+                <section class='package-info'>
+                    <p>Package information:</p>
+                    <dl>
+                        <dt>Package name:</dt>
+                        <dd><a href='https://www.archlinux.org/packages/core/x86_64/lvm2/'>core/lvm2</a></dd>
+                        <dt>Version:</dt>
+                        <dd>2.03.37-1</dd>
+                        <dt>Upstream:</dt>
+                        <dd><a href='https://sourceware.org/lvm2/'>https://sourceware.org/lvm2/</a></dd>
+                        <dt>Licenses:</dt>
+                        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+                        <dt>Manuals:</dt>
+                        <dd><a href='/listing/core/lvm2/'>/listing/core/lvm2/</a></dd>
+                    </dl>
+                </section>
+                <details>
+                    <summary>Table of contents</summary>
+                    <nav class='toc'>
+                        <ul>
+                            <li><a href='#NAME'>NAME</a></li>
+                            <li><a href='#SYNOPSIS'>SYNOPSIS</a></li>
+                            <li><a href='#DESCRIPTION'>DESCRIPTION</a></li>
+                            <li><a href='#OPTIONS'>OPTIONS</a></li>
+                            <li><a href='#EXAMPLES'>EXAMPLES</a></li>
+                            <li><a href='#SEE_ALSO'>SEE ALSO</a></li>
+                        </ul>
+                    </nav>
+                </details>
+                <nav class='other-formats'>
+                    <p>Other formats:
+                        <a href='/man/pvcreate.8.en.txt'>txt</a>,
+                        <a href='/man/pvcreate.8.en.raw'>raw</a>
+                    </p>
+                </nav>
+            </aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href='https://www.gnu.org/licenses/gpl-3.0.en.html'>GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

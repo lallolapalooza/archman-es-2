@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>lvmvdo(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">lvmvdo(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/lvm2/">lvm2</a></p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LVMVDO(7)</td>
+    <td class="head-vol">Información Miscelánea Manual</td>
+    <td class="head-rtitle">LVMVDO(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">lvmvdo — Soporte para Virtual Data Optimizer en LVM</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">VDO es un software que proporciona deduplicación en línea a nivel de
+    bloque, compresión y capacidades de aprovisionamiento fino para almacenamiento
+    primario.</p>
+<p class="Pp">La deduplicación es una técnica para reducir el consumo de
+    recursos de almacenamiento eliminando copias múltiples de bloques duplicados.
+    La compresión toma los bloques únicos individuales y los reduce. Estos bloques
+    reducidos se empaquetan eficientemente en bloques físicos.</p>
+<p class="Pp">Con la deduplicación, en lugar de escribir los mismos datos más de
+    una vez, VDO detecta y registra cada bloque duplicado como una referencia al
+    bloque original. VDO mantiene un mapeo de Direcciones de Bloque Lógicas (LBA)
+    (utilizadas por la capa de almacenamiento por encima de VDO) a direcciones de
+    bloque físicas (utilizadas por la capa de almacenamiento por debajo de VDO).
+    Después de la deduplicación, múltiples direcciones de bloque lógicas pueden
+    mapearse a la misma dirección de bloque física; estos se llaman bloques
+    compartidos y son contados por referencia por el software.</p>
+<p class="Pp">Con la compresión, VDO comprime múltiples bloques (o bloques
+    compartidos) con el algoritmo rápido LZ4, y los agrupa donde sea posible para
+    que múltiples bloques comprimidos quepan dentro de un bloque de 4 KB en el
+    almacenamiento subyacente. El mapeo de LBA es a una dirección de bloque física
+    y un índice dentro de él para los datos comprimidos deseados. Todos los bloques
+    comprimidos se cuentan individualmente por referencia para garantizar la
+    corrección.</p>
+<p class="Pp">El compartir bloques y la compresión de bloques son invisibles para
+    las aplicaciones que usan el almacenamiento, que leen y escriben bloques como lo
+    harían si VDO no estuviera presente. Cuando se sobrescribe un bloque compartido,
+    se asigna un nuevo bloque físico para almacenar los nuevos datos del bloque,
+    asegurando que otras direcciones de bloque lógicas que se mapean al bloque
+    físico compartido no se modifiquen.</p>
+<p class="Pp">Para usar VDO con <a href='/man/lvm.8.en'>lvm(8)</a>, debes instalar las
+    herramientas estándar de espacio de usuario de VDO <a href='/man/vdoformat.8.en'>vdoformat(8)</a> y el
+    módulo del kernel "<i>dm_vdo</i>" (Para kernels más antiguos &lt;6.9 es
+    necesario el módulo VDO externo al árbol del kernel "<i>kvdo</i>").</p>
+<p class="Pp">El módulo del kernel implementa virtualización de almacenamiento de
+    grano fino, aprovisionamiento fino, compartir bloques, compresión e
+    identificación de duplicados eficiente en memoria. Las herramientas de espacio
+    de usuario incluyen <a href='/man/vdostats.8.en'>vdostats(8)</a> para extraer estadísticas
+    de los volúmenes VDO.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TÉRMINOS_VDO'><a class='permalink' href='#TÉRMINOS_VDO'>TÉRMINOS VDO</a></h1>
+<dl class="Bl-tag">
+  <dt id="VDODataLV"><a class="permalink" href="#VDODataLV"><b>VDODataLV</b></a></dt>
+  <dd>El LV de datos de VDO es un LV oculto grande con el sufijo _vdata. Se crea en
+      un VG utilizado por el destino del kernel VDO para almacenar todos los
+      bloques de datos y metadatos.</dd>
+  <dt id="VDOPoolLV"><a class="permalink" href="#VDOPoolLV"><b>VDOPoolLV</b></a></dt>
+  <dd>El LV de pool de VDO es un pool para VDOLV(s) virtuales, que tienen el
+      tamaño de VDODataLV utilizado. Actualmente solo se admite un VDOLV.</dd>
+  <dt id="VDOLV"><a class="permalink" href="#VDOLV"><b>VDOLV</b></a></dt>
+  <dd>El LV de VDO es un LV virtual creado a partir de VDOPoolLV. Aparece vacío
+      después de la creación.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_VDO'><a class='permalink' href='#USO_VDO'>USO VDO</a></h1>
+<p class="Pp">Los métodos principales para usar VDO con lvm2:</p>
+<section class="Ss">
+<h2 class="Ss" id='1._Crear_un_VDOPoolLV_y_un_VDOLV'><a class='permalink' href='#1._Crear_un_VDOPoolLV_y_un_VDOLV'>1. Crear un VDOPoolLV y un VDOLV</a></h2>
+<p class="Pp">Crea un VDOPoolLV que contendrá datos VDO, y un VDOLV de tamaño
+    virtual que el usuario puede usar. Si no especificas el tamaño virtual, el
+    VDOLV se crea con el tamaño máximo que siempre cabe en el volumen de datos,
+    incluso si no se puede realizar deduplicación o compresión (es decir, puede
+    contener el contenido incompresible de /dev/urandom). Si no especificas el
+    nombre de VDOPoolLV, se toma de la secuencia vpool0, vpool1, ...</p>
+<p class="Pp">Nota: El rendimiento de las operaciones TRIM/Discard es lento para
+    volúmenes grandes de tipo VDO. Por favor, intente evitar enviar solicitudes de
+    descarga a menos que sea necesario, ya que puede llevar una cantidad considerable
+    de tiempo completar la operación de descarga.</p>
+<p class="Pp"><b>lvcreate --type vdo -n</b> <i>VDOLV</i> <b>-L</b>
+    <i>TamañoDatos</i> <b>-V</b> <i>TamañoVirtualGrande VG/VDOPoolLV</i>
+  <br/>
+  <b>lvcreate --vdo -L</b> <i>TamañoDatos VG</i></p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type vdo -n vdo0 -L 10G -V 100G vg/vdopool0
+# mkfs.ext4 -E nodiscard /dev/vg/vdo0</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='2._Convertir_un_LV_existente_en_VDOPoolLV'><a class='permalink' href='#2._Convertir_un_LV_existente_en_VDOPoolLV'>2. Convertir un LV existente en VDOPoolLV</a></h2>
+<p class="Pp">Convierte un LV ya creado o existente en un VDOPoolLV, que es un
+    volumen que puede contener datos y metadatos. Se le pedirá que confirme dicha
+    conversión ya que <b>DESTRUYE IRREVERSIBLEMENTE</b> el contenido de dicho
+    volumen y el volumen se formatea inmediatamente con <a href='/man/vdoformat.8.en'>vdoformat(8)</a> como un
+    volumen de datos de pool VDO. Puede especificar el tamaño virtual del VDOLV
+    asociado con este VDOPoolLV. Si no especifica el tamaño virtual, se
+    establecerá al tamaño máximo que pueda contener datos incompresibles al
+    100%.</p>
+<p class="Pp"><b>lvconvert --type vdo-pool -n</b> <i>VDOLV</i> <b>-V</b>
+    <i>TamañoVirtual VG/VDOPoolLV</i>
+  <br/>
+  <b>lvconvert --vdopool</b> <i>VG/VDOPoolLV</i></p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvconvert --type vdo-pool -n vdo0 -V10G vg/ExistingLV</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='3._Cambiar_la_compresión_y_deduplicación_de_un_VDOPoolLV'><a class='permalink' href='#3._Cambiar_la_compresión_y_deduplicación_de_un_VDOPoolLV'>3. Cambiar la compresión y deduplicación de un VDOPoolLV</a></h2>
+<p class="Pp">Desactiva o activa la compresión y deduplicación para VDOPoolLV
+    (el volumen que mantiene todos los VDO LV asociados a él).</p>
+<p class="Pp"><b>lvchange --compression</b> <b>s</b>|<b>n</b>
+    <b>--deduplication</b> <b>s</b>|<b>n</b> <i>VG/VDOPoolLV</i></p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvchange --compression n  vg/vdopool0
+# lvchange --deduplication s vg/vdopool1</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='4._Cambiar_la_configuración_predeterminada_usada_para_crear_un_VDOPoolLV'><a class='permalink' href='#4._Cambiar_la_configuración_predeterminada_usada_para_crear_un_VDOPoolLV'>4. Cambiar la configuración predeterminada usada para crear un VDOPoolLV</a></h2>
+<p class="Pp">VDO permite establecer una gran variedad de opciones. Muchas de estas
+    configuraciones se pueden especificar en lvm.conf o en la configuración de
+    perfiles. Puede preparar una serie de perfiles diferentes en el directorio
+    <i>/etc/lvm/profile</i> y simplemente especificar el nombre del archivo de
+    perfil. Consulte la salida de <b>lvmconfig --type default --withcomments</b>
+    para obtener una descripción detallada de cada configuración individual de
+    VDO.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># cat &lt;&lt;EOF &gt; /etc/lvm/profile/vdo_create.profile
+allocation {</pre>
+<div class="Bd-indent">
+<pre>vdo_use_compression=1
+vdo_use_deduplication=1
+vdo_minimum_io_size=4096
+vdo_block_map_cache_size_mb=128
+vdo_block_map_period=16380
+vdo_use_sparse_index=0
+vdo_index_memory_size_mb=256
+vdo_slab_size_mb=2048
+vdo_ack_threads=1
+vdo_bio_threads=1
+vdo_bio_rotation=64
+vdo_cpu_threads=2
+vdo_hash_zone_threads=1
+vdo_logical_threads=1
+vdo_physical_threads=1
+vdo_max_discard=1</pre>
+</div>
+<pre>}
+EOF</pre>
+<pre># lvcreate --vdo -L10G --metadataprofile vdo_create vg/vdopool0
+# lvcreate --vdo -L10G --config 'allocation/vdo_cpu_threads=4' vg/vdopool1</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='5._Establecer_o_cambiar_configuraciones_de_VDO_con_la_opción_--vdosettings'><a class='permalink' href='#5._Establecer_o_cambiar_configuraciones_de_VDO_con_la_opción_--vdosettings'>5. Establecer o cambiar configuraciones de VDO con la opción --vdosettings</a></h2>
+<p class="Pp">Utilice el formato 'opción=valor' o 'opción1=valor opción2=valor', o
+    repita --vdosettings para cada opción que se va a establecer. Las opciones se
+    enumeran en la sección de Ejemplo anterior, para obtener la descripción
+    completa consulte <a href='/man/lvm.conf.5.en'>lvm.conf(5)</a>. Las opciones pueden omitir los
+    prefijos 'vdo_' y 'vdo_use_' y todos sus guiones bajos. Así, por ejemplo,
+    vdo_use_deduplication=1 y deduplication=1 son equivalentes. Para cambiar la
+    opción de un VDOPoolLV ya existente, utilice el comando <a href='/man/lvchange.8.en'>lvchange(8)</a>. Sin embargo, no
+    todas las opciones se pueden cambiar. Solo las opciones de compresión y
+    deduplicación se pueden cambiar también para un LV VDO activo. Las opciones de
+    menor prioridad se especifican con el archivo de configuración, luego con
+    --vdosettings y las más altas son las opciones explícitas --compression y
+    --deduplication.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --vdo -L10G --vdosettings 'ack_threads=1 hash_zone_threads=2' vg/vdopool0
+# lvchange --vdosettings 'bio_threads=2 deduplication=1' vg/vdopool0</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='6._Verificar_el_uso_de_VDOPoolLV'><a class='permalink' href='#6._Verificar_el_uso_de_VDOPoolLV'>6. Verificar el uso de VDOPoolLV</a></h2>
+<p class="Pp">Para verificar rápidamente cuántos datos en un VDOPoolLV ya se han
+    consumido, use <a href='/man/lvs.8.en'>lvs(8)</a></p>
+</section>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+. El campo % de Datos informa cuántos datos están ocupados en el contenido de los datos virtuales para VDOLV y cuánto espacio ya se ha consumido con todos los bloques de datos y metadatos en VDOPoolLV. Para una descripción detallada, utilice el comando <a href='/man/vdostats.8.en'>vdostats(8)</a>.</p>
+<p class="Pp">Nota: <a href='/man/vdostats.8.en'>vdostats(8)</a> actualmente solo entiende los nombres de dispositivo de <i>/dev/mapper</i>.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type vdo -L10G -V20G -n vdo0 vg/vdopool0
+# mkfs.ext4 -E nodiscard /dev/vg/vdo0
+# lvs -a vg</pre>
+<pre>&#x00A0; LV               VG Attr       LSize  Pool     Origin Data%
+&#x00A0; vdo0             vg vwi-a-v--- 20.00g vdopool0        0.01
+&#x00A0; vdopool0         vg dwi-ao---- 10.00g                 30.16
+&#x00A0; [vdopool0_vdata] vg Dwi-ao---- 10.00g</pre>
+<pre># vdostats --all /dev/mapper/vg-vdopool0-vpool
+/dev/mapper/vg-vdopool0 :
+&#x00A0; version                             : 30
+&#x00A0; release version                     : 133524
+&#x00A0; data blocks used                    : 79
+&#x00A0; ...</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='7._Extending_the_VDOPoolLV_size'><a class='permalink' href='#7._Extending_the_VDOPoolLV_size'>7.   Ampliación del tamaño de VDOPoolLV</a></h2>
+<p class="Pp">Puede añadir más espacio para almacenar datos y metadatos de VDO
+    ampliando VDODataLV utilizando los comandos <a href='/man/lvresize.8.en'>lvresize(8)</a> y <a href='/man/lvextend.8.en'>lvextend(8)</a>.
+    La ampliación debe añadir al menos una nueva losa de VDO. Puede configurar el
+    tamaño de la losa con el ajuste <b>allocation/vdo_slab_size_mb</b>.</p>
+<p class="Pp">También puede habilitar la ampliación automática del tamaño de un
+    VDOPoolLV supervisado con los ajustes <b>activation/vdo_pool_autoextend_percent</b> y
+    <b>activation/vdo_pool_autoextend_threshold</b>.</p>
+<p class="Pp">Nota: No puede reducir el tamaño de un VDOPoolLV.</p>
+<p class="Pp"><b>lvextend -L+</b><i>TamañoAMás VG/VDOPoolLV</i></p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvextend -L+50G vg/vdopool0
+# lvresize -L300G vg/vdopool1</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='8._Extending_or_reducing_the_VDOLV_size'><a class='permalink' href='#8._Extending_or_reducing_the_VDOLV_size'>8.   Ampliación o reducción del tamaño de VDOLV</a></h2>
+<p class="Pp">Puede ampliar o reducir un VDO LV virtual como un LV estándar con los
+    comandos <a href='/man/lvresize.8.en'>lvresize(8)</a>, <a href='/man/lvextend.8.en'>lvextend(8)</a> y <a href='/man/lvreduce.8.en'>lvreduce(8)</a>.</p>
+<p class="Pp">Nota: La reducción necesita procesar TRIM para que el área de disco
+    reducida desmapee los bloques de datos utilizados de VDOPoolLV, lo que
+    puede llevar mucho tiempo.</p>
+<p class="Pp"><b>lvextend -L+</b><i>TamañoAMás VG/VDOLV</i>
+  <br/>
+  <b>lvreduce -L-</b><i>TamañoAMenos VG/VDOLV</i></p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvextend -L+50G vg/vdo0
+# lvreduce -L-50G vg/vdo1
+# lvresize -L200G vg/vdo2</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='9._Component_activation_of_a_VDODataLV'><a class='permalink' href='#9._Component_activation_of_a_VDODataLV'>9.   Activación de componentes de un VDODataLV</a></h2>
+<p class="Pp">Puede activar un VDODataLV por separado como un LV de componente para
+    fines de examen. La activación del VDODataLV activa el LV de datos en modo de
+    solo lectura, y el LV de datos no se puede modificar. Si el VDODataLV está
+    activo como componente, cualquier LV superior que utilice este volumen NO
+    podrá activarse. Debe desactivar primero el VDODataLV para continuar
+    utilizando el VDOPoolLV.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvchange -ay vg/vpool0_vdata
+# lvchange -an vg/vpool0_vdata</pre>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VDO_TOPICS'><a class='permalink' href='#VDO_TOPICS'>TEMAS DE VDO</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='1._Stacking_VDO'><a class='permalink' href='#1._Stacking_VDO'>1.   Apilamiento de VDO</a></h2>
+<p class="Pp">Puede convertir o apilar un VDOPooLV con los siguientes tipos de
+    volumen actualmente soportados: lineal, stripe, raid y caché con cachépool.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1._Using_multiple_volumes_using_same_VDOPoolLV'><a class='permalink' href='#1._Using_multiple_volumes_using_same_VDOPoolLV'>1.   Uso de varios volúmenes utilizando el mismo VDOPoolLV</a></h2>
+<p class="Pp">Puede convertir un LV VDO existente en un volumen thin. Después de esta
+    conversión, puede crear una instantánea thin o añadir más volúmenes thin
+    con un pool thin cuyo nombre sea el mismo que el nombre del LV original,
+    LV_tpool0. Consulte <a href='/man/lvmthin.7.en'>lvmthin(7)</a> para más detalles.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type vdo -L 5G -V 10G -n vdo1 vg/vdopool
+# lvconvert --type thin vg/vdo1
+# lvcreate -V20 vg/vdo1_tpool0</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='2._VDOPoolLV_on_top_of_raid'><a class='permalink' href='#2._VDOPoolLV_on_top_of_raid'>2.   VDOPoolLV sobre raid</a></h2>
+<p class="Pp">Uso de un LV de tipo raid para un VDODataLV.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type raid1 -L 5G -n vdopool vg
+# lvconvert --type vdo-pool -V 10G vg/vdopool</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='3._Caching_a_VDOPoolLV'><a class='permalink' href='#3._Caching_a_VDOPoolLV'>3.   Caché de un VDOPoolLV</a></h2>
+<p class="Pp">El caché de VDOPoolLV (acepta también el nombre de volumen VDODataLV)
+    proporciona un mecanismo para acelerar las lecturas y escrituras de bloques
+    ya comprimidos y deduplicados junto con los metadatos de VDO.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type vdo -L 5G -V 10G -n vdo1 vg/vdopool
+# lvcreate --type cache-pool -L 1G -n cachepool vg
+# lvconvert --cache --cachepool vg/cachepool vg/vdopool
+# lvconvert --uncache vg/vdopool</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='4._Caching_a_VDOLV'><a class='permalink' href='#4._Caching_a_VDOLV'>4.   Caché de un VDOLV</a></h2>
+<p class="Pp">El caché de LV VDO le permite "cachéar" un dispositivo para un mejor
+    rendimiento antes de que llegue al procesamiento de la capa VDO Pool LV.</p>
+<p class="Pp"><i>Ejemplo</i></p>
+<pre># lvcreate --type vdo -L 5G -V 10G -n vdo1 vg/vdopool
+# lvcreate --type cache-pool -L 1G -n cachepool vg
+# lvconvert --cache --cachepool vg/cachepool vg/vdo1
+# lvconvert --uncache vg/vdo1</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='5._Usage_of_Discard/TRIM_with_a_VDOLV'><a class='permalink' href='#5._Usage_of_Discard/TRIM_with_a_VDOLV'>5.   Uso de Descarte/TRIM con un VDOLV</a></h2>
+<p class="Pp">Puede descartar datos en un VDO LV y reducir los bloques utilizados en
+    un VDOPoolLV. Sin embargo, el rendimiento actual de las operaciones de descarte
+    todavía no es óptimo y lleva una cantidad considerable de tiempo y CPU. A menos
+    que realmente lo necesite, debe evitar el uso del descarte.</p>
+<p class="Pp">Cuando un dispositivo de bloques va a ser reescrito, sus bloques se
+    reutilizarán automáticamente para nuevos datos. El descarte es útil en
+    situaciones en las que el usuario sabe que la porción dada de un VDO LV no
+    se va a utilizar y el espacio descartado se puede utilizar para el
+    aprovisionamiento de bloques en otras regiones del VDO LV. Por la misma
+    razón, debe evitar usar mkfs con descarte para un VDO LV recién creado para
+    ahorrar mucho tiempo que esta operación llevaría de lo contrario, ya que se
+    espera que el dispositivo ya esté vacío.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='6._Memory_usage'><a class='permalink' href='#6._Memory_usage'>6.   Uso de memoria</a></h2>
+<p class="Pp">El destino VDO requiere 38 MiB de RAM y varias cantidades variables:</p>
+<ul class="Bl-bullet">
+  <li>1.15 MiB de RAM por cada 1 MiB de tamaño de caché de mapa de bloques
+      configurado. La caché de mapa de bloques requiere un mínimo de 150 MiB de
+    RAM.</li>
+  <li>1.6 MiB de RAM por cada 1 TiB de espacio lógico.</li>
+  <li>268 MiB de RAM por cada 1 TiB de almacenamiento físico gestionado por el
+    volumen.</li>
+</ul>
+<p class="Pp">UDS requiere un mínimo de 250 MiB de RAM, que también es la cantidad
+    predeterminada que utiliza la deduplicación.</p>
+<p class="Pp">La memoria requerida para el índice UDS viene determinada por el tipo
+    de índice y el tamaño requerido de la ventana de deduplicación y está controlada
+    por el ajuste <b>allocation/vdo_use_sparse_index</b>.</p>
+<p class="Pp">Con la indexación dispersa UDS habilitada, se basa en la localidad
+    temporal de los datos e intenta retener solo las entradas de índice más
+    relevantes en memoria y puede mantener una ventana de deduplicación que es diez
+    veces mayor que con la dispersa, utilizando la misma cantidad de memoria.</p>
+<p class="Pp">Aunque el índice disperso proporciona la mayor cobertura, el índice
+    denso proporciona más asesoramiento de deduplicación. Para la mayoría de las
+    cargas de trabajo, dada la misma cantidad de memoria, la diferencia en las tasas
+    de deduplicación entre los índices denso y disperso es insignificante.</p>
+<p class="Pp">Un índice denso con 1 GiB de RAM mantiene una ventana de deduplicación de
+    1 TiB, mientras que un índice disperso con 1 GiB de RAM mantiene una ventana de
+    deduplicación de 10 TiB. En general, 1 GiB es suficiente para 4 TiB de
+    almacenamiento físico con un índice denso y 40 TiB con un índice
+  disperso.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='7._Storage_space_requirements'><a class='permalink' href='#7._Storage_space_requirements'>7.   Requisitos de espacio de almacenamiento</a></h2>
+<p class="Pp">Puede configurar un VDOPoolLV para que utilice hasta 256 TiB de
+    almacenamiento físico. Solo una parte del almacenamiento físico es utilizable
+    para almacenar datos. Esta sección proporciona los cálculos para determinar el
+    tamaño utilizable de un volumen gestionado por VDO.</p>
+<p class="Pp">El destino VDO requiere almacenamiento para dos tipos de metadatos de VDO
+    y para el índice UDS:</p>
+<ul class="Bl-bullet">
+  <li>El primer tipo de metadatos de VDO utiliza aproximadamente 1 MiB por cada 4
+      GiB de almacenamiento físico más 1 MiB adicional por losa.</li>
+  <li>El segundo tipo de metadatos de VDO consume aproximadamente 1.25 MiB por
+      cada 1 GiB de almacenamiento lógico, redondeado al alza a la losa más
+      cercana.</li>
+  <li>La cantidad de almacenamiento requerida para el índice UDS depende del tipo
+      de índice y la cantidad de RAM asignada al índice. Por cada 1 GiB de
+      RAM, un índice UDS denso utiliza 17 GiB de almacenamiento y un índice UDS
+      disperso utilizará 170 GiB de almacenamiento.</li>
+</ul>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/lvm.8.en'>lvm(8)</a>, <a href='/man/lvm.conf.5.en'>lvm.conf(5)</a>, <a href='/man/lvmconfig.8.en'>lvmconfig(8)</a>,
+    <a href='/man/lvcreate.8.en'>lvcreate(8)</a>, <a href='/man/lvconvert.8.en'>lvconvert(8)</a>, <a href='/man/lvchange.8.en'>lvchange(8)</a>,
+    <a href='/man/lvextend.8.en'>lvextend(8)</a>, <a href='/man/lvreduce.8.en'>lvreduce(8)</a>, <a href='/man/lvresize.8.en'>lvresize(8)</a>,
+    <a href='/man/lvremove.8.en'>lvremove(8)</a>, <a href='/man/lvs.8.en'>lvs(8)</a>,</p>
+<p class="Pp"><a href='/man/lvmthin.7.en'>lvmthin(7)</a>, <a href='/man/vdoformat.8.en'>vdoformat(8)</a>, <a href='/man/vdostats.8.en'>vdostats(8)</a>,</p>
+<p class="Pp"><a href='/man/mkfs.8.en'>mkfs(8)</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">HERRAMIENTAS LVM 2.03.37(2) (2025-11-21)</td>
+    <td class="foot-os">Red Hat, Inc.</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/lvm2/">core/lvm2</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.03.37-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://sourcewa<article class="man-page">
+    
+
+    <section id="NAME">
+        <h2>NAME</h2>
+        <p>lvmvdo &mdash; Virtual Data Optimizer (VDO) concepts</p>
+    </section>
+
+    <section id="DESCRIPTION">
+        <h2>DESCRIPTION</h2>
+        <p>Virtual Data Optimizer (VDO) is a software-based data deduplication and
+        compression system for Linux. It can be used to reduce the amount of disk
+        space required to store data. VDO works by taking a block device (like a
+        hard drive or SSD) and presenting a larger block device to the operating
+        system. It then intercepts writes to the larger device, checks if the data
+        has already been stored, and if not, compresses and stores it. Reads are
+        similarly intercepted to retrieve the original, uncompressed data.</p>
+        <p>LVM provides commands to create, manage, and monitor VDO volumes. These
+        commands are part of the LVM toolset and integrate VDO functionality into
+        the LVM volume management framework.</p>
+        <p>VDO volumes can be created on top of LVM logical volumes or directly on
+        raw devices. They can be used for various purposes, including storing virtual
+        machine images, backups, and general file systems.</p>
+    </section>
+
+    <section id="VDO_TERMS">
+        <h2>VDO TERMS</h2>
+        <dl>
+            <dt>VDO Volume:</dt>
+            <dd>A block device managed by VDO. It appears larger than the underlying
+            physical storage and provides deduplication and compression.</dd>
+            <dt>Underlying Device:</dt>
+            <dd>The physical storage (e.g., a logical volume, a partition, a whole
+            disk) on which the VDO volume is built.</dd>
+            <dt>Deduplication:</dt>
+            <dd>The process of identifying and eliminating redundant copies of data.
+            VDO stores only unique blocks of data, saving space.</dd>
+            <dt>Compression:</dt>
+            <dd>The process of reducing the size of data by encoding it using fewer
+            bits. VDO can compress data before storing it.</dd>
+            <dt>Block Lander:</dt>
+            <dd>A virtual block device driver that VDO uses to present the virtual
+            device to the operating system.</dd>
+            <dt>Metadata:</dt>
+            <dd>Information that VDO uses to manage the deduplication and compression
+            process, such as block mappings and checksums.</dd>
+        </dl>
+    </section>
+
+    <section id="VDO_USAGE">
+        <h2>VDO USAGE</h2>
+        <p>To use VDO with LVM, you typically perform the following steps:</p>
+        <ol>
+            <li>
+                <p><strong>Create an underlying logical volume or use an existing raw device.</strong>
+                This will be the storage for your VDO volume.</p>
+            </li>
+            <li>
+                <p><strong>Create a VDO volume using <code>lvmvdo create</code>.</strong>
+                This command will format the underlying device with VDO metadata and
+                make it available as a VDO block device.</p>
+                <p>Example:
+                <pre><code>lvmvdo create --name my_vdo_volume --size 100G --virtualsize 500G /dev/my_vg/my_lv</code></pre>
+                This creates a VDO volume named "my_vdo_volume" on the LVM logical
+                volume "/dev/my_vg/my_lv". The VDO volume will have a virtual size
+                of 500GB, but will use up to 100GB of physical storage.</p>
+            </li>
+            <li>
+                <p><strong>Create a file system on the VDO volume or use it as a block device.</strong>
+                You can format the VDO volume with a file system like XFS or ext4,
+                or use it directly for applications that require block devices.</p>
+                <p>Example:
+                <pre><code>mkfs.xfs /dev/mapper/my_vdo_volume</code></pre>
+                </p>
+            </li>
+            <li>
+                <p><strong>Mount the file system or access the block device.</strong></p>
+                <p>Example:
+                <pre><code>mount /dev/mapper/my_vdo_volume /mnt/vdo_data</code></pre>
+                </p>
+            </li>
+        </ol>
+        <p>Other LVM VDO commands include:</p>
+        <ul>
+            <li>
+                <p><code>lvmvdo status</code>: Show the status of VDO volumes.</p>
+            </li>
+            <li>
+                <p><code>lvmvdo resize</code>: Resize a VDO volume.</p>
+            </li>
+            <li>
+                <p><code>lvmvdo remove</code>: Remove a VDO volume.</p>
+            </li>
+            <li>
+                <p><code>lvmvdo suspend</code> and <code>lvmvdo resume</code>: Suspend and resume VDO operations.</p>
+            </li>
+        </ul>
+    </section>
+
+    <section id="VDO_TOPICS">
+        <h2>VDO TOPICS</h2>
+        <p>For more detailed information on VDO concepts, configuration, and advanced
+        usage, refer to the official VDO documentation and the LVM command man
+        pages:</p>
+        <ul>
+            <li>
+                <p>VDO Project: <a href="https://linux-vdo.github.io/documentation/">https://linux-vdo.github.io/documentation/</a></p>
+            </li>
+            <li>
+                <p>LVM man pages:
+                <a href="/listing/core/lvm2/">/listing/core/lvm2/</a></p>
+            </li>
+        </ul>
+    </section>
+
+    <section id="SEE_ALSO">
+        <h2>SEE ALSO</h2>
+        <p><a href="lvm.html">lvm(8)</a>, <a href="lvcreate.html">lvcreate(8)</a>, <a href="lvmvdo_create.html">lvmvdo_create(8)</a>, <a href="lvmvdo_status.html">lvmvdo_status(8)</a></p>
+    </section>
+</article>
+
+<section class="man-page-footer">
+    <dl>
+        <dt>LVM TOOLS</dt>
+        <dd><a href="https://sourceware.org/lvm2/">https://sourceware.org/lvm2/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/lvm2/">/listing/core/lvm2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+            <li><a href="#NAME">NAME</a></li>
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+            <li><a href="#VDO_TERMS">VDO TERMS</a></li>
+            <li><a href="#VDO_USAGE">VDO USAGE</a></li>
+            <li><a href="#VDO_TOPICS">VDO TOPICS</a></li>
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        </ul>
+    </nav>
+</details>
+
+<nav class="other-formats">
+    <p>Other formats:
+        <a href="/man/lvmvdo.7.en.txt">txt</a>,
+        <a href="/man/lvmvdo.7.en.raw">raw</a>
+    </p>
+</nav>

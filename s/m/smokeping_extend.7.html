@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>smokeping_extend(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">smokeping_extend(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SMOKEPING_EXTEND(7)</td>
+    <td class="head-vol">SmokePing</td>
+    <td class="head-rtitle">SMOKEPING_EXTEND(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">smokeping_extend - Notas sobre la extensión de Smokeping</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OVERVIEW'><a class='permalink' href='#OVERVIEW'>VISIÓN GENERAL</a></h1>
+<p class="Pp">Este documento está destinado a guiar a los autores potenciales en la
+    escritura de nuevas sondas de Smokeping. Describe principalmente la interfaz
+    entre Smokeping y sus módulos de sonda. Si parece demasiado complicado de
+    entender, consulta los módulos existentes para ver ejemplos.</p>
+<p class="Pp">Se aceptan comentarios y propuestas de cambios o adiciones. Por
+    favor, envíalos a la lista de correo de smokeping-users. Los parches contra
+    el código fuente POD de este documento son muy apreciados.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CHOOSING_A_BASE_CLASS'><a class='permalink' href='#CHOOSING_A_BASE_CLASS'>ELEGIR UNA CLASE BASE</a></h1>
+<p class="Pp">Lo primero que debes decidir es qué clase base utilizar para tu
+    sonda. Para la mayoría de los usos (si no todos), es una elección entre
+    <span class="Li">&quot;Smokeping::probes::base&quot;</span> y
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span>. La primera
+    está destinada a sondas que pueden medir sus objetivos de una sola vez,
+    mientras que la segunda es para sondearlos uno a uno, posiblemente en varios
+    subprocesos concurrentes.</p>
+<p class="Pp">En este momento, las únicas sondas que utilizan
+    <span class="Li">&quot;Smokeping::probes::base&quot;</span> son las derivadas
+    de FPing. Todas las demás utilizan
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span>, y lo más
+    probable es que tú también deberías hacerlo. Por lo tanto, este documento se
+    concentrará en este último caso.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SKELETON_FILE'><a class='permalink' href='#SKELETON_FILE'>ARCHIVO ESQUELÉTICO</a></h1>
+<p class="Pp">El módulo Smokeping::probes::skel es una sonda no funcional que
+    está destinada a ser una buena base para un nuevo módulo de sonda. Copia el
+    archivo, <span class="Li">&quot;lib/probes/skel.pm&quot;</span>, a un nuevo
+    nombre y simplemente rellena los huecos :). Ten en cuenta que los nombres de
+    los módulos de sonda reales deben empezar con una letra mayúscula.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PROBE_DOCUMENTATION'><a class='permalink' href='#PROBE_DOCUMENTATION'>DOCUMENTACIÓN DE LA SONDA</a></h1>
+<p class="Pp">La documentación de la sonda se genera a partir del código fuente con
+    los argumentos de smokeping <span class="Li">&quot;--man&quot;</span> o
+    <span class="Li">&quot;--makepod&quot;</span>. La documentación POD incrustada
+    debe apuntar a esta documentación real, de modo que los usuarios curiosos del
+    comando <span class="Li">&quot;perldoc&quot;</span> sepan lo que está pasando.
+    Todas las sondas actuales hacen esto.</p>
+<p class="Pp">Debes proporcionar el método
+    <span class="Li">&quot;pod_hash&quot;</span> que devuelve una referencia a un
+    hash con claves correspondientes a los nombres de sección que deseas en la
+    página man. Los nombres de sección admitidos son
+    <span class="Li">&quot;name&quot;</span>,
+    <span class="Li">&quot;overview&quot;</span>,
+    <span class="Li">&quot;description&quot;</span>,
+    <span class="Li">&quot;authors&quot;</span>,
+    <span class="Li">&quot;notes&quot;</span>,
+    <span class="Li">&quot;bugs&quot;</span> y
+    <span class="Li">&quot;see_also&quot;</span>. Si no necesitas una sección
+    particular, simplemente déjala fuera.</p>
+<p class="Pp">Las secciones especiales
+    <span class="Li">&quot;synopsis&quot;</span> y
+    <span class="Li">&quot;variables&quot;</span> se generan automáticamente a
+    partir de la descripción de tus variables. Véase más abajo.</p>
+<p class="Pp">Ten en cuenta que si utilizas 'here documents' ('&lt;&lt;') que
+    tienen marcado POD en su interior, deberías escapar el marcado para que no
+    aparezca en la documentación POD incrustada. La mayoría de las sondas lo
+    hacen así:</p>
+<pre>my $e = &quot;=&quot;;
+my $doc = &lt;&lt;DOC;
+${e}head1 TÍTULO DE SECCIÓN
+DOC</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PROBE_DESCRIPTION'><a class='permalink' href='#PROBE_DESCRIPTION'>DESCRIPCIÓN DE LA SONDA</a></h1>
+<p class="Pp">La sonda debe ofrecer el método
+    <span class="Li">&quot;ProbeDesc&quot;</span> que devuelve una breve
+    descripción de lo que hace. Esto se utilizará en los gráficos producidos por
+    el frontend web.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VARIABLES'><a class='permalink' href='#VARIABLES'>VARIABLES</a></h1>
+<p class="Pp">Todas las sondas de Smokeping deben definir sus variables implementando
+    un método <span class="Li">&quot;probevars&quot;</span> para variables
+    específicas de la sonda y un método
+    <span class="Li">&quot;targetvars&quot;</span> para variables específicas del
+    objetivo. Si aún no sabes la diferencia entre estas, consulta
+    smokeping_examples.</p>
+<p class="Pp">(Las sondas que se derivan de
+    <span class="Li">&quot;Smokeping::probes::base&quot;</span> no admiten
+    variables específicas del objetivo, por lo que solo utilizan el método
+    <span class="Li">&quot;probevars&quot;</span>.)</p>
+<p class="Pp">Las clases base también ofrecen estos métodos para proporcionar las
+    variables que son comunes a todas las sondas (por ejemplo, la variable
+    <span class="Li">&quot;step&quot;</span> específica de la sonda y la variable
+    <span class="Li">&quot;pings&quot;</span> específica del objetivo. Si no
+    quieres añadir nada a las variables de la clase base (quizás porque todas tus
+    variables son de naturaleza específica del objetivo, por lo que no necesitas
+    nuevas variables específicas de la sonda en absoluto), puedes omitir el
+    método correspondiente y se heredará de la clase base.</p>
+<p class="Pp">Cuando proporciones tu propio método
+    <span class="Li">&quot;probevars&quot;</span> o
+    <span class="Li">&quot;targetvars&quot;</span>, debes combinar tus variables
+    con las de la superclase. Hay un método de conveniencia llamado
+    <span class="Li">&quot;_makevars&quot;</span> que hace esto, y el modismo
+    común es</p>
+<pre>sub probevars {
+       my $class = shift;
+       return $class-&gt;_makevars($class-&gt;SUPER::probevars, {
+               # tus variables van aquí
+       }
+}</pre>
+<p class="Pp">Las variables se declaran en una sintaxis que proviene del módulo
+    utilizado para analizar el archivo de configuración,
+    <span class="Li">&quot;Config::Grammar&quot;</span>. Cada variable debe ser un
+    hash que utiliza las "claves de variables especiales" documentadas en
+    Config::Grammar. Consulta
+    <span class="Li">&quot;Smokeping::probes::skel&quot;</span> y las otras
+    sondas para ver ejemplos.</p>
+<p class="Pp">A modo de referencia, aquí están las claves que debe tener el hash.
+    Gran parte de esto se toma directamente del manual de
+    <span class="Li">&quot;Config::Grammar&quot;</span>.</p>
+<dl class="Bl-tag">
+  <dt id="Keys"><a class="permalink" href="#Keys">Claves que <b>debes</b>
+    proporcionar</a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>_doc</dt>
+  <dd>Descripción de la variable.</dd>
+  <dt>_example</dt>
+  <dd>Un valor de ejemplo. Se utilizará en la sección SYNOPSIS del manual de la
+      sonda.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="Optional"><a class="permalink" href="#Optional">Claves opcionales</a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>_default</dt>
+  <dd>Un valor predeterminado que se asignará a la variable si no se especifica
+      o hereda ninguno.</dd>
+  <dt>_re</dt>
+  <dd>Expresión regular sobre la cual se comprobará el valor.</dd>
+  <dt>_re_error</dt>
+  <dd>Cadena que contiene el error devuelto en caso de que la expresión regular
+      no coincida (si no se especifica, se devolverá un mensaje genérico de
+      'error de sintaxis').</dd>
+  <dt>_sub</dt>
+  <dd>Un puntero a función. Se llama para cada valor, con el valor pasado como
+      su primer argumento. Si la función devuelve un valor definido, se asume
+      que la prueba no tuvo éxito y se genera un error con la cadena devuelta
+      como contenido.</dd>
+</dl>
+</div>
+<p class="Pp">Los métodos <span class="Li">&quot;probevars&quot;</span> y
+    <span class="Li">&quot;targetvars&quot;</span> deben devolver referencias a
+    hashes que contengan los nombres de las variables como claves y los hashes
+    descritos anteriormente como valores. Además, la clave de sección especial
+    <span class="Li">&quot;Config::Grammar&quot;</span>
+    <span class="Li">&quot;_mandatory&quot;</span> es compatible y debe contener
+    una referencia a una lista de variables obligatorias. El método
+    <span class="Li">&quot;_makevars&quot;</span> es consciente de esta clave
+    especial y fusiona las listas obligatorias en sus argumentos. Ten en cuenta
+    que no se admiten otras claves de sección especial de
+    <span class="Li">&quot;Config::Grammar&quot;</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='INITIALIZATION'><a class='permalink' href='#INITIALIZATION'>INICIALIZACIÓN</a></h1>
+<p class="Pp">Si necesitas hacer algo en el momento de la inicialización de la
+    sonda, como comprobar que el programa externo que vas a utilizar se
+    comporta como esperas, deberías hacerlo en el método
+    <span class="Li">&quot;new&quot;</span>. Probablemente también deberías
+    asegurarte de no ejecutar las pruebas innecesariamente en modo CGI. La forma
+    habitual de hacerlo es comprobar
+    <span class="Li">$ENV</span>{SERVER_SOFTWARE}. Consulta el módulo
+    <span class="Li">&quot;Smokeping::probes::skel&quot;</span> para ver un
+    ejemplo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PINGING'><a class='permalink' href='#PINGING'>PING</a></h1>
+<p class="Pp">Toda la acción real ocurre en el método
+    <span class="Li">&quot;pingone&quot;</span> (o, para las sondas derivadas de
+    <span class="Li">&quot;Smokeping::probes::base&quot;</span>, en el método
+    <span class="Li">&quot;ping&quot;</span>.) Los argumentos para
+    <span class="Li">&quot;pingone&quot;</span> son
+    <span class="Li">$self</span>, la instancia del módulo (ya que este es un
+    método) y <span class="Li">$target</span>, el</p>
+</div>
+</section>
+                
+            </article>
+        
+        </main>
+        <footer>
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id="MANUAL_PAGE_FOR_SMOKEPING_EXTEND"><a class="permalink" href="#MANUAL_PAGE_FOR_SMOKEPING_EXTEND">SMOKEPING_EXTEND(7)</a></h1>
+<p class="Nd">User Manuals</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Nm">smokeping_extend - How to write new probes for Smokeping</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OVERVIEW"><a class="permalink" href="#OVERVIEW">OVERVIEW</a></h1>
+<p class="Pp">Smokeping uses external programs called "probes" to measure network
+    latency. These probes are implemented as Perl modules. This document explains
+    how to write your own probes.</p>
+<p class="Pp">The probes are located in the
+    <span class="Li">&quot;Smokeping::probes&quot;</span> namespace. To add a new
+    probe, you need to create a Perl module under this namespace, e.g.
+    <span class="Li">&quot;Smokeping::probes::MyProbe&quot;</span>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CHOOSING_A_BASE_CLASS"><a class="permalink" href="#CHOOSING_A_BASE_CLASS">CHOOSING A BASE CLASS</a></h1>
+<p class="Pp">Most probes can inherit from
+    <span class="Li">&quot;Smokeping::probes::base&quot;</span>. This base class
+    provides a lot of functionality needed by most probes.</p>
+<p class="Pp">If your probe needs to run external programs (like <span
+    class="Sy">ping</span>, <span class="Sy">traceroute</span>, or <span
+    class="Sy">fping</span>), you should inherit from
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span> instead. This
+    base class handles process management and communication with the external
+    program.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SKELETON_FILE"><a class="permalink" href="#SKELETON_FILE">SKELETON FILE</a></h1>
+<p class="Pp">Here's a skeleton for a simple probe:</p>
+<pre>
+package Smokeping::probes::MyProbe;
+
+use strict;
+use Smokeping::probes::base;
+
+use base qw(Smokeping::probes::base);
+
+our @p = (
+    \%Smoke::probes::base::Probe,
+    # Put your probe-specific variables here. Example:
+    # %my_probe_vars = (
+    #    'timeout'  => {
+    #        _type    => 'int',
+    #        _default => 5,
+    #        _desc    => "Max time to wait for the ping to finish.",
+    #    },
+    # );
+);
+
+sub probevars {
+    my $class = shift;
+    return $class->SUPER::probevars, \%my_probe_vars;
+}
+
+sub setup_targets {
+    my ($self, $targets) = @_;
+    # 'targets' is a hash containing targets known to this probe.
+    # You can add target-specific variables here.
+    # Example:
+    # if ($targets->{example.com}{name} eq 'example.com') {
+    #    $targets->{example.com}{port} = 80;
+    # }
+    return;
+}
+
+sub run {
+    my ($self, $target) = @_;
+
+    # $target is a hash containing information about the target host.
+    # It contains:
+    #   name: the hostname or IP address
+    #   probe: the probe name (e.g. 'MyProbe')
+    #   vars: a hash of probe-specific and target-specific variables
+    #   auth: authentication details (if any)
+
+    # $self->{properties} contains probe-specific variables.
+    # $target->{vars} contains target-specific variables.
+
+    # Get the number of pings for this target:
+    my $count = $self->pings($target);
+
+    # Replace this with your actual probing logic.
+    # For example, to simulate some latency:
+    my @results;
+    for (1..$count) {
+        my $latency = rand(100); # Simulate latency in ms
+        push @results, $latency;
+        # If a ping fails, don't add anything to the array.
+        # For example:
+        # next if rand() &lt; 0.1; # 10% chance of failure
+    }
+
+    # Return a sorted array of latency times.
+    return sort { $a &lt;=&gt; $b } @results;
+}
+
+1;
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PROBE_DOCUMENTATION"><a class="permalink" href="#PROBE_DOCUMENTATION">PROBE DOCUMENTATION</a></h1>
+<p class="Pp">The probe documentation is generated from POD sections in your probe
+    module. Typically, you would add a <span class="Li">&quot;=head1&quot;</span>
+    section for each of the following:</p>
+<dl class="Bl-tag">
+<dt id="NAME"><b>NAME</b></dt>
+<dd>A short description of the probe.</dd>
+<dt id="SYNOPSIS"><b>SYNOPSIS</b></dt>
+<dd>An example configuration snippet showing how to use the probe.</dd>
+<dt id="DESCRIPTION"><b>DESCRIPTION</b></dt>
+<dd>A more detailed explanation of what the probe does and its features.</dd>
+<dt id="PARAMETERS"><b>PARAMETERS</b></dt>
+<dd>A list of probe-specific and target-specific variables supported by the
+    probe, along with their types, defaults, and descriptions.</dd>
+<dt id="EXAMPLE_CONFIGURATIONS"><b>EXAMPLE CONFIGURATIONS</b></dt>
+<dd>One or more complete example configurations demonstrating how to use the
+    probe in different scenarios.</dd>
+</dl>
+<p class="Pp">See the existing probe modules in
+    <span class="Li">&quot;Smokeping::probes&quot;</span> for examples.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PROBE_DESCRIPTION"><a class="permalink" href="#PROBE_DESCRIPTION">PROBE DESCRIPTION</a></h1>
+<p class="Pp">The <span class="Li">&quot;=head1 NAME&quot;</span> section should
+    contain a short, one-line description of the probe. This description is used
+    in the main Smokeping display.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VARIABLES"><a class="permalink" href="#VARIABLES">VARIABLES</a></h1>
+<p class="Pp">Probe variables are defined in the <span class="Li">&quot;probevars&quot;</span>
+    subroutine. Probe-specific variables are defined within the probe module itself,
+    while target-specific variables can be defined in the main
+    <span class="Li">&quot;smokeping_config&quot;</span> file or within the probe
+    module in the <span class="Li">&quot;setup_targets&quot;</span> subroutine.</p>
+<p class="Pp">Variables are defined as hashes with the following keys:</p>
+<dl class="Bl-tag">
+<dt><b>_type</b></dt>
+<dd>The data type of the variable (e.g., <span class="Li">'int'</span>,
+    <span class="Li">'string'</span>, <span class="Li">'bool'</span>).</dd>
+<dt><b>_default</b></dt>
+<dd>The default value of the variable if not specified otherwise.</dd>
+<dt><b>_desc</b></dt>
+<dd>A description of the variable, used in the probe documentation.</dd>
+</dl>
+<p class="Pp">Example:</p>
+<pre>
+our %my_vars = (
+    'port' => {
+        _type    => 'int',
+        _default => 80,
+        _desc    => "Port to connect to.",
+    },
+    'timeout' => {
+        _type    => 'int',
+        _default => 5,
+        _desc    => "Max time to wait for the probe to complete.",
+    },
+);
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="INITIALIZATION"><a class="permalink" href="#INITIALIZATION">INITIALIZATION</a></h1>
+<p class="Pp">The <span class="Li">&quot;setup_targets&quot;</span> subroutine is
+    called once when Smokeping starts. It receives a hash of targets known to
+    this probe and can be used to add or modify target-specific variables.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PINGING"><a class="permalink" href="#PINGING">PINGING</a></h1>
+<p class="Pp">The <span class="Li">&quot;run&quot;</span> subroutine is called for
+    each target. It receives a hash containing information about the target to be
+    probed.</p>
+<p class="Pp">You can access the probe-specific variables here via the
+    <span class="Li">&quot;$self-&gt;{properties}&quot;</span> hash and the
+    target-specific ones via the
+    <span class="Li">&quot;$target-&gt;{vars}&quot;</span> hash. You get the
+    number of pings needed for the target via the
+    <span class="Li">&quot;pings&quot;</span> method: <span class="Li">&quot;my
+    $count = $self-&gt;pings($target)&quot;</span>.</p>
+<p class="Pp">You should return a sorted array of the latency times measured. If
+    a ping fails, don't put anything in the array.</p>
+<p class="Pp">That's it, you're done!</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLE_CONFIGURATIONS"><a class="permalink" href="#EXAMPLE_CONFIGURATIONS">EXAMPLE CONFIGURATIONS</a></h1>
+<p class="Pp">If you would like to provide a documented example configuration
+    for your probe (in addition to the automatically generated SYNOPSIS section
+    in the probe manual), you can do so by adding it to the Smokeping::Examples
+    module. Look for the 'examples' subroutine and add your example there.</p>
+<p class="Pp">Future versions of Smokeping might provide a way to embed examples
+    in the probe modules too. The author's motivation for implementing this
+    would be greatly increased by even a single demand for it, so please speak
+    up if you think you'd use it.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="TIMEOUT_HANDLING"><a class="permalink" href="#TIMEOUT_HANDLING">TIMEOUT HANDLING</a></h1>
+<p class="Pp">If you deal with timeouts (for example because your program offers
+    a parameter for specifying the timeout for the pings), you should know a few
+    things.</p>
+<p class="Pp">First, there's timeout logic in
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span> that kills
+    the probe when the timeout is reached. By default the timeout is (# of pings
+    * 5 seconds) + 1 second. If you expect that your pings can take longer, you
+    should modify the default value of the probe-specific variable
+    <span class="Li">&quot;timeout&quot;</span>. This would be done like
+  this:</p>
+<pre>
+sub probevars {
+       my $class = shift;
+       my $h = $class-&gt;SUPER::probevars;
+       $h-&gt;{timeout}{_default} = 10; # override the superclass default
+       return $class-&gt;_makevars($h, {
+               # your variables go here
+       }
+</pre>
+<p class="Pp">If you want to provide a target-specific
+    <span class="Li">&quot;timeout&quot;</span> setting, you should delete the
+    probe-specific variable and be sure to provide a default for your
+    target-specific one. See eg.
+    <span class="Li">&quot;Smokeping::probes::AnotherDNS&quot;</span> for an
+    example of how this is done.</p>
+<p class="Pp">Providing a target-specific
+    <span class="Li">&quot;timeout&quot;</span> will make the timeout in
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span> be (# of
+    pings * the maximum timeout of all targets) + 1 second. The 1 second is
+    added so that the own timeout logic of the probe has time to kick in even in
+    the worst case (ie. all pings are lost) before
+    <span class="Li">&quot;Smokeping::probes::basefork&quot;</span> starts
+    killing the processes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+<p class="Pp">Copyright 2005 by Niko Tyni.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LICENSE"><a class="permalink" href="#LICENSE">LICENSE</a></h1>
+<p class="Pp">This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or (at your
+    option) any later version.</p>
+<p class="Pp">This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+    Public License for more details.</p>
+<p class="Pp">You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software Foundation,
+    Inc., 675 Mass Ave, Cambridge, MA 02139, USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR"><a class="permalink" href="#AUTHOR">AUTHOR</a></h1>
+<p class="Pp">Niko Tyni &lt;ntyni@iki.fi&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="BUGS"><a class="permalink" href="#BUGS">BUGS</a></h1>
+<p class="Pp">This document makes writing new probes look much harder than it
+    really is.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE ALSO</a></h1>
+<p class="Pp">The other Smokeping documents, especially smokeping_config.</p>
+</section>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-06-29</td>
+    <td class="foot-os">2.9.0</td>
+  </tr>
+</table>

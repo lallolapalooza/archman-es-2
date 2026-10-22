@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>gammu-smsd-pgsql(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">gammu-smsd-pgsql(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/gammu/">gammu</a></p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">GAMMU-SMSD-PGSQL(7)</td>
+    <td class="head-vol">Gammu</td>
+    <td class="head-rtitle">GAMMU-SMSD-PGSQL(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">gammu-smsd-pgsql - backend de gammu-smsd(1) que usa el servidor
+    de base de datos PostgreSQL como almacenamiento de mensajes</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El backend PGSQL almacena todos los datos en un servidor de base de
+    datos de <i>PostgreSQL</i>, cuyos parámetros se definen en la configuración
+    (ver gammu-smsdrc para la descripción de las opciones de configuración).</p>
+<p class="Pp">Para la descripción de las tablas, ver gammu-smsd-tables.</p>
+<p class="Pp">Este backend se basa en gammu-smsd-sql.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN'><a class='permalink' href='#CONFIGURACIÓN'>CONFIGURACIÓN</a></h1>
+<p class="Pp">Antes de ejecutar gammu-smsd, necesita crear las tablas necesarias en
+    la base de datos, lo cual se describe a continuación.</p>
+<p class="Pp">El archivo de configuración puede ser entonces como:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>[smsd]
+service = sql
+driver = native_pgsql
+host = localhost</pre>
+</div>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">gammu-smsdrc</div>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CREACIÓN_DE_TABLAS_PARA_POSTGRESQL'><a class='permalink' href='#CREACIÓN_DE_TABLAS_PARA_POSTGRESQL'>CREACIÓN DE TABLAS PARA POSTGRESQL</a></h1>
+<p class="Pp">Script SQL para crear tablas en la base de datos PostgreSQL:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>-- 
+-- Base de datos: &quot;smsd&quot;
+-- 
+-- CREATE USER &quot;smsd&quot; WITH NOCREATEDB NOCREATEUSER;
+-- CREATE DATABASE &quot;smsd&quot; WITH OWNER = &quot;smsd&quot; ENCODING = 'UTF8';
+-- \connect &quot;smsd&quot; &quot;smsd&quot;
+-- COMMENT ON DATABASE &quot;smsd&quot; IS 'Base de datos Gammu SMSD';
+-- --------------------------------------------------------
+--
+-- Declaración de función para actualizar marcas de tiempo
+--
+CREATE LANGUAGE plpgsql;
+CREATE OR REPLACE FUNCTION update_timestamp() RETURNS trigger AS $update_timestamp$
+  BEGIN
+    NEW.&quot;UpdatedInDB&quot; := LOCALTIMESTAMP(0);
+    RETURN NEW;
+  END;
+$update_timestamp$ LANGUAGE plpgsql;
+-- --------------------------------------------------------
+--
+-- Declaraciones de secuencia para las claves primarias de las tablas
+--
+--CREATE SEQUENCE inbox_ID_seq;
+--CREATE SEQUENCE outbox_ID_seq;
+--CREATE SEQUENCE outbox_multipart_ID_seq;
+--CREATE SEQUENCE sentitems_ID_seq;
+-- --------------------------------------------------------
+--
+-- Declaraciones de índice para las claves primarias de las tablas
+--
+--CREATE UNIQUE INDEX inbox_pkey ON inbox USING btree (&quot;ID&quot;);
+--CREATE UNIQUE INDEX outbox_pkey ON outbox USING btree (&quot;ID&quot;);
+--CREATE UNIQUE INDEX outbox_multipart_pkey ON outbox_multipart USING btree (&quot;ID&quot;);
+--CREATE UNIQUE INDEX sentitems_pkey ON sentitems USING btree (&quot;ID&quot;);
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;gammu&quot;
+-- 
+CREATE TABLE gammu (
+  &quot;Version&quot; smallint NOT NULL DEFAULT '0' PRIMARY KEY
+);
+-- 
+-- Volcado de datos para la tabla &quot;gammu&quot;
+-- 
+INSERT INTO gammu (&quot;Version&quot;) VALUES (17);
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;inbox&quot;
+-- 
+CREATE TABLE inbox (
+  &quot;UpdatedInDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;ReceivingDateTime&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;Text&quot; text NOT NULL,
+  &quot;SenderNumber&quot; varchar(20) NOT NULL DEFAULT '',
+  &quot;Coding&quot; varchar(255) NOT NULL DEFAULT 'Default_No_Compression',
+  &quot;UDH&quot; text NOT NULL,
+  &quot;SMSCNumber&quot; varchar(20) NOT NULL DEFAULT '',
+  &quot;Class&quot; integer NOT NULL DEFAULT '-1',
+  &quot;TextDecoded&quot; text NOT NULL DEFAULT '',
+  &quot;ID&quot; serial PRIMARY KEY,
+  &quot;RecipientID&quot; text NOT NULL,
+  &quot;Processed&quot; boolean NOT NULL DEFAULT 'false',
+  &quot;Status&quot; integer NOT NULL DEFAULT '-1',
+  CHECK (&quot;Coding&quot; IN 
+  ('Default_No_Compression','Unicode_No_Compression','8bit','Default_Compression','Unicode_Compression')) 
+);
+-- 
+-- Volcado de datos para la tabla &quot;inbox&quot;
+-- 
+-- --------------------------------------------------------
+--
+-- Crear disparador para la tabla &quot;inbox&quot;
+--
+CREATE TRIGGER update_timestamp BEFORE UPDATE ON inbox FOR EACH ROW EXECUTE PROCEDURE update_timestamp();
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;outbox&quot;
+-- 
+CREATE TABLE outbox (
+  &quot;UpdatedInDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;InsertIntoDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;SendingDateTime&quot; timestamp NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;SendBefore&quot; time NOT NULL DEFAULT '23:59:59',
+  &quot;SendAfter&quot; time NOT NULL DEFAULT '00:00:00',
+  &quot;Text&quot; text,
+  &quot;DestinationNumber&quot; varchar(20) NOT NULL DEFAULT '',
+  &quot;Coding&quot; varchar(255) NOT NULL DEFAULT 'Default_No_Compression',
+  &quot;UDH&quot; text,
+  &quot;Class&quot; integer DEFAULT '-1',
+  &quot;TextDecoded&quot; text NOT NULL DEFAULT '',
+  &quot;ID&quot; serial PRIMARY KEY,
+  &quot;MultiPart&quot; boolean NOT NULL DEFAULT 'false',
+  &quot;RelativeValidity&quot; integer DEFAULT '-1',
+  &quot;SenderID&quot; varchar(255),
+  &quot;SendingTimeOut&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;DeliveryReport&quot; varchar(10) DEFAULT 'default',
+  &quot;CreatorID&quot; text NOT NULL,
+  &quot;Retries&quot; integer DEFAULT '0',
+  &quot;Priority&quot; integer DEFAULT '0',
+  &quot;Status&quot; varchar(255) NOT NULL DEFAULT 'Reserved',
+  &quot;StatusCode&quot; integer NOT NULL DEFAULT '-1',
+  CHECK (&quot;Coding&quot; IN 
+  ('Default_No_Compression','Unicode_No_Compression','8bit','Default_Compression','Unicode_Compression')),
+  CHECK (&quot;DeliveryReport&quot; IN ('default','yes','no')),
+  CHECK (&quot;Status&quot; IN 
+  ('SendingOK','SendingOKNoReport','SendingError','DeliveryOK','DeliveryFailed','DeliveryPending',
+  'DeliveryUnknown','Error','Reserved'))
+);
+CREATE INDEX outbox_date ON outbox(&quot;SendingDateTime&quot;, &quot;SendingTimeOut&quot;);
+CREATE INDEX outbox_sender ON outbox(&quot;SenderID&quot;);
+-- 
+-- Volcado de datos para la tabla &quot;outbox&quot;
+-- 
+-- --------------------------------------------------------
+--
+-- Crear disparador para la tabla &quot;outbox&quot;
+--
+CREATE TRIGGER update_timestamp BEFORE UPDATE ON outbox FOR EACH ROW EXECUTE PROCEDURE update_timestamp();
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;outbox_multipart&quot;
+-- 
+CREATE TABLE outbox_multipart (
+  &quot;Text&quot; text,
+  &quot;Coding&quot; varchar(255) NOT NULL DEFAULT 'Default_No_Compression',
+  &quot;UDH&quot; text,
+  &quot;Class&quot; integer DEFAULT '-1',
+  &quot;TextDecoded&quot; text DEFAULT NULL,
+  &quot;ID&quot; serial,
+  &quot;SequencePosition&quot; integer NOT NULL DEFAULT '1',
+  &quot;Status&quot; varchar(255) NOT NULL DEFAULT 'Reserved',
+  &quot;StatusCode&quot; integer NOT NULL DEFAULT '-1',
+  PRIMARY KEY (&quot;ID&quot;, &quot;SequencePosition&quot;),
+  CHECK (&quot;Coding&quot; IN 
+  ('Default_No_Compression','Unicode_No_Compression','8bit','Default_Compression','Unicode_Compression')),
+  CHECK (&quot;Status&quot; IN 
+  ('SendingOK','SendingOKNoReport','SendingError','DeliveryOK','DeliveryFailed','DeliveryPending',
+  'DeliveryUnknown','Error','Reserved'))
+);
+-- 
+-- Volcado de datos para la tabla &quot;outbox_multipart&quot;
+-- 
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;phones&quot;
+-- 
+CREATE TABLE phones (
+  &quot;ID&quot; text NOT NULL,
+  &quot;UpdatedInDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;InsertIntoDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;TimeOut&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;Send&quot; boolean NOT NULL DEFAULT 'no',
+  &quot;Receive&quot; boolean NOT NULL DEFAULT 'no',
+  &quot;IMEI&quot; varchar(35) PRIMARY KEY NOT NULL,
+  &quot;IMSI&quot; varchar(35) NOT NULL,
+  &quot;NetCode&quot; varchar(10) DEFAULT 'ERROR',
+  &quot;NetName&quot; varchar(35) DEFAULT 'ERROR',
+  &quot;Client&quot; text NOT NULL,
+  &quot;Battery&quot; integer NOT NULL DEFAULT -1,
+  &quot;Signal&quot; integer NOT NULL DEFAULT -1,
+  &quot;Sent&quot; integer NOT NULL DEFAULT 0,
+  &quot;Received&quot; integer NOT NULL DEFAULT 0
+);
+-- 
+-- Volcado de datos para la tabla &quot;phones&quot;
+-- 
+-- --------------------------------------------------------
+--
+-- Crear disparador para la tabla &quot;phones&quot;
+--
+CREATE TRIGGER update_timestamp BEFORE UPDATE ON phones FOR EACH ROW EXECUTE PROCEDURE update_timestamp();
+-- --------------------------------------------------------
+-- 
+-- Estructura de la tabla &quot;sentitems&quot;
+-- 
+CREATE TABLE sentitems (
+  &quot;UpdatedInDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;InsertIntoDB&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;SendingDateTime&quot; timestamp(0) WITHOUT time zone NOT NULL DEFAULT LOCALTIMESTAMP(0),
+  &quot;DeliveryDateTime&quot; timestamp(0) WITHOUT time zone NULL,
+  &quot;Text&quot; text NOT NULL,
+  &quot;DestinationNumber&quot; varchar(20) NOT NULL DEFAULT '',
+  &quot;Coding&quot; varchar(255) NOT NULL DEFAULT 'Default_No_Compression',
+  &quot;UDH&quot; text NOT NULL,
+  &quot;SMSCNumber&quot; varchar(20) NOT NULL DEFAULT '',
+  &quot;Class&quot; integer NOT NULL DEFAULT '-1',
+  &quot;TextDecoded&quot; text NOT NULL DEFAULT '',
+  &quot;ID&quot; serial,
+  &quot;Sen
+</pre>
+</div>
+</div>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+derID" varchar(255) NOT NULL,
+  "SequencePosition" integer NOT NULL DEFAULT '1',
+  "Status" varchar(255) NOT NULL DEFAULT 'SendingOK',
+  "StatusError" integer NOT NULL DEFAULT '-1',
+  "TPMR" integer NOT NULL DEFAULT '-1',
+  "RelativeValidity" integer NOT NULL DEFAULT '-1',
+  "CreatorID" text NO</pre>T NULL,
+  "StatusCode" integer NOT NULL DEFAULT '-1',
+  CHECK ("Status" IN 
+  ('SendingOK','SendingOKNoReport','SendingError','DeliveryOK','DeliveryFailed','DeliveryPending',
+  'DeliveryUnknown','Error')),
+  CHECK ("Coding" IN 
+  ('Default_No_Compression','Unicode_No_Compression','8bit','Defaul</div>t_Compression','Unicode_Compression')),
+  PRIMARY KEY ("ID", "SequencePosition")
+);
+CREATE INDEX sentitems_date ON sentitems("DeliveryDateTime");
+CREATE INDEX sentitems_tpmr ON sentitems("TPMR");
+CREATE INDEX sentitems_dest ON sentitems("DestinationNumber");
+CREATE INDEX sentitems_sender ON sen</div>titems("SenderID");
+-- 
+-- Volcado de datos para la tabla "sentitems"
+-- 
+-- --------------------------------------------------------
+--
+-- Crear disparador para la tabla "sentitems"
+--
+CREATE TRIGGER update_timestamp BEFORE UPDATE ON sentitems FOR EACH ROW EXECUTE PROCEDURE update_timestamp();
+<p class="Pp"><b>NOTA</b></p>:
+<div class="Bd-indent">
+<div class="Bd-indent">Puede encontrar el script en <b>docs/sql/p</b>gsql.sql t</div>ambién. A</div>CTUALIZAND</section>O   TABLAS
+<section class="Sh">
+<h1 class="Sh" id='UPGRADING_TABLES'><a class='permalink' href='#UPGRADING_TABLES'>La forma más fácil de actualizar la estructura de la base de datos es hacer una copia de seguridad de la antigua y comenzar creando una nueva basada en el ejemplo </a></h1>anterior.
+<p class="Pp">Para actualizar una base de datos existente, puede usar los cambios descritos </p>en
+<p class="Pp">smsd-tables-history <b>y luego </b>actualizar manualmente el campo
+    <b>Ve</b>rs</p>i</section>on
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>en la </a></h1>tabla
+<p class="Pp">gamm</p>u
+[[1</section>3]].
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>AUTO</a></h1>R
+<p class="Pp">Michal Č</p>ihař &lt;mi</section>chal@ci</div>har.com&gt;
+<table class="foot">
+  <tr>
+    <td class="foot-date">DERECHOS DE </td>AUTOR
+    <td class="foot-os">2009-20</td>15, Mic</tr>hal Čih</table>ař &lt;mic</section>hal@cih</article>ar.com&gt;
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>3 de octubre de </p>2020
+    <dl>
+        <dt>1.42.</dt>0
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/gammu/">Información </a></dd>del paquete:
+        <dt>Nombre </dt>del paquete:
+        <dd>extra/gammu </dd>Versión: 1.42.0-2
+        <dt>Upst</dt>ream:
+        <dd><a href="https://wammu.eu/gammu/">https://wammu.</a></dd>eu/gammu/
+        <dt>Licen</dt>cias:
+        <dd>GPL-2.</dd>0-or-later
+        <dt>Manuales: </dt>/listing/extra/gammu/
+        <dd><a href="/listing/extra/gammu/">Ín</a></dd>d</dl>i</section>ce
+
+<details>
+    <summary>NOMBR</summary>E
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">DESCRIPCIÓN </a></li>CONFIGURACIÓN CREACIÓN DE TABLAS PARA POSTGRESQL
+        
+            <li><a href="#DESCRIPTION">ACTUALIZANDO </a></li>TABLAS AUTOR
+        
+            <li><a href="#CONFIGURATION">DERECHOS </a></li>DE AUTOR
+        
+            <li><a href="#CREATING_TABLES_FOR_POSTGRESQL">Otros </a></li>formatos:
+        
+            <li><a href="#UPGRADING_TABLES">t</a></li>xt
+        
+            <li><a href="#AUTHOR"></a></li>,
+        
+            <li><a href="#COPYRIGHT">r</a></li></ul>a</nav></details>w
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Impulsado por
+        
+            <a href="/man/gammu-smsd-pgsql.7.en.txt">a</a>rchmanweb 
+        
+            <a href="/man/gammu-smsd-pgsql.7.en.raw">,</a>
+    </p> </nav>     </aside>     </main>usando
+        <footer>
+            la licencia
+            <p>GPL-3.0 <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">, excepto por el contenido</a> de las páginas de manual,</p> que tienen su propia lice</footer>ncia
+               espec</body>ificada en el paquete corr</html>espondiente de Arch Linux.

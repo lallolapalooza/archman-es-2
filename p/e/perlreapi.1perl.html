@@ -1,0 +1,1077 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlreapi(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlreapi.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLREAPI(1perl)</td>
+    <td class="head-vol">Guía de Referencia para Programadores de Perl</td>
+    <td class="head-rtitle">PERLREAPI(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlreapi - Interfaz de plugin para expresiones regulares de Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">A partir de Perl 5.9.5 existe una nueva interfaz para enchufar y
+    utilizar motores de expresiones regulares distintos del predeterminado.</p>
+<p class="Pp">Se espera que cada motor proporcione acceso a una estructura
+    constante del siguiente formato:</p>
+<pre>typedef struct regexp_engine {
+    REGEXP* (*comp) (pTHX_
+                     const SV * const pattern, const U32 flags);
+    I32     (*exec) (pTHX_
+                     REGEXP * const rx,
+                     char* stringarg,
+                     char* strend, char* strbeg,
+                     SSize_t minend, SV* sv,
+                     void* data, U32 flags);
+    char*   (*intuit) (pTHX_
+                       REGEXP * const rx, SV *sv,
+                       const char * const strbeg,
+                       char *strpos, char *strend, U32 flags,
+                       struct re_scream_pos_data_s *data);
+    SV*     (*checkstr) (pTHX_ REGEXP * const rx);
+    void    (*free) (pTHX_ REGEXP * const rx);
+    void    (*numbered_buff_FETCH) (pTHX_
+                                    REGEXP * const rx,
+                                    const I32 paren,
+                                    SV * const sv);
+    void    (*numbered_buff_STORE) (pTHX_
+                                    REGEXP * const rx,
+                                    const I32 paren,
+                                    SV const * const value);
+    I32     (*numbered_buff_LENGTH) (pTHX_
+                                     REGEXP * const rx,
+                                     const SV * const sv,
+                                     const I32 paren);
+    SV*     (*named_buff) (pTHX_
+                           REGEXP * const rx,
+                           SV * const key,
+                           SV * const value,
+                           U32 flags);
+    SV*     (*named_buff_iter) (pTHX_
+                                REGEXP * const rx,
+                                const SV * const lastkey,
+                                const U32 flags);
+    SV*     (*qr_package)(pTHX_ REGEXP * const rx);
+#ifdef USE_ITHREADS
+    void*   (*dupe) (pTHX_ REGEXP * const rx, CLONE_PARAMS *param);
+#endif
+    REGEXP* (*op_comp) (...);}</pre>
+<p class="Pp">Cuando se compila una expresión regular, su campo
+    <span class="Li">&quot;engine&quot;</span> se establece para apuntar a la
+    estructura apropiada, de modo que cuando necesite ser utilizada, Perl pueda
+    encontrar las rutinas correctas para hacerlo.</p>
+<p class="Pp">Para instalar un nuevo manejador de expresiones regulares,
+    <span class="Li">$^H{regcomp}</span> se establece en un entero que (cuando
+    se castea apropiadamente) se resuelve en una de estas estructuras. Al
+    compilar, se ejecuta el método
+    <span class="Li">&quot;comp&quot;</span>, y se espera que el campo
+    <span class="Li">&quot;engine&quot;</span> de la estructura
+    <span class="Li">&quot;regexp&quot;</span> resultante apunte de nuevo a la
+    misma estructura.</p>
+<p class="Pp">El símbolo pTHX_ en la definición es una macro utilizada por Perl
+    bajo hilos para proporcionar un argumento adicional a la rutina que contiene
+    un puntero de vuelta al intérprete que está ejecutando la expresión regular.
+    Por lo tanto, bajo hilos, todas las rutinas reciben un argumento adicional.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Callbacks'><a class='permalink' href='#Callbacks'>Callbacks</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='comp'><a class='permalink' href='#comp'>comp</a></h2>
+<pre>REGEXP* comp(pTHX_ const SV * const pattern, const U32 flags);</pre>
+<p class="Pp">Compila el patrón almacenado en
+    <span class="Li">&quot;pattern&quot;</span> usando las
+    <span class="Li">&quot;flags&quot;</span> dadas y devuelve un puntero a una
+    estructura <span class="Li">&quot;REGEXP&quot;</span> preparada que puede
+    realizar la coincidencia. Consulte &quot;La estructura REGEXP&quot; a
+    continuación para obtener una explicación de los campos individuales de la
+    estructura REGEXP.</p>
+<p class="Pp">El parámetro
+    <span class="Li">&quot;pattern&quot;</span> es el escalar que se utilizó como
+    patrón. Las versiones anteriores de Perl pasaban dos
+    <span class="Li">&quot;char*&quot;</span> indicando el inicio y el final del
+    patrón convertido a cadena; el siguiente fragmento se puede usar para obtener
+    los parámetros antiguos:</p>
+<pre>STRLEN plen;
+char*  exp = SvPV(pattern, plen);
+char* xend = exp + plen;</pre>
+<p class="Pp">Dado que cualquier escalar se puede pasar como patrón, es posible
+    implementar un motor que haga algo con una matriz
+    (<span class="Li">&quot;&quot;ook&quot; =~ [ qw/ eek</span>
+    <span class="Li">hlagh / ]&quot;</span>) o con la forma no convertida a cadena
+    de una expresión regular compilada (<span class="Li">&quot;&quot;ook&quot; =~
+    qr/eek/&quot;</span>). El propio motor de Perl siempre convertirá todo a
+    cadena utilizando el fragmento anterior, pero eso no significa que otros
+    motores tengan que hacerlo.</p>
+<p class="Pp">El parámetro
+    <span class="Li">&quot;flags&quot;</span> es un campo de bits que indica cuáles
+    de las banderas
+    <span class="Li">&quot;msixpn&quot;</span> se utilizaron para compilar la
+    expresión regular. También contiene información adicional, como si
+    <span class="Li">&quot;use locale&quot;</span> está activo.</p>
+<p class="Pp">Las banderas
+    <span class="Li">&quot;eogc&quot;</span> se eliminan antes de pasarse a la rutina
+    de compilación. El motor de expresiones regulares no necesita saber si alguna
+    de estas está configurada, ya que esas banderas solo deberían afectar lo que
+    Perl hace con el patrón y sus variables de coincidencia, no cómo se compila y
+    ejecuta.</p>
+<p class="Pp">Para cuando se llama al callback de compilación, algunas de estas
+    banderas ya han tenido efecto (indicado a continuación donde sea aplicable).
+    Sin embargo, la mayor parte de su efecto ocurre después de que se ejecuta el
+    callback de compilación, en rutinas que leen el campo
+    <span class="Li">&quot;rx-&gt;extflags&quot;</span> que este popula.</p>
+<p class="Pp">En general, las banderas deben conservarse en
+    <span class="Li">&quot;rx-&gt;extflags&quot;</span> después de la compilación,
+    aunque el motor de expresiones regulares podría querer añadir o eliminar
+    algunas de ellas para invocar o deshabilitar algún comportamiento especial en
+    Perl. Las banderas junto con cualquier comportamiento especial que provoquen se
+    documentan a continuación:</p>
+<p class="Pp">Los modificadores del patrón:</p>
+<dl class="Bl-tag">
+  <dt>&quot;/m&quot; - RXf_PMf_MULTILINE</dt>
+  <dd>Si esto está en
+      <span class="Li">&quot;rx-&gt;extflags&quot;</span>, se pasará a
+      <span class="Li">&quot;Perl_fbm_instr&quot;</span> por
+      <span class="Li">&quot;pp_split&quot;</span>, que tratará la cadena
+      sujeto como una cadena multilínea.</dd>
+  <dt>&quot;/s&quot; - RXf_PMf_SINGLELINE</dt>
+  <dd></dd>
+  <dt>&quot;/i&quot; - RXf_PMf_FOLD</dt>
+  <dd></dd>
+  <dt>&quot;/x&quot; - RXf_PMf_EXTENDED</dt>
+  <dd>Si está presente en una expresión regular, los comentarios
+      <span class="Li">&quot;#&quot;</span> se manejarán de manera diferente por
+      el tokenizador en algunos casos.
+    <p class="Pp">TODO: Documentar esos casos.</p>
+  </dd>
+  <dt>&quot;/p&quot; - RXf_PMf_KEEPCOPY</dt>
+  <dd>TODO: Documentar esto</dd>
+  <dt id="Caracter"><a class="permalink" href="#Caracter">Conjunto de
+    caracteres</a></dt>
+  <dd>Las reglas del conjunto de caracteres se determinan mediante un enumerado que
+      se contiene en este campo. Esto todavía es experimental y está sujeto a
+      cambios, pero la interfaz actual devuelve las reglas mediante la función
+      en línea
+      <span class="Li">&quot;get_regex_charset(const U32 flags)&quot;</span>.
+      El único valor documentado actualmente devuelto por ella es
+      REGEX_LOCALE_CHARSET, que se establece si
+      <span class="Li">&quot;use
+      locale&quot;</span> está en efecto. Si está presente en
+      <span class="Li">&quot;rx-&gt;extflags&quot;</span>,
+      <span class="Li">&quot;split&quot;</span> usará la definición de espacio en
+      blanco dependiente de la configuración regional cuando RXf_SKIPWHITE o
+      RXf_WHITE estén en efecto. Los espacios en blanco ASCII se definen según
+      isSPACE, y por las macros internas
+      <span class="Li">&quot;is_utf8_space&quot;</span> bajo UTF-8, y
+      <span class="Li">&quot;isSPACE_LC&quot;</span> bajo
+      <span class="Li">&quot;use</span>
+    <span class="Li">locale&quot;</span>.</dd>
+</dl>
+<p class="Pp">Banderas adicionales:</p>
+<dl class="Bl-tag">
+  <dt id="RXf_SPLIT"><a class="permalink" href="#RXf_SPLIT">RXf_SPLIT</a></dt>
+  <dd>Esta bandera se eliminó en perl 5.18.0. <span class="Li">&quot;split '
+      '&quot;</span> ahora se maneja de forma especial solo en el analizador.
+      RXf_SPLIT todavía está #definido, por lo que puedes verificarlo. Así es
+      como funcionaba antes:
+    <p class="Pp">Si <span class="Li">&quot;split&quot;</span> se invoca como
+        <span class="Li">&quot;split ' '&quot;</span> o sin argumentos
+        (lo que realmente significa <span class="Li">&quot;split(' ', $_)&quot;</span>,
+        consulte split), Perl establecerá esta bandera. El motor de expresiones
+        regulares puede entonces verificarla y establecer las banderas extflags
+        SKIPWHITE y WHITE. Para hacer esto, el motor de Perl hace:</p>
+        <pre>if (flags &amp; RXf_SPLIT &amp;&amp; r-&gt;prelen == 1 &amp;&amp; r-&gt;precomp[0] == ' ')
+    r-&gt;extflags |= (RXf_SKIPWHITE|RXf_WHITE);
+</pre>
+  </dd>
+</dl>
+<p class="Pp">Estas banderas se pueden establecer durante la compilación para
+    habilitar optimizaciones en el operador
+    <span class="Li">&quot;split&quot;</span>.</p>
+<dl class="Bl-tag">
+  <dt id="RXf_SKIPWHITE"><a class="permalink" href="#RXf_SKIPWHITE">RXf_SKIPWHITE</a></dt>
+  <dd>Esta bandera se eliminó en perl 5.18.0. Todavía está #definida, por lo que
+      puedes establecerla, pero hacerlo no tendrá ningún efecto. Así es como
+      funcionaba antes:
+    <p class="Pp">Si la bandera está presente en
+        <span class="Li">&quot;rx-&gt;extflags&quot;</span>
+        <span class="Li">&quot;split&quot;</span> eliminará los espacios en blanco
+        del inicio de la cadena sujeto antes de oper</dd>
+</dl>
+</div>
+</section>
+</article>
+        </main>
+    </body>
+</html>
+{
+  "sections": [
+    {
+      "title": "RXf_PMf_LOCALE",
+      "content": "Indica a la función split que el delimitador es una secuencia de caracteres blancos, pero solo en el idioma local actual. Qué se considera carácter blanco depende de si el sujeto es una cadena UTF-8 y de si se establece el flag \"RXf_PMf_LOCALE\".\nSi RXf_WHITE se establece además de este flag, \"split\" se comportará como \"split \" \" \" bajo el motor de Perl."
+    },
+    {
+      "title": "RXf_START_ONLY",
+      "content": "Indica al operador split que divida la cadena objetivo en saltos de línea (\"\\n\") sin invocar el motor de expresiones regulares.\nEl motor de Perl establece esto si el patrón es \"/^/\" (\"plen == 1 && *exp == '^'\"), incluso bajo \"/^/s\"; véase split. Por supuesto, un motor de expresiones regulares diferente podría querer usar las mismas optimizaciones con una sintaxis diferente."
+    },
+    {
+      "title": "RXf_WHITE",
+      "content": "Indica al operador split que divida la cadena objetivo en caracteres blancos sin invocar el motor de expresiones regulares. La definición de carácter blanco varía según de si la cadena objetivo es una cadena UTF-8 y de si RXf_PMf_LOCALE está establecida.\nEl motor de Perl establece este flag si el patrón es \"\\s+\"."
+    },
+    {
+      "title": "RXf_NULL",
+      "content": "Indica al operador split que divida la cadena objetivo en caracteres. La definición de carácter varía según de si la cadena objetivo es una cadena UTF-8.\nEl motor de Perl establece este flag en patrones vacíos; esta optimización hace que \"split //\" sea mucho más rápido de lo que sería de otro modo. Es incluso más rápido que \"unpack\"."
+    },
+    {
+      "title": "RXf_NO_INPLACE_SUBST",
+      "content": "Añadido en perl 5.18.0, este flag indica que una expresión regular podría realizar una operación que interferiría con la sustitución in situ. Por ejemplo, podría contener retrovisión (lookbehind) o asignar a variables no mágicas (como $REGMARK y $REGERROR) durante la coincidencia. \"s///\" omitirá ciertas optimizaciones cuando este flag esté establecido."
+    }
+  ],
+  "exec": {
+    "signature": "I32 exec(pTHX_ REGEXP * const rx,\n         char *stringarg, char* strend, char* strbeg,\n         SSize_t minend, SV* sv,\n         void* data, U32 flags);",
+    "description": "Ejecuta una expresión regular. Los argumentos son:",
+    "arguments": [
+      {
+        "name": "rx",
+        "description": "La expresión regular a ejecutar."
+      },
+      {
+        "name": "sv",
+        "description": "Este es el SV contra el que se realizará la coincidencia. Tenga en cuenta que el array de caracteres real contra el que se realizará la coincidencia se proporciona mediante los argumentos descritos a continuación; el SV se utiliza solo para determinar la codificación UTF8, pos(), etc."
+      },
+      {
+        "name": "strbeg",
+        "description": "Puntero al inicio físico de la cadena."
+      },
+      {
+        "name": "strend",
+        "description": "Puntero al carácter que sigue al final físico de la cadena (es decir, el \"\\0\", si lo hay)."
+      },
+      {
+        "name": "stringarg",
+        "description": "Puntero a la posición en la cadena donde debe comenzar la coincidencia; podría no ser igual a \"strbeg\" (por ejemplo, en una iteración posterior de \"/.../g\")."
+      },
+      {
+        "name": "minend",
+        "description": "Longitud mínima de la cadena (medida en bytes desde \"stringarg\") que debe coincidir; si el motor llega al final de la coincidencia pero no ha llegado a esta posición en la cadena, debería fallar."
+      },
+      {
+        "name": "data",
+        "description": "Datos de optimización; sujeto a cambios."
+      },
+      {
+        "name": "flags",
+        "description": "Flags de optimización; sujeto a cambios."
+      }
+    ]
+  },
+  "intuit": {
+    "signature": "char* intuit(pTHX_\n            REGEXP * const rx,\n            SV *sv,\n            const char * const strbeg,\n            char *strpos,\n            char *strend,\n            const U32 flags,\n            struct re_scream_pos_data_s *data);",
+    "description": "Busca la posición de inicio donde se debe intentar una coincidencia de expresión regular, o posiblemente si el motor de expresión regular no debe ejecutarse porque el patrón no puede coincidir. Esto se llama, según corresponda, por el núcleo, dependiendo de los valores del miembro \"extflags\" de la estructura \"regexp\".",
+    "arguments": [
+      {
+        "name": "rx",
+        "description": "la expresión regular a coincidir"
+      },
+      {
+        "name": "sv",
+        "description": "el SV contra el que se realiza la coincidencia: solo se utiliza para el flag utf8; la cadena en sí se accede a través de los punteros a continuación. Tenga en cuenta que en algo como un SV sobrecargado, SvPOK(sv) puede ser falso y los punteros de cadena pueden apuntar a algo no relacionado con el SV en sí."
+      },
+      {
+        "name": "strbeg",
+        "description": "inicio real de la cadena"
+      },
+      {
+        "name": "strpos",
+        "description": "el punto en la cadena en el que comenzar la coincidencia"
+      },
+      {
+        "name": "strend",
+        "description": "puntero al byte siguiente al último carácter de la cadena"
+      },
+      {
+        "name": "flags",
+        "description": "actualmente no utilizado; establecido en 0"
+      },
+      {
+        "name": "data",
+        "description": "actualmente no utilizado; establecido en NULL"
+      }
+    ]
+  },
+  "checkstr": {
+    "signature": "SV* checkstr(pTHX_ REGEXP * const rx);",
+    "description": "Devuelve un SV que contiene una cadena que debe aparecer en el patrón. Utilizado por \"split\" para optimizar coincidencias."
+  },
+  "free": {
+    "signature": "void free(pTHX_ REGEXP * const rx);",
+    "description": "Llamado por Perl cuando está liberando un patrón de expresión regular para que el motor pueda liberar cualquier recurso al que apunte el miembro \"pprivate\" de la estructura \"regexp\". Esto solo es responsable de liberar datos privados; Perl se encargará de liberar cualquier otra cosa contenida en la estructura \"regexp\"."
+  },
+  "capture_callbacks": {
+    "title": "Callbacks de captura numerada",
+    "description": "Se llama para obtener/establecer el valor de \"$\"\", \"$\"\", \"$&\" y sus equivalentes nombrados, ${^PREMATCH}, ${^POSTMATCH} y ${^MATCH}, así como los grupos de captura numerados ($1, $2, ...).\nEl parámetro \"paren\" será 1 para $1, 2 para $2 y así sucesivamente, y tendrá estos valores simbólicos para las variables especiales:\n${^PREMATCH}  RX_BUFF_IDX_CARET_PREMATCH\n${^POSTMATCH} RX_BUFF_IDX_CARET_POSTMATCH\n${^MATCH}     RX_BUFF_IDX_CARET_FULLMATCH\n$`            RX_BUFF_IDX_PREMATCH\n$'            RX_BUFF_IDX_POSTMATCH\n$&amp;            RX_BUFF_IDX_FULLMATCH\n\nTenga en cuenta que en Perl 5.17.3 y anteriores, las últimas tres constantes también se usaron para las variantes de acento circunflejo de las variables.\nLos nombres han sido elegidos por analogía con los nombres de los métodos de Tie::Scalar con una llamada adicional <b>LENGTH</b> para mayor eficiencia. Sin embargo, las variables de captura con nombre actualmente no están enlazadas internamente sino que se implementan a través de magia.",
+    "numbered_buff_FETCH": {
+      "signature": "void numbered_buff_FETCH(pTHX_ REGEXP * const rx, const I32 paren,\n                         SV * const sv);",
+      "description": "Obtiene una captura numerada especificada. \"sv\" debe establecerse en el escalar a devolver; el escalar se pasa como argumento en lugar de ser devuelto por la función porque cuando se llama, Perl ya tiene un escalar para almacenar el valor, crear otro sería redundante. El escalar se puede establecer con \"sv_setsv\", \"sv_setpvn\" y similares; véase perlapi.\nEste callback es donde Perl des-taintea sus propias variables de captura en modo taint (véase perlsec). Consulte la función \"Perl_reg_numbered_buff_fetch\" en <i>regcomp.c</i> para ver cómo des-taintear las variables de captura si desea que su motor también lo haga."
+    },
+    "numbered_buff_STORE": {
+      "signature": "void    (*numbered_buff_STORE) (pTHX_\n                                REGEXP * const rx,\n                                const I32 paren,\n                                SV const * const value);",
+      "description": "Establece el valor de una variable de captura numerada. \"value\" es el escalar que se utilizará como nuevo valor. Depende del motor asegurarse de que se utilice como el nuevo valor (o rechazarlo).\nEjemplo:\nif (\"ook\" =~ /(o*)/) {\n    # 'paren' será '1' y 'value' será 'ee'\n    $1 =~ tr/o/e/;\n}\n\nEl propio motor de Perl fallará ante cualquier intento de modificar las variables de captura; para hacerlo en otro motor, utilice la siguiente llamada (copiada de \"Perl_reg_ Ancak_numbered_buff_store\"):\nvoid\nExample_reg_numbered_buff_store(pTHX_\n                                REGEXP * const rx,\n                                const I32 paren,\n                                SV const * const value)\n{\n    PERL_UNUSED_ARG(rx);\n    PERL_UNUSED_ARG(paren);\n    PERL_UNUSED_ARG(value);\n    if (!PL_localizing)\n        Perl_croak(aTHX_ PL_no_modify);\n}\n\nEn realidad, Perl no siempre fallará en una declaración que parezca modificar una variable de captura numerada. Esto se debe a que la llamada STORE no se realizará si Perl puede determinar que no tiene que modificar el valor. Esto es exactamente cómo se comportan las variables enlazadas en la misma situación:\npackage CaptureVar;\nuse parent 'Tie::Scalar';\nsub TIESCALAR { bless [] }\nsub FETCH { undef }\nsub STORE { die \"This doesn't get called\" }\npackage main;\ntie my $sv => \"CaptureVar\";\n$sv =~ y/a/b/;\n\nDebido a que $sv es \"undef\" cuando el operador \"y///\" se aplica a él, la transliteración en realidad no se ejecutará y el programa no \"fallará\". Esto es diferente a cómo se comportaban las versiones 5.8 y anteriores, ya que las variables de captura eran variables SOLO LECTURA en ese momento; ahora fallarán cuando se les asigne en el motor predeterminado."
+    },
+    "numbered_buff_LENGTH": {
+      "signature": "I32 numbered_buff_LENGTH (pTHX_\n                          REGEXP * const rx,\n                          const SV * const sv,\n                          const I32 paren);",
+      "description": "Obtiene la \"longitud\" de una variable de captura. Hay una llamada especial para esto para que Perl no tenga que hacer un FETCH y ejecutar \"length\" en el resultado, ya que la longitud es (en el caso de Perl) conocida a partir de un desplazamiento."
+    }
+  }
+}
+almacenado en
+    <span class="Li">&quot;rx-&gt;offs&quot;</span>, esto es mucho más
+    eficiente:</p>
+<pre>I32 s1  = rx-&gt;offs[paren].start;
+I32 s2  = rx-&gt;offs[paren].end;
+I32 len = t1 - s1;</pre>
+<p class="Pp">Esto es un poco más complejo en el caso de UTF-8, mira lo que
+    hace <span class="Li">&quot;Perl_reg_numbered_buff_length&quot;</span> con
+    is_utf8_string_loclen.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Callbacks_de_captura_nombradas'><a class='permalink' href='#Callbacks_de_captura_nombradas'>Callbacks de captura nombradas</a></h2>
+<p class="Pp">Se llama para obtener/establecer el valor de
+    <span class="Li">&quot;%+&quot;</span> y
+    <span class="Li">&quot;%-&quot;</span>, así como por algunas funciones
+    utilitarias en re.</p>
+<p class="Pp">Hay dos callbacks,
+    <span class="Li">&quot;named_buff&quot;</span> se llama en todos los casos
+    en que los callbacks de FETCH, STORE, DELETE, CLEAR, EXISTS y SCALAR de
+    Tie::Hash ocurrirían ante cambios en
+    <span class="Li">&quot;%+&quot;</span> y
+    <span class="Li">&quot;%-&quot;</span> y
+    <span class="Li">&quot;named_buff_iter&quot;</span> en los mismos casos que
+    FIRSTKEY y NEXTKEY.</p>
+<p class="Pp">El parámetro <span class="Li">&quot;flags&quot;</span> se puede usar
+    para determinar a cuáles de estas operaciones deben responder los callbacks.
+    Las siguientes flags están definidas actualmente:</p>
+<p class="Pp">Qué operación de Tie::Hash se está realizando desde el nivel de
+    Perl en <span class="Li">&quot;%+&quot;</span> o
+    <span class="Li">&quot;%-&quot;</span>, si la hay:</p>
+<pre>RXapif_FETCH
+RXapif_STORE
+RXapif_DELETE
+RXapif_CLEAR
+RXapif_EXISTS
+RXapif_SCALAR
+RXapif_FIRSTKEY
+RXapif_NEXTKEY</pre>
+<p class="Pp">Si <span class="Li">&quot;%+&quot;</span> o
+    <span class="Li">&quot;%-&quot;</span> está siendo operado, si lo está.</p>
+<pre>RXapif_ONE /* %+ */
+RXapif_ALL /* %- */</pre>
+<p class="Pp">Si se está llamando como
+    <span class="Li">&quot;re::regname&quot;</span>,
+    <span class="Li">&quot;re::regnames&quot;</span> o
+    <span class="Li">&quot;re::regnames_count&quot;</span>, si lo está. Los dos
+    primeros se combinarán con <span class="Li">&quot;RXapif_ONE&quot;</span> o
+    <span class="Li">&quot;RXapif_ALL&quot;</span>.</p>
+<pre>RXapif_REGNAME
+RXapif_REGNAMES
+RXapif_REGNAMES_COUNT</pre>
+<p class="Pp">Internamente <span class="Li">&quot;%+&quot;</span> y
+    <span class="Li">&quot;%-&quot;</span> se implementan con una interfaz atada
+    real a través de Tie::Hash::NamedCapture. Los métodos en ese paquete llamarán
+    a estas funciones. Sin embargo, el uso de Tie::Hash::NamedCapture para este
+    propósito podría cambiar en futuras versiones. Por ejemplo, esto podría
+    implementarse mediante magia en su lugar (necesitaría una extensión para
+    mgvtbl).</p>
+<p class="Pp"><i>named_buff</i></p>
+<pre>SV*     (*named_buff) (pTHX_ REGEXP * const rx, SV * const key,
+                       SV * const value, U32 flags);</pre>
+<p class="Pp"><i>named_buff_iter</i></p>
+<pre>SV*     (*named_buff_iter) (pTHX_
+                            REGEXP * const rx,
+                            const SV * const lastkey,
+                            const U32 flags);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='qr_package'><a class='permalink' href='#qr_package'>qr_package</a></h2>
+<pre>SV* qr_package(pTHX_ REGEXP * const rx);</pre>
+<p class="Pp">El paquete al que está bendito el objeto mágico qr// (como se ve
+    en <span class="Li">&quot;ref</span> <span class="Li">qr//&quot;</span>). Se
+    recomienda que los motores cambien esto a su nombre de paquete para
+    identificación, independientemente de si implementan métodos en el objeto.</p>
+<p class="Pp">El paquete que devuelve este método también debe tener el paquete
+    interno <span class="Li">&quot;Regexp&quot;</span> en su
+    <span class="Li">@ISA</span>.
+    <span class="Li">&quot;qr//-&gt;isa(&quot;Regexp&quot;)&quot;</span> siempre debe ser
+    verdadero, independientemente del motor que se esté utilizando.</p>
+<p class="Pp">Una posible implementación:</p>
+<pre>SV*
+Example_qr_package(pTHX_ REGEXP * const rx)
+{
+    PERL_UNUSED_ARG(rx);
+    return newSVpvs(&quot;re::engine::Example&quot;);
+}</pre>
+<p class="Pp">Cualquier llamada a método en un objeto creado con
+    <span class="Li">&quot;qr//&quot;</span> se enviará al paquete como un objeto
+    normal.</p>
+<pre>use re::engine::Example;
+my $re = qr//;
+$re-&gt;meth; # enviado a re::engine::Example::meth()</pre>
+<p class="Pp">Para recuperar el objeto <span class="Li">&quot;REGEXP&quot;</span>
+    del escalar en una función XS, use la macro
+    <span class="Li">&quot;SvRX&quot;</span>, vea &quot;REGEXP Functions&quot;
+    en perlapi.</p>
+<pre>void meth(SV * rv)
+PPCODE:
+    REGEXP * re = SvRX(sv);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='dupe'><a class='permalink' href='#dupe'>dupe</a></h2>
+<pre>void* dupe(pTHX_ REGEXP * const rx, CLONE_PARAMS *param);</pre>
+<p class="Pp">En compilaciones con hilos, una expresión regular puede necesitar
+    ser duplicada para que el patrón pueda ser utilizado por múltiples hilos. Se
+    espera que esta rutina maneje la duplicación de cualquier dato privado al que
+    apunte el miembro
+    <span class="Li">&quot;pprivate&quot;</span> de la estructura
+    <span class="Li">&quot;regexp&quot;</span>. Se llamará con la estructura
+    nueva <span class="Li">&quot;regexp&quot;</span> preconstruida como
+    argumento, el miembro
+    <span class="Li">&quot;pprivate&quot;</span> apuntará a la estructura privada
+    **antigua**, y esta rutina será responsable de construir una copia y devolver
+    un puntero a ella (que Perl utilizará para sobrescribir el campo tal como se
+    pasó a esta rutina).</p>
+<p class="Pp">Esto permite al motor duplicar sus datos privados pero también, si
+    es necesario, modificar la estructura final si realmente debe hacerlo.</p>
+<p class="Pp">En compilaciones sin hilos, este campo no existe.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='op_comp'><a class='permalink' href='#op_comp'>op_comp</a></h2>
+<p class="Pp">Esto es privado del núcleo de Perl y está sujeto a cambios. Debe
+    dejarse nulo.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='La_estructura_REGEXP'><a class='permalink' href='#La_estructura_REGEXP'>La estructura REGEXP</a></h1>
+<p class="Pp">La estructura REGEXP está definida en
+    <i>regexp.h</i>. Todos los motores de expresiones regulares deben ser capaces
+    de construir correctamente dicha estructura en su rutina
+    &quot;comp&quot;.</p>
+<p class="Pp">La estructura REGEXP contiene todos los datos que Perl necesita
+    conocer para trabajar correctamente con la expresión regular. Incluye datos
+    sobre optimizaciones que Perl puede usar para determinar si el motor de
+    expresiones regulares realmente debe usarse, y otra información de control
+    variada que se necesita para ejecutar correctamente los patrones en varios
+    contextos, como si el patrón estaba anclado de alguna manera, o qué flags se
+    utilizaron durante la compilación, o si el programa contiene construcciones
+    especiales que Perl necesita conocer.</p>
+<p class="Pp">Además, contiene dos campos destinados al uso privado del motor de
+    expresiones regulares que compiló el patrón. Estos son los miembros
+    <span class="Li">&quot;intflags&quot;</span> y
+    <span class="Li">&quot;pprivate&quot;</span>.
+    <span class="Li">&quot;pprivate&quot;</span> es un puntero void a una estructura
+    arbitraria, cuyo uso y gestión es responsabilidad del motor compilador. Perl
+    nunca modificará ninguno de estos valores.</p>
+<pre>/* copiado de: regexp.h */
+typedef struct regexp {
+    /*----------------------------------------------------------------------
+     * Campos requeridos para compatibilidad con tipos SV
+     */
+    _XPV_HEAD;
+    /*----------------------------------------------------------------------
+     * Campos operacionales
+     */
+    const struct regexp_engine* engine; /* ¿qué motor creó esta regexp? */
+    REGEXP *mother_re; /* ¿qué re es esta copia ligera de? */
+    HV *paren_names;   /* Hash opcional de nombres de paréntesis */
+    /*----------------------------------------------------------------------
+     * Información sobre la coincidencia que el núcleo de perl usa para gestionar cosas
+     */
+    /* ver comentario en regcomp_internal.h sobre la bifurcación de reinicio para entender
+       la distinción entre búferes de captura físicos y lógicos */
+    U32 nparens;                    /* número físico de búferes de captura */
+    U32 logical_nparens;            /* número lógico de búferes de captura */
+    I32 *logical_to_parno;          /* mapeo del número lógico de paréntesis al primero físico */
+    I32 *parno_to_logical;          /* mapeo de cada número físico de paréntesis al lógico */
+    I32 *parno_to_logical_next;     /* mapeo de cada número físico de paréntesis al siguiente
+                                       físico con el mismo id lógico */
+    SSize_t maxlen;    /* número máximo posible de caracteres en la cadena para coincidir */
+    SSize_t minlen;    /* número mínimo posible de caracteres en la cadena para coincidir */
+    SSize_t minlenret; /* número mínimo posible de caracteres en $&amp; */
+    STRLEN gofs;       /* caracteres a la izquierda de la posición desde la que buscamos */
+                       /* datos de subcadena sobre cadenas que deben aparecer en
+                        * la coincidencia final, se usa para optimizaciones */
+    struct reg_substr_data *substrs;
+    /* datos privados específicos del motor */
+    void *pprivate;    /* Datos privados del motor de expresiones regulares que
+                        * creó este objeto. */
+    U32 extflags;      /* Flags usados tanto externa como internamente */
+    U32 intflags;      /* Flags internos específicos del motor */
+    /*----------------------------------------------------------------------
+     * Datos sobre la última/actual coincidencia. Estos se modifican durante la coincidencia
+     */
+    U32 lastparen;           /* último paréntesis de cierre coincidente ($+) */
+    U32 lastcloseparen;      /* último paréntesis de cierre coincidente ($^N) */
+    regexp_paren_pair *offs; /* Array de offsets para (@-) y (@+) */
+    char **recurse_locinput; /* usado para detectar recursión infinita, XXX: mover a interno */
+    /*---------------------------------------------------------------------- */
+    /* offset desde el envoltorio hasta el inicio de precomp */
+    PERL_BITFIELD32 pre_prefix:4;
+    /* flags originales usados para compilar el patrón, pueden diferir de
+     * extflags en varias formas */
+    PERL_BITFIELD32 compflags:9;
+    /*---------------------------------------------------------------------- */
+    char *subbeg;       /* cadena guardada u original para que \digit funcione siempre. */
+    SV_SAVED_COPY       /* Si es distinto de NULL, SV que es COW de la original */
+    SSize_t sublen;     /* Longitud de la cadena apuntada por subbeg */
+    SSize_t suboffset;  /* offset de byte de subbeg desde el inicio lógico de la cadena */
+    SSize_t subcoffset; /* suboffset equivalente, pero en caracteres (para @-/@+) */
+    /*----------------------------------------------------------------------
+     * Más campos operacionales
+     */
+    CV *qr_anoncv;      /* la subrutina anónima envuelta alrededor de qr/(?{..})/ */
+} regexp;</pre>
+<p class="Pp">La mayoría de los campos contenidos en esta estructura se acceden
+    a través de macros con un prefijo de <span class="Li">&quot;RX_&quot;</span> o
+    <span class="Li">&quot;RXp_&quot;</span>. Los campos se discuten con más detalle
+    a continuación:</p>
+<section class="Ss">
+<h2 class="Ss" id='&amp;quot;engine&amp;quot;'><a class='permalink' href='#&amp;quot;engine&amp;quot;'>&quot;engine&quot;</a></h2>
+<p class="Pp">Este campo apunta a una estructura
+    <span class="Li">&quot;regexp_engine&quot;</span> que contiene punteros a las
+    subrutinas que se utilizarán para realizar una coincidencia. Es responsabilidad
+    de la rutina de compilación poblar este campo antes de devolver el objeto
+    regexp.</p>
+<p class="Pp">Internamente, esto se establece en
+    <span class="Li">&quot;NULL&quot;</span> a menos que se especifique un motor
+    personalizado en <span class="Li">$^H{regcomp}</span>. Los callbacks propios
+    de Perl se pueden acceder en la estructura a la que apunta
+    <span class="Li">&quot;RE_ENGINE_PTR&quot;</span>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='&amp;quot;mother_re&amp;quot;'><a class='permalink' href='#&amp;quot;mother_re&amp;quot;'>&quot;mother_re&quot;</a></h2>
+<p class="Pp">Esto i[
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"extflags\"",
+      "anchor": "\"extflags\"",
+      "text": "\"extflags\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Esto será utilizado por Perl para ver con qué indicadores se compiló la expresión regular, esto normalmente se establecerá al valor del parámetro flags por la llamada de retorno comp. Ver la documentación de comp para los indicadores válidos."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"minlen\"   \"minlenret\"",
+      "anchor": "\"minlen\"   \"minlenret\"",
+      "text": "\"minlen\"   \"minlenret\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "La longitud mínima de la cadena (en caracteres) requerida para que el patrón coincida. Esto se usa para podar el espacio de búsqueda al no molestarse en coincidir nada más cerca del final de una cadena de lo que permitiría una coincidencia. Por ejemplo, no tiene sentido siquiera iniciar el motor de expresiones regulares si la longitud mínima es 10 pero la cadena solo tiene 5 caracteres de largo. No hay forma de que el patrón pueda coincidir."
+      },
+      {
+        "type": "p",
+        "text": "<code>\"minlenret\"</code> es la longitud mínima (en caracteres) de la cadena que se encontraría en $&amp; después de una coincidencia."
+      },
+      {
+        "type": "p",
+        "text": "La diferencia entre <code>\"minlen\"</code> y <code>\"minlenret\"</code> se puede ver en el siguiente patrón:"
+      },
+      {
+        "type": "preformatted",
+        "text": "/ns(?=\\d)/"
+      },
+      {
+        "type": "p",
+        "text": "donde el <code>\"minlen\"</code> sería 3 pero el <code>\"minlenret\"</code> solo sería 2 ya que se requiere que \\d coincida, pero en realidad no se incluye en el contenido coincidente. Esta distinción es particularmente importante ya que la lógica de sustitución utiliza el <code>\"minlenret\"</code> para saber si puede hacer sustituciones en el lugar (estas pueden resultar en una considerable aceleración)."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"gofs\"",
+      "anchor": "\"gofs\"",
+      "text": "\"gofs\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Desplazamiento izquierdo desde pos() para iniciar la coincidencia."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"substrs\"",
+      "anchor": "\"substrs\"",
+      "text": "\"substrs\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Datos de subcadenas sobre cadenas que deben aparecer en la coincidencia final. Esto se usa actualmente solo internamente por el motor de Perl, pero podría usarse en el futuro para todos los motores para optimizaciones."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"nparens\",   \"logical_nparens\"",
+      "anchor": "\"nparens\",   \"logical_nparens\"",
+      "text": "\"nparens\",   \"logical_nparens\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Estos campos se utilizan para realizar un seguimiento del número de grupos de captura de paréntesis físicos y lógicos que existen en el patrón, que pueden diferir si el patrón incluye el uso de la construcción de reinicio de rama <code>\"(?| ... | ... )\"</code>. Por ejemplo, el patrón <code>\"/(?|(foo)|(bar))/\"</code> contiene dos búferes de captura físicos, pero solo un búfer de captura lógico. La mayoría de la lógica interna del motor de expresiones regulares utiliza los identificadores de los búferes de captura físicos, pero la lógica expuesta al usuario utiliza los identificadores de los búferes de captura lógicos. Consulte la siguiente sección para ver las estructuras de datos que permiten mapear de uno a otro."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"logical_to_parno\",   \"parno_to_logical\", \"parno_to_logical_next\"",
+      "anchor": "\"logical_to_parno\",   \"parno_to_logical\", \"parno_to_logical_next\"",
+      "text": "\"logical_to_parno\",   \"parno_to_logical\", \"parno_to_logical_next\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Estos campos facilitan el mapeo entre números de búfer de captura lógicos y físicos. <code>\"logical_to_parno\"</code> es una matriz cuyo K-ésimo elemento contiene el ID del búfer de captura físico más bajo para el K-ésimo búfer de captura lógico. <code>\"parno_to_logical\"</code> es una matriz cuyo K-ésimo elemento contiene el búfer de captura lógico asociado con el K-ésimo búfer de captura físico. <code>\"parno_to_logical_next\"</code> es una matriz cuyo K-ésimo elemento contiene el siguiente búfer de captura físico con el mismo ID lógico, o 0 si no hay ninguno."
+      },
+      {
+        "type": "p",
+        "text": "Tenga en cuenta que las tres matrices solo se rellenan cuando el patrón incluye el uso del concepto de reinicio de rama. Los patrones que no utilizan el reinicio de rama tienen efectivamente un mapeo de 1:1 entre lógico y físico, por lo que no se necesita esta metadatos."
+      },
+      {
+        "type": "p",
+        "text": "La siguiente tabla proporciona un ejemplo de cómo funciona esto."
+      },
+      {
+        "type": "preformatted",
+        "text": "Patrón /(a) (?| (b) (c) (d) | (e) (f) | (g) ) (h)/\nLógico: $1      $2  $3  $4    $2  $3    $2    $5\nFísico: 1       2   3   4     5   6     7     8\nSiguiente:     0       5   6   0     7   0     0     0"
+      },
+      {
+        "type": "p",
+        "text": "También tenga en cuenta que el elemento 0 de cualquiera de estas matrices no se utiliza, ya que representa el \"patrón completo\"."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"lastparen\",   and \"lastcloseparen\"",
+      "anchor": "\"lastparen\",   and \"lastcloseparen\"",
+      "text": "\"lastparen\",   and \"lastcloseparen\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Estos campos se utilizan para realizar un seguimiento de: cuál fue el último paréntesis cerrado (ver \"$\+\" en perlvar); y cuál fue el último paréntesis cerrado (ver \"$\^N\" en perlvar)."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"intflags\"",
+      "anchor": "\"intflags\"",
+      "text": "\"intflags\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "La copia privada del motor de los indicadores con los que se compiló el patrón. Normalmente, esto es lo mismo que <code>\"extflags\"</code> a menos que el motor haya optado por modificar uno de ellos."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"pprivate\"",
+      "anchor": "\"pprivate\"",
+      "text": "\"pprivate\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Un void\* que apunta a una estructura de datos definida por el motor. El motor de Perl utiliza la estructura <code>\"regexp_internal\"</code> (ver \"Estructuras Base\" en perlreguts), pero un motor personalizado debería usar algo diferente."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"offs\"",
+      "anchor": "\"offs\"",
+      "text": "\"offs\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Una estructura <code>\"regexp_paren_pair\"</code> que define los desplazamientos dentro de la cadena que se está coincidiendo que corresponden a las capturas <code>$&amp;</code> y <code>$1</code>, <code>$2</code>, etc., la estructura <code>\"regexp_paren_pair\"</code> se define de la siguiente manera:"
+      },
+      {
+        "type": "preformatted",
+        "text": "typedef struct regexp_paren_pair {\n    I32 start;\n    I32 end;\n} regexp_paren_pair;"
+      },
+      {
+        "type": "p",
+        "text": "Si <code>\"-&gt;offs[num].start\"</code> o <code>\"-&gt;offs[num].end\"</code> es <code>\"-1\"</code>, entonces ese grupo de captura no coincidió. <code>\"-&gt;offs[0].start/end\"</code> representa <code>$&amp;</code> (o <code>\"${^MATCH}\"</code> bajo <code>\"/p\"</code>) y <code>\"-&gt;offs[paren].end\"</code> coincide con <code>$$paren</code> donde <code>$paren </code>= 1&gt;."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"RX_PRECOMP\"   \"RX_PRELEN\"",
+      "anchor": "\"RX_PRECOMP\"   \"RX_PRELEN\"",
+      "text": "\"RX_PRECOMP\"   \"RX_PRELEN\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Usado para optimizaciones. <code>\"RX_PRECOMP\"</code> contiene una copia del patrón que se compiló y <code>\"RX_PRELEN\"</code> su longitud. Cuando se va a compilar un nuevo patrón (como dentro de un bucle), el operador interno <code>\"regcomp\"</code> verifica si los <code>\"RX_PRECOMP\"</code> y <code>\"RX_PRELEN\"</code> de la última <code>\"REGEXP\"</code> compilada son equivalentes al nuevo y, de ser así, utiliza el patrón anterior en lugar de compilar uno nuevo."
+      },
+      {
+        "type": "p",
+        "text": "En perls anteriores, estas dos macros eran en realidad campos de la estructura con los nombres <code>\"precomp\"</code> y <code>\"prelen\"</code> respectivamente."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"paren_names\"",
+      "anchor": "\"paren_names\"",
+      "text": "\"paren_names\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Este es un hash utilizado internamente para rastrear grupos de captura nombrados y sus desplazamientos. Las claves son los nombres de los búferes, los valores son dualvars, con la ranura IV que contiene el número de búferes con el nombre dado y el pv siendo una matriz incrustada de I32. Los valores también pueden contenerse de forma independiente en la matriz de datos en casos donde se utilizan retroreferencias nombradas."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"substrs\"",
+      "anchor": "\"substrs\"",
+      "text": "\"substrs\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Contiene información sobre la cadena más larga que debe aparecer en una posición fija desde el inicio del patrón, y la cadena más larga que debe aparecer en una posición flotante desde el inicio del patrón. Se utiliza para realizar búsquedas Fast-Boyer-Moore en la cadena para averiguar si vale la pena utilizar el motor de expresiones regulares y, en caso afirmativo, dónde buscar en la cadena."
+      }
+    ]
+  },
+  {
+    "type": "section",
+    "section_type": "Ss",
+    "heading": {
+      "type": "h2",
+      "id": "\"subbeg\"   \"sublen\" \"saved_copy\" \"suboffset\"   \"subcoffset\"",
+      "anchor": "\"subbeg\"   \"sublen\" \"saved_copy\" \"suboffset\"   \"subcoffset\"",
+      "text": "\"subbeg\"   \"sublen\" \"saved_copy\" \"suboffset\"   \"subcoffset\""
+    },
+    "content": [
+      {
+        "type": "p",
+        "text": "Se utiliza durante la fase de ejecución para gestionar los patrones de búsqueda y reemplazo, y para proporcionar el texto para <code>$&amp;</code>, <code>$1</code>, etc. <code>\"subbeg\"</code> apunta a un búfer (ya sea la cadena original, o una copia en el caso de <code>RX_MATCH_COPIED(rx_sv)</code>), y <code>\"sublen\"</code> es la longitud del búfer. Las macros <code>\"RX_OFFS_START(rx_sv,n)\"</code> y <code>\"RX_OFFS_END(rx_sv,n)\"</code> indexan en este búfer. Al igual que la estructura de datos devuelta por <code>RX_OFFSp(rx_sv)</code>, pero no debería usarla directamente."
+      },
+      {
+        "type": "p",
+        "text": "En presencia de la marca <code>\"REXEC_COPY_STR\"</code>, pero con la adición de las marcas <code>\"REXEC_COPY_SKIP_PRE\"</code> o <code>\"REXEC_COPY_SKIP_POST\"</code>, un motor puede"
+      }
+    ]
+  }
+]
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <link rel="stylesheet" href="/css/style.css"/>
+        <link rel="stylesheet" href="/css/theme.css"/>
+        <link rel="stylesheet" href="/css/print.css" media="print"/>
+        <title>perlreapi - Perl regular expression internal API</title>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp">perlreapi - Perl regular expression internal API</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">This document describes the internal API for Perl's regular
+    expression engine.</p>
+<p class="Pp">The API is still subject to change and is not intended for use
+    outside of the Perl core distribution.</p>
+<section class="Ss">
+<h2 class="Ss" id='Callbacks'><a class='permalink' href='#Callbacks'>Callbacks</a></h2>
+<p class="Pp">When a regular expression is compiled, Perl associates a number of
+    callback pointers with the compiled regular expression structure. These
+    callbacks are invoked by Perl's internal code when it needs to perform certain
+    operations on the compiled regular expression.</p>
+<p class="Pp">The following callbacks are defined:</p>
+<ul class="Bl-item">
+<li class="Li"><b>comp</b>: This callback is invoked when a regular expression
+    is compiled. It is responsible for compiling the pattern into an internal
+    representation that can be executed by the engine. The compiled structure
+    is then returned.</li>
+<li class="Li"><b>free</b>: This callback is invoked when the compiled regular
+    expression structure is no longer needed. It is responsible for freeing any
+    memory that was allocated by the <b>comp</b> callback.</li>
+<li class="Li"><b>eval</b>: This callback is invoked when the regular expression
+    needs to be executed against a string. It is responsible for performing the
+    match and returning the result.</li>
+<li class="Li"><b>free_suboffset</b>: This callback is invoked when the
+    <span class="Li">&quot;suboffset&quot;</span> field of the
+    <span class="Li">&quot;REGEXP&quot;</span> structure is being freed.
+    This is only relevant when a sub-string match is performed.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='The_REGEXP_structure'><a class='permalink' href='#The_REGEXP_structure'>The REGEXP structure</a></h2>
+<p class="Pp">The <span class="Li">&quot;REGEXP&quot;</span> structure is used to
+    hold information about a compiled regular expression. It is defined in
+    <span class="Li">&quot;regcomp.h&quot;</span> and contains the following
+    fields:</p>
+<ul class="Bl-tag">
+<li class="Li"><span class="Li"><b>magic</b></span>: A magic number used to
+    identify the structure.</li>
+<li class="Li"><span class="Li"><b>engine</b></span>: A pointer to the
+    <span class="Li">&quot;regexp_engine&quot;</span> structure for this
+    regular expression.</li>
+<li class="Li"><span class="Li"><b>program</b></span>: A pointer to the compiled
+    program for this regular expression.</li>
+<li class="Li"><span class="Li"><b>flags</b></span>: Flags associated with this
+    regular expression. These can include options such as case-insensitivity,
+    multiline matching, etc.</li>
+<li class="Li"><span class="Li"><b>start_offset</b></span>: The offset within
+    the source string where the match started.</li>
+<li class="Li"><span class="Li"><b>last_match</b></span>: A pointer to the
+    last match found.</li>
+<li class="Li"><span class="Li"><b>name_map</b></span>: A map of capture group
+    names to their corresponding group numbers.</li>
+<li class="Li"><span class="Li"><b>suboffset</b></span>: The number of bytes
+    from the logical start of the buffer to the physical start. This is used
+    when a sub-string match is performed.</li>
+<li class="Li"><span class="Li"><b>subbeg</b></span>: The offset within the
+    source string where the sub-string match begins.</li>
+<li class="Li"><span class="Li"><b>subcoffset</b></span>: The number of
+    characters in the offset. This is needed to support <span class="Li">&quot;@-&quot;</span>
+    and <span class="Li">&quot;@+&quot;</span> which work in characters, not
+    bytes.</li>
+</ul>
+<p class="Pp">The engine may choose not to copy the full buffer (although it must
+    still do so in the presence of <span class="Li">&quot;RXf_PMf_KEEPCOPY&quot;</span>
+    or the relevant bits being set in <span class="Li">&quot;PL_sawampersand&quot;</span>).
+    In this case, it may set <span class="Li">&quot;suboffset&quot;</span> to indicate
+    the number of bytes from the logical start of the buffer to the physical start
+    (i.e. <span class="Li">&quot;subbeg&quot;</span>). It should also set
+    <span class="Li">&quot;subcoffset&quot;</span>, the number of characters in the
+    offset. The latter is needed to support <span class="Li">&quot;@-&quot;</span>
+    and <span class="Li">&quot;@+&quot;</span> which work in characters, not
+    bytes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='&amp;quot;RX_WRAPPED&amp;quot;_&amp;quot;RX_WRAPLEN&amp;quot;'><a class='permalink' href='#&amp;quot;RX_WRAPPED&amp;quot;_&amp;quot;RX_WRAPLEN&amp;quot;'>&quot;RX_WRAPPED&quot;   &quot;RX_WRAPLEN&quot;</a></h2>
+<p class="Pp">Macros which access the string the <span class="Li">&quot;qr//&quot;</span>
+    stringifies to. The Perl engine for example stores
+    <span class="Li">&quot;(?^:eek)&quot;</span> in the case of
+    <span class="Li">&quot;qr/eek/&quot;</span>.</p>
+<p class="Pp">When using a custom engine that doesn't support the
+    <span class="Li">&quot;(?:)&quot;</span> construct for inline modifiers,
+    it's probably best to have <span class="Li">&quot;qr//&quot;</span> stringify
+    to the supplied pattern, note that this will create undesired patterns in
+    cases such as:</p>
+<pre>my $x = qr/a|b/;  # &quot;a|b&quot;
+my $y = qr/c/i;   # &quot;c&quot;
+my $z = qr/$x$y/; # &quot;a|bc&quot;</pre>
+<p class="Pp">There's no solution for this problem other than making the custom
+    engine understand a construct like <span class="Li">&quot;(?:)&quot;</span>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='RX_REFCNT()'><a class='permalink' href='#RX_REFCNT()'>RX_REFCNT()</a></h2>
+<p class="Pp">The number of times the structure is referenced. When this falls
+    to 0, the regexp is automatically freed by a call to
+    <span class="Li">&quot;pregfree&quot;</span>. This should be set to 1 in
+    each engine's &quot;comp&quot; routine. Note that in older perls this was a
+    member in the struct called <span class="Li">&quot;refcnt&quot;</span> but
+    in more modern perls where the regexp structure was unified with the SV
+    structure this is an alias to <b>SvREFCNT()</b>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORY'><a class='permalink' href='#HISTORY'>HISTORY</a></h1>
+<p class="Pp">Originally part of perlreguts.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTHORS</a></h1>
+<p class="Pp">Originally written by Yves Orton, expanded by &#x00C6;var
+    Arnfj&#x00F0;r&#x00F0; Bjarmason.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENSE</a></h1>
+<p class="Pp">Copyright 2006 Yves Orton and 2007 &#x00C6;var
+    Arnfj&#x00F0;r&#x00F0; Bjarmason.</p>
+<p class="Pp">This program is free software; you can redistribute it and/or
+    modify it under the same terms as Perl itself.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Version:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licenses:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#Callbacks">Callbacks</a></li>
+        
+            <li><a href="#The_REGEXP_structure">The REGEXP structure</a></li>
+        
+            <li><a href="#HISTORY">HISTORY</a></li>
+        
+            <li><a href="#AUTHORS">AUTHORS</a></li>
+        
+            <li><a href="#LICENSE">LICENSE</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/perlreapi.1perl.en.txt">txt</a>, 
+        
+            <a href="/man/perlreapi.1perl.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

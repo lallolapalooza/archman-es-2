@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tc-hfsc(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tc-hfsc(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">TC-HFSC(7)</td>
+    <td class="head-vol">Linux</td>
+    <td class="head-rtitle">TC-HFSC(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NOMBRE</a></h1>
+<p class="Pp">tc-hfsc - Curva de Servicio Jerárquica Justa (Hierarchical Fair Service Curve)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="HISTORIA_&amp;amp;_INTRODUCCIÓN"><a class="permalink" href="#HISTORIA_&amp;amp;_INTRODUCCIÓN">HISTORIA &amp; INTRODUCCIÓN</a></h1>
+<p class="Pp">HFSC (Hierarchical Fair Service Curve) es un algoritmo de planificación de paquetes de red que se presentó por primera vez en SIGCOMM'97. Desarrollado como parte de ALTQ (ALTernative Queuing) en NetBSD, se abrió camino rápidamente en otros sistemas BSD y, hace unos años, se incorporó al kernel de Linux. Aun así, no es el algoritmo de planificación más popular, especialmente en comparación con HTB, y no está bien documentado para el usuario final. Esta introducción pretende explicar cómo funciona HFSC sin utilizar demasiada matemática (aunque alguna será inevitable).</p>
+<p class="Pp">En resumen, HFSC tiene como objetivo:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>1)</b></dt>
+  <dd>garantizar una asignación precisa de ancho de banda y latencia para todas las clases hoja (criterio en tiempo real)</dd>
+  <dt><b>2)</b></dt>
+  <dd>asignar el ancho de banda excedente de forma justa según lo especificado por la jerarquía de clases (criterio de participación en el enlace y límite superior)</dd>
+  <dt><b>3)</b></dt>
+  <dd>minimizar cualquier discrepancia entre la curva de servicio y la cantidad real de servicio proporcionado durante el uso compartido del enlace</dd>
+</dl>
+</div>
+<p class="Pp">El principal punto fuerte de HFSC es la característica <b>(1)</b>, que se logra utilizando curvas de servicio no lineales (más sobre lo que es realmente más adelante). Esto es particularmente útil en VoIP o juegos, donde no solo es importante una garantía de ancho de banda constante, sino también limitar el retraso inicial de un flujo de datos. Tenga en cuenta que solo importa para las clases hoja (donde están las colas reales); por lo tanto, la jerarquía de clases se ignora en el caso en tiempo real.</p>
+<p class="Pp">La característica <b>(2)</b> es, bueno, obvia: cualquier algoritmo que presente jerarquía de clases (como HTB) se esfuerza por lograrlo. HFSC lo hace bien, aunque podría terminar en situaciones inusuales si define las curvas de servicio descuidadamente; consulte la sección CASOS LÍMITE para ver ejemplos.</p>
+<p class="Pp">La característica <b>(3)</b> se menciona debido a la naturaleza del problema. Puede haber situaciones en las que no sea posible garantizar el servicio de todas las curvas al mismo tiempo y/o sea imposible hacerlo de manera justa. Ambos se explicarán más adelante. Tenga en cuenta que esto se relaciona principalmente con las clases interiores (también conocidas como agregadas), ya que las hojas ya están manejadas por <b>(1)</b>. Aún así, es perfectamente posible crear una clase hoja sin servicio en tiempo real, y en ese caso, las advertencias se extenderán naturalmente a las clases hoja también.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ABREVIATURAS"><a class="permalink" href="#ABREVIATURAS">ABREVIATURAS</a></h1>
+<p class="Pp">Para el resto del documento, utilizaremos los siguientes atajos:</p>
+<div class="Bd-indent">
+<pre>RT - tiempo real
+LS - participación en el enlace (linkshare)
+UL - límite superior (upperlimit)
+SC - curva de servicio (service curve)</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CONCEPTOS_BÁSICOS_DE_HFSC"><a class="permalink" href="#CONCEPTOS_BÁSICOS_DE_HFSC">CONCEPTOS BÁSICOS DE HFSC</a></h1>
+<p class="Pp">Para comprender cómo funciona HFSC, primero debemos introducir una curva de servicio. En general, es una función no decreciente de alguna unidad de tiempo, que devuelve la cantidad de servicio (una cantidad permitida o asignada de ancho de banda) en un punto específico en el tiempo. El propósito debería ser subconscientemente obvio: si a una clase se le permitiera transferir no menos que la cantidad especificada por su curva de servicio, entonces la curva de servicio no se viola.</p>
+<p class="Pp">Aún así, necesitamos un criterio más elaborado que solo el anterior (aunque en el caso más genérico se puede reducir a él). El criterio debe tener en cuenta dos cosas:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>períodos de inactividad</li>
+  <li>la capacidad de "mirar hacia atrás", por lo que si durante el período activo actual se viola la curva de servicio, tal vez no se viole si contamos el ancho de banda excedente recibido durante períodos activos anteriores</li>
+</ul>
+</div>
+<p class="Pp">Definamos el criterio de la siguiente manera:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>(1)</b></dt>
+  <dd>
+    <pre>Para cada t1, debe existir un t0 en el conjunto B, tal que S(t1-t0) &lt;= w(t0,t1)</pre>
+  </dd>
+</dl>
+</div>
+<p class="Pp">Aquí 'w' denota la cantidad de servicio recibida durante algún período de tiempo entre t0 y t1. B es un conjunto de todos los tiempos en los que una sesión se activa después de un período de inactividad (denotado más adelante como 'volverse activa'). Para una imagen más clara, imagine dos situaciones:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="a)"><a class="permalink" href="#a)"><b>a)</b></a></dt>
+  <dd>nuestra sesión estuvo activa durante dos períodos, con una pequeña brecha de tiempo entre ellos</dd>
+  <dt id="b)"><a class="permalink" href="#b)"><b>b)</b></a></dt>
+  <dd>como en (a), pero con una brecha más grande</dd>
+</dl>
+</div>
+<p class="Pp">Considere <b>(a)</b>: si el servicio recibido durante ambos períodos cumple con <b>(1)</b>, entonces todo está bien. ¿Pero qué pasa si no lo hace durante el segundo período? Si la cantidad de servicio recibida durante el primer período es mayor que la curva de servicio, entonces podría compensar un servicio menor durante el segundo período *y* la brecha, si la brecha es lo suficientemente pequeña.</p>
+<p class="Pp">Si la brecha es más grande <b>(b)</b>, es menos probable que suceda (a menos que el ancho de banda excedente asignado durante la primera parte fuera realmente grande). Aún así, cuanto mayor sea la brecha, menos interesante es lo que sucedió en el pasado (por ejemplo, hace 10 minutos); lo que importa es el tráfico actual que acaba de comenzar.</p>
+<p class="Pp">Desde la perspectiva de HFSC, es más interesante responder la siguiente pregunta: ¿cuándo deberíamos comenzar a transferir paquetes, para que no se viole la curva de servicio de una clase? O reformulándolo: ¿cuánta cantidad X() de servicio debe recibir una sesión en el momento t, para que no se viole la curva de servicio? La función X() definida a continuación es el bloque de construcción básico de HFSC, utilizado en curvas de elegibilidad, plazo, tiempo virtual y tiempo de ajuste. Por supuesto, X() se basa en la ecuación <b>(1)</b> y se define recursivamente:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Al comienzo del primer período activo, la función X se inicializa con la curva de servicio genérica asignada a una clase</li>
+  <li>En cualquier período activo subsiguiente, X() es:
+    <pre><b>min(X() del período anterior ; w(t0)+S(t-t0) para t&gt;=t0),</b></pre>
+    ... donde t0 denota el comienzo del período activo actual.</li>
+</ul>
+</div>
+<p class="Pp">HFSC utiliza curvas de servicio lineales o lineales de dos piezas. En el caso de funciones convexas lineales o lineales de dos piezas (primera pendiente &lt; segunda pendiente), min() en la definición de X se reduce al segundo argumento. Pero en el caso de funciones cóncavas de dos piezas, el primer argumento puede volverse rápidamente menor para algún t&gt;=t0. Tenga en cuenta que, para algunos períodos activos, X() se define solo a partir del comienzo de ese período. También definimos X^(-1)(w) como el t más pequeño &gt;=t0 para el cual X(t) = w. Tenemos que definirlo de esta manera, ya que X() generalmente no es una inyección.</p>
+<p class="Pp">El X() genérico anterior puede ser una de las siguientes:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="E()"><a class="permalink" href="#E()">E()</a></dt>
+  <dd>En el criterio en tiempo real, selecciona paquetes elegibles para ser enviados. Si ninguno es elegible, HFSC utilizará el criterio de participación en el enlace. El tiempo de elegibilidad 'et' se calcula con referencia a las cabeceras de los paquetes ( et = E^(-1)(w) ). Se basa en la curva de servicio RT, *pero en el caso de una curva convexa, solo utiliza su segunda pendiente*.</dd>
+  <dt id="D()"><a class="permalink" href="#D()">D()</a></dt>
+  <dd>En el criterio en tiempo real, selecciona el paquete más adecuado de entre los elegidos por E(). El tiempo de plazo 'dt' corresponde a las colas de los paquetes ( dt = D^(-1)(w+l), donde 'l' es la longitud del paquete ). Se basa en la curva de servicio RT.</dd>
+  <dt id="V()"><a class="permalink" href="#V()">V()</a></dt>
+  <dd>En el criterio de participación en el enlace, arbitra qué paquete enviar a continuación. Tenga en cuenta que V() es una función del tiempo virtual; consulte la sección CRITERIO DE PARTICIPACIÓN EN EL ENLACE para obtener detalles. El tiempo virtual 'vt' corresponde a las cabeceras de los paquetes ( vt = V^(-1)(w) ). Se basa en la curva de servicio LS.</dd>
+  <dt id="F()"><a class="permalink" href="#F()">F()</a></dt>
+  <dd>Una extensión al criterio de participación en el enlace, utilizada para limitar la velocidad a la que se permite la salida del criterio de participación en el enlace. El tiempo de ajuste 'ft' corresponde también a las cabeceras de los paquetes ( ft = F^(-1)(w) ). Se basa en la curva de servicio UL.</dd>
+</dl>
+</div>
+<p class="Pp">Asegúrese de distinguir claramente entre las curvas de servicio RT, LS y UL de la sesión y las funciones de "utilidad" anteriores.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CRITERIO_EN_TIEMPO_REAL"><a class="permalink" href="#CRITERIO_EN_TIEMPO_REAL">CRITERIO EN TIEMPO REAL</a></h1>
+<p class="Pp">El criterio RT *ignora la jerarquía de clases* y garantiza una asignación precisa de ancho de banda y latencia. Decimos que un paquete es elegible para ser enviado cuando el tiempo real actual es posterior al tiempo de elegibilidad del paquete. De todos los paquetes elegibles, el más adecuado para enviar es el que tiene el tiempo de plazo más corto. Esto suena simple, pero considere el siguiente ejemplo:</p>
+<p class="Pp">Interfaz de 10Mbit, dos clases, ambas con curvas de servicio lineales de dos piezas:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>1ra clase - 2Mbit durante 100ms, luego 7Mbit (convexa - 1ra pendiente &lt; 2da pendiente)</li>
+  <li>2da clase - 7Mbit durante 100ms, luego 2Mbit (cóncava - 1ra pendiente &gt; 2da pendiente)</li>
+</ul>
+<p class="Pp">En el momento 0 (inicio), ambas clases comienzan a enviar datos.</p>
+<p class="Pp">La 1ra clase tiene un ancho de banda garantizado de 2Mbit, pero la 2da clase tiene un ancho de banda garantizado de 7Mbit. Ambas tienen acceso a 10Mbit en total.</p>
+<p class="Pp"><b>¿Qué sucede después de 100ms?</b></p>
+<p class="Pp">La 1ra clase ahora tiene garantizados 7Mbit, mientras que la 2da clase solo tiene 2Mbit. Aún así, ambas clases recibieron el servicio que se les prometió (o más) durante los primeros 100ms. Entonces, las curvas de servicio no se violan.</p>
+<p class="Pp"><b>¿Qué sucede si la 2da clase tiene un solo paquete grande que se envía en el tiempo 50ms?</b></p>
+<p class="Pp">Su plazo es 7Mbit para 100ms. Pero, según el criterio RT, la 1ra clase es más adecuada para enviar paquetes debido a su menor plazo (ya que su curva es cóncava). El paquete grande de la 2da clase espera su turno. Si la 1ra clase envía datos durante todo el tiempo hasta 100ms, el paquete grande de la 2da clase podría no ser enviado *en absoluto* dentro de los primeros 100ms. Esto viola su servicio garantizado (7Mbit para 100ms).</p>
+<p class="Pp">Por lo tanto, si la 2da clase necesita enviar datos en el tiempo real, un paquete grande (o cualquier dato) se considera elegible si su tiempo de plazo es menor o igual que el tiempo real. Luego, el paquete con el plazo más corto se considera el más adecuado. Esto garantiza que los paquetes se envíen dentro de sus plazos.</p>
+<p class="Pp"><b>Parámetros de la curva de servicio</b></p>
+<p class="Pp">Una curva de servicio se define típicamente por dos parámetros: velocidad (mínima garantizada) y el tiempo en el que se alcanza esa velocidad (o el período de tiempo durante el cual se aplica). Por ejemplo, `rate 10000Kbit burst 1500Kbit` puede significar que la clase tiene garantizado 10Mbit de ancho de banda, y que puede usar hasta 1.5 megabytes en ráfagas.</p>
+<p class="Pp">Las curvas lineales de dos piezas son las más comunes en HFSC. Se definen por una tasa de 'primera etapa' y un 'tamaño de ráfaga' (o 'crecimiento' o 'horizonte'), seguido de una tasa de 'segunda etapa' y un 'tamaño de ráfaga' (o 'crecimiento' o 'horizonte').</p>
+<p class="Pp">Las curvas convexas (primera tasa &lt; segunda tasa) son útiles para priorizar el tráfico que necesita un rendimiento rápido inicialmente, como VoIP o juegos. Las curvas cóncavas (primera tasa &gt; segunda tasa) son útiles para limitar el ancho de banda de ciertas clases, evitando que consuman demasiado ancho de banda y perjudiquen a otras clases.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CRITERIO_DE_PARTICIPACIÓN_EN_EL_ENLACE"><a class="permalink" href="#CRITERIO_DE_PARTICIPACIÓN_EN_EL_ENLACE">CRITERIO DE PARTICIPACIÓN EN EL ENLACE</a></h1>
+<p class="Pp">El criterio de participación en el enlace (LS) se utiliza para asignar el ancho de banda excedente entre las clases de forma justa, según lo definido por la jerarquía de clases. A diferencia del criterio en tiempo real, LS considera la jerarquía de clases y se basa en el concepto de "tiempo virtual".</p>
+<p class="Pp">El tiempo virtual es una medida del tiempo que una clase ha estado esperando para transmitir datos, ajustada por el ancho de banda que se le ha asignado. Las clases con tiempos virtuales más bajos tienen prioridad para acceder al ancho de banda excedente.</p>
+<p class="Pp">El criterio LS utiliza la función V() (tiempo virtual) para determinar qué paquete tiene la prioridad más alta. El paquete con el tiempo virtual más bajo se considera el siguiente en la cola.</p>
+<p class="Pp">Los parámetros de la curva de servicio LS definen la tasa de participación justa para cada clase y cómo se distribuye el ancho de banda excedente. Por ejemplo, una clase con una tasa LS más alta recibirá una mayor proporción del ancho de banda excedente.</p>
+<p class="Pp">La función F() (tiempo de ajuste) se utiliza para limitar la velocidad a la que se permite la salida del criterio de participación en el enlace. Esto puede ser útil para evitar que una clase consuma rápidamente todo el ancho de banda excedente, incluso si su tasa LS es alta.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CRITERIO_DE_LÍMITE_SUPERIOR"><a class="permalink" href="#CRITERIO_DE_LÍMITE_SUPERIOR">CRITERIO DE LÍMITE SUPERIOR</a></h1>
+<p class="Pp">El criterio de límite superior (UL) se utiliza para establecer un límite máximo en el ancho de banda que una clase puede consumir, incluso si hay ancho de banda excedente disponible. Esto es útil para garantizar que ciertas clases no monopolicen el enlace.</p>
+<p class="Pp">El criterio UL utiliza la función F() (tiempo de ajuste) para limitar la velocidad deDequeue de paquetes. El tiempo de ajuste se calcula en función de la curva de servicio UL de la clase. Si el tiempo de ajuste de un paquete es mayor que el tiempo real, el paquete debe esperar.</p>
+<p class="Pp">Los parámetros de la curva de servicio UL definen el límite máximo de ancho de banda para cada clase. Por ejemplo, una clase con una tasa UL de 5Mbit no podrá transmitir a más de 5Mbit, incluso si el enlace está infrautilizado y su tasa LS es mayor.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ESCENARIOS_Y_CASOS_LÍMITE"><a class="permalink" href="#ESCENARIOS_Y_CASOS_LÍMITE">ESCENARIOS Y CASOS LÍMITE</a></h1>
+<p class="Pp">HFSC es un algoritmo potente pero complejo. Aquí hay algunos escenarios y casos límite a tener en cuenta:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>Curvas de servicio contradictorias:</b> Si las curvas de servicio de las clases padre e hija son contradictorias (por ejemplo, la clase hija tiene un requisito de tasa garantizada más alto que la clase padre), el comportamiento puede ser impredecible. HFSC intentará satisfacer ambas, pero puede resultar en degradación del rendimiento.</li>
+  <li><b>Sobresuscripción:</b> Si la suma de las tasas garantizadas de las clases supera el ancho de banda del enlace, habrá contención. HFSC intentará priorizar las clases según sus curvas de servicio RT y LS, pero no puede crear ancho de banda de la nada.</li>
+  <li><b>Ráfagas grandes:</b> Las ráfagas grandes pueden agotar el búfer de una clase, lo que podría provocar la pérdida de paquetes si el ancho de banda disponible no puede mantenerse al día. La configuración adecuada de los parámetros de ráfaga (tamaño de ráfaga o crecimiento) es crucial.</li>
+  <li><b>Curvas cóncavas:</b> El uso de curvas cóncavas (primera tasa &gt; segunda tasa) en el criterio RT puede ser problemático si la tasa garantizada es muy alta y el período es corto. Si el tráfico real no puede mantenerse al día, la curva de servicio podría violarse.</li>
+  <li><b>Prioridad de RT sobre LS:</b> El criterio RT tiene prioridad sobre LS. Si una clase tiene tráfico RT activo, se le dará prioridad sobre cualquier tráfico LS, incluso si la clase LS tiene un tiempo virtual más bajo.</li>
+  <li><b> Jerarquía de clases:</b> La forma en que se estructura la jerarquía de clases tiene un impacto significativo en cómo se distribuye el ancho de banda excedente. Las clases que están más arriba en la jerarquía tienen más control sobre la asignación de ancho de banda a sus clases hijas.</li>
+</ul>
+</div>
+<p class="Pp">Es importante probar cuidadosamente la configuración de HFSC en su red para asegurarse de que se comporta como se espera y satisface sus requisitos de QoS.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VER_TAMBIÉN"><a class="permalink" href="#VER_TAMBIÉN">VER TAMBIÉN</a></h1>
+<p class="Pp">tc(8), tc-htb(7), tc-fq_codel(8)</p>
+</section>
+</div>
+
+</section>
+                
+            </article>
+        
+        </main>
+        <footer>
+            <p>
+    Page generated by Arch::Man::Website on 2023-10-27 09:01:05 UTC
+</p>
+
+        </footer>
+    </body>
+</html>
+/div>
+<p class="Pp">Supongamos por un momento que usamos D() tanto para encontrar paquetes elegibles como para elegir el más adecuado, de modo que el tiempo elegible se calcularía como D^(-1)(w) y el tiempo de vencimiento se calcularía como D^(-1)(w+l). Si la segunda clase comienza a enviar paquetes 1 segundo después de la primera clase, es imposible garantizar 14Mbit, ya que la capacidad de la interfaz es solo de 10Mbit. La única solución en este escenario es permitir que la primera clase envíe los paquetes antes de lo que normalmente se permitiría. Ahí es donde entra en juego el E() separado. Dejando a un lado las matemáticas (ver el artículo de HFSC para más detalles), E() para una curva de servicio cóncava RT es como D(), pero para la curva de servicio convexa RT, se construye utilizando *únicamente* la segunda pendiente de la curva de servicio RT (en nuestro ejemplo, 7Mbit).</p>
+<p class="Pp">El efecto de dicho E() es que los paquetes se enviarán antes y, al mismo tiempo, D() *se actualizará*, por lo que el tiempo de vencimiento actual calculado a partir de él será posterior. Por lo tanto, cuando la segunda clase comience a enviar paquetes más tarde, tanto la primera como la segunda clase serán elegibles, pero el tiempo de vencimiento de la segunda sesión será menor y sus paquetes se enviarán primero. Cuando la primera clase se idle en algún momento posterior, la segunda clase podrá "acumular" nuevamente para un período activo posterior de la primera clase.</p>
+<p class="Pp">Una breve observación: en una situación en la que la cantidad total de ancho de banda disponible en la interfaz es mayor que las partes totales en tiempo real asignadas (imagine una interfaz de 10 Mbit, pero clases de 1Mbit/2Mbit y 2Mbit/1Mbit), la simple velocidad de la interfaz podría ser suficiente para garantizar los tiempos.</p>
+<p class="Pp">Una parte importante del criterio RT es que, además de actualizar su D() y E(), también se actualiza V() utilizado por el criterio LS. En general, el criterio RT es secundario al criterio LS y se utiliza *únicamente* si existe el riesgo de violar los requisitos precisos en tiempo real. Aún así, la "participación" en el ancho de banda distribuido por el criterio LS está ahí, por lo que V() debe actualizarse sobre la marcha. El criterio LS puede entonces compensar adecuadamente la situación de reparto no ideal, causada por la programación RT. Si utiliza una curva de servicio UL, su F() también se actualizará (la curva de servicio UL es una extensión del criterio LS; consulte la sección CRITERIO DE LÍMITE SUPERIOR).</p>
+<p class="Pp">De todos modos, una especificación descuidada de las curvas de servicio LS y RT puede conducir a situaciones potencialmente no deseadas (ver CASOS LÍMITE para ejemplos). Este no fue el caso en el artículo de HFSC, donde las curvas de servicio LS y RT no podían especificarse por separado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LINKSHARING_CRITERION'><a class='permalink' href='#LINKSHARING_CRITERION'>CRITERIO   DE USO COMPARTIDO DEL ENLACE</a></h1>
+<p class="Pp">La tarea del criterio LS es distribuir el ancho de banda de acuerdo con la jerarquía de clases especificada. Contrariamente al criterio RT, no hay comparaciones entre el tiempo real actual y el tiempo virtual; la decisión se basa únicamente en la comparación directa de los tiempos virtuales de todas las subclases activas: la que tenga el vt más pequeño gana y se programa. Una conclusión inmediata de este hecho es que los valores absolutos no importan, solo las proporciones entre ellos (por lo que, por ejemplo, dos clases hijas con curvas de servicio lineales simples de 1Mbit recibirán el mismo tratamiento desde la perspectiva del criterio LS que si fueran de 5Mbit). La otra conclusión es que, en un sistema perfectamente fluido con curvas lineales, todos los tiempos virtuales en toda la jerarquía de clases serían iguales.</p>
+<p class="Pp">¿Por qué VC se define en términos de tiempo virtual (y qué es)?</p>
+<p class="Pp">Imagine un ejemplo: clase A con dos hijas, A1 y A2, ambas con, digamos, 10Mbit SC. Si A2 está inactiva, A1 recibe todo el ancho de banda de A (y actualiza su V() en el proceso). Cuando A2 se activa, el tiempo virtual de A1 ya está *mucho* más allá que el de A2. Considerando el tipo de decisión tomada por el criterio LS, A1 quedaría inactivo durante mucho tiempo. Podemos solucionar esta situación ajustando el tiempo virtual de la clase que se activa; lo hacemos actualizando dicho tiempo. HFSC utiliza una media del tiempo virtual más pequeño y más grande de los hijos activos actualmente aptos para enviar. Como ya no es tiempo real (excluyendo el caso trivial en el que todas las clases se activan al mismo tiempo y nunca quedan inactivas), se llama tiempo virtual.</p>
+<p class="Pp">Tal enfoque tiene un precio. El problema es análogo a lo que se presentó en la sección anterior y es causado por la no linealidad de las curvas de servicio:</p>
+<dl class="Bl-tag">
+  <dt>1)</dt>
+  <dd>o es imposible garantizar las curvas de servicio y satisfacer la equidad durante ciertos períodos de tiempo:
+      </dd>
+</dl>
+<div class="Bd-indent">Recuerde el ejemplo de la sección RT, ligeramente modificado (con pendientes de 3Mbit en lugar de 2Mbit):
+<ul class="Bl-bullet">
+  <li>1ª clase - 3Mbit durante 100ms, luego 7Mbit (convexa - 1ª pendiente &lt; 2ª pendiente)</li>
+  <li>2ª clase - 7Mbit durante 100ms, luego 3Mbit (cóncava - 1ª pendiente &gt; 2ª pendiente)
+      </li>
+</ul>
+<p class="Pp">Suman 10Mbit, la capacidad de la interfaz. Pero si solo quisiéramos usar LS para garantías y equidad, simplemente no funcionaría. En el contexto de LS, solo se utiliza V() para tomar la decisión de qué clase programar. Si la segunda clase se activa cuando la primera está en su segunda pendiente, la equidad se mantendrá (la proporción será 1:1 (7Mbit:7Mbit)), pero LS en sí mismo, por supuesto, no puede garantizar los valores absolutos, ya que tendría que ir más allá de lo que la interfaz es capaz.</p>
+</div>
+<dl class="Bl-tag">
+  <dt>2)</dt>
+  <dd>y/o es imposible garantizar las curvas de servicio de todas las clases al mismo tiempo [justa o injustamente]:
+      </dd>
+</dl>
+<div class="Bd-indent">
+<p class="Pp">Esto es similar al caso anterior, pero un poco más sutil. Consideraremos dos subárboles, arbitrados por su padre común (raíz aquí):</p>
+<pre>R (raíz) -&#x00A0;10Mbit
+A  - 7Mbit, luego 3Mbit
+A1 - 5Mbit, luego 2Mbit
+A2 - 2Mbit, luego 1Mbit
+B  - 3Mbit, luego 7Mbit</pre>
+<p class="Pp">R arbitra entre el subárbol izquierdo (A) y el derecho (B). Supongamos que A2 y B están constantemente con exceso de carga, y en algún momento posterior A1 se satura (cuando todas las demás clases están en su segunda parte lineal).</p>
+<p class="Pp">¿Qué sucede ahora? B (elección tomada por R) *siempre* obtendrá 7 Mbit, ya que R solo se preocupa (obviamente) por la proporción entre sus hijos directos. Por lo tanto, el subárbol A obtiene 3Mbit, pero sus hijos querrían (en el momento en que A1 se saturó) 5Mbit + 1Mbit. Eso es, por supuesto, imposible, ya que solo pueden obtener 3Mbit debido a la limitación de la interfaz.</p>
+<p class="Pp">En el subárbol izquierdo, tenemos la misma situación que antes (reparto equitativo entre A1 y A2, pero garantías violadas), pero en todo el árbol, no hay equidad (B obtuvo 7Mbit, pero A1 y A2 deben repartirse 3Mbit) y no hay garantías para todas las clases (solo B obtuvo lo que quería). Incluso si violáramos la equidad en el subárbol A y estableciéramos la curva de servicio de A2 en 0, A1 aún no obtendría el ancho de banda requerido.</p>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='UPPERLIMIT_CRITERION'><a class='permalink' href='#UPPERLIMIT_CRITERION'>CRITERIO   DE LÍMITE SUPERIOR</a></h1>
+<p class="Pp">El criterio UL es una extensión del criterio LS que permite enviar paquetes solo si el tiempo real actual es posterior al tiempo de ajuste ('ft'). Por lo tanto, el criterio LS modificado es: elija el tiempo virtual más pequeño de todos los hijos activos, tal que el tiempo de ajuste &lt; tiempo real actual también se cumpla. El tiempo de ajuste se calcula a partir de F(), que se basa en la curva de servicio UL. Como puede ver, su función es similar a la de E() utilizada en el criterio RT. Además, por razones obvias, no se puede especificar una curva de servicio UL sin una LS.</p>
+<p class="Pp">El propósito principal de la curva de servicio UL es limitar HFSC al ancho de banda disponible en el enrutador de upstream (piense en un módem/enrutador doméstico ADSL y un servidor Linux como NAT/firewall/etc. con una conexión de 100Mbit+ al módem/enrutador mencionado). Típicamente, se utiliza para crear una única clase directamente debajo de la raíz, estableciendo una curva de servicio UL lineal al ancho de banda disponible, y luego creando la estructura de su clase a partir de esa clase hacia abajo. Por supuesto, puede agregar una curva de servicio UL (lineal o no) a cualquier clase con el criterio LS.</p>
+<p class="Pp">Una parte importante de la curva de servicio UL es que siempre que, en algún momento, una clase no califique para el uso compartido del enlace debido a su tiempo de ajuste, la próxima vez que califique, actualizará su tiempo virtual al tiempo virtual más pequeño de todos los hijos activos aptos para el uso compartido del enlace. De esta manera, una de las principales cosas que el criterio LS intenta lograr, la igualdad de todos los tiempos virtuales en toda la jerarquía, se preserva (en un sistema perfectamente fluido con solo curvas lineales, todos los tiempos virtuales serían iguales).</p>
+<p class="Pp">Sin eso, 'vt' se quedaría atrás de otros tiempos virtuales y podría causar problemas. Considere una interfaz con una capacidad de 10Mbit y las siguientes clases hoja (por si acaso omite este texto rápidamente, este ejemplo muestra un comportamiento que *no ocurre*):</p>
+<pre>A - ls 5.0Mbit
+B - ls 2.5Mbit
+C - ls 2.5Mbit, ul 2.5Mbit</pre>
+<p class="Pp">Si B estuviera inactivo, mientras que A y C estuvieran constantemente saturados, A y C normalmente dividirían el ancho de banda en una proporción de 2:1 (en cuanto al criterio LS). Pero debido a la curva de servicio UL en su lugar, C obtendría como máximo 2.5Mbit, y A obtendría los 7.5Mbit restantes. Cuanto más largo sea el período de saturación, más divergirán los tiempos virtuales de A y C. Si B se saturara en algún momento posterior, su tiempo virtual se establecería en (vt de A + vt de C) / 2, bloqueando así a A de enviar cualquier tráfico hasta que el tiempo virtual de B alcance al de A.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEPARATE_LS_/_RT_SCs'><a class='permalink' href='#SEPARATE_LS_/_RT_SCs'>CS   LS / RT SEPARADAS</a></h1>
+<p class="Pp">Otra diferencia con el artículo original de HFSC es que las CS RT y LS se pueden especificar por separado. Además, las clases hoja pueden tener solo una CS RT o LS. Para las clases interiores, solo tienen sentido las CS LS; cualquier CS RT se ignorará.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CORNER_CASES'><a class='permalink' href='#CORNER_CASES'>CASOS   LÍMITE</a></h1>
+<p class="Pp">Las curvas de servicio separadas para los criterios LS y RT pueden conducir a ciertas trampas que provienen de la "lucha" entre el uso compartido ideal del enlace y las garantías de tiempo real impuestas. Esas situaciones no existían en el artículo original de HFSC, donde no se discutió la especificación de curvas de servicio LS / RT separadas.</p>
+<p class="Pp">Considere una interfaz con una capacidad de 10Mbit, con las siguientes clases hoja:</p>
+<pre>A - ls 5.0Mbit, rt 8Mbit
+B - ls 2.5Mbit
+C - ls 2.5Mbit</pre>
+<p class="Pp">Imagine que A y C están constantemente saturados. Como B está inactivo, A y C dividirían el ancho de banda en una proporción de 2:1, considerando la curva de servicio LS (así que en teoría, 6.66 y 3.33). Sin embargo, el criterio RT tiene prioridad, por lo que A obtendrá 8Mbit y LS podrá compensar a la clase C solo por 2 Mbit; esto causará una discrepancia entre los tiempos virtuales de A y C.</p>
+<p class="Pp">Suponga que esta situación dura mucho tiempo sin períodos de inactividad, y de repente B se activa. El tiempo virtual de B se actualizará a (vt de A + vt de C) / 2, aterrizando efectivamente en el medio entre el tiempo virtual de A y C. El efecto: B, sin garantías RT, será castigado y no se le permitirá transferir hasta que el tiempo virtual de C se ponga al día.</p>
+<p class="Pp">Si la interfaz tuviera una mayor capacidad, por ejemplo, 100Mbit, este ejemplo se comportaría perfectamente bien.</p>
+<p class="P<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="CORNER_CASES"><a class="permalink" href="#CORNER_CASES">CASOS_EXTREMOS</a></h1>
+<p class="Pp">Echemos un vistazo más de cerca al ejemplo anterior: invalida
+    "inteligentemente" una de las cosas básicas que el criterio LS intenta
+    lograr: la igualdad de todos los tiempos virtuales en la jerarquía de
+    clases. Las clases hoja sin curvas de servicio RT quedan literalmente a su
+    suerte (gobernadas por tiempos virtuales desordenados).</p>
+<p class="Pp">Además, no tiene mucho sentido. La clase A siempre tendrá garantizados
+    hasta 8Mbit, y esto es más que cualquier ancho de banda absoluto que pudiera
+    surgir de su criterio LS (excluyendo el caso trivial de que solo A esté
+    activa). Si el ancho de banda tomado por A es menor que el valor absoluto del
+    criterio LS, la parte no utilizada se asignará automáticamente a otras
+    clases activas (ya que A tiene períodos de inactividad en tal caso). La única
+    "ventaja" es que, incluso en caso de bajo ancho de banda en promedio, las
+    ráfagas se manejarían a la velocidad definida por el criterio RT. Aun así, si
+    se necesita velocidad adicional (por ejemplo, debido a latencia), se deben
+    usar curvas de servicio no lineales en ese caso.</p>
+<p class="Pp">En otras palabras: el criterio LS no tiene sentido en el ejemplo
+    anterior.</p>
+<p class="Pp">Puede "solucionarlo" rápidamente asegurándose de que a cada clase
+    hoja se le asigne una curva de servicio RT (garantizando así que todas
+    recibirán algo de ancho de banda), pero eso no lo hace más válido.</p>
+<p class="Pp">Tenga en cuenta: si utiliza curvas no lineales y las irregularidades
+    explicadas anteriormente ocurren *solo* en el primer segmento, entonces hay
+    poco que objetar a "abusar" un poco de la curva RT:</p>
+<pre>A - ls 5.0Mbit, rt 9Mbit/30ms, luego 1Mbit
+B - ls 2.5Mbit
+C - ls 2.5Mbit</pre>
+<p class="Pp">Aquí, el vt de A "se disparará" en el período inicial, pero luego A
+    nunca obtendrá más de 1Mbit hasta que B y C se pongan al día. Luego, todo
+    volverá a la normalidad.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LINUX_AND_TIMER_RESOLUTION"><a class="permalink" href="#LINUX_AND_TIMER_RESOLUTION">LINUX Y RESOLUCIÓN DEL TEMPORIZADOR</a></h1>
+<p class="Pp">En ciertas situaciones, el programador puede limitarse a sí mismo y
+    configurar un "watchdog" para activar la función de desencolado más tarde. En
+    el caso de HFSC, ocurre cuando, por ejemplo, ningún paquete es elegible para
+    la programación, y se utiliza una curva de servicio UL para limitar la
+    velocidad a la que el criterio LS puede desencolar paquetes. Esto se llama
+    throttling (limitación), y su precisión depende de cómo se compile el
+    kernel.</p>
+<p class="Pp">Hay 3 opciones importantes en los kernels modernos, en lo que
+    respecta a la resolución de temporizadores: 'tickless system', 'high
+    resolution timer support' y 'timer frequency'.</p>
+<p class="Pp">Si tiene habilitado el 'tickless system', la interrupción del
+    temporizador se activará lo más lentamente posible, pero cada vez que el
+    programador se limite a sí mismo (o cualquier otra parte del kernel necesite
+    mayor precisión), la tasa aumentará según sea necesario / posible. El límite
+    es, o bien 'timer frequency' si el 'high resolution timer support' no está
+    disponible o no está compilado, o bien depende del hardware y puede ir
+    *mucho más allá* de la configuración más alta de 'timer frequency'
+    disponible.</p>
+<p class="Pp">Si el 'tickless system' no está habilitado, el temporizador se
+    activará a una tasa fija especificada por 'timer frequency', independientemente
+    de si los temporizadores de alta resolución están disponibles o no.</p>
+<p class="Pp">Es importante tener en cuenta estas configuraciones, ya que en un
+    escenario como: sin tickless, sin temporizadores HR, frecuencia establecida a
+    100Hz - la precisión del throttling sería de 10 ms. Esto no significa
+    automáticamente que estaría limitado a ~0.8Mbit/s (asumiendo paquetes de ~1KB)
+    - siempre que sus colas estén preparadas para cubrir la imprecisión del
+    temporizador. Por supuesto, en el caso de tráfico UDP generado localmente,
+    también se necesita un tamaño de socket apropiado. Un breve ejemplo para
+    hacerlo más comprensible (suponga configuraciones anti-programación extremas
+    - HZ=100, sin temporizadores HR, sin tickless):</p>
+<pre>tc qdisc add dev eth0 root handle 1:0 hfsc default 1
+tc class add dev eth0 parent 1:0 classid 1:1 hfsc rt m2 10Mbit</pre>
+<p class="Pp">Suponiendo un paquete de ~1KB y HZ=100, eso promedia ~0.8Mbit -
+    cualquier cosa por encima de eso (por ejemplo, el ejemplo anterior con una
+    tasa especificada más de 10 veces mayor) requerirá una cola apropiada y
+    causará ráfagas cada ~10 ms. Como puede imaginar, cualquier garantía RT de
+    HFSC se verá seriamente invalidada por eso. El ejemplo mencionado es
+    principalmente importante si se trabaja con hardware antiguo, ya que es
+    particularmente popular para tareas de servidor doméstico. Incluso entonces,
+    puede establecer fácilmente HZ=1000 y tener una programación muy precisa para
+    velocidades típicas de ADSL.</p>
+<p class="Pp">Cualquier cosa moderna (temporizadores basados en APIC o incluso HPET
+    MSI + 'tickless system') proporcionará suficiente precisión para una
+    programación de 1Gbit excelente. Por ejemplo, en una de mis placas AMD de
+    doble núcleo baratas tengo las siguientes configuraciones:</p>
+<pre>tc qdisc add dev eth0 parent root handle 1:0 hfsc default 1
+tc class add dev eth0 parent 1:0 classid 1:1 hfsc rt m2 300mbit</pre>
+<p class="Pp">Y un simple:</p>
+<pre>nc -u dst.host.com 54321 &lt;/dev/zero
+nc -l -p 54321 &gt;/dev/null</pre>
+<p class="Pp">...producirá los siguientes efectos durante un período de ~10
+    segundos (tomado de /proc/interrupts):</p>
+<pre>319: 42124229   0  HPET_MSI-edge  hpet2 (antes)
+319: 42436214   0  HPET_MSI-edge  hpet2 (después de 10s.)</pre>
+<p class="Pp">Eso es aproximadamente 31000/s. Ahora compárelo con la configuración
+    HZ=1000. La desventaja obvia es que la carga de la CPU puede ser bastante
+    alta al atender tantas interrupciones del temporizador. El ejemplo con una
+    curva de servicio RT de 300Mbit en un enlace de 1Gbit es particularmente
+    feo, ya que requiere mucho throttling con retrasos minúsculos.</p>
+<p class="Pp">Tenga en cuenta también que es solo un ejemplo que muestra las
+    capacidades del hardware actual. El ejemplo anterior (esencialmente un
+    emulador TBF de 300Mbit) no tiene sentido en una interfaz interna: casi
+    siempre querrá una curva de servicio LS regular allí, y en ese escenario HFSC
+    simplemente no hace throttling en absoluto.</p>
+<p class="Pp">Curva de servicio RT de 300Mbit (columnas seleccionadas de mpstat -P
+    ALL 1):</p>
+<pre>10:56:43 PM  CPU  %sys     %irq   %soft   %idle
+10:56:44 PM  all  20.10    6.53   34.67   37.19
+10:56:44 PM    0  35.00    0.00   63.00    0.00
+10:56:44 PM    1   4.95   12.87    6.93   73.27</pre>
+<p class="Pp">Por lo tanto, en el raro caso en que necesite esas velocidades con
+    solo una curva de servicio RT, o con una curva de servicio UL: recuerde los
+    inconvenientes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CAVEAT:_RANDOM_ONLINE_EXAMPLES"><a class="permalink" href="#CAVEAT:_RANDOM_ONLINE_EXAMPLES">ADVERTENCIA: EJEMPLOS ALEATORIOS EN LÍNEA</a></h1>
+<p class="Pp">Por razones desconocidas (aunque bien adivinadas), muchos ejemplos
+    que puedes googlear aman abusar del criterio UL y meterlo en cada nodo
+    posible. Esto no tiene sentido y va en contra de lo que HFSC intenta hacer
+    (y hace bastante bien). Usa UL donde tenga sentido: en el nodo más alto para
+    igualar la capacidad de enlace ascendente del enrutador upstream. O en casos
+    especiales, como pruebas (limitar cierto subárbol a cierta velocidad), o
+    clientes que nunca deben obtener más que una cierta velocidad. En este último
+    caso, generalmente puedes lograr lo mismo simplemente usando un criterio RT
+    sin LS+UL en los nodos hoja.</p>
+<p class="Pp">En cuanto al caso del enrutador, recuerde que es bueno diferenciar
+    entre "tráfico hacia el enrutador" (consola remota, configuración web, etc.) y
+    "tráfico saliente", por lo que, por ejemplo:</p>
+<pre>tc qdisc add dev eth0 root handle 1:0 hfsc default 0x8002
+tc class add dev eth0 parent 1:0 classid 1:999 hfsc rt m2 50Mbit
+tc class add dev eth0 parent 1:0 classid 1:1 hfsc ls m2 2Mbit ul m2 2Mbit</pre>
+<p class="Pp">... así el árbol de "internet" debajo de 1:1 y el "enrutador
+    mismo" como 1:999</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LAYER2_ADAPTATION"><a class="permalink" href="#LAYER2_ADAPTATION">ADAPTACIÓN DE CAPA 2</a></h1>
+<p class="Pp">Consulte <a href="/man/tc-stab.8.en">tc-stab(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">VER TAMBIÉN</a></h1>
+<p class="Pp"><a href="/man/tc.8.en">tc(8)</a>, <a href="/man/tc-hfsc.8.en">tc-hfsc(8)</a>, <a href="/man/tc-stab.8.en">tc-stab(8)</a></p>
+<p class="Pp">Por favor, envíe informes de errores y parches a:
+    &lt;netdev@vger.kernel.org&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR"><a class="permalink" href="#AUTHOR">AUTOR</a></h1>
+<p class="Pp">Página de manual creada por Michal Soltys (soltys@ziu.info)</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">31 de Octubre de 2011</td>
+    <td class="foot-os">iproute2</td>
+  </tr>
+</table>

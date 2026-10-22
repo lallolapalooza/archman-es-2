@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>systemd-repart(8) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+        <link rel="alternate" href="/man/systemd-repart.8.de" hreflang="de">
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">systemd-repart(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/systemd/">systemd</a></p>
+<p class="lic">Licencias: LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYSTEMD-REPART(8)</td>
+    <td class="head-vol">systemd-repart</td>
+    <td class="head-rtitle">SYSTEMD-REPART(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">systemd-repart, systemd-repart.service - Crece y añade particiones
+    automáticamente, y genera imágenes de disco (DDI)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<p class="Pp HP"><b>systemd-repart</b> [OPCIONES...]
+  [<i>[DISPOSITIVOBLOQUE]</i>...]</p>
+<p class="Pp">systemd-repart.service</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>systemd-repart</b> crea tablas de particiones, y añade o crece
+    particiones, basándose en los archivos de configuración descritos en
+    <a href='/man/repart.d.5.en'>repart.d(5)</a>.</p>
+<p class="Pp"><b>systemd-repart</b> se utiliza al *construir* imágenes del SO, y
+    también al *desplegar* imágenes para ajustarlas automáticamente, durante el
+    arranque, al sistema en el que se están ejecutando. De esta manera, la imagen
+    puede ser mínima en tamaño y puede ser aumentada automáticamente al arrancar,
+    apoderándose del espacio en disco disponible.</p>
+<p class="Pp">Si se invoca sin argumentos, <b>systemd-repart</b> opera sobre el
+    dispositivo de bloque que soporta la partición del sistema de archivos raíz
+    del SO en ejecución, aumentando así las particiones del propio SO arrancado.
+    Cuando se llama en el initrd, opera sobre el dispositivo de bloque que soporta
+    /sysroot/, es decir, sobre el dispositivo de bloque al que el sistema hará la
+    transición pronto. Si se utiliza <i>--image=</i>, operará sobre el dispositivo
+    o archivo de imagen especificado. El servicio systemd-repart.service se
+    ejecuta generalmente al arrancar en el initrd, con el fin de aumentar la tabla
+    de particiones del SO antes de que sus particiones sean montadas.</p>
+<p class="Pp">Las operaciones de <b>systemd-repart</b> son mayormente incrementales:
+    crece particiones existentes o añade nuevas, pero no reduce, elimina ni
+    mueve particiones existentes. El servicio está diseñado para ejecutarse en
+    cada arranque, pero cuando detecta que la tabla de particiones ya coincide con
+    los archivos de configuración de repart.d/*.conf instalados, no ejecuta
+    ninguna operación.</p>
+<p class="Pp">Los siguientes casos de uso se encuentran entre los cubiertos:</p>
+<div class="Bd-indent">&#x2022;La partición raíz puede crecer para cubrir todo el
+    espacio de disco disponible.</div>
+<div class="Bd-indent">&#x2022;Se puede añadir una partición /home/, swap, o
+    /srv/.</div>
+<div class="Bd-indent">&#x2022;Se puede añadir una segunda (o tercera, ...)
+    partición raíz, para cubrir configuraciones de estilo A/B donde se utiliza
+    alternativamente una segunda versión del sistema de archivos raíz para
+    implementar esquemas de actualización. La imagen desplegada solo llevaría una
+    única partición ("A") pero en el primer arranque se crearía automáticamente
+    una segunda partición ("B") para este propósito.</div>
+<p class="Pp">El algoritmo ejecutado por <b>systemd-repart</b> es aproximadamente
+    el siguiente:</p>
+<div class="Bd-indent"> 1.Los archivos de configuración repart.d/*.conf se cargan y
+    analizan, y se ordenan por nombre de archivo (sin el prefijo del directorio).
+    Para cada archivo de configuración, se cargan archivos de tipo "drop-in" de
+    directorios con el mismo nombre que el archivo de configuración al que se le
+    añade el sufijo ".d".</div>
+<div class="Bd-indent"> 2.La tabla de particiones en el dispositivo de bloque se
+    carga y analiza, si está presente.</div>
+<div class="Bd-indent"> 3.Las particiones existentes en la tabla de particiones se
+    asocian con los archivos repart.d/*.conf por el UUID del tipo de partición
+    GPT. La primera partición existente de un tipo específico se asigna al primer
+    archivo de configuración que declara el mismo tipo. La segunda partición
+    existente de un tipo específico se asigna entonces al segundo archivo de
+    configuración que declara el mismo tipo, y así sucesivamente. Después de que
+    esta asignación iterativa se completa, cualquier partición existente que no
+    tenga un archivo de configuración coincidente se considera "ajena" y se deja
+    tal cual. Y cualquier archivo de configuración para el que no se haya asociado
+    ninguna partición se trata como una solicitud para crear una partición.</div>
+<div class="Bd-indent"> 4.Las particiones que se crearán ahora se asignan en el
+    disco, teniendo en cuenta las restricciones de tamaño y los pesos declarados
+    en los archivos de configuración. Se utiliza el espacio libre dentro de los
+    límites establecidos por las solicitudes de tamaño y relleno. Además, se
+    aumentan las particiones existentes que deben crecer. Las nuevas particiones
+    siempre se añaden al final de la tabla de particiones, ocupando la primera
+    ranura de tabla de particiones cuyo índice sea mayor que los índices de todas
+    las particiones existentes. Las particiones nunca se reordenan y, por lo
+    tanto, los números de partición permanecen estables. Cuando se crean
+    particiones, se colocan en el área de espacio libre más pequeña que sea lo
+    suficientemente grande como para satisfacer los límites de tamaño y relleno.
+    Esto significa que las particiones pueden tener un orden diferente en el disco
+    que en la tabla de particiones. Tenga en cuenta que esta asignación se realiza
+    solo en memoria, la tabla de particiones en el disco aún no se ha actualizado.</div>
+<div class="Bd-indent"> 5.Todas las particiones existentes para las que existen
+    archivos de configuración y que actualmente no tienen una etiqueta de
+    partición GPT establecida recibirán una etiqueta, ya sea explícitamente
+    configurada en la configuración o —si falta— derivada automáticamente del
+    tipo de partición. Lo mismo se hace para todas las particiones que se crean
+    nuevas. Estas asignaciones se realizan solo en memoria, tampoco, el disco aún
+    no se ha actualizado.</div>
+<div class="Bd-indent"> 6.De manera similar, todas las particiones existentes para
+    las que existen archivos de configuración y que actualmente tienen un UUID
+    identificador de ceros se les asignará un nuevo UUID. Este UUID se hashea
+    criptográficamente a partir de un valor de semilla común junto con el UUID
+    del tipo de partición (y un contador en caso de que se definan múltiples
+    particiones del mismo tipo), ver más abajo. Lo mismo se hace para todas las
+    particiones que se crean de nuevo. Estas asignaciones se realizan solo en
+    memoria, tampoco, el disco aún no se ha actualizado.</div>
+<div class="Bd-indent"> 7.De manera similar, si el UUID del volumen del disco son
+    todos ceros, también se inicializa, hasheado criptográficamente a partir del
+    mismo valor de semilla común. Esto también se realiza solo en memoria.</div>
+<div class="Bd-indent"> 8.El espacio en disco asignado a nuevas particiones (es
+    decir, lo que antes era espacio libre) ahora se borra. Específicamente, se
+    eliminan todas las firmas de sistema de archivos y, si el dispositivo lo soporta,
+    se emite el comando de control de E/S <b>BLKDISCARD</b> para informar al
+    hardware de que el espacio está ahora vacío. Además, cualquier "relleno"
+    entre particiones y al final del dispositivo se borra de manera similar.</div>
+<div class="Bd-indent"> 9.Finalmente, la nueva tabla de particiones se escribe en el
+    disco. Se le pide al kernel que relea la tabla de particiones.</div>
+<p class="Pp">Como excepción a la operación incremental normal, cuando se llama en
+    un modo especial de "restablecimiento de fábrica", <b>systemd-repart</b>
+    puede utilizarse para borrar particiones existentes y restablecer una
+    instalación a los valores predeterminados del fabricante. Este modo de
+    operación se utiliza cuando se pasa el interruptor
+    <b>--factory-reset=yes</b> en la línea de comandos de la herramienta, o se
+    especifica la opción <i>systemd.factory_reset=yes</i> en la línea de
+    comandos del kernel, o la variable EFI <i>FactoryResetRequest</i> (UUID
+    del proveedor <b>8cf2644b-4b0b-428f-9387-6d876050dc67</b>) se establece en
+    "yes". Altera ligeramente el algoritmo anterior: entre el tercer y el cuarto
+    paso anterior, cualquier partición marcada explícitamente a través del booleano
+    <i>FactoryReset=</i> se elimina y el algoritmo se reinicia, recreando así
+    inmediatamente estas particiones vacías.</p>
+<p class="Pp">Tenga en cuenta que <b>systemd-repart</b> por defecto solo cambia
+    las tablas de particiones, no crea ni redimensiona ningún sistema de archivos
+    dentro de estas particiones, a menos que se especifique la opción de
+    configuración <i>Format=</i>. Tenga en cuenta también que existen mecanismos
+    separados para este propósito, por ejemplo <a href='/man/systemd-growfs.8.en'>systemd-growfs(8)</a> y
+    <b>systemd-makefs</b>.</p>
+<p class="Pp">Los UUID que identifican las nuevas particiones creadas (o asignadas
+    a particiones existentes que aún no tienen UUID), así como el disco en su
+    conjunto, se hashean criptográficamente a partir de un valor de semilla
+    común. Este valor de semilla suele ser el <a href='/man/machine-id.5.en'>machine-id(5)</a> del
+    sistema, por lo que el ID de la máquina determina de forma reproducible los
+    UUID asignados a todas las particiones. Si el ID de la máquina no se puede
+    leer (o el usuario pasa <b>--seed=random</b>, véase más abajo) la semilla se
+    genera aleatoriamente en su lugar, de modo que los UUID de las particiones
+    también son efectivamente aleatorios. El valor de la semilla también se puede
+    establecer explícitamente, formateado como UUID mediante la opción
+    <b>--seed=</b>. Al hashear estos UUID a partir de una semilla común, las
+    imágenes preparadas con esta herramienta se vuelven reproducibles y el
+    resultado del algoritmo anterior es determinista.</p>
+<p class="Pp">El argumento posicional debe especificar el dispositivo de bloque o
+    un archivo regular sobre el que operar. Si se especifica <b>--empty=create</b>,
+    la ruta especificada se crea como un archivo regular, lo cual es útil para
+    generar imágenes de disco desde cero.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPCIONES</a></h1>
+<p class="Pp">Se entienden las siguientes opciones:</p>
+<p class="Pp"><b>--dry-run=</b></p>
+<div class="Bd-indent">Toma un valor booleano. Si este interruptor no se especifica,
+  se asume <b>--dry-run=yes</b> por defecto. Controla si systemd-repart ejecuta
+  las operaciones de re-particionado solicitadas o si solo debe mostrar lo que
+  haría. A menos que se especifique <b>--dry-run=no</b>, systemd-repart no tocará
+  realmente la tabla de particiones del dispositivo.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--empty=</b></p>
+<div class="Bd-indent">Toma uno de "refuse", "allow", "req</div>
+</div>
+</section>
+
+</article>
+        </main>
+    </body>
+</html>
+uire", "force" o "create". Controla cómo operar en dispositivos de bloque que están completamente vacíos, es decir, que aún no contienen una tabla de particiones/etiqueta de disco. Si no se especifica esta opción, el valor predeterminado implícito es "refuse".
+<p class="Pp">Si se establece en "refuse", <b>systemd-repart</b> requiere que el dispositivo de bloque sobre el que operará ya contenga una tabla de particiones y se niega a operar si no encuentra ninguna. Si se establece en "allow", el comando extenderá una tabla de particiones existente o creará una nueva si no existe. Si se establece en "require", el comando creará una nueva tabla de particiones si no existe hasta el momento y se negará a operar si ya existe una. Si se establece en "force", creará una nueva tabla de particiones incondicionalmente, borrando completamente el disco en efecto. Si se establece en "force", no se tendrán en cuenta ni sobrevivirán las particiones existentes. Por lo tanto, úselo con cuidado, es una excelente manera de perder todos sus datos. Si se establece en "create", se creará un nuevo archivo de loopback en la ruta pasada a través del parámetro del nodo del dispositivo, del tamaño indicado con <b>--size=</b>, véase más abajo.</p>
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--discard=</b></p>
+<div class="Bd-indent">Toma un valor booleano. Si no se especifica esta opción, el valor predeterminado implícito es <b>--discard=yes</b>. Controla si se emite el comando de control de E/S <b>BLKDISCARD</b> sobre el espacio ocupado por las particiones añadidas o sobre el espacio entre ellas. Normalmente, es una buena idea emitir esta solicitud, ya que le dice al hardware subyacente que los bloques cubiertos deben considerarse vacíos, mejorando el rendimiento. Si opera sobre un archivo regular en lugar de un nodo de dispositivo de bloque, se genera un archivo disperso.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--size=</b></p>
+<div class="Bd-indent">Toma un tamaño en bytes, utilizando los sufijos habituales K, M, G, T, o el valor especial "auto". Si se utiliza, la ruta del nodo de dispositivo especificada debe referirse a un archivo regular, que luego se ampliará al tamaño especificado si es menor, antes de realizar cualquier cambio en la tabla de particiones. Si se especifica como "auto", el tamaño mínimo de la imagen del disco se determinará automáticamente (es decir, se sumarán los tamaños mínimos de todas las particiones, teniendo en cuenta el espacio para metadatos adicionales). Esta opción no es compatible si el nodo especificado es un dispositivo de bloque. Esta opción no tiene ningún efecto si el archivo ya tiene el tamaño especificado o es más grande. El tamaño especificado se redondea implícitamente a múltiplos de 4096. Cuando se utiliza con <b>--empty=create</b>, especifica el tamaño inicial del archivo de loopback a crear.
+<p class="Pp">La opción <b>--size=auto</b> tiene en cuenta los tamaños de las particiones preexistentes. Sin embargo, no tiene en cuenta las tablas de particiones que no están densamente empaquetadas: las particiones configuradas podrían no caber en el dispositivo subyacente si existe espacio vacío entre particiones preexistentes (o antes de la primera partición) que no puede ser completamente llenado por las particiones a ampliar o crear.</p>
+<p class="Pp">Tenga en cuenta también que la determinación automática del tamaño no tiene en cuenta los archivos o directorios especificados con <b>CopyFiles=</b>: la operación podría fallar si los archivos o directorios especificados requieren más espacio en disco que el límite mínimo de tamaño por partición configurado.</p>
+<p class="Pp">Añadido en la versión 246.</p>
+</div>
+<p class="Pp"><b>--factory-reset=</b></p>
+<div class="Bd-indent">Toma un valor booleano. Si no se especifica esta opción, el valor predeterminado implícito es <b>--factory-reset=no</b>. Controla si se opera en modo "restablecimiento de fábrica", véase más arriba. Si se establece en true, se eliminarán todas las particiones existentes marcadas con <i>FactoryReset=</i> establecido en sí temprano mientras se ejecuta el algoritmo de re-particionado. Úselo con cuidado, es una excelente manera de perder todos sus datos. Tenga en cuenta que los archivos de partición deben activar explícitamente <i>FactoryReset=</i>, ya que la opción tiene como valor predeterminado apagado. Si ninguna partición está marcada para restablecimiento de fábrica, esta opción no tendrá ningún efecto. Tenga en cuenta que existen otros dos métodos para solicitar la operación de restablecimiento de fábrica: a través de la línea de comandos del kernel y a través de una variable EFI, véase más arriba.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--can-factory-reset</b></p>
+<div class="Bd-indent">Si se especifica esta opción, el disco no se vuelve a particionar. En su lugar, se determina si alguna de las particiones existentes está marcada con <i>FactoryReset=</i>. Si las hay, la herramienta saldrá con el estado de salida cero, de lo contrario, con un estado de salida distinto de cero. Esta opción se puede utilizar para determinar rápidamente si el sistema en ejecución admite un mecanismo de restablecimiento de fábrica basado en <b>systemd-repart</b>.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--root=</b></p>
+<div class="Bd-indent">Toma una ruta a un directorio para usar como sistema de archivos raíz al buscar archivos repart.d/*.conf, para el archivo de ID de máquina a utilizar como semilla y para los archivos y directorios de origen <i>CopyFiles=</i> y <i>CopyBlocks=</i>. Por defecto, cuando se invoca en el sistema normal, este valor por defecto es el sistema de archivos raíz de host /. Si se invoca desde initrd, este valor por defecto es /sysroot/, de modo que la herramienta opere sobre la configuración y el ID de máquina almacenados en el sistema de archivos raíz que luego se transiciona a sí mismo.
+<p class="Pp">Consulte <b>--copy-source=</b> para una opción más restringida que solo afecta a <i>CopyFiles=</i>.</p>
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--image=</b></p>
+<div class="Bd-indent">Toma una ruta a un archivo de imagen de disco o dispositivo para montarlo y usarlo de manera similar a <b>--root=</b>, véase más arriba.
+<p class="Pp">Añadido en la versión 249.</p>
+</div>
+<p class="Pp"><b>--image-policy=</b><b></b><i>policy</i></p>
+<div class="Bd-indent">Toma una cadena de política de imagen como argumento, según <a href='/man/systemd.image-policy.7.en'>systemd.image-policy(7)</a>. La política se aplica al operar en la imagen de disco especificada a través de <b>--image=</b>, véase más arriba. Si no se especifica, el valor predeterminado es la política "*", es decir, se utilizan todos los sistemas de archivos reconocidos en la imagen.</div>
+<p class="Pp"><b>--seed=</b></p>
+<div class="Bd-indent">Toma un UUID como argumento o el valor especial <b>random</b>. Si se especifica un UUID, los UUID que se asignarán a las particiones y a la propia tabla de particiones se derivan mediante hash criptográfico de él. Si no se especifica, se intenta leer el ID de máquina del host (o más precisamente, el directorio raíz configurado a través de <b>--root=</b>) y usarlo como semilla en su lugar, recurriendo a una semilla aleatoria en caso contrario. Use <b>--seed=random</b> para forzar una semilla aleatoria. Especificar explícitamente la semilla puede usarse para generar tablas de particiones estrictamente reproducibles.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--pretty=</b></p>
+<div class="Bd-indent">Toma un argumento booleano. Si no se especifica esta opción, por defecto está activada cuando se llama desde una terminal interactiva y desactivada en caso contrario. Controla si se muestra una tabla y gráfica amigables para el usuario que ilustren los cambios aplicados.
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--definitions=</b></p>
+<div class="Bd-indent">Toma una ruta de sistema de archivos. Si se especifica, los archivos *.conf se leen del directorio especificado en lugar de buscar en /usr/lib/repart.d/*.conf, /etc/repart.d/*.conf, /run/repart.d/*.conf.
+<p class="Pp">Este parámetro se puede especificar varias veces.</p>
+<p class="Pp">Añadido en la versión 245.</p>
+</div>
+<p class="Pp"><b>--key-file=</b></p>
+<div class="Bd-indent">Toma una ruta de sistema de archivos. Configura la clave de cifrado a utilizar al configurar volúmenes LUKS2 configurados con la opción <i>Encrypt=key-file</i> en los archivos de partición. Debe referirse a un archivo regular que contenga la clave, o a un socket de transmisión <b>AF_UNIX</b> en el sistema de archivos. En este último caso, se establece una conexión a él y se lee la clave de él. Si no se especifica esta opción, se utiliza la clave vacía (es decir, clave de longitud cero). Este comportamiento es útil para configurar particiones cifradas durante el primer arranque, que solo reciben su contraseña proporcionada por el usuario en un paso de configuración posterior.
+<p class="Pp">Añadido en la versión 247.</p>
+</div>
+<p class="Pp"><b>--private-key=</b></p>
+<div class="Bd-indent">Toma una ruta de sistema de archivos o una designación específica del motor o proveedor. Configura la clave de firma a utilizar al crear particiones de firma de veracidad con la opción <i>Verity=signature</i> en los archivos de partición.
+<p class="Pp">Añadido en la versión 252.</p>
+</div>
+<p class="Pp"><b>--private-key-source=</b></p>
+<div class="Bd-indent">Toma una de las opciones "file", "engine" o "provider". En los dos últimos casos, va seguida del nombre de un proveedor o motor, separado por dos puntos, que se pasará a la lógica de "engine" o "provider" de OpenSSL. Configura cómo cargar la clave privada a utilizar al crear particiones de firma de veracidad con la opción <i>Verity=signature</i> en los archivos de partición.
+<p class="Pp">Añadido en la versión 256.</p>
+</div>
+<p class="Pp"><b>--certificate=</b></p>
+<div class="Bd-indent">Toma una ruta de sistema de archivos o una designación específica del proveedor. Configura el certificado X.509 codificado en PEM a utilizar al crear particiones de firma de veracidad con la opción <i>Verity=signature</i> en los archivos de partición.
+<p class="Pp">Añadido en la versión 252.</p>
+</div>
+<p class="Pp"><b>--certificate-source=</b></p>
+<div class="Bd-indent">Toma una de las opciones "file", o "provider". En este último caso, va seguida del nombre de un proveedor, separado por dos puntos, que se pasará a la lógica de "provider" de OpenSSL. Configura cómo cargar el certificado X.509 a utilizar al crear particiones de firma de veracidad con la opción <i>Verity=signature</i> en los archivos de partición.
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+<p class="Pp"><b>--join-signature=</b></p>
+<div class="Bd-indent">Especifica una tupla separada por dos puntos con un hash de veracidad de nivel superior codificado en hexadecimal de una partición <i>Verity=hash</i> como primer elemento, y una firma PKCS7 del roothash como ruta a un archivo de firma codificado en DER, o como una cadena de codificación base64 ASCII de una firma codificada en DER prefijada con "base64:". Se utilizará en una imagen preexistente creada con un parámetro como <b>--defer-partitions=root-verity-sig</b>, para permitir la firma sin conexión de la partición de firma de veracidad.
+<p class="Pp">Esta es una alternativa a la firma en línea utilizando parámetros como <b>--private-key=</b>, para sistemas de compilación donde la clave privada para la firma de producción no está disponible en el mismo contexto donde se crea el contenido.</p>
+<p class="Pp">Añadido en la versión 258.</p>
+</div>
+<p class="Pp"><b>--tpm2-device=</b>, <b>--tpm2-pcrs=</b></p>
+<div class="Bd-indent">Configura el dispositivo TPM2 y la lista de PCRs a utilizar para volúmenes LUKS2 configurados con la opción <i>Encrypt=tpm2</i>. Estas opciones toman los mismos parámetros que las opciones con el mismo nombre de <a href='/man/systemd-cryptenroll.1.en'>systemd-cryptenroll(1)</a> y tienen el mismo efecto en las particiones donde se solicita la inscripción TPM2.
+<p class="Pp">Añadido en la versión 248.</p>
+</div>
+<p class="Pp"><b>--tpm2-device-key=</b><b></b><i>PATH</i>,
+    <b>--tpm2-seal-key-handle=</b><b></b><i>HANDLE</i></p>
+<div class="Bd-indent">Configura una clave TPM2 SRK para vincular el cifrado. Consulte <a href='/man/systemd-cryptenroll.1.en'>systemd-cryptenroll(1)</a> para obtener detalles sobre esta opción.
+<p class="Pp">Añadido en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm2-public-key=</b><b></b><i>PATH</i>,
+    <b>--tpm2-public-key-pcrs=</b><b></b><i>PCR</i><i>[+PCR...]</i></p>
+<div class="Bd-indent">Configura una política de PCR firmada por TPM2 para vincular el cifrado. Consulte <a href='/man/systemd-cryptenroll.1.en'>systemd-cryptenroll(1)</a> para obtener detalles sobre estas dos opciones.
+<p class="Pp">Añadido en la versión 252.</p>
+</div>
+<p class="Pp"><b>--tpm2-pcrlock=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Configura una política TPM2 pcrlock para vincular esystemd-repart -r /run/image/disk.raw --dry-run --no-write-clone --directory=/usr/lib/kernel-install/ \
+	--definitions=/usr/lib/kernel-install/50-repart.conf
+```
+
+<p class="Pp">Este comando crea una imagen de disco llamada <code>disk.raw</code> en <code>/run/image/</code>. No escribe realmente la imagen en el disco real, sino que realiza una simulación (<code>--dry-run</code>) sin crear un clon para escribir (<code>--no-write-clone</code>). Las definiciones de partición para el proceso de creación de la imagen se leen del directorio <code>/usr/lib/kernel-install/</code>, y específicamente del archivo de definición <code>/usr/lib/kernel-install/50-repart.conf</code>. Esto se utiliza comúnmente para crear imágenes de disco para sistemas operativos o extensiones de sistema que requieren una estructura de partición específica.</p>
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--apply-image=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Aplica las definiciones de partición en el archivo de
+  imagen dado. Esta opción se puede especificar varias veces para aplicar
+  definiciones de cada una de las imágenes dadas. Las definiciones generadas
+  copiarán las particiones en la tabla de particiones de destino. Las particiones
+  copiadas tendrán el mismo tamaño, metadatos y contenido, pero pueden tener un
+  número de partición diferente y pueden estar ubicadas en un desplazamiento
+  diferente en la tabla de particiones de destino. Estas definiciones se pueden
+  combinar con las definiciones de partición leídas de los archivos de
+  definición de partición normales. Las definiciones sintetizadas tienen
+  precedencia sobre las definiciones leídas de los archivos de definición de
+  partición.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--key-hash-alg=</b><b></b><i>ALG</i></p>
+<div class="Bd-indent">Establece el algoritmo de hash de clave para la
+  firma de las imágenes de disco de arranque. Solo se admite el algoritmo
+  &quot;sha256&quot;. Solo aplicable cuando <b>--make-ddi=</b> se utiliza.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--pcr-policy=</b><b></b><i>POLICY</i></p>
+<div class="Bd-indent">Establece una política de PCR para firmar la imagen de
+  arranque. La política debe ser una lista separada por comas de valores de PCR
+  que se utilizarán para calcular el hash de la imagen. Solo aplicable cuando
+  <b>--make-ddi=</b> se utiliza.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--pcr-extend=</b><b></b><i>BOOL</i></p>
+<div class="Bd-indent">Si está habilitado, los valores de PCR se extenderán
+  con el contenido de la imagen de arranque. Solo aplicable cuando
+  <b>--make-ddi=</b> se utiliza.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--unlock-timeout=</b><b></b><i>SECS</i></p>
+<div class="Bd-indent">Establece el tiempo de espera de desbloqueo para los
+  discos cifrados. El valor predeterminado es 0, lo que significa que el disco
+  no se desbloqueará automáticamente. Solo se aplica cuando se utiliza
+  <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--change-secret=</b></p>
+<div class="Bd-indent">Cambia el secreto utilizado para cifrar el dispositivo.
+  Solo se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--fdo-boot-sig=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Establece la firma de arranque de FDO. La firma debe ser
+  un archivo que contenga la firma de arranque. Solo se aplica cuando se utiliza
+  <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--remove-secret=</b></p>
+<div class="Bd-indent">Elimina el secreto utilizado para cifrar el dispositivo.
+  Solo se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--wipe-slot=</b><b></b><i>SLOT</i></p>
+<div class="Bd-indent">Borra la ranura de secreto especificada. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--wipe-device=</b></p>
+<div class="Bd-indent">Borra el dispositivo especificado. Solo se aplica cuando
+  se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--reset-key=</b></p>
+<div class="Bd-indent">Restablece la clave de cifrado del dispositivo. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--read-secret-file=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Lee el secreto de un archivo especificado. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--write-secret-file=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Escribe el secreto en un archivo especificado. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-device=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del dispositivo TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-owner=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del archivo de propietario de TPM.
+  Solo se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-endorsement=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del archivo de respaldo de TPM. Solo
+  se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-data=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del archivo de datos de TPM. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del archivo de clave de TPM. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-state=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica la ruta del archivo de estado de TPM. Solo
+  se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-handle=</b><b></b><i>HANDLE</i></p>
+<div class="Bd-indent">Especifica el manejador de clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-name=</b><b></b><i>NAME</i></p>
+<div class="Bd-indent">Especifica el nombre de la clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-description=</b><b></b><i>DESC</i></p>
+<div class="Bd-indent">Especifica la descripción de la clave de TPM. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-usage=</b><b></b><i>USAGE</i></p>
+<div class="Bd-indent">Especifica el uso de la clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-flags=</b><b></b><i>FLAGS</i></p>
+<div class="Bd-indent">Especifica las banderas de la clave de TPM. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-blob=</b><b></b><i>BLOB</i></p>
+<div class="Bd-indent">Especifica el blob de clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-auth=</b><b></b><i>AUTH</i></p>
+<div class="Bd-indent">Especifica la autenticación de la clave de TPM. Solo
+  se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-scheme=</b><b></b><i>SCHEME</i></p>
+<div class="Bd-indent">Especifica el esquema de clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-protected=</b><b></b><i>BOOL</i></p>
+<div class="Bd-indent">Especifica si la clave de TPM está protegida. Solo se
+  aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-pin=</b><b></b><i>PIN</i></p>
+<div class="Bd-indent">Especifica el PIN de la clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-puk=</b><b></b><i>PUK</i></p>
+<div class="Bd-indent">Especifica el PUK de la clave de TPM. Solo se aplica
+  cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--tpm-key-auth-data=</b><b></b><i>DATA</i></p>
+<div class="Bd-indent">Especifica los datos de autenticación de la clave de TPM.
+  Solo se aplica cuando se utiliza <code>systemd-cryptenroll</code>.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--split=</b><b></b><i>BOOL</i></p>
+<div class="Bd-indent">Habilita la generación de artefactos divididos a partir de
+  particiones configuradas con <i>SplitName=</i>. Si está habilitado, para cada
+  partición con <i>SplitName=</i> establecido, se genera un archivo de salida
+  separado que contiene solo el contenido de esa partición. El nombre del archivo
+  de salida consiste en el nombre del archivo de bucle invertido con el sufijo
+  del nombre configurado con <i>SplitName=</i>. Si el nombre del archivo de
+  bucle invertido termina en ".raw", el sufijo se inserta antes de la extensión
+  ".raw".
+<p class="Pp">Tenga en cuenta que <b>--split</b> es independiente de
+    <b>--dry-run</b>. Incluso si <b>--dry-run</b> está habilitado, los artefactos
+    divididos se generarán a partir de una imagen existente si
+    <b>--split</b> está habilitado.</p>
+<p class="Pp">Se añadió en la versión 252.</p>
+</div>
+<p class="Pp"><b>--include-partitions=</b><b></b><i>PARTICIONES</i>,
+    <b>--exclude-partitions=</b><b></b><i>PARTICIONES</i></p>
+<div class="Bd-indent">Estas opciones especifican en qué tipos de partición
+  operará <b>systemd-repart</b>. Si se utiliza <b>--include-partitions=</b>,
+  todas las particiones que no se especifican quedan excluidas. Si se utiliza
+    <b>--exclude-partitions=</b>, todas las particiones que se especifican quedan
+  excluidas. Ambas opciones toman una lista separada por comas de UUIDs de tipo
+  de partición GPT o identificadores (ver <i>Type=</i> en
+    <a href='/man/repart.d.5.en'>repart.d(5)</a>).
+<p class="Pp">Se añadió en la versión 253.</p>
+</div>
+<p class="Pp"><b>--defer-partitions=</b><b></b><i>PARTICIONES</i></p>
+<div class="Bd-indent">Esta opción especifica para qué tipos de partición
+  debe diferir <b>systemd-repart</b>. Todas las particiones que se difieren
+  usando esta opción todavía se tienen en cuenta al calcular los tamaños y
+  desplazamientos de otras particiones, pero no se escriben realmente en la
+  imagen del disco. El efecto neto de esta opción es que si ejecuta
+    <b>systemd-repart</b> nuevamente sin esta opción, las particiones faltantes
+  se agregarán como si no hubieran sido diferidas la primera vez que se ejecutó
+    <b>systemd-repart</b>.
+<p class="Pp">Se añadió en la versión 253.</p>
+</div>
+<p class="Pp"><b>--sector-size=</b><b></b><i>BYTES</i></p>
+<div class="Bd-indent">Esta opción permite configurar el tamaño del sector de
+  la imagen producida por <b>systemd-repart</b>. Toma un valor que es una potencia
+  de "2" entre "512" y "4096". Esta opción es útil al construir imágenes para
+  discos que usan un tamaño de sector diferente al disco en el que se produce
+  la imagen.
+<p class="Pp">Se añadió en la versión 253.</p>
+</div>
+<p class="Pp"><b>--architecture=</b><b></b><i>ARCH</i></p>
+<div class="Bd-indent">Esta opción permite anular la arquitectura utilizada para
+  tipos de partición específicos de la arquitectura. Por ejemplo, si se establece
+  en "arm64", un tipo de partición "root-x86-64" referenciado en los drop-in de
+  repart.d/ se parcheará dinámicamente para referirse a "root-arm64" en su lugar.
+  Toma uno de "alpha", "arc", "arm", "arm64", "ia64", "loongarch64",
+  "mips-le", "mips64-le", "parisc", "ppc", "ppc64", "ppc64-le", "riscv32",
+  "riscv64", "s390", "s390x", "tilegx", "x86" o "x86-64".
+<p class="Pp">Se añadió en la versión 254.</p>
+</div>
+<p class="Pp"><b>--offline=</b><b></b><i>BOOL</i></p>
+<div class="Bd-indent">Instruye a <b>systemd-repart</b> para construir la imagen
+  sin conexión. Toma un booleano o "auto". Por defecto es "auto". Si está
+  habilitado, la imagen se construye sin usar dispositivos de bucle. Esto es
+  útil para construir imágenes sin privilegios o cuando los dispositivos de
+  bucle no están disponibles. Si está deshabilitado, la imagen se construye
+  siempre utilizando dispositivos de bucle. Si es "auto", <b>systemd-repart</b>
+  construirá la imagen en línea si es posible y recurrirá a construir la imagen
+  sin conexión si los dispositivos de bucle no están disponibles o no se puede
+  acceder a ellos debido a permisos faltantes.
+<p class="Pp">Se añadió en la versión 254.</p>
+</div>
+<p class="Pp"><b>--copy-from=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Instruye a <b>systemd-repart</b> para sintetizar
+  definiciones de partición de la tabla de particiones en la imagen o dispositivo
+  dado. Esta opción se puede especificar varias veces para sintetizar
+  definiciones de cada una de las imágenes o dispositivos dados. Las definiciones
+  generadas copiarán las particiones en la tabla de particiones de destino. Las
+  particiones copiadas tendrán el mismo tamaño, metadatos y contenido, pero
+  pueden tener un número de partición diferente y pueden estar ubicadas en un
+  desplazamiento diferente en la tabla de particiones de destino. Estas
+  definiciones se pueden combinar con definiciones de partición leídas de archivos
+  de definición de partición normales. Las definiciones sintetizadas tienen
+  precedencia sobre las definiciones leídas de los archivos de definición de
+  partición.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--copy-source=</b><b></b><i>PATH</i>, <b>-s</b> <i>PATH</i></p>
+<div class="Bd-indent">Especifica un directorio de origen del cual se considerarán
+  todas las rutas de origen de <i>CopyFiles=</i>. Esto es similar a
+    <b>--root=</b>, pero se aplica exclusivamente a la configuración
+    <i>CopyFiles=</i>. Si se usan <b>--root=</b> y <b>--copy-source=</b> en
+  combinación, el primero se aplica como de costumbre, excepto para
+    <i>CopyFiles=</i>, donde el segundo tiene precedencia.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--make-ddi=</b><b></b><i>TYPE</i></p>
+<div class="Bd-indent">Toma uno de "sysext", "confext" o "portable". Genera
+  una Imagen de Disco Descubrible (DDI) para una extensión de sistema (sysext,
+  ver <a href='/man/systemd-sysext.8.en'>systemd-sysext(8)</a> para detalles),
+  extensión de configuración (confext) o <b>Servicios Portátiles</b>[1]. La
+  imagen generada consistirá en un sistema de archivos "erofs" firmado Verity
+  como partición raíz. En este modo de operación, las definiciones de partición
+  en /usr/lib/repart.d/*.conf y directorios relacionados no se leen, y
+    <b>--definitions=</b> no es compatible, ya que se elegirán automáticamente
+  las definiciones apropiadas para la clase DDI seleccionada.
+<p class="Pp">Debe usarse junto con <b>--copy-source=</b> para especificar la
+    jerarquía de archivos para poblar la DDI. El directorio especificado debe
+    contener un subdirectorio etc/ si se selecciona "confext". Si se selecciona
+    "sysext", debe contener un directorio usr/ o opt/, o ambos. Si se usa
+    "portable", se puede proporcionar una jerarquía completa de archivos del
+    sistema operativo.</p>
+<p class="Pp">Esta opción implica <b>--empty=create</b>, <b>--size=auto</b>
+    y <b>--seed=random</b> (los dos últimos se pueden anular).</p>
+<p class="Pp">La clave privada y el certificado para firmar la DDI deben
+    especificarse mediante los modificadores <b>--private-key=</b> y
+    <b>--certificate=</b>.</p>
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>-S</b>, <b>-C</b>, <b>-P</b></p>
+<div class="Bd-indent">Atajos para <b>--make-ddi=sysext</b>,
+    <b>--make-ddi=confext</b>, <b>--make-ddi=portable</b>, respectivamente.
+<p class="Pp">Se añadió en la versión 255.</p>
+</div>
+<p class="Pp"><b>--append-fstab=</b></p>
+<div class="Bd-indent">Toma uno de "no", "auto" o "replace". Controla cómo el
+  archivo <a href='/man/fstab.5.en'>fstab(5)</a> generado por
+    <b>--generate-fstab=</b> se comportará en caso de que exista un archivo
+  preexistente.
+<p class="Pp">Si es "no", <b>systemd-repart</b> se quejará y abortará en caso de
+    que exista un archivo. Este es el comportamiento predeterminado. Si es
+    "replace", el archivo será reemplazado silenciosamente por el nuevo generado.</p>
+<p class="Pp">Si es "auto", <b>systemd-repart</b> buscará en el archivo
+    preexistente la sección que pertenece al contenido generado automáticamente y
+    la reemplazará con el contenido generado más reciente, y conservará la
+    sección proporcionada por el usuario si existe una. La sección generada se
+    identifica buscando el contenido automático rodeado por "# Start section
+    &#x2193; of automatically generated fstab by systemd-repart" y "# End
+    section &#x2191; of automatically generated fstab by
+    systemd-repart". El contenido que está antes y después de esos comentarios
+    se considera proporcionado por el usuario y se conserva en el nuevo
+  archivo.</p>
+<p class="Pp">Se añadió en la versión 258.</p>
+</div>
+<p class="Pp"><b>--generate-fstab=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica una ruta donde escribir las entradas de
+    <a href='/man/fstab.5.en'>fstab(5)</a> para los puntos de montaje
+  configurados con <b>MountPoint=</b> en el directorio raíz especificado con
+    <b>--copy-source=</b> o <b>--root=</b> o en el directorio raíz del host si
+  no se especifica ninguno. Deshabilitado por defecto.
+<p class="Pp">Se añadió en la versión 256.</p>
+</div>
+<p class="Pp"><b>--generate-crypttab=</b><b></b><i>PATH</i></p>
+<div class="Bd-indent">Especifica una ruta donde escribir las entradas de
+    crypttab para los volúmenes cifrados configurados con
+    <b>EncryptedVolume=</b> en el directorio raíz especificado con
+    <b>--copy-source=</b> o <b>--root=</b> o en el directorio raíz del host si
+  no se especifica ninguno. Deshabilitado por defecto.
+<p class="Pp">Se añadió en la versión 256.</p>
+</div>
+<p class="Pp"><b>--list-devices</b></p>
+<div class="Bd-indent">Muestra una lista de dispositivos de bloque candidatos
+  sobre los que este comando puede operar. Específicamente, enumera los
+  dispositivos de bloque actualmente presentes que admiten tablas de particiones,
+  y muestra sus rutas de nodos de dispositivo junto con cualquiera de sus enlaces
+  simbólicos.
+<p class="Pp">Se añadió en la versión 257.</p>
+</div>
+<p class="Pp"><b>-h</b>, <b>--help</b></p>
+<div class="Bd-indent">Imprime un breve texto de ayuda y sale.</div>
+<p class="Pp"><b>--version</b></p>
+<div class="Bd-indent">Imprime una breve cadena de versión y sale.</div>
+<p class="Pp"><b>--no-pager</b></p>
+<div class="Bd-indent">No canaliza la salida a un paginador.</div>
+<p class="Pp"><b>--no-legend</b></p>
+<div class="Bd-indent">No imprime la leyenda, es decir, las cabeceras de las
+  columnas y el pie de página con pistas.</div>
+<p class="Pp"><b>--json=</b><b></b><i>MODE</i></p>
+<div class="Bd-indent">Muestra la salida formateada como JSON. Espera uno de
+  "short" (para la salida más corta posible sin espacios en blanco redundantes o
+  saltos de línea), "pretty" (para una versión bonita de la misma, con
+  indentación y saltos de línea) o "off" (para desactivar la salida JSON, el
+  valor predeterminado).</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESTADO_DE_SALIDA'><a class='permalink' href='#ESTADO_DE_SALIDA'>ESTADO DE SALIDA</a></h1>
+<p class="Pp">En caso de éxito, se devuelve 0, y un código de error distinto de
+  cero en caso contrario.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO'><a class='permalink' href='#EJEMPLO'>EJEMPLO</a></h1>
+<p class="Pp"><b>Ejemplo&#x00A0;1.&#x00A0;Generar una imagen de extensión de
+    configuración</b></p>
+<p class="Pp">Lo siguiente crea una DDI de extensión de configuración (confext)
+  para una actualización de /etc/motd:</p>
+<div class="Bd-indent">
+<pre>mkdir -p tree/etc/extension-release.d
+echo &quot;Hola Mundo&quot; &gt;tree/etc/motd
+cat &gt;tree/etc/extension-release.d/extension-release.my-motd &lt;&lt;EOF
+ID=fedora
+VERSION_ID=38
+IMAGE_ID=my-motd
+IMAGE_VERSION=7
+EOF
+systemd-repart -C \
+  --private-key=verity-private-key.pem \
+  --certificate=verity-certificate.pem \
+  -s tree/ \
+  /var/lib/confexts/my-motd.confext.raw
+systemd-confext refresh</pre>
+</div>
+<p class="Pp">La DDI generada de esta manera se puede aplicar al sistema con
+    <a href='/man/systemd-confext.1.en'>systemd-confext(1)</a>.</p>
+<p class="Pp"><b>Ejemplo&#x00A0;2.&#x00A0;Generar una imagen de extensión de
+    sistema y firmarla a través de PKCS11</b></p>
+<p class="Pp">Lo siguiente crea una DDI de extensión de sistema (sysext) para una
+  actualización de /usr/foo y la firma con un token de hardware a través de
+  PKCS11:</p>
+<div class="Bd-indent">
+<pre>mkdir -p tree/usr/lib/extension-release.d
+echo &quot;Hola Mundo&quot; &gt;tree/usr/foo
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>systemd-repart(8) — systemd manual pages</title>
+        <link rel="stylesheet" type="text/css" href="/css/man.css">
+        
+        <link rel="stylesheet" type="text/css" href="/css/arch.css">
+        
+        <link rel="stylesheet" type="text/css" href="/css/custom.css">
+        
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        <meta name="description" content="systemd-repart — Tool for automatically partitioning block devices">
+        
+        <meta name="keywords" content="systemd-repart, man, manual, page, partitioning, block devices, dm-verity, ext4, vfat, f2fs, erofs, ext2, btrfs, xfs, FAT, Linux">
+        
+    </head>
+    <body>
+        <main>
+            <article>
+                <div class="manual-header">
+                    
+                    <div class="header-left">
+                        <h1 class="manual-title">systemd-repart</h1>
+                        <h2 class="manual-section">8</h2>
+                    </div>
+                    
+                    <div class="header-right">
+                        <span class="manual-date"></span>
+                        <span class="manual-os">systemd 258.2</span>
+                    </div>
+                    
+                </div>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="NAME">NAME</h1>
+                    <p class="Pp">systemd-repart — Tool for automatically partitioning block devices</p>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="SYNOPSIS">SYNOPSIS</h1>
+                    <p class="Pp"><code class="Nm">systemd-repart</code> [OPTIONS...] [DEVICE]</p>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="DESCRIPTION">DESCRIPTION</h1>
+                    <p class="Pp"><code>systemd-repart</code> is a tool that partitions a block device
+                        (like a USB stick, SD card, or a disk image file) based on a set of
+                        partitioning definitions. It is primarily used to create OS images for
+                        portable systems, such as those based on <a href="/man/systemd.html">systemd</a>'s
+                        <a href="https://systemd.io/PORTABLE_SERVICES">portable service images</a> feature.</p>
+                    <p class="Pp">The partitioning definitions are read from a directory specified
+                        using the <a href="#OPTIONS"><code>--definitions=</code></a> option, or
+                        from <code class="Cm">/etc/repart.d/</code>, <code class="Cm">/usr/lib/repart.d/</code>,
+                        and <code class="Cm">/run/repart.d/</code> by default. These definitions
+                        reside in <code class="Cm">.conf</code> files and describe the desired
+                        partitions, their types, file systems, and size constraints.</p>
+                    <p class="Pp">By default, <code class="Nm">systemd-repart</code> operates on the
+                        block device specified by the <code class="Cm">DEVICE</code> argument. If
+                        omitted, it attempts to partition the root device of the system,
+                        usually <code class="Cm">/dev/mmcblk0</code> or <code class="Cm">/dev/sda</code>,
+                        if it is a removable device.</p>
+                    <p class="Pp">The tool supports creating various partition types and file systems,
+                        including <code class="Cm">ext4</code>, <code class="Cm">erofs</code>, <code class="Cm">f2fs</code>,
+                        <code class="Cm">btrfs</code>, <code class="Cm">xfs</code>, and FAT variants. It
+                        also has built-in support for <code class="Cm">dm-verity</code>, allowing the creation
+                        of read-only, verifiable file systems.</p>
+                    <p class="Pp">When creating <code class="Cm">dm-verity</code> partitions,
+                        <code class="Nm">systemd-repart</code> can generate the necessary metadata
+                        (hash tree and signature) directly or use pre-generated files. It can
+                        also integrate with cryptographic hardware modules (PKCS#11) for signing.</p>
+                    <p class="Pp">The <a href="#OPTIONS"><code>--json=</code></a> option can be used to
+                        output detailed information about the generated partitions, which can be
+                        useful for scripting and integration with other tools.</p>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="OPTIONS">OPTIONS</h1>
+                    <p class="Pp">The following options are understood:</p>
+                    <dl class="Bl-tag">
+                        <dt><code>-d</code>, <code>--definitions=</code></dt>
+                        <dd>Load partitioning definitions from the specified directory instead of the
+                            default locations.</dd>
+                        <dt><code>-A</code>, <code>--allow-empty</code></dt>
+                        <dd>Allow partitioning an empty or unformatted block device.</dd>
+                        <dt><code>--empty=</code></dt>
+                        <dd>Control behavior when partitioning an empty device. Accepts
+                            <code class="Cm">create</code> (create partitions as defined),
+                            <code class="Cm">no</code> (do not create any partitions), or
+                            <code class="Cm">auto</code> (default; create partitions if definitions
+                            are found).</dd>
+                        <dt><code>--json=</code></dt>
+                        <dd>Generate output in JSON format. Accepts <code class="Cm">short</code>,
+                            <code class="Cm">pretty</code>, or <code class="Cm">off</code>.</dd>
+                        <dt><code>-s</code>, <code>--copy-source=</code></dt>
+                        <dd>Copy files from the specified source directory into the generated file
+                            system(s).</dd>
+                        <dt><code>--defer-partitions=</code></dt>
+                        <dd>A comma-separated list of partition types that should be created after
+                            all other partitions. This is useful for partitions that depend on
+                            data from other partitions, like signatures.</dd>
+                        <dt><code>--join-signature=</code></dt>
+                        <dd>When creating a partition of type <code class="Cm">...-sig</code>, this
+                            option allows joining the data from a prior partition (e.g., a hash
+                            tree) with a separate signature file. The format is
+                            <code class="Cm">HASH_DATA:SIGNATURE_FILE</code>.</dd>
+                        <dt><code>--root-hash=</code></dt>
+                        <dd>Specify the hash of the root file system. This is used when generating
+                            <code class="Cm">dm-verity</code> signatures.</dd>
+                        <dt><code>--private-key-source=</code></dt>
+                        <dd>Specify the source for the private key used for signing <code class="Cm">dm-verity</code>
+                            data. Accepts <code class="Cm">engine:pkcs11</code> for PKCS#11 tokens.</dd>
+                        <dt><code>--private-key=</code></dt>
+                        <dd>Path to the private key file or PKCS#11 URI for signing.</dd>
+                        <dt><code>--certificate=</code></dt>
+                        <dd>Path to the certificate file used for signing.</dd>
+                        <dt><code>--remove-digits</code></dt>
+                        <dd>Remove leading digits from partition labels.</dd>
+                        <dt><code>--dry-run=</code></dt>
+                        <dd>Perform a trial run with the given options without making any changes.
+                            Accepts <code class="Cm">yes</code>, <code class="Cm">no</code>, or
+                            <code class="Cm">metadata</code>.</dd>
+                        <dt><code>--size=</code></dt>
+                        <dd>Set the total size of the block device to be created. Useful when
+                            working with image files.</dd>
+                        <dt><code>-h</code>, <code>--help</code></dt>
+                        <dd>Print a help message and exit.</dd>
+                        <dt><code>-V</code>, <code>--version</code></dt>
+                        <dd>Print version information and exit.</dd>
+                    </dl>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="EXIT_STATUS">EXIT STATUS</h1>
+                    <p class="Pp"><code>systemd-repart</code> exits with status 0 on success, and
+                        non-zero otherwise.</p>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id="EXAMPLE">EXAMPLE</h1>
+                    <p class="Pp"><b>Example&#x00A0;1.&#x00A0;Create a bootable USB drive with
+                        multiple partitions</b></p>
+                    <div class="Bd-indent">
+                        <pre># Create a directory for the portable image content
+mkdir -p /tmp/my-portable-image/usr/lib/extension-release.d/
+# Define the image metadata
+cat &gt;/tmp/my-portable-image/usr/lib/extension-release.d/extension-release.my-foo &lt;&lt;EOF
+ID=fedora
+VERSION_ID=38
+IMAGE_ID=my-foo
+IMAGE_VERSION=7
+EOF
+# Create the image file and partition it
+systemd-repart --copy-source=/tmp/my-portable-image/ --size=10G --empty=create my-portable-image.img</pre>
+                    </div>
+                    <p class="Pp">This command creates a 10GB image file named
+                        <code class="Cm">my-portable-image.img</code> and partitions it according to
+                        the definitions found in <code class="Cm">/etc/repart.d/</code>,
+                        <code class="Cm">/usr/lib/repart.d/</code>, and <code class="Cm">/run/repart.d/</code>.
+                        It also copies the contents of <code class="Cm">/tmp/my-portable-image/</code>
+                        into the generated file system(s).</p>
+                    <p class="Pp"><b>Example&#x00A0;2.&#x00A0;Generate a dm-verity protected portable
+                        extension image</b></p>
+                    <p class="Pp">This example demonstrates creating a portable extension image with
+                        <code class="Cm">dm-verity</code> protection, signing it using a PKCS#11
+                        token.</p>
+                    <div class="Bd-indent">
+                        <pre># Prepare the extension content
+mkdir -p tree/usr/lib/extension-release.d/
+cat &gt;tree/usr/lib/extension-release.d/extension-release.my-foo &lt;&lt;EOF
+ID=fedora
+VERSION_ID=38
+IMAGE_ID=my-foo
+IMAGE_VERSION=7
+EOF
+# Create the dm-verity protected extension image
+systemd-repart --make-ddi=sysext \
+  --private-key-source=engine:pkcs11 \
+  --private-key="pkcs11:model=PKCS%2315%20emulated;manufacturer=piv_II;serial=0123456789abcdef;token=Some%20Cert" \
+  --certificate=verity-certificate.pem \
+  -s tree/ \
+  /var/lib/extensions/my-foo.sysext.raw
+# Refresh systemd-sysext to recognize the new extension
+systemd-sysext refresh</pre>
+                    </div>
+                    <p class="Pp">The DDI generated this way may be applied to the system with
+                        <a href='/man/systemd-sysext.8.en'>systemd-sysext(8)</a>.</p>
+                    <p class="Pp"><b>Example&#x00A0;3.&#x00A0;Generate a dm-verity signature offline
+                        and append it to a pre-built image</b></p>
+                    <p class="Pp">The following creates an image with dm-verity metadata, signs it
+                        separately to simulate an offline signing system, and then appends the
+                        signature to the image:</p>
+                    <div class="Bd-indent">
+                        <pre>mkdir -p repart.d/ /tmp/tree/usr/lib/
+cat &gt;/tmp/tree/usr/lib/os-release &lt;&lt;EOF
+ID=debian
+VERSION_ID=13
+EOF
+cat &gt;repart.d/10-root.conf &lt;&lt;EOF
+[Partition]
+Type=root
+Format=erofs
+SizeMinBytes=100M
+SizeMaxBytes=100M
+Verity=data
+VerityMatchKey=root
+EOF
+cat &gt;repart.d/11-root-verity.conf &lt;&lt;EOF
+[Partition]
+Type=root-verity
+Label=%o_%w_verity
+Verity=hash
+VerityMatchKey=root
+SizeMinBytes=400M
+SizeMaxBytes=400M
+EOF
+cat &gt;repart.d/12-root-verity-sig.conf &lt;&lt;EOF
+[Partition]
+Type=root-verity-sig
+Label=%o_%w_verity_sig
+Verity=signature
+VerityMatchKey=root
+EOF
+systemd-repart --definitions repart.d \
+  --defer-partitions=root-verity-sig \
+  --copy-source=/tmp/tree/ \
+  --empty=create --size=600M \
+  --json=short \
+  /tmp/img.raw | | jq --raw-output0 .[-1].roothash &gt; /tmp/img.roothash
+openssl smime -sign -in /tmp/img.roothash \
+  -inkey verity-private-key.pem \
+  -signer verity-certificate.pem \
+  -noattr -binary -outform der \
+  -out /tmp/img.roothash.p7s
+systemd-repart --definitions repart.d \
+  --dry-run=no --root=/tmp/tree/ \
+  --join-signature="$(cat /tmp/img.roothash):/tmp/img.roothash.p7s" \
+  --certificate=verity-certificate.pem \
+  /tmp/img.raw</pre>
+                    </div>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE ALSO</a></h1>
+                    <p class="Pp"><a href='/man/systemd.1.en'>systemd(1)</a>, <a href='/man/repart.d.5.en'>repart.d(5)</a>, <a href='/man/machine-id.5.en'>machine-id(5)</a>,
+                        <a href='/man/systemd-cryptenroll.1.en'>systemd-cryptenroll(1)</a>, <a href='/man/portablectl.1.en'>portablectl(1)</a>,
+                        <a href='/man/systemd-sysext.8.en'>systemd-sysext(8)</a></p>
+                </section>
+                
+                <section class="Sh">
+                    <h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTES</a></h1>
+                    <dl class="Bl-tag">
+                        <dt> 1.</dt>
+                        <dd>Portable Services</dd>
+                    </dl>
+                    <div class="Bd-indent"><a href='https://systemd.io/PORTABLE_SERVICES'>https://systemd.io/PORTABLE_SERVICES</a></div>
+                </section>
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+        <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+        <input type="submit" name="go" value="Go" />
+    </form>
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/systemd/">core/systemd</a></dd>
+        <dt>Version:</dt>
+        <dd>258.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.github.com/systemd/systemd">https://www.github.com/systemd/systemd</a></dd>
+        <dt>Licenses:</dt>
+        <dd>LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/systemd/">/listing/core/systemd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#OPTIONS">OPTIONS</a></li>
+        
+            <li><a href="#EXIT_STATUS">EXIT STATUS</a></li>
+        
+            <li><a href="#EXAMPLE">EXAMPLE</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+            <li><a href="#NOTES">NOTES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+<nav class="other-languages">
+    <p>In other languages:</p>
+    <ul>
+    
+        <li><a href="/man/systemd-repart.8.de">de</a></li>
+    
+    </ul>
+</nav>
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/systemd-repart.8.en.txt">txt</a>, 
+        
+            <a href="/man/systemd-repart.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

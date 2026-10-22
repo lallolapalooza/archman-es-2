@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ts_read(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ts_read(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/tslib/">tslib</a></p>
+<p class="lic">Licencias: LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">TS_READ(3)</td>
+    <td class="head-vol">tslib</td>
+    <td class="head-rtitle">TS_READ(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">ts_read, ts_read_raw, ts_read_mt, ts_read_raw_mt - leer muestras táctiles de tslib</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;tslib.h&gt;</b>
+
+<b>int ts_read(struct tsdev *</b><i>dev</i><b>, struct ts_sample *</b><i>samp</i><b>, int </b><i>nr</i><b>);</b>
+
+<b>int ts_read_raw(struct tsdev *</b><i>dev</i><b>, struct ts_sample *</b><i>samp</i><b>, int </b><i>nr</i><b>);</b>
+
+<b>int ts_read_mt(struct tsdev *</b><i>dev</i><b>, struct ts_sample_mt **</b><i>samp</i><b>, int </b><i>slots</i><b>, int </b><i>nr</i><b>);</b>
+
+<b>int ts_read_raw_mt(struct tsdev *</b><i>dev</i><b>, struct ts_sample_mt **</b><i>samp</i><b>, int </b><i>slots</i><b>, int </b><i>nr</i><b>);</b></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>ts_read</b>() lee <b>nr</b> muestras de entrada con los filtros
+    de tslib aplicados. <b>struct ts_sample</b> se define de la siguiente
+    manera:</p>
+<pre>struct ts_sample {
+        int             x;
+        int             y;
+        unsigned int    pressure;
+        struct timeval  tv;
+};</pre>
+<p class="Pp"><b>ts_read_mt()</b> lee <b>nr</b> * <b>slots</b> muestras de entrada
+    con los filtros de tslib aplicados. <b>struct ts_sample_mt</b> se define de
+    la siguiente manera:</p>
+<pre>struct ts_sample_mt {
+        /* códigos de evento ABS_MT_* más recientes.
+         * ver linux/input.h para descripciones */
+        int             x;
+        int             y;
+        unsigned int    pressure;
+        int             slot;
+        int             tracking_id;
+        int             tool_type;
+        int             tool_x;
+        int             tool_y;
+        unsigned int    touch_major;
+        unsigned int    width_major;
+        unsigned int    touch_minor;
+        unsigned int    width_minor;
+        int             orientation;
+        int             distance;
+        int             blob_id;
+        struct timeval  tv;
+        /* estado BTN_TOUCH */
+        short           pen_down;
+        /* el bit TSLIB_MT_VALID se establece en valid si esta muestra
+         * contiene datos nuevos;
+	 * valid se establece a 0 en caso contrario */
+        short           valid;
+};</pre>
+<p class="Pp">El usuario debe proporcionar la cantidad de memoria descrita en
+    <b>nr</b> y <b>slots</b> para contenerlas.</p>
+<p class="Pp"><b>ts_read_raw</b>() y <b>ts_read_raw_mt</b>() hacen lo mismo
+    sin aplicar los filtros de tslib.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Se devuelve el número de muestras leídas realmente. Especialmente
+    cuando se abre en modo no bloqueante, ver <b>ts_setup()</b>, puede ser
+    menor que lo solicitado en la llamada. En caso de fallo, se devuelve un
+    número de error negativo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE'><a class='permalink' href='#EXAMPLE'>EJEMPLO</a></h1>
+<p class="Pp">El siguiente programa lee continuamente muestras de entrada
+    multitáctiles de tslib e imprime los valores de ranura y posición en la
+    salida estándar a medida que se toca la pantalla táctil.</p>
+<pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;tslib.h&gt;
+#define READ_SAMPLES 1
+#define MAX_SLOTS 5
+int main(int argc, char **argv)
+{
+        struct tsdev *ts;
+        struct ts_sample_mt **samp_mt = NULL;
+        int i, j;
+        int ret;
+        ts = ts_setup(NULL, 0);
+        if (!ts)
+                return -1;
+        samp_mt = malloc(READ_SAMPLES * sizeof(struct ts_sample_mt **));
+        if (!samp_mt)
+                return -1;
+        for (i = 0; i &lt; READ_SAMPLES; i++) {
+                samp_mt[i] = calloc(MAX_SLOTS, sizeof(struct ts_sample_mt));
+                if (!samp_mt[i])
+                        return -1;
+        }
+        while(1) {
+                ret = ts_read_mt(ts, samp_mt, MAX_SLOTS, READ_SAMPLES);
+                for (i = 0; i &lt; ret; i++) {
+                        printf(&quot;muestra nr %d0, i);
+                        for (j = 0; i &lt; MAX_SLOTS; j++) {
+                                if (!(samp_mt[i][j].valid &amp; TSLIB_MT_VALID))
+                                        continue;
+                                printf(&quot;ranura %d: X:%d Y: %d0,
+                                       samp_mt[i][j].slot,
+                                       samp_mt[i][j].x,
+                                       samp_mt[i][j].y);
+                        }
+                }
+        }
+}</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ts_setup.3.en'>ts_setup(3)</a>, <a href='/man/ts_config.3.en'>ts_config(3)</a>, <a href='/man/ts_open.3.en'>ts_open(3)</a>,
+    <a href='/man/ts_close.3.en'>ts_close(3)</a>, <a href='/man/ts.conf.5.en'>ts.conf(5)</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/tslib/">extra/tslib</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.24-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/kergoth/tslib">https://github.com/kergoth/tslib</a></dd>
+        <dt>Licencias:</dt>
+        <dd>LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/tslib/">/listing/extra/tslib/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EXAMPLE">EJEMPLO</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ts_read.3.en.txt">txt</a>, 
+        
+            <a href="/man/ts_read.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

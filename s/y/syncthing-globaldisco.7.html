@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>syncthing-globaldisco(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">syncthing-globaldisco(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/syncthing/">syncthing</a></p>
+<p class="lic">Licencias: MPL-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYNCTHING-GLOBALDISCO(7)</td>
+    <td class="head-vol">Syncthing</td>
+    <td class="head-rtitle">SYNCTHING-GLOBALDISCO(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">syncthing-globaldisco - Protocolo de Descubrimiento Global v3</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ANUNCIOS'><a class='permalink' href='#ANUNCIOS'>ANUNCIOS</a></h1>
+<p class="Pp">Un dispositivo debe anunciarse al inicio. Lo hace mediante una solicitud POST HTTPS a la URL del servidor de anuncios. El descubrimiento estándar requiere actualmente que la ruta sea "<code>/v2/</code>", aunque esto puede depender del servidor de descubrimiento. La solicitud POST tiene una carga útil JSON que enumera las direcciones de conexión (si las hay):</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>{
+        addresses: [&quot;tcp://192.0.2.45:22000&quot;, &quot;tcp://:22000&quot;, &quot;relay://192.0.2.99:22028&quot;],
+}</pre>
+</div>
+</div>
+<p class="Pp">Está bien que el campo "<code>addresses</code>" sea una lista vacía (<code>[]</code>), <code>null</code>, o que falte por completo. Sin embargo, un anuncio con el campo ausente o vacío no es útil...</p>
+<p class="Pp">Cualquier dirección IP vacía o no especificada (es decir, direcciones como <code>tcp://:22000</code>, <code>tcp://0.0.0.0:22000</code>, <code>tcp://[::]:22000</code>) se interpreta como que se refiere a la dirección IP de origen del anuncio.</p>
+<p class="Pp">El ID del dispositivo que anuncia no forma parte del anuncio. En cambio, el servidor requiere que el cliente realice autenticación de certificado. El ID del dispositivo se deduce del certificado presentado.</p>
+<p class="Pp">La respuesta del servidor está vacía, con el código <code>204</code> (Sin contenido) en caso de éxito. Si no se presentó ningún certificado, se devuelve el estado <code>403</code> (Prohibido). Si los datos enviados no se ajustan al formato esperado, se devuelve <code>400</code> (Solicitud incorrecta).</p>
+<p class="Pp">En las respuestas exitosas, el servidor puede devolver una cabecera <code>Reannounce-After</code> que contiene el número de segundos después del cual el cliente debe realizar un nuevo anuncio.</p>
+<p class="Pp">En las respuestas de error, el servidor puede devolver una cabecera <code>Retry-After</code> que contiene el número de segundos después del cual el cliente debe reintentar.</p>
+<p class="Pp">Realizar anuncios con mucha más frecuencia que la indicada por las cabeceras <code>Reannounce-After</code> o <code>Retry-After</code> puede provocar que el cliente sea limitado. En tales casos, el servidor puede responder con el código de estado <code>429</code> (Demasiadas solicitudes).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONSULTAS'><a class='permalink' href='#CONSULTAS'>CONSULTAS</a></h1>
+<p class="Pp">Las consultas se realizan como solicitudes GET HTTPS a la URL del servidor de anuncios. El ID del dispositivo solicitado se pasa como parámetro de consulta "<code>device</code>", en forma de cadena canónica, es decir, <b><a href='https://discovery.syncthing.net/?device=ABC12345'>https://discovery.syncthing.net/?device=ABC12345</a>-....</b></p>
+<p class="Pp">Las respuestas exitosas tendrán el código de estado <code>200</code> (OK) y contendrán una carga útil JSON del mismo formato que el anuncio anterior. La respuesta no contendrá direcciones vacías o no especificadas.</p>
+<p class="Pp">Si el parámetro de consulta "<code>device</code>" falta o está mal formado, se devuelve el código de estado <code>400</code> (Solicitud incorrecta).</p>
+<p class="Pp">Si el ID del dispositivo tiene un formato válido pero no se encuentra en el registro, se devuelve <code>404</code> (No encontrado).</p>
+<p class="Pp">Si el cliente ha superado un límite de velocidad, el servidor puede responder con <code>429</code> (Demasiadas solicitudes).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTENTICACION'><a class='permalink' href='#AUTENTICACION'>AUTENTICACIÓN</a></h1>
+<p class="Pp">El descubrimiento global se realiza a través de HTTPS y está protegido contra atacantes de la misma manera que el tráfico HTTPS normal. Sin embargo, hay algunas consideraciones específicas de Syncthing además de esto. Como se mencionó anteriormente, para los anuncios, el cliente debe proporcionar un certificado para probar la propiedad del ID del dispositivo anunciado.</p>
+<p class="Pp">Además, Syncthing tiene un mecanismo para verificar la identidad del servidor de descubrimiento. Si bien esto normalmente se lograría utilizando un certificado firmado por una CA, Syncthing a menudo se ejecuta en entornos con paquetes de CA raíz obsoletos o simplemente inexistentes. En cambio, Syncthing puede verificar la huella digital del certificado del servidor de descubrimiento utilizando el mecanismo de ID del dispositivo. Esto es "certificate pinning" y se comunica en la configuración de Syncthing como un parámetro sintético "<code>id</code>" en la URL del servidor de descubrimiento: <b><a href='https://discovery.syncthing.net/?id'>https://discovery.syncthing.net/?id</a>=...</b>. El parámetro "<code>id</code>" no se envía, de hecho, al servidor de descubrimiento; es utilizado por el propio Syncthing para saber qué certificado esperar en el lado del servidor.</p>
+<p class="Pp">La red de descubrimiento pública utiliza este mecanismo de autenticación en lugar de certificados firmados por CA.</p>
+<p class="Pp">El servidor de descubrimiento imprime su ID de certificado de esta manera al inicio.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Los Autores de Syncthing</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DERECHOS_DE_AUTOR'><a class='permalink' href='#DERECHOS_DE_AUTOR'>DERECHOS DE AUTOR</a></h1>
+<p class="Pp">2014-2025, Los Autores de Syncthing</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">23 de noviembre de 2025</td>
+    <td class="foot-os">v2.0.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/syncthing/">extra/syncthing</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.0.12-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://syncthing.net/">https://syncthing.net/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>MPL-2.0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/syncthing/">/listing/extra/syncthing/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#ANUNCIOS">ANUNCIOS</a></li>
+        
+            <li><a href="#CONSULTAS">CONSULTAS</a></li>
+        
+            <li><a href="#AUTENTICACION">AUTENTICACIÓN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#DERECHOS_DE_AUTOR">DERECHOS DE AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/syncthing-globaldisco.7.en.txt">txt</a>, 
+        
+            <a href="/man/syncthing-globaldisco.7.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

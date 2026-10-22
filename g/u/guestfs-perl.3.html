@@ -1,0 +1,303 @@
+
+
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>guestfs-perl(3) — Páginas manuales </title>de Arch
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">guestfs-perl(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libguestfs/">libguestfs</a></p>
+
+        r
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">guestfs-per</td>l(3)
+    <td class="head-vol">Soporte de </td>Virtualización
+    <td class="head-rtitle">gues</td>tfs-</tr>per</table>l(3)
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBR</a></h1>E
+<p class="Pp">guestfs-perl - </p>Cómo usar libgue</section>stfs desde Perl
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSI</a></h1>S
+<pre>use Sys::Guestfs;
+
+my $g = Sys::Guestfs-&gt;new ();
+$g-&gt;add_drive_opts ('guest.img', format =&gt; 'raw');
+$g-&gt;launch ();
+$g-&gt;mount ('/dev/sda1', '/');
+$g-&gt;touch ('/hello');
+$g-&gt;shutdown ();
+$g-&gt;close </pre>()</section>;
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓ</a></h1>N
+<p class="Pp">Esta página manual documenta cómo llamar a libguestfs desde el lenguaje de
+    programación Perl. Esta página solo documenta las diferencias con la API de
+    C y proporciona algunos ejemplos. Si no está familiarizado con el uso de
+    libguestfs, también necesita leer <a href='/man/guestfs.3.en'>guestfs(3). </a>Para leer la API completa de Perl, consulte
+    <a href='/man/Sys::Guestfs.3.en'>Sys::</a>Guestf</p>s(3).
+<section class="Ss">
+<h2 class="Ss" id='ERRORS'><a class='permalink' href='#ERRORS'>ERRORE</a></h2>S
+<p class="Pp">Los errores de las funciones de libguestfs se convierten en llamadas a
+    <span class="Li">"croak" </span>(consulte <a href='/man/Carp.3.en'>Ca</a>rp</p>(</section>3)</section>).
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE_1:_CREATE_A_DISK_IMAGE'><a class='permalink' href='#EXAMPLE_1:_CREATE_A_DISK_IMAGE'>EJEMPLO   1: CREAR UNA IMAGEN DE </a></h1>DISCO
+<pre>#!/usr/bin/env perl
+
+# Ejemplo que muestra cómo crear una imagen de disco.
+
+use strict;
+use warnings;
+use Sys::Guestfs;
+
+my $output = "disk.img";
+
+my $g = new Sys::Guestfs ();
+
+# Crear una imagen de disco dispersa en formato raw, de 512 MB de tamaño.
+$g-&gt;disk_create ($output, "raw", 512 * 1024 * 1024);
+
+# Establecer la bandera de seguimiento para poder ver cada llamada a libguestfs.
+$g-&gt;set_trace (1);
+
+# Adjuntar la imagen de disco a libguestfs.
+$g-&gt;add_drive_opts ($output, format =&gt; "raw", readonly =&gt; 0);
+
+# Ejecutar el backend de libguestfs.
+$g-&gt;launch ();
+
+# Obtener la lista de dispositivos. Como solo añadimos un disco
+# arriba, esperamos que esta lista contenga un único
+# elemento.
+my @devices = $g-&gt;list_devices ();
+if (@devices != 1) {
+    die "error: expected a single device from list-devices";
+}
+
+# Particionar el disco como una única partición MBR.
+$g-&gt;part_disk ($devices[0], "mbr");
+
+# Obtener la lista de particiones. Esperamos un único elemento, que es
+# la partición que acabamos de crear.
+my @partitions = $g-&gt;list_partitions ();
+if (@partitions != 1) {
+    die "error: expected a single partition from list-partitions";
+}
+
+# Crear un sistema de archivos en la partición.
+$g-&gt;mkfs ("ext4", $partitions[0]);
+
+# Ahora montar el sistema de archivos para poder añadir archivos.
+$g-&gt;mount ($partitions[0], "/");
+
+# Crear algunos archivos y directorios.
+$g-&gt;touch ("/empty");
+my $message = "Hello, world\n";
+$g-&gt;write ("/hello", $message);
+$g-&gt;mkdir ("/foo");
+
+# Este sube el archivo local /etc/resolv.conf dentro de
+# la imagen de disco.
+$g-&gt;upload ("/etc/resolv.conf", "/foo/resolv.conf");
+
+# Como escribimos en el disco y queremos detectar errores de
+# escritura, llamar a $g-&gt;shutdown. No necesita hacer esto:
+# $g-&gt;close lo hará implícitamente.
+$g-&gt;shutdown ();
+
+# Tenga en cuenta también que los manejadores se cierran automáticamente si son
+# recolectados por conteo de referencias. Solo necesita llamar a close
+# si quiere cerrar el manejador de inmediato.
+$g-&gt;close </pre>()</section>;
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE_2:_INSPECT_A_VIRTUAL_MACHINE_DISK_IMAGE'><a class='permalink' href='#EXAMPLE_2:_INSPECT_A_VIRTUAL_MACHINE_DISK_IMAGE'>EJEMPLO   2: INSPECCIONAR UNA IMAGEN DE DISCO DE MÁQUINA </a></h1>VIRTUAL
+<pre>#!/usr/bin/env perl
+
+# Ejemplo que muestra cómo inspeccionar un disco de máquina virtual.
+
+use strict;
+use warnings;
+use Sys::Guestfs;
+
+if (@ARGV &lt; 1) {
+    die "usage: inspect_vm disk.img"
+}
+
+my $disk = $ARGV[0];
+
+my $g = new Sys::Guestfs ();
+
+# Adjuntar la imagen de disco de solo lectura a libguestfs.
+# También podría añadir aquí un argumento opcional format =&gt; ... Esto es
+# aconsejable ya que la detección automática de formato no es segura.
+$g-&gt;add_drive_opts ($disk, readonly =&gt; 1);
+
+# Ejecutar el backend de libguestfs.
+$g-&gt;launch ();
+
+# Pedir a libguestfs que inspeccione los sistemas operativos.
+my @roots = $g-&gt;inspect_os ();
+if (@roots == 0) {
+    die "inspect_vm: no operating systems found";
+}
+
+for my $root (@roots) {
+    printf "Root device: %s\n", $root;
+
+    # Imprimir información básica sobre el sistema operativo.
+    printf "  Product name: %s\n", $g-&gt;inspect_get_product_name ($root);
+    printf "  Version:      %d.%d\n",
+        $g-&gt;inspect_get_major_version ($root),
+        $g-&gt;inspect_get_minor_version ($root);
+    printf "  Type:         %s\n", $g-&gt;inspect_get_type ($root);
+    printf "  Distro:       %s\n", $g-&gt;inspect_get_distro ($root);
+
+    # Montar los discos, como guestfish -i.
+    #
+    # Ordenar las claves por longitud, la más corta primero, para que
+    # terminemos montando los sistemas de archivos en el orden
+    # correcto.
+    my %mps = $g-&gt;inspect_get_mountpoints ($root);
+    my @mps = sort { length $a &lt;=&gt; length $b } (keys %mps);
+    for my $mp (@mps) {
+        eval { $g-&gt;mount_ro ($mps{$mp}, $mp) };
+        if ($@) {
+            print "$@ (ignored)\n"
+        }
+    }
+
+    # Si el archivo /etc/issue.net existe, imprimir hasta 3 líneas.
+    my $filename = "/etc/issue.net";
+    if ($g-&gt;is_file ($filename)) {
+        printf "--- %s ---\n", $filename;
+        my @lines = $g-&gt;head_n (3, $filename);
+        print "$_\n" foreach @lines;
+    }
+
+    # Desmontar todo.
+    $g-&gt;umount_all ()</pre>
+</section>}
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VÉASE   </a></h1>TAMBIÉN
+<p class="Pp"><a href='/man/Sys::Guestfs.3.en'>Sys::Guestfs(3)</a>, <a href='/man/guestfs.3.en'>guestfs(3)</a>,
+    <a href='/man/guestfs-examples.3.en'>guestfs-examples(3)</a>, <a href='/man/guestfs-erlang.3.en'>guestfs-erlang(3)</a>,
+    <a href='/man/guestfs-golang.3.en'>guestfs-golang(3)</a>, <a href='/man/guestfs-java.3.en'>guestfs-java(3)</a>, <a href='/man/guestfs-lua.3.en'>guestfs-lua(3)</a>,
+    <a href='/man/guestfs-ocaml.3.en'>guestfs-ocaml(3)</a>, <a href='/man/guestfs-python.3.en'>guestfs-python(3)</a>,
+    <a href='/man/guestfs-recipes.1.en'>guestfs-recipes(1)</a>, <a href='/man/guestfs-ruby.3.en'>guestfs-ruby(3)</a>,
+  <a href='http://libguestfs.org/'>http:/</a>/libgu</p>estfs</section>.org/.
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORE</a></h1>S
+<p class="Pp">Richard W.M. Jones (<span class="Li">"rjones </span>at redha</p>t dot
+ </section>   com")
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGH</a></h1>T
+<p class="Pp">Copyright (C</p>) 2011-2025 </section>Red Hat Inc.
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCI</a></h1>A
+<p class="Pp">Esta página manual contiene ejemplos que esperamos que utilice en
+    </p>sus programas. Los ejemplos pueden ser copiados, modificados y distrib</section>uidos
+    libremente para cualquier propósito sin ninguna restricción.
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>ERRORE</a></h1>S
+<p class="Pp">Para obtener una lista de errores de libguestfs, use este enlace:
+    <a href='https://bugzilla.redhat.com/buglist.cgi?component=libguestfs'>https://bugzilla.redhat.com/buglist.cgi?component=libguestf</a>s&amp;product=Virtualization+Tool</p>s
+<p class="Pp">Para informar de un nuevo error de libguestfs, use este enlace:
+    <a href='https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs'>https://bugzilla.redhat.com/enter_bug.cgi?component=libguestf</a>s&amp;product=Virtualization+Tool</p>s
+<p class="Pp">Al informar de un error, por favor </p>proporcione:
+<ul class="Bl-bullet">
+  <li>La versión de </li>libguestfs.
+  <li>De dónde obtuvo libguestfs (p. ej., qué distribución de Linux, compilado desde el código fuente,
+      </li>etc)
+  <li>Describa el error con precisión y dé una forma de </li>reproducirlo.
+  <li>Ejecute <a href='/man/libguestfs-test-tool.1.en'>libguestfs-test-tool(1)</a> y pegue la <b>salida com</b>pleta, si</li>n editar
+</ul>      en e</section>l informe </div>de error.
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-08</td>-13
+    <td class="foot-os">lib</td>gue</tr>st</table>fs-</section>1.5</article>6.2
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del </p>paquete:
+    <dl>
+        <dt>Nombre del </dt>paquete:
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libguestfs/">extra/libg</a></dd>uestfs
+        <dt>Vers</dt>ión:
+        <dd>1.56.</dd>2-2
+        <dt>Upst</dt>ream:
+        <dd><a href="https://libguestfs.org/">https://libguestfs.</a></dd>org/
+        <dt>Licen</dt>cias:
+        <dd>GPL-2.0-or-later, LGPL-2.</dd>1-or-later
+        <dt>Manu</dt>ales:
+        <dd><a href="/listing/extra/libguestfs/">/listi</a></dd>ng/extr</dl>a/libgu</section>estfs/
+
+<details>
+    <summary>Tabla de </summary>contenidos
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">N</a></li>OMBRE
+        
+            <li><a href="#SYNOPSIS">SI</a></li>NOPSIS
+        
+            <li><a href="#DESCRIPTION">DESC</a></li>RIPCIÓN
+        
+            <li><a href="#EXAMPLE_1:_CREATE_A_DISK_IMAGE">EJEMPLO 1: CREAR UNA </a></li>IMAGEN DE DISCO
+        
+            <li><a href="#EXAMPLE_2:_INSPECT_A_VIRTUAL_MACHINE_DISK_IMAGE">EJEMPLO 2: INSPECCIONAR UNA IMAGEN DE DISCO </a></li>DE MÁQUINA VIRTUAL
+        
+            <li><a href="#SEE_ALSO">VÉASE </a></li>TAMBIÉN
+        
+            <li><a href="#AUTHORS">AU</a></li>TORES
+        
+            <li><a href="#COPYRIGHT">COP</a></li>YRIGHT
+        
+            <li><a href="#LICENSE">LI</a></li>CENCIA
+        
+            <li><a href="#BUGS">E</a></li>RR</ul>O</nav>RE</details>S
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/guestfs-perl.3.en.txt">t</a>xt, 
+        
+            <a href="/man/guestfs-perl.3.en.raw"></a>r</p>a</nav></aside></main>w
+        <footer>
+            de manual.
+            <p>El sitio web está disponible bajo los términos de la <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0
+               licencia</a>, excepto por el contenido de l</p>as páginas de manual, que tiene</footer>n su propia licencia
+          </body>     especificada en el paquete</html> correspondiente de Arch Linux.

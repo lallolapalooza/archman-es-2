@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ossl-guide-quic-client-block(7ssl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ossl-guide-quic-client-block(7ssl)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/openssl/">openssl</a></p>
+<p class="lic">Licencias: Apache-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">OSSL-GUIDE-QUIC-CLIENT-BLOCK(7ssl)</td>
+    <td class="head-vol">OpenSSL</td>
+    <td class="head-rtitle">OSSL-GUIDE-QUIC-CLIENT-BLOCK(7ssl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE">NOMBRE</h1>
+<p class="Pp">ossl-guide-quic-client-block - Guía de OpenSSL: Escribiendo un cliente QUIC bloqueante simple</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EJEMPLO_DE_CLIENTE_QUIC_BLOQUEANTE_SIMPLE">EJEMPLO DE CLIENTE QUIC BLOQUEANTE SIMPLE</h1>
+<p class="Pp">Esta página presentará varios ejemplos de código fuente que demuestran cómo escribir una aplicación cliente QUIC bloqueante simple que se conecta a un servidor, le envía una solicitud HTTP/1.0 y lee la respuesta. Tenga en cuenta que HTTP/1.0 sobre QUIC no es estándar y no será compatible con servidores del mundo real. Esto es solo para fines de demostración.</p>
+<p class="Pp">Suponemos que ya tiene OpenSSL instalado en su sistema; que ya tiene una comprensión fundamental de los conceptos de OpenSSL, TLS y QUIC (ver <a href='/man/ossl-guide-libraries-introduction.7.en'>ossl-guide-libraries-introduction(7)</a>, <a href='/man/ossl-guide-tls-introduction.7.en'>ossl-guide-tls-introduction(7)</a> y <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a>); y que sabe cómo escribir y compilar código C y enlazarlo contra las bibliotecas libcrypto y libssl que proporciona OpenSSL. También asume que tiene una comprensión básica de UDP/IP y sockets. El código de ejemplo que construiremos en este tutorial modificará el ejemplo de cliente TLS bloqueante que se cubre en <a href='/man/ossl-guide-tls-client-block.7.en'>ossl-guide-tls-client-block(7)</a>. Solo se discutirán las diferencias entre ese cliente y este, por lo que también asumimos que ha revisado y comprendido ese tutorial.</p>
+<p class="Pp">Para este tutorial, nuestro cliente utilizará un único stream QUIC. Un tutorial posterior discutirá cómo escribir un cliente multi-stream (ver <a href='/man/ossl-guide-quic-multi-stream.7.en'>ossl-guide-quic-multi-stream(7)</a>).</p>
+<p class="Pp">El código fuente completo para este cliente QUIC bloqueante de ejemplo está disponible en el directorio <span class="Li">&quot;demos/guide&quot;</span> de la distribución fuente de OpenSSL en el archivo <span class="Li">&quot;quic-client-block.c&quot;</span>. También está disponible en línea en <a href='https://github.com/openssl/openssl/blob/master/demos/guide/quic-client-block.c'>https://github.com/openssl/openssl/blob/master/demos/guide/quic-client-block.c</a>.</p>
+<section class="Ss">
+<h2 class="Ss" id="Creación_de_los_objetos_SSL_CTX_y_SSL">Creación de los objetos SSL_CTX y SSL</h2>
+<p class="Pp">En el tutorial de TLS (<a href='/man/ossl-guide-tls-client-block.7.en'>ossl-guide-tls-client-block(7)</a>) creamos un objeto <b>SSL_CTX</b> para nuestro cliente y lo usamos para crear un objeto <b>SSL</b> para representar la conexión TLS. Una conexión QUIC funciona exactamente de la misma manera. Primero creamos un objeto <b>SSL_CTX</b> y luego lo usamos para crear un objeto <b>SSL</b> para representar la conexión QUIC.</p>
+<p class="Pp">Al igual que en el ejemplo de TLS, el primer paso es crear un objeto <b>SSL_CTX</b> para nuestro cliente. Esto se hace de la misma manera que antes, excepto que usamos un "método" diferente. OpenSSL ofrece dos métodos de cliente QUIC diferentes, es decir, <a href='/man/OSSL_QUIC_client_method.3.en'>OSSL_QUIC_client_method(3)</a> y <a href='/man/OSSL_QUIC_client_thread_method.3.en'>OSSL_QUIC_client_thread_method(3)</a>.</p>
+<p class="Pp">El primero es el equivalente de <a href='/man/TLS_client_method.3.en'>TLS_client_method(3)</a> pero para el protocolo QUIC. El segundo es el mismo, pero además creará un hilo secundario para manejar eventos basados en el tiempo (conocido como "modo asistido por hilo", ver <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a>). Para este tutorial, utilizaremos <a href='/man/OSSL_QUIC_client_method.3.en'>OSSL_QUIC_client_method(3)</a> porque no dejaremos inactiva la conexión QUIC en nuestra aplicación y, por lo tanto, el modo asistido por hilo no es necesario.</p>
+<pre>/*
+ * Crea un SSL_CTX que podemos usar para crear objetos SSL a partir de él.
+ * Queremos un SSL_CTX para crear clientes, así que usamos OSSL_QUIC_client_method()
+ * aquí.
+ */
+ctx = SSL_CTX_new(OSSL_QUIC_client_method());
+if (ctx == NULL) {
+    printf(&quot;Failed to create the SSL_CTX\n&quot;);
+    goto end;
+}</pre>
+<p class="Pp">Los otros pasos de configuración que aplicamos al <b>SSL_CTX</b> para TLS también se aplican a QUIC, excepto la restricción de las versiones de TLS que estamos dispuestos a aceptar. La implementación del protocolo QUIC en OpenSSL actualmente solo admite TLSv1.3. No es necesario llamar a <a href='/man/SSL_CTX_set_min_proto_version.3.en'>SSL_CTX_set_min_proto_version(3)</a> o <a href='/man/SSL_CTX_set_max_proto_version.3.en'>SSL_CTX_set_max_proto_version(3)</a> en una aplicación QUIC de OpenSSL, y cualquier llamada de este tipo será ignorada.</p>
+<p class="Pp">Una vez creado el <b>SSL_CTX</b>, el objeto <b>SSL</b> se construye de la misma manera que para la aplicación TLS.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Creación_del_socket_y_BIO">Creación del socket y BIO</h2>
+<p class="Pp">Una diferencia importante entre TLS y QUIC es el protocolo de transporte subyacente. TLS usa TCP mientras que QUIC usa UDP. La forma en que se crea el socket QUIC en nuestro código de ejemplo es muy similar a la de TLS. Utilizamos las funciones auxiliares <a href='/man/BIO_lookup_ex.3.en'>BIO_lookup_ex(3)</a> y <a href='/man/BIO_socket.3.en'>BIO_socket(3)</a> como hicimos en el tutorial anterior, excepto que pasamos <b>SOCK_DGRAM</b> como argumento para indicar UDP (en lugar de <b>SOCK_STREAM</b> para TCP).</p>
+<pre>/*
+ * Busca la información de la dirección IP del servidor.
+ */
+if (!BIO_lookup_ex(hostname, port, BIO_LOOKUP_CLIENT, family, SOCK_DGRAM, 0,
+                   &amp;res))
+    return NULL;
+/*
+ * Itera a través de todas las direcciones posibles para el servidor y encuentra una
+ * a la que podamos conectarnos.
+ */
+for (ai = res; ai != NULL; ai = BIO_ADDRINFO_next(ai)) {
+    /*
+     * Crea un socket TCP. Podríamos usar igualmente llamadas que no sean de OpenSSL
+     * como &quot;socket&quot; aquí para estas y las funciones posteriores de conexión y cierre.
+     * Pero por razones de portabilidad y también para obtener
+     * errores en la pila de OpenSSL en caso de fallo, usamos
+     * las versiones de OpenSSL de estas funciones.
+     */
+    sock = BIO_socket(BIO_ADDRINFO_family(ai), SOCK_DGRAM, 0, 0);
+    if (sock == -1)
+        continue;
+    /* Conecta el socket a la dirección del servidor */
+    if (!BIO_connect(sock, BIO_ADDRINFO_address(ai), 0)) {
+        BIO_closesocket(sock);
+        sock = -1;
+        continue;
+    }
+    /* Configúralo en modo no bloqueante */
+    if (!BIO_socket_nbio(sock, 1)) {
+        BIO_closesocket(sock);
+        sock = -1;
+        continue;
+    }
+    break;
+}
+if (sock != -1) {
+    *peer_addr = BIO_ADDR_dup(BIO_ADDRINFO_address(ai));
+    if (*peer_addr == NULL) {
+        BIO_closesocket(sock);
+        return NULL;
+    }
+}
+/* Libera los recursos de información de direcciones que asignamos anteriormente */
+BIO_ADDRINFO_free(res);</pre>
+<p class="Pp">Puede notar un par de otras diferencias entre este código y la versión que utilizamos para TLS.</p>
+<p class="Pp">Primero, configuramos el socket en modo no bloqueante. Esto siempre debe hacerse para una aplicación QUIC de OpenSSL. Esto puede ser sorprendente considerando que estamos tratando de escribir un cliente bloqueante. A pesar de esto, el objeto <b>SSL</b> seguirá teniendo un comportamiento bloqueante. Ver <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a> para más información sobre esto.</p>
+<p class="Pp">Segundo, tomamos nota de la dirección IP del par al que nos conectamos. Almacenamos esa información. La necesitaremos más tarde.</p>
+<p class="Pp">Ver <a href='/man/BIO_lookup_ex.3.en'>BIO_lookup_ex(3)</a>, <a href='/man/BIO_socket.3.en'>BIO_socket(3)</a>, <a href='/man/BIO_connect.3.en'>BIO_connect(3)</a>, <a href='/man/BIO_closesocket.3.en'>BIO_closesocket(3)</a>, <a href='/man/BIO_ADDRINFO_next.3.en'>BIO_ADDRINFO_next(3)</a>, <a href='/man/BIO_ADDRINFO_address.3.en'>BIO_ADDRINFO_address(3)</a>, <a href='/man/BIO_ADDRINFO_free.3.en'>BIO_ADDRINFO_free(3)</a> y <a href='/man/BIO_ADDR_dup.3.en'>BIO_ADDR_dup(3)</a> para más información sobre las funciones utilizadas aquí. En el código de ejemplo anterior, las variables <b>hostname</b> y <b>port</b> son cadenas, por ejemplo, &quot;www.example.com&quot; y &quot;443&quot;.</p>
+<p class="Pp">Al igual que con nuestro cliente TLS, una vez que se ha creado y conectado el socket, debemos asociarlo con un objeto BIO:</p>
+<pre>BIO *bio;
+/* Crea un BIO para envolver el socket */
+bio = BIO_new(BIO_s_datagram());
+if (bio == NULL) {
+    BIO_closesocket(sock);
+    return NULL;
+}
+/*
+ * Asocia el BIO recién creado con el socket subyacente. Al
+ * pasar BIO_CLOSE aquí, el socket se cerrará automáticamente cuando
+ * el BIO sea liberado. Alternativamente, puede usar BIO_NOCLOSE, en cuyo
+ * caso debe cerrar el socket explícitamente cuando ya no sea necesario.
+ */
+BIO_set_fd(bio, sock, BIO_CLOSE);</pre>
+<p class="Pp">Observe el uso de <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> aquí en lugar de
+    <a href='/man/BIO_s_socket.3.en'>BIO_s_socket(3)</a> que usamos para nuestro cliente TLS. Esto se debe nuevamente al
+    hecho de que QUIC usa UDP en lugar de TCP para su capa de transporte. Ver <a href='/man/BIO_new.3.en'>BIO_new(3)</a>, <a href='/man/BIO_s_datagram.3.en'>BIO_s_datagram(3)</a> y <a href='/man/BIO_set_fd.3.en'>BIO_set_fd(3)</a> para
+    </p>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+información adicional sobre estas funciones.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estableciendo_el_nombre_de_host_del_servidor'><a class='permalink' href='#Estableciendo_el_nombre_de_host_del_servidor'>Estableciendo el nombre de host del servidor</a></h2>
+<p class="Pp">Al igual que en el tutorial de TLS, necesitamos establecer el nombre
+    de host del servidor tanto para SNI (Server Name Indication) como para fines
+    de validación de certificados. Los pasos para esto son idénticos a los del
+    tutorial de TLS y no se repetirán aquí.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estableciendo_el_ALPN'><a class='permalink' href='#Estableciendo_el_ALPN'>Estableciendo el ALPN</a></h2>
+<p class="Pp">ALPN (Application-Layer Protocol Negotiation) es una característica de
+    TLS que permite a la aplicación negociar qué protocolo se utilizará sobre
+    la conexión. Por ejemplo, si pretende usar HTTP/3 sobre la conexión, el
+    valor ALPN para eso es &quot;h3&quot; (ver
+    <a href='https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml#alpn-protocol-ids'>https://www.iana.org/assignments/tls-extensiontype-values/tls-extensiontype-values.xml#alpn-protocol-ids</a>).
+    OpenSSL proporciona la capacidad para que un cliente especifique el ALPN a
+    utilizar a través de la función
+    <a href='/man/SSL_set_alpn_protos.3.en'>SSL_set_alpn_protos(3)</a>. Esto es opcional para un cliente TLS,
+    por lo que nuestro cliente simple que desarrollamos en
+    <a href='/man/ossl-guide-tls-client-block.7.en'>ossl-guide-tls-client-block(7)</a> no lo utilizó. Sin embargo, QUIC
+    exige que el handshake TLS utilizado para establecer una conexión QUIC
+    deba usar ALPN.</p>
+<pre>unsigned char alpn[] = { 8, 'h', 't', 't', 'p', '/', '1', '.', '0' };
+/* ¡SSL_set_alpn_protos devuelve 0 para éxito! */
+if (SSL_set_alpn_protos(ssl, alpn, sizeof(alpn)) != 0) {
+    printf(&quot;Fallo al establecer el ALPN para la conexión\n&quot;);
+    goto end;
+}</pre>
+<p class="Pp">El ALPN se especifica utilizando un array de caracteres sin signo
+    precedido por su longitud (no es una cadena terminada en NUL). Nuestra demo
+    original de cliente bloqueante TLS utilizaba HTTP/1.0. Usaremos el mismo
+    para este ejemplo. A diferencia de la mayoría de las funciones de OpenSSL,
+    <a href='/man/SSL_set_alpn_protos.3.en'>SSL_set_alpn_protos(3)</a> devuelve cero para el éxito y un valor distinto de
+    cero para el fallo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estableciendo_la_dirección_del_par'><a class='permalink' href='#Estableciendo_la_dirección_del_par'>Estableciendo la dirección del par</a></h2>
+<p class="Pp">Una aplicación QUIC de OpenSSL debe especificar la dirección de
+    destino del servidor al que se está conectando. En &quot;Creando el socket
+    y BIO&quot; arriba, guardamos esa dirección para uso futuro. Ahora necesitamos
+    usarla a través de la función
+    <a href='/man/SSL_set1_initial_peer_addr.3.en'>SSL_set1_initial_peer_addr(3)</a>.</p>
+<pre>/* Establecer la dirección IP del par remoto */
+if (!SSL_set1_initial_peer_addr(ssl, peer_addr)) {
+    printf(&quot;Fallo al establecer la dirección inicial del par\n&quot;);
+    goto end;
+}</pre>
+<p class="Pp">Tenga en cuenta que necesitaremos liberar el valor de
+    <b>peer_addr</b> que asignamos previamente a través de
+    <a href='/man/BIO_ADDR_dup.3.en'>BIO_ADDR_dup(3)</a>:</p>
+<pre>BIO_ADDR_free(peer_addr);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='El_handshake_y_la_transferencia_de_datos_de_la_aplicación'><a class='permalink' href='#El_handshake_y_la_transferencia_de_datos_de_la_aplicación'>El handshake y la transferencia de datos de la aplicación</a></h2>
+<p class="Pp">Una vez completada la configuración inicial del objeto <b>SSL</b>,
+    realizamos el handshake a través de
+    <a href='/man/SSL_connect.3.en'>SSL_connect(3)</a> de la misma manera que lo hicimos para el cliente
+    TLS, por lo que no lo repetiremos aquí.</p>
+<p class="Pp">También podemos realizar la transferencia de datos utilizando un
+    stream QUIC predeterminado que se asocia automáticamente con el objeto
+    <b>SSL</b> para nosotros. Podemos transmitir datos usando
+    <a href='/man/SSL_write_ex.3.en'>SSL_write_ex(3)</a> y recibir datos usando
+    <a href='/man/SSL_read_ex.3.en'>SSL_read_ex(3)</a> de la misma manera que para TLS. La principal
+    diferencia es que tenemos que tener en cuenta los fallos de forma un poco
+    diferente. Con QUIC, el stream puede ser reiniciado por el par (lo cual es
+    fatal para ese stream), pero la conexión subyacente en sí misma puede
+    seguir estando operativa.</p>
+<p class="Pp">Primero, escribimos toda la solicitud al stream. También debemos
+    asegurarnos de indicar al servidor que hemos terminado de escribir. Esto se
+    puede hacer pasando el flag SSL_WRITE_FLAG_CONCLUDE a
+    <a href='/man/SSL_write_ex2.3.en'>SSL_write_ex2(3)</a> o llamando a
+    <a href='/man/SSL_stream_conclude.3.en'>SSL_stream_conclude(3)</a>. Dado que la primera forma es más
+    eficiente, elegimos hacerlo así.</p>
+<pre>/* Escribir una solicitud HTTP GET al par */
+if (!SSL_write_ex(ssl, request_start, strlen(request_start), &amp;written)) {
+    printf(&quot;Fallo al escribir el inicio de la solicitud HTTP\n&quot;);
+    goto end;
+}
+if (!SSL_write_ex(ssl, hostname, strlen(hostname), &amp;written)) {
+    printf(&quot;Fallo al escribir el nombre de host en la solicitud HTTP\n&quot;);
+    goto end;
+}
+if (!SSL_write_ex2(ssl, request_end, strlen(request_end),
+    SSL_WRITE_FLAG_CONCLUDE, &amp;written)) {
+    printf(&quot;Fallo al escribir el final de la solicitud HTTP\n&quot;);
+    goto end;
+}</pre>
+<p class="Pp">Luego, leemos la respuesta del servidor.</p>
+<pre>/*
+ * Obtener hasta sizeof(buf) bytes de la respuesta. Seguimos leyendo hasta
+ * que el servidor cierre la conexión.
+ */
+while (SSL_read_ex(ssl, buf, sizeof(buf), &amp;readbytes)) {
+    /*
+    * OpenSSL no garantiza que los datos devueltos sean una cadena o
+    * que estén terminados en NUL, por lo que usamos fwrite() para escribir
+    * el número exacto de bytes que leímos. Los datos podrían no ser
+    * imprimibles o tener caracteres NUL en medio. Para este ejemplo simple,
+    * lo imprimiremos en stdout de todos modos.
+    */
+    fwrite(buf, 1, readbytes, stdout);
+}
+/* En caso de que la respuesta no terminara con una nueva línea, la añadimos ahora */
+printf(&quot;\n&quot;);
+/*
+ * Comprobar si terminamos el bucle while anterior normalmente o como resultado
+ * de un error. El argumento 0 a SSL_get_error() es el código de retorno que
+ * recibimos de la llamada SSL_read_ex(). Debe ser 0 para llegar aquí. La
+ * finalización normal se indica con SSL_ERROR_ZERO_RETURN. En términos de
+ * QUIC, esto significa que el par ha enviado FIN en el stream para indicar
+ * que no se enviarán más datos.
+ */
+switch (SSL_get_error(ssl, 0)) {
+case SSL_ERROR_ZERO_RETURN:
+    /* Finalización normal del stream */
+    break;
+case SSL_ERROR_SSL:
+    /*
+     * Ocurrió algún error fatal en el stream. Esto podría deberse a un reinicio
+     * del stream o a algún fallo en la conexión subyacente.
+     */
+    switch (SSL_get_stream_read_state(ssl)) {
+    case SSL_STREAM_STATE_RESET_REMOTE:
+        printf(&quot;Ocurrió un reinicio del stream\n&quot;);
+        /* El stream se ha reiniciado, pero la conexión sigue estando operativa. */
+        break;
+    case SSL_STREAM_STATE_CONN_CLOSED:
+        printf(&quot;Conexión cerrada\n&quot;);
+        /* La conexión ya está cerrada. Omitir SSL_shutdown() */
+        goto end;
+    default:
+        printf(&quot;Fallo desconocido del stream\n&quot;);
+        break;
+    }
+    break;
+default:
+    /* Ocurrió algún otro error inesperado */
+    printf (&quot;Fallo al leer los datos restantes\n&quot;);
+    break;
+}</pre>
+<p class="Pp">En el ejemplo de código anterior, puede ver que
+    <b>SSL_ERROR_SSL</b> indica un error fatal del stream. Podemos usar
+    <a href='/man/SSL_get_stream_read_state.3.en'>SSL_get_stream_read_state(3)</a> para determinar si el stream ha sido
+    reiniciado o si ha ocurrido algún otro error fatal.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Cerrando_la_conexión'><a class='permalink' href='#Cerrando_la_conexión'>Cerrando la conexión</a></h2>
+<p class="Pp">En el tutorial de TLS, sabíamos que el servidor había terminado de
+    enviar datos porque <a href='/man/SSL_read_ex.3.en'>SSL_read_ex(3)</a> devolvía 0, y
+    <a href='/man/SSL_get_error.3.en'>SSL_get_error(3)</a> devolvía
+    <b>SSL_ERROR_ZERO_RETURN</b>. Lo mismo ocurre con QUIC, excepto que
+    <b>SSL_ERROR_ZERO_RETURN</b> debe interpretarse de forma ligeramente
+    diferente. Con TLS, sabíamos que esto significaba que el servidor había
+    enviado una alerta de &quot;close_notify&quot;. No se enviarán más datos desde
+    el servidor en esa conexión.</p>
+<p class="Pp">Con QUIC, significa que el servidor ha indicado &quot;FIN&quot; en el
+    stream, lo que significa que ya no enviará más datos en ese stream. Sin
+    embargo, esto solo nos da información sobre el stream en sí y no nos dice
+    nada sobre la conexión subyacente. Todavía se podrían enviar más datos desde
+    el servidor en algún otro stream. Además, aunque el servidor no enviará más
+    datos al cliente, esto no impide que el cliente envíe más datos al
+    servidor.</p>
+<p class="Pp">En este tutorial, una vez que hayamos terminado de leer datos del
+    servidor en el único stream que estamos utilizando, cerraremos la conexión.
+    Como antes, lo hacemos a través de la función
+    <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a>. Este ejemplo para QUIC es muy similar a la
+    versión de TLS. Sin embargo, la función
+    <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a> deberá llamarse más de una vez:</p>
+<pre>/*
+ * Llamar repetidamente a SSL_shutdown() hasta que la conexión esté completamente
+ * cerrada.
+ */
+do {
+    ret = SSL_shutdown(ssl);
+    if (ret &lt; 0) {
+        printf(&quot;Error al cerrar: %d\n&quot;, ret);
+        goto end;
+    }
+} while (ret != 1);</pre>
+<p class="Pp">El proceso de cierre consta de dos etapas. En la primera etapa,
+    esperamos hasta que todos los datos que hemos almacenado en búfer para
+    enviar en cualquier stream se hayan enviado y confirmado correctamente por
+    el par, y luego enviamos un CONNECTION_CLOSE al par para indicar que la
+    conexión ya no es utilizable. Esto cierra inmediatamente la conexión y no
+    se pueden enviar ni recibir más datos. <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a> devuelve 0
+    una vez completada la primera etapa.</p>
+<p class="Pp">En la segunda etapa, la conexión entra en un estado de &quot;cierre&quot;.
+    Los datos de la aplicación no se pueden enviar ni recibir en este estado, pero
+    los paquetes que llegan tarde del par se manejarán adecuadamente. Una vez que
+    esta etapa se completa con éxito, <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a> devolverá 1
+    para indicar el éxito.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LECTURA_ADICIONAL'><a class='permalink' href='#LECTURA_ADICIONAL'>LECTURA ADICIONAL</a></h1>
+<p class="Pp">Vea <a href='/man/ossl-guide-quic-multi-stream.7.en'>ossl-guide-quic-multi-stream(7)</a> para leer un tutorial sobre
+    cómo modificar el cliente desarrollado en esta página para admitir múltiples
+    streams.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ossl-guide-introduction.7.en'>ossl-guide-introduction(7)</a>,
+    <a href='/man/ossl-guide-libraries-introduction.7.en'>ossl-guide-libraries-introduction(7)</a>,
+    <a href='/man/ossl-guide-libssl-introduction.7.en'>ossl-guide-libssl-introduction(7)</a>,
+    <a href='/man/ossl-guide-tls-introduction.7.en'>ossl-guide-tls-introduction(7)</a>,
+    <a href='/man/ossl-guide-tls-client-block.7.en'>ossl-guide-tls-client-block(7)</a>,
+    <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright 2023-2025 The OpenSSL Project Authors. All Rights
+    Reserved.</p>
+<p class="Pp">Licensed under the Apache License 2.0 (the &quot;License&quot;).
+    You may not use this file except in compliance with the License. You can
+    obtain a copy in the file LICENSE in the source distribution or at
+    <a href='https://www.openssl.org/source/license.html'>https://www.openssl.org/source/license.html</a>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-10-01</td>
+    <td class="foot-os">3.6.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/openssl/">core/openssl</a></dd>
+        <dt>Versión:</dt>
+        <dd>3.6.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.openssl.org">https://www.openssl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Apache-2.0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/openssl/">/listing/core/openssl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#EJEMPLO_DE_CLIENTE_QUIC_BLOQUEANTE_SIMPLE">EJEMPLO DE CLIENTE QUIC BLOQUEANTE SIMPLE</a></li>
+        
+            <li><a href="#LECTURA_ADICIONAL">LECTURA ADICIONAL</a></li>
+        
+            <li><a href="#VER_TAMBIEN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ossl-guide-quic-client-block.7ssl.en.txt">txt</a>, 
+        
+            <a href="/man/ossl-guide-quic-client-block.7ssl.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

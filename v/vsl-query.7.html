@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>vsl-query(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">vsl-query(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/varnish/">varnish</a></p>
+<p class="lic">Licencias: BSD-2-Clause</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">VSL-QUERY(7)</td>
+    <td class="head-vol"></td>
+    <td class="head-rtitle">VSL-QUERY(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">vsl-query - Expresiones de consulta VSL de Varnish</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OVERVIEW'><a class='permalink' href='#OVERVIEW'>DESCRIPCIÓN GENERAL</a></h1>
+<p class="Pp">Las Expresiones de Consulta VSL de Varnish extraen transacciones
+    del registro de memoria compartida de Varnish, y realizan consultas sobre las
+    transacciones antes de informar sobre las coincidencias.</p>
+<p class="Pp">Una transacción es un conjunto de líneas de registro que pertenecen
+    juntas, por ejemplo, una solicitud del cliente o una solicitud del backend.
+    La API monitoriza el registro y recopila todos los registros que componen una
+    transacción antes de informar sobre esa transacción. Las transacciones también
+    pueden agruparse, lo que significa que las transacciones del backend se
+    informan junto con la transacción del cliente que las inició.</p>
+<p class="Pp">Se ejecuta una consulta sobre un grupo de transacciones. Una
+    expresión de consulta es verdadera si hay un registro en el grupo que
+    satisface la condición. Es falsa solo si ninguno de los registros satisface
+    la condición. Las expresiones de consulta se pueden combinar utilizando
+    funciones booleanas. Además de los registros, es posible consultar los
+    identificadores de transacción (vxid) en la consulta.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GROUPING'><a class='permalink' href='#GROUPING'>AGRUPACIÓN</a></h1>
+<p class="Pp">Al agrupar transacciones, existe una estructura jerárquica que
+    muestra qué transacción inició qué. El nivel aumenta en uno en una relación
+    'iniciado por', por lo que, por ejemplo, una transacción de backend tendrá un
+    nivel uno más alto que la transacción del cliente que la inició en una
+    equivocación de caché. Las transacciones de reinicio de solicitud no
+    incrementan su nivel para hacerlo predecible.</p>
+<p class="Pp">Los niveles comienzan a contarse desde 1, excepto cuando se usa
+    crudo, donde siempre será 0.</p>
+<p class="Pp">Los modos de agrupación son:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>session</b>
+    <p class="Pp">Se informan juntas todas las transacciones iniciadas por una
+        conexión de cliente. Las conexiones de cliente son abiertas cuando se usan
+        conexiones persistentes HTTP, por lo que es indefinido cuándo se
+        informará la sesión. Si se excede el período de tiempo de espera de la
+        transacción, se informará una sesión incompleta. Los datos no
+        transaccionales (vxid == 0) no se informan.</p>
+  </li>
+  <li><b>request</b>
+    <p class="Pp">Las transacciones se agrupan por solicitud, donde el conjunto
+        incluirá la solicitud en sí, así como cualquier solicitud de backend o
+        subsolicitud ESI. Los datos de sesión y los datos no transaccionales
+        (vxid == 0) no se informan.</p>
+  </li>
+  <li><b>vxid</b>
+    <p class="Pp">Las transacciones no se agrupan, por lo que cada vxid se
+        informa en su totalidad. Se informan individualmente sesiones,
+        solicitudes, subsolicitudes ESI y solicitudes de backend. Los datos no
+        transaccionales no se informan (vxid == 0). Este es el valor predeterminado.</p>
+  </li>
+  <li><b>raw</b>
+    <p class="Pp">Cada registro de registro constituirá su propia transacción. Se
+        informarán todos los datos, incluidos los datos no transaccionales.</p>
+  </li>
+</ul>
+</div>
+<section class="Ss">
+<h2 class="Ss" id='Transaction_Hierarchy'><a class='permalink' href='#Transaction_Hierarchy'>Jerarquía de Transacciones</a></h2>
+<p class="Pp">Ejemplo de jerarquía de transacciones utilizando el modo de
+    agrupación de solicitudes</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>Nivel 1: Solicitud del cliente (equivocación de caché)
+  Nivel 2: Solicitud de backend
+  Nivel 2: Subsolicitud ESI (equivocación de caché)
+    Nivel 3: Solicitud de backend
+    Nivel 3: Solicitud de backend (reinicio VCL)
+    Nivel 3: Subsolicitud ESI (equivocación de caché)
+      Nivel 4: Solicitud de backend
+  Nivel 2: Subsolicitud ESI (acierto de caché)</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MEMORY_USAGE'><a class='permalink' href='#MEMORY_USAGE'>USO DE MEMORIA</a></h1>
+<p class="Pp">La API utilizará punteros a datos del registro de memoria compartida
+    tanto como sea posible para mantener el uso de memoria al mínimo. Pero como el
+    registro de memoria compartida es un búfer circular, los datos se sobrescribirán
+    eventualmente, por lo que la API crea copias locales de los datos de registro
+    referenciados cuando varnishd se acerca a sobrescribir contenido aún no
+    informado.</p>
+<p class="Pp">Este proceso evita la pérdida de datos de registro en muchos
+    escenarios, pero no es infalible: todavía pueden ocurrir desbordamientos donde
+    varnishd "adelanta" al proceso lector de registros en el búfer circular cuando
+    los clientes de la API no pueden seguir leyendo y/o copiando, por ejemplo, debido
+    a bloqueos de salida.</p>
+<p class="Pp">Aunque no está relacionado con la agrupación en principio, la copia
+    de datos de registro es particularmente relevante para la agrupación de
+    sesiones junto con conexiones de cliente de larga duración; para esta
+    agrupación, es probable que el proceso cliente de la API consuma cantidades
+    relevantes de memoria. Dado que la agrupación vxid también registra sesiones
+    (potencialmente de larga duración), también es probable que requiera memoria
+    para copias de entradas de registro, pero mucha menos que la agrupación de
+    sesiones.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='QUERY_LANGUAGE'><a class='permalink' href='#QUERY_LANGUAGE'>LENGUAJE DE CONSULTA</a></h1>
+<p class="Pp">Una expresión de consulta consta de criterios de selección de
+    registros, y opcionalmente un operador y un valor para comparar con los
+    registros seleccionados.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>&lt;criterios de selección de registro&gt; &lt;operador&gt; &lt;operando&gt;</pre>
+</div>
+</div>
+<p class="Pp">Adicionalmente, una expresión de consulta puede ocurrir en la
+    transacción misma en lugar de en los registros pertenecientes a la
+    transacción.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>vxid &lt;operador numérico&gt; &lt;entero&gt;</pre>
+</div>
+</div>
+<p class="Pp">Una consulta <b>vxid</b> le permite apuntar directamente a una
+    transacción específica, cuyo ID se puede obtener de una cabecera HTTP
+    <b>X-Varnish</b>, la página de error predeterminada "guru meditation", o los
+    registros <b>Begin</b> y <b>Link</b>.</p>
+<p class="Pp">Una consulta debe caber en una sola línea, pero es posible pasar
+    varias consultas a la vez, una consulta por línea. Las líneas vacías se
+    ignoran y la lista de consultas se trata como si se hubiera utilizado el
+    operador 'or' para combinarlas.</p>
+<p class="Pp">Por ejemplo, esta lista de consultas:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre># capturar errores de varnish
+*Error
+# capturar errores de backend
+BerespStatus &gt;= 500</pre>
+</div>
+</div>
+<p class="Pp">es idéntica a esta consulta:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>(*Error) o (BerespStatus &gt;= 500)</pre>
+</div>
+</div>
+<p class="Pp">Se pueden usar comentarios y serán ignorados, comienzan con el
+    carácter <b>'#'</b>, lo que puede ser más útil cuando la consulta se lee de un
+    archivo.</p>
+<p class="Pp">Para consultas muy largas que no se puedan dividir fácilmente en
+    múltiples consultas, es posible dividirlas en varias líneas con una barra
+    invertida precediendo al final de la línea.</p>
+<p class="Pp">Por ejemplo, esta consulta:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>BerespStatus &gt;= 500</pre>
+</div>
+</div>
+<p class="Pp">es idéntica a esta consulta:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>BerespStatus \
+&gt;= \
+500</pre>
+</div>
+</div>
+<p class="Pp">Una secuencia de barra invertida-nueva línea no continúa un
+    comentario en la siguiente línea y no está permitida en una cadena entre
+    comillas.</p>
+<section class="Ss">
+<h2 class="Ss" id='Record_selection_criteria'><a class='permalink' href='#Record_selection_criteria'>Criterios de selección de registro</a></h2>
+<p class="Pp">Los criterios de selección de registro determinan a qué tipo de
+    registros del grupo de transacciones se aplica la expresión. Sintaxis:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>{nivel}lista_etiquetas:prefijo_registro[campo]</pre>
+</div>
+</div>
+<p class="Pp">La lista_etiquetas es obligatoria, los otros componentes son
+    opcionales.</p>
+<p class="Pp">El nivel limita la expresión a una transacción en ese nivel. Si se
+    deja sin especificar, la expresión se aplica a transacciones en todos los
+    niveles. El nivel es un entero positivo o cero. Si el nivel va seguido de un
+    carácter '+', expresa mayor o igual. Si el nivel va seguido de un '-',
+    expresa menor o igual.</p>
+<p class="Pp">La lista_etiquetas es una lista separada por comas de etiquetas de
+    registro VSL contra las cuales se verificará esta expresión. Cada elemento
+    de la lista puede ser un nombre de etiqueta o un comodín de etiqueta. Los
+    comodines permiten un '*' al principio o al final del nombre, y seleccionarán
+    todas las etiquetas que coincidan con el prefijo o sufijo. Un solo '*'
+    seleccionará todas las etiquetas.</p>
+<p class="Pp">El prefijo_registro limitará aún más las coincidencias a aquellos
+    registros que tengan este prefijo como primera parte del contenido del
+    registro seguido de dos puntos. La parte del registro de registro que se
+    comparará se limitará a lo que sigue al prefijo y los dos puntos. Esto es
+    útil al comparar con encabezados HTTP específicos. La coincidencia del
+    prefijo del registro no distingue entre mayúsculas y minúsculas.</p>
+<p class="Pp">El campo, si está presente, tratará el registro de registro como una
+    lista de campos separada por espacios en blanco, y solo se comparará la n-ésima
+    parte del registro. Los campos comienzan a contarse desde 1.</p>
+<p class="Pp">Una expresión que utiliza solo un criterio de selección de registro
+    será verdadera si hay algún registro en el grupo de transacciones que sea
+    seleccionado por el criterio.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Operators'><a class='permalink' href='#Operators'>Operadores</a></h2>
+<p class="Pp">Los siguientes operadores de comparación están disponibles:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>== != &lt; &lt;= &gt; &gt;=
+    <p class="Pp">Comparación numérica. El contenido del registro se convertirá a
+        entero o flotante antes de la comparación, dependiendo del tipo del
+        operando.</p>
+  </li>
+  <li>eq ne
+    <p class="Pp">Comparación de cadenas. 'eq' prueba la igualdad de cadenas, 'ne'
+        prueba la desigualdad.</p>
+  </li>
+ 
+</ul>
+</div>
+</section>
+</div>
+
+</section>
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<ul>
+  <li>~ !~
+    <p class="Pp">Coincidencia de expresiones regulares. '~' es una coincidencia positiva,
+        '!~' es una no coincidencia.</p>
+  </li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Operando'><a class='permalink' href='#Operando'>Operando</a></h2>
+<p class="Pp">El operando es el valor contra el cual se compararán los registros
+    seleccionados.</p>
+<p class="Pp">Un operando puede ser citado o no citado. Las comillas pueden ser
+    simples o dobles, y para operandos citados se puede usar una barra invertida
+    para escapar las comillas.</p>
+<p class="Pp">Los operandos no citados solo pueden consistir en los siguientes
+    caracteres:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>a-z A-Z 0-9 + - _ . *</pre>
+</div>
+</div>
+<p class="Pp">Los siguientes tipos de operandos están disponibles:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Entero
+    <p class="Pp">Un número sin parte fraccionaria, válido para los operadores de
+        comparación numérica. El tipo entero se utiliza cuando el operando no
+        contiene ningún punto (.) ni caracteres de exponente (e). Sin embargo, si
+        el registro se evalúa como un flotante, solo se utiliza su parte entera
+        para la comparación.</p>
+  </li>
+  <li>Flotante
+    <p class="Pp">Un número con una parte fraccionaria, válido para los operadores
+        de comparación numérica. El tipo flotante se utiliza cuando el operando
+        contiene un punto (.) o un carácter de exponente (e).</p>
+  </li>
+  <li>Cadena
+    <p class="Pp">Una secuencia de caracteres, válida para los operadores de
+        igualdad de cadenas.</p>
+  </li>
+  <li>Expresión regular
+    <p class="Pp">Una expresión regular PCRE2. Válida para los operadores de
+        expresiones regulares.</p>
+  </li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Funciones_booleanas'><a class='permalink' href='#Funciones_booleanas'>Funciones booleanas</a></h2>
+<p class="Pp">Las expresiones de consulta se pueden enlazar utilizando funciones
+    booleanas. Las siguientes están disponibles, en orden decreciente de
+    precedencia:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>not &lt;expr&gt;
+    <p class="Pp">Invierte el resultado de &lt;expr&gt;</p>
+  </li>
+  <li>&lt;expr1&gt; and &lt;expr2&gt;
+    <p class="Pp">Verdadero solo si ambos expr1 y expr2 son verdaderos</p>
+  </li>
+  <li>&lt;expr1&gt; or &lt;expr2&gt;
+    <p class="Pp">Verdadero si alguno de expr1 o expr2 es verdadero</p>
+  </li>
+</ul>
+</div>
+<p class="Pp">Las expresiones se pueden agrupar utilizando paréntesis.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS_DE_EXPRESIONES_DE_CONSULTA'><a class='permalink' href='#EJEMPLOS_DE_EXPRESIONES_DE_CONSULTA'>EJEMPLOS DE EXPRESIONES DE CONSULTA</a></h1>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones contiene una URL de solicitud que es igual a
+    &quot;/foo&quot;</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>ReqURL eq &quot;/foo&quot;</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones contiene una cabecera de cookie de solicitud</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>ReqHeader:cookie</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones no contiene una cabecera de cookie de
+    solicitud</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>not ReqHeader:cookie</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Solicitud del cliente donde el manejo interno tardó más de 800 ms.:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>Timestamp:Process[2] &gt; 0.8</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones contiene una cabecera user-agent de solicitud
+    que contiene &quot;iPod&quot; y el tiempo de entrega de la solicitud excede 1
+    segundo</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>ReqHeader:user-agent ~ &quot;iPod&quot; and Timestamp:Resp[2] &gt; 1.</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones contiene un estado de respuesta de backend mayor o
+    igual a 500</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>BerespStatus &gt;= 500</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El grupo de transacciones contiene un estado de respuesta de 304, pero donde
+    la solicitud no contenía una cabecera if-modified-since</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>RespStatus == 304 and not ReqHeader:if-modified-since</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Transacciones que han tenido fallos de backend o tiempos de entrega largos
+    en sus subsolicitudes ESI. (Asume el modo de agrupación de solicitudes).</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>BerespStatus &gt;= 500 or {2+}Timestamp:Process[2] &gt; 1.</pre>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Registra errores no transaccionales. (Asume el modo de agrupación
+    directa).</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>vxid == 0 and Error</pre>
+</div>
+</div>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORIA'><a class='permalink' href='#HISTORIA'>HISTORIA</a></h1>
+<p class="Pp">Este documento fue escrito inicialmente por Martin Blix Grydeland y
+    modificado por otros.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Este documento tiene licencia bajo la misma licencia que el propio
+    Varnish. Ver LICENCE para más detalles.</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Copyright (c) 2006 Verdens Gang AS</li>
+  <li>Copyright (c) 2006-2015 Varnish Software AS</li>
+</ul>
+</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/varnish/">extra/varnish</a></dd>
+        <dt>Versión:</dt>
+        <dd>8.0.0-1</dd>
+        <dt>Anterior:</dt>
+        <dd><a href="https://www.varnish-cache.org/">https://www.varnish-cache.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD-2-Clause</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/varnish/">/listing/extra/varnish/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN_GENERAL">DESCRIPCIÓN GENERAL</a></li>
+        
+            <li><a href="#AGRUPACIÓN">AGRUPACIÓN</a></li>
+        
+            <li><a href="#USO_DE_MEMORIA">USO DE MEMORIA</a></li>
+        
+            <li><a href="#LENGUAJE_DE_CONSULTA">LENGUAJE DE CONSULTA</a></li>
+        
+            <li><a href="#EJEMPLOS_DE_EXPRESIONES_DE_CONSULTA">EJEMPLOS DE EXPRESIONES DE CONSULTA</a></li>
+        
+            <li><a href="#HISTORIA">HISTORIA</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/vsl-query.7.es.txt">txt</a>, 
+        
+            <a href="/man/vsl-query.7.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>guestfs-ruby(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">guestfs-ruby(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libguestfs/">libguestfs</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later, LGPL-2.1-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">guestfs-ruby(3)</td>
+    <td class="head-vol">Soporte de virtualización</td>
+    <td class="head-rtitle">guestfs-ruby(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">guestfs-ruby - Cómo usar libguestfs desde Ruby</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>require 'guestfs'
+g = Guestfs::Guestfs.new()
+g.add_drive_opts(&quot;disk.img&quot;,
+                 :readonly =&gt; true, :format =&gt; &quot;raw&quot;)
+g.launch()</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIóN'><a class='permalink' href='#DESCRIPCIóN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Esta página del manual documenta cómo llamar a libguestfs desde el
+    lenguaje de programación Ruby. Esta página solo documenta las diferencias con
+    la API de C y proporciona algunos ejemplos. Si no estás familiarizado con el uso
+    de libguestfs, también debes leer <a href='/man/guestfs.3.en'>guestfs(3)</a>.</p>
+<section class="Ss">
+<h2 class="Ss" id='EXCEPCIONES'><a class='permalink' href='#EXCEPCIONES'>EXCEPCIONES</a></h2>
+<p class="Pp">Los errores de las funciones de libguestfs se mapean a la
+    excepción <span class="Li">&quot;Error&quot;</span>. Esta tiene un solo
+    parámetro que es el mensaje de error (una cadena).</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO_1:_CREAR_UNA_IMAGEN_DE_DISCO'><a class='permalink' href='#EJEMPLO_1:_CREAR_UNA_IMAGEN_DE_DISCO'>EJEMPLO   1: CREAR UNA IMAGEN DE DISCO</a></h1>
+<pre># Ejemplo que muestra cómo crear una imagen de disco.
+
+require 'guestfs'
+
+output = &quot;disk.img&quot;
+
+g = Guestfs::Guestfs.new()
+
+# Crea una imagen de disco dispersa en formato raw, de 512 MB de tamaño.
+g.disk_create (output, &quot;raw&quot;, 512 * 1024 * 1024)
+
+# Establece la bandera de rastreo para que podamos ver cada llamada a libguestfs.
+g.set_trace(1)
+
+# Adjunta la imagen de disco a libguestfs.
+g.add_drive_opts(output, :format =&gt; &quot;raw&quot;)
+
+# Ejecuta el backend de libguestfs.
+g.launch();
+
+# Obtiene la lista de dispositivos. Como solo adjuntamos una unidad
+# arriba, esperamos que esta lista contenga un solo
+# elemento.
+devices = g.list_devices()
+if devices.length != 1 then
+  raise &quot;error: se esperaba un solo dispositivo de list-devices&quot;
+end
+
+# Particiona el disco como una única partición MBR.
+g.part_disk(devices[0], &quot;mbr&quot;)
+
+# Obtiene la lista de particiones. Esperamos un solo elemento, que
+# es la partición que acabamos de crear.
+partitions = g.list_partitions()
+if partitions.length != 1 then
+  raise &quot;error: se esperaba una sola partición de list-partitions&quot;
+end
+
+# Crea un sistema de archivos en la partición.
+g.mkfs(&quot;ext4&quot;, partitions[0])
+
+# Ahora monta el sistema de archivos para que podamos añadir archivos.
+g.mount(partitions[0], &quot;/&quot;)
+
+# Crea algunos archivos y directorios.
+g.touch(&quot;/empty&quot;)
+message = &quot;Hola, mundo\n&quot;
+g.write(&quot;/hello&quot;, message)
+g.mkdir(&quot;/foo&quot;)
+
+# Esto sube el archivo local /etc/resolv.conf a
+# la imagen de disco.
+g.upload(&quot;/etc/resolv.conf&quot;, &quot;/foo/resolv.conf&quot;)
+
+# Como escribimos en el disco y queremos detectar errores de escritura, llamamos a g.shutdown.
+# No necesitas hacer esto: g.close lo hará implícitamente.
+g.shutdown()
+
+# Ten en cuenta también que los manejadores se cierran automáticamente si son
+# recolectados por el recolector de basura. Solo necesitas llamar a close
+# si quieres cerrar el manejador de inmediato.
+g.close()</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO_2:_INSPECCIONAR_UNA_IMAGEN_DE_DISCO_DE_MáQUINA_VIRTUAL'><a class='permalink' href='#EJEMPLO_2:_INSPECCIONAR_UNA_IMAGEN_DE_DISCO_DE_MáQUINA_VIRTUAL'>EJEMPLO   2: INSPECCIONAR UNA IMAGEN DE DISCO DE MÁQUINA VIRTUAL</a></h1>
+<pre># Ejemplo que muestra cómo inspeccionar un disco de máquina virtual.
+
+require 'guestfs'
+
+if ARGV.length == 0
+  puts &quot;uso: inspect_vm disk.img&quot;
+  exit 1
+end
+disk = ARGV[0]
+
+g = Guestfs::Guestfs.new()
+
+# Adjunta la imagen de disco en modo de solo lectura a libguestfs.
+g.add_drive_opts(disk, :readonly =&gt; true)
+
+# Ejecuta el backend de libguestfs.
+g.launch()
+
+# Pide a libguestfs que inspeccione los sistemas operativos.
+roots = g.inspect_os()
+if roots.length == 0
+  puts &quot;inspect_vm: no se encontraron sistemas operativos&quot;
+  exit 1
+end
+
+for root in roots do
+  printf(&quot;Dispositivo raíz: %s\n&quot;, root)
+
+  # Imprime información básica sobre el sistema operativo.
+  printf(&quot;  Nombre del producto: %s\n&quot;, g.inspect_get_product_name(root))
+  printf(&quot;  Versión:      %d.%d\n&quot;,
+         g.inspect_get_major_version(root),
+         g.inspect_get_minor_version(root))
+  printf(&quot;  Tipo:         %s\n&quot;, g.inspect_get_type(root))
+  printf(&quot;  Distribución:       %s\n&quot;, g.inspect_get_distro(root))
+
+  # Monta los discos, como guestfish -i.
+  #
+  # Ordena las claves por longitud, la más corta primero, para que terminemos
+  # montando los sistemas de archivos en el orden correcto.
+  mps = g.inspect_get_mountpoints(root)
+  mps = mps.sort {|a,b| a[0].length &lt;=&gt; b[0].length}
+  for mp in mps do
+    begin
+      g.mount_ro(mp[1], mp[0])
+    rescue Guestfs::Error =&gt; msg
+      printf(&quot;%s (ignorado)\n&quot;, msg)
+    end
+  end
+
+  # Si el archivo /etc/issue.net existe, imprime hasta 3 líneas.
+  filename = &quot;/etc/issue.net&quot;
+  if g.is_file filename then
+    printf(&quot;--- %s ---\n&quot;, filename)
+    lines = g.head_n(3, filename)
+    for line in lines do
+      puts line
+    end
+  end
+
+  # Desmonta todo.
+  g.umount_all()
+end</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/guestfs.3.en'>guestfs(3)</a>, <a href='/man/guestfs-examples.3.en'>guestfs-examples(3)</a>,
+    <a href='/man/guestfs-erlang.3.en'>guestfs-erlang(3)</a>, <a href='/man/guestfs-golang.3.en'>guestfs-golang(3)</a>, <a href='/man/guestfs-java.3.en'>guestfs-java(3)</a>,
+    <a href='/man/guestfs-lua.3.en'>guestfs-lua(3)</a>, <a href='/man/guestfs-ocaml.3.en'>guestfs-ocaml(3)</a>, <a href='/man/guestfs-perl.3.en'>guestfs-perl(3)</a>,
+    <a href='/man/guestfs-python.3.en'>guestfs-python(3)</a>, <a href='/man/guestfs-recipes.1.en'>guestfs-recipes(1)</a>,
+  <a href='http://libguestfs.org/'>http://libguestfs.org/</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp">Richard W.M. Jones (<span class="Li">&quot;rjones at redhat dot
+    com&quot;</span>)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright (C) 2010-2025 Red Hat Inc.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENCIA'><a class='permalink' href='#LICENCIA'>LICENCIA</a></h1>
+<p class="Pp">Esta página del manual contiene ejemplos que esperamos que utilices
+    en tus programas. Los ejemplos pueden ser copiados, modificados y distribuidos
+    libremente para cualquier propósito sin ninguna restricción.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ERRORES'><a class='permalink' href='#ERRORES'>ERRORES</a></h1>
+<p class="Pp">Para obtener una lista de errores contra libguestfs, utiliza este
+    enlace:
+    <a href='https://bugzilla.redhat.com/buglist.cgi?component=libguestfs'>https://bugzilla.redhat.com/buglist.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">Para reportar un nuevo error contra libguestfs, utiliza este
+    enlace:
+    <a href='https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs'>https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">Al reportar un error, por favor proporciona:</p>
+<ul class="Bl-bullet">
+  <li>La versión de libguestfs.</li>
+  <li>De dónde obtuviste libguestfs (por ejemplo, qué distribución de Linux,
+      compilado desde el código fuente, etc.)</li>
+  <li>Describe el error con precisión y proporciona una forma de reproducirlo.</li>
+  <li>Ejecuta <a href='/man/libguestfs-test-tool.1.en'>libguestfs-test-tool(1)</a> y pega la salida
+      <b>completa y sin editar</b> en el informe de error.</li>
+</ul>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-08-13</td>
+    <td class="foot-os">libguestfs-1.56.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libguestfs/">extra/libguestfs</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.56.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://libguestfs.org/">https://libguestfs.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later, LGPL-2.1-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libguestfs/">/listing/extra/libguestfs/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIóN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EJEMPLO_1:_CREAR_UNA_IMAGEN_DE_DISCO">EJEMPLO 1: CREAR UNA IMAGEN DE DISCO</a></li>
+        
+            <li><a href="#EJEMPLO_2:_INSPECCIONAR_UNA_IMAGEN_DE_DISCO_DE_MáQUINA_VIRTUAL">EJEMPLO 2: INSPECCIONAR UNA IMAGEN DE DISCO DE MÁQUINA VIRTUAL</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+            <li><a href="#LICENCIA">LICENCIA</a></li>
+        
+            <li><a href="#ERRORES">ERRORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+  
+      
+            <a href="/man/guestfs-ruby.3.en.txt">txt</a>, 
+        
+            <a href="/man/guestfs-ruby.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               licencia, excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>threads::shared(3perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">threads__shared.3perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">threads::shared(3perl)</td>
+    <td class="head-vol">Guía del programador de Perl</td>
+    <td class="head-rtitle">threads::shared(3perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">threads::shared - Extensión de Perl para compartir estructuras de
+    datos entre hilos</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSIÓN'><a class='permalink' href='#VERSIÓN'>VERSIÓN</a></h1>
+<p class="Pp">Este documento describe threads::shared versión 1.70</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>use threads;
+use threads::shared;
+my $var :shared;
+my %hsh :shared;
+my @ary :shared;
+my ($scalar, @array, %hash);
+share($scalar);
+share(@array);
+share(%hash);
+$var = $scalar_value;
+$var = $shared_ref_value;
+$var = shared_clone($non_shared_ref_value);
+$var = shared_clone({'foo' =&gt; [qw/foo bar baz/]});
+$hsh{'foo'} = $scalar_value;
+$hsh{'bar'} = $shared_ref_value;
+$hsh{'baz'} = shared_clone($non_shared_ref_value);
+$hsh{'quz'} = shared_clone([1..3]);
+$ary[0] = $scalar_value;
+$ary[1] = $shared_ref_value;
+$ary[2] = shared_clone($non_shared_ref_value);
+$ary[3] = shared_clone([ {}, [] ]);
+{ lock(%hash); ...  }
+cond_wait($scalar);
+cond_timedwait($scalar, time() + 30);
+cond_broadcast(@array);
+cond_signal(%hash);
+my $lockvar :shared;
+# cond var != lock var
+cond_wait($var, $lockvar);
+cond_timedwait($var, time()+30, $lockvar);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Por defecto, las variables son privadas para cada hilo, y cada hilo
+    recién creado obtiene una copia privada de cada variable existente. Este módulo
+    permite compartir variables entre diferentes hilos (y pseudo-forks en Win32).
+    Se utiliza junto con el módulo threads.</p>
+<p class="Pp">Este módulo solo admite el intercambio de los siguientes tipos de
+    datos: escalares y referencias a escalares, arrays y referencias a arrays, y
+    hashes y referencias a hashes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXPORT'><a class='permalink' href='#EXPORT'>EXPORT</a></h1>
+<p class="Pp">Las siguientes funciones son exportadas por este módulo:
+    <span class="Li">&quot;share&quot;</span>,
+    <span class="Li">&quot;shared_clone&quot;</span>,
+    <span class="Li">&quot;is_shared&quot;</span>,
+    <span class="Li">&quot;cond_wait&quot;</span>,
+    <span class="Li">&quot;cond_timedwait&quot;</span>,
+    <span class="Li">&quot;cond_signal&quot;</span> y
+    <span class="Li">&quot;cond_broadcast&quot;</span></p>
+<p class="Pp">Tenga en cuenta que si este módulo se importa cuando threads aún no
+    ha sido cargado, entonces todas estas funciones no tendrán efecto. Esto permite
+    escribir módulos que funcionarán tanto en entornos con hilos como sin
+    ellos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FUNCIONES'><a class='permalink' href='#FUNCIONES'>FUNCIONES</a></h1>
+<dl class="Bl-tag">
+  <dt id="share"><a class="permalink" href="#share">share VARIABLE</a></dt>
+  <dd><span class="Li">&quot;share&quot;</span> toma una variable y la marca como
+      compartida:
+        <pre>my ($scalar, @array, %hash);
+share($scalar);
+share(@array);
+share(%hash);
+</pre>
+    <p class="Pp"><span class="Li">&quot;share&quot;</span> devolverá el valor
+        r de solo lectura compartido, pero siempre como una referencia.</p>
+    <p class="Pp">Las variables también se pueden marcar como compartidas en
+        tiempo de compilación utilizando el atributo
+        <span class="Li">&quot;:shared&quot;</span>:</p>
+        <pre>my ($var, %hash, @array) :shared;
+</pre>
+    <p class="Pp">Las variables compartidas solo pueden almacenar escalares,
+        referencias a variables compartidas o referencias a datos compartidos
+        (discutido en la siguiente sección):</p>
+        <pre>my ($var, %hash, @array) :shared;
+my $bork;
+# Almacenamiento de escalares
+$var = 1;
+$hash{'foo'} = 'bar';
+$array[0] = 1.5;
+# Almacenamiento de referencias compartidas
+$var = \%hash;
+$hash{'ary'} = \@array;
+$array[1] = \$var;
+# Los siguientes son errores:
+#   $var = \$bork;                    # ref de variable no compartida
+#   $hash{'bork'} = [];               # ref de array no compartido
+#   push(@array, { 'x' =&gt; 1 });       # ref de hash no compartido
+</pre>
+  </dd>
+  <dt id="shared_clone"><a class="permalink" href="#shared_clone">shared_clone
+    REF</a></dt>
+  <dd><span class="Li">&quot;shared_clone&quot;</span> toma una referencia y
+      devuelve una versión compartida de su argumento, realizando una copia
+      profunda de cualquier elemento no compartido. Cualquier elemento compartido
+      en el argumento se utiliza tal cual (es decir, no se clona).
+        <pre>my $cpy = shared_clone({'foo' =&gt; [qw/foo bar baz/]});
+</pre>
+    <p class="Pp">El estado del objeto (es decir, la clase a la que está
+        bendecido un objeto) también se clona.</p>
+        <pre>my $obj = {'foo' =&gt; [qw/foo bar baz/]};
+bless($obj, 'Foo');
+my $cpy = shared_clone($obj);
+print(ref($cpy), &quot;\n&quot;);         # Muestra 'Foo'
+</pre>
+    <p class="Pp">Para clonar referencias vacías de arrays o hashes, también se
+        puede utilizar lo siguiente:</p>
+        <pre>$var = &amp;share([]);   # Igual que $var = shared_clone([]);
+$var = &amp;share({});   # Igual que $var = shared_clone({});
+</pre>
+    <p class="Pp">No todos los tipos de datos de Perl se pueden clonar (por
+        ejemplo, globs, referencias a código). Por defecto,
+        <span class="Li">&quot;shared_clone&quot;</span> generará un error si
+        encuentra tales elementos. Para cambiar este comportamiento a una advertencia,
+        establezca lo siguiente:</p>
+        <pre>$threads::shared::clone_warn = 1;
+</pre>
+    <p class="Pp">En este caso, <span class="Li">&quot;undef&quot;</span> se
+        sustituirá por el elemento a clonar. Si se establece en cero:</p>
+        <pre>$threads::shared::clone_warn = 0;
+</pre>
+    <p class="Pp">entonces la sustitución de
+        <span class="Li">&quot;undef&quot;</span> se realizará de forma
+        silenciosa.</p>
+  </dd>
+  <dt id="is_shared"><a class="permalink" href="#is_shared">is_shared
+    VARIABLE</a></dt>
+  <dd><span class="Li">&quot;is_shared&quot;</span> comprueba si la variable
+      especificada está compartida o no. Si está compartida, devuelve el ID
+      interno de la variable (similar a <span class="Li">refaddr()</span>
+      (ver Scalar::Util). De lo contrario, devuelve
+      <span class="Li">&quot;undef&quot;</span>.
+        <pre>if (is_shared($var)) {
+    print(&quot;\$var está compartido\n&quot;);
+} else {
+    print(&quot;\$var no está compartido\n&quot;);
+}
+</pre>
+    <p class="Pp">Cuando se utiliza en un elemento de un array o hash,
+        <span class="Li">&quot;is_shared&quot;</span> comprueba si el elemento
+        especificado pertenece a un array o hash compartido. (No comprueba el
+        contenido de ese elemento).
+        <pre>my %hash :shared;
+if (is_shared(%hash)) {
+    print(&quot;\&amp;%hash está compartido\n&quot;);
+}
+$hash{'elem'} = 1;
+if (is_shared($hash{'elem'})) {
+    print(&quot;\$hash{'elem'} está en un hash compartido\n&quot;);
+}
+</pre>
+  </dd>
+  <dt id="lock"><a class="permalink" href="#lock">lock VARIABLE</a></dt>
+  <dd><span class="Li">&quot;lock&quot;</span> coloca un bloqueo
+      <b>consultivo</b> en una variable hasta que el bloqueo salga del ámbito.
+      Si la variable está bloqueada por otro hilo, la llamada a
+      <span class="Li">&quot;lock&quot;</span> se bloqueará hasta que esté
+      disponible. Múltiples llamadas a
+      <span class="Li">&quot;lock&quot;</span> por el mismo hilo desde
+      ámbitos anidados dinámicamente son seguras: la variable permanecerá
+      bloqueada hasta que el bloqueo más externo de la variable salga del
+      ámbito.
+    <p class="Pp"><span class="Li">&quot;lock&quot;</span> sigue las referencias
+        exactamente *un* nivel:</p>
+        <pre>my %hash :shared;
+my $ref = \%hash;
+lock($ref);           # Esto es equivalente a lock(%hash)
+</pre>
+    <p class="Pp">Tenga en cuenta que no puede desbloquear explícitamente una
+        variable; solo puede esperar a que el bloqueo salga del ámbito. Esto se
+        logra más fácilmente bloqueando la variable dentro de un bloque.</p>
+        <pre>my $var :shared;
+{
+    lock($var);
+    # $var está bloqueado desde aquí hasta el final del bloque
+    ...
+}
+# $var ahora está desbloqueado
+</pre>
+    <p class="Pp">Como los bloqueos son consultivos, no impiden el acceso o la
+        modificación de datos por parte de otro hilo que no intente obtener un
+        bloqueo sobre la variable.</p>
+    <p class="Pp">No puede bloquear los elementos individuales de una variable
+        contenedora:</p>
+        <pre>my %hash :shared;
+$hash{'foo'} = 'bar';
+#lock($hash{'foo'});          # Error
+lock(%hash);                  # Funciona
+</pre>
+    <p class="Pp">Si necesita un control más detallado sobre el acceso a
+        variables compartidas, consulte Thread::Semaphore.</p>
+  </dd>
+  <dt id="cond_wait"><a class="permalink" href="#cond_wait">cond_wait
+    VARIABLE</a></dt>
+  <dd></dd>
+  <dt id="cond_wait~2"><a class="permalink" href="#cond_wait~2">cond_wait
+    CONDVAR, LOCKVAR</a></dt>
+  <dd>La función <span class="Li">&quot;cond_wait&quot;</span> toma una variable
+      <b>bloqueada</b> como parámetro, desbloquea la variable y se bloquea hasta
+      que otro hilo realice una llamada a
+      <span class="Li">&quot;cond_signal&quot;</span> o
+      <span class="Li">&quot;cond_broadcast&quot;</span> para la misma variable
+      bloqueada. La variable en la que se bloqueó
+      <span class="Li">&quot;cond_wait&quot;</span> se vuelve a bloquear después
+      de que se satisfaga
+      <span class="Li">&quot;cond_wait&quot;</span>. Si hay varios hilos
+      haciendo
+      <span class="Li">&quot;cond_wait&quot;</span> sobre la misma variable, todos
+      excepto uno volverán a bloquearse esperando para readquirir el bloqueo sobre
+      la variable. (Así que si solo está usando
+      <span class="Li">&quot;cond_wait&quot;</span> para sincronización, libere el
+      bloqueo lo antes posible). Las dos acciones de desbloquear la variable y
+      entrar en el estado de espera bloqueada son atómicas, las dos acciones de
+      salir del estado de espera bloqueada y volver a bloquear la variable no lo
+      son.
+    <p class="Pp">En su segunda forma,
+        <span class="Li">&quot;cond_wait&quot;</span> toma una variable compartida
+        y
+        <b>desbloqueada</b> seguida de</p>
+</section>
+</div>
+</section>
+</article>
+
+        </main>
+    </body>
+</html>
+por una variable compartida y <b>bloqueada</b>.
+        La segunda variable no está bloqueada y la ejecución del hilo se suspende hasta
+        que otro hilo señale la primera variable.</p>
+    <p class="Pp">Es importante notar que la variable puede ser notificada incluso
+        si ningún hilo realiza una <span class="Li">&quot;cond_signal&quot;</span> o
+        <span class="Li">&quot;cond_broadcast&quot;</span> sobre la variable.
+        Por lo tanto, es importante verificar el valor de la variable y volver a
+        esperar si el requisito no se cumple. Por ejemplo, para pausar hasta
+        que un contador compartido caiga a cero:</p>
+        <pre>{ lock($counter); cond_wait($counter) until $counter == 0; }
+</pre>
+  </dd>
+  <dt id="cond_timedwait"><a class="permalink" href="#cond_timedwait">cond_timedwait
+    VARIABLE, ABS_TIMEOUT</a></dt>
+  <dd></dd>
+  <dt id="cond_timedwait~2"><a class="permalink" href="#cond_timedwait~2">cond_timedwait
+    CONDVAR, ABS_TIMEOUT, LOCKVAR</a></dt>
+  <dd>En su forma de dos argumentos,
+      <span class="Li">&quot;cond_timedwait&quot;</span> toma una variable <b>bloqueada</b>
+      y un tiempo de espera absoluto en segundos de *época* (ver
+      <b>time()</b> en perlfunc para más detalles) como parámetros, desbloquea la variable,
+      y se bloquea hasta que se alcance el tiempo de espera o otro hilo señale la
+      variable. Se devuelve un valor falso si se alcanza el tiempo de espera, y un valor verdadero en caso contrario. En cualquier caso, la variable se vuelve a bloquear al regresar.
+    <p class="Pp">Al igual que <span class="Li">&quot;cond_wait&quot;</span>, esta
+        función puede tomar una variable compartida y <b>bloqueada</b> como parámetro
+        adicional; en este caso, el primer parámetro es una variable de condición <b>no bloqueada</b>
+        protegida por una variable de bloqueo distinta.</p>
+    <p class="Pp">De nuevo, al igual que <span class="Li">&quot;cond_wait&quot;</span>,
+        el despertar y la readquisición del bloqueo no son atómicos, y siempre
+        debes verificar tu condición deseada después de que esta función regrese.
+        Dado que el tiempo de espera es un valor absoluto, sin embargo, no tiene que
+        ser recalculado con cada pasada:</p>
+        <pre>lock($var);
+my $abs = time() + 15;
+until ($ok = desired_condition($var)) {
+    last if !cond_timedwait($var, $abs);
+}
+# Lo obtuvimos si $ok, ¡de lo contrario, se agotó el tiempo!
+</pre>
+  </dd>
+  <dt id="cond_signal"><a class="permalink" href="#cond_signal">cond_signal
+    VARIABLE</a></dt>
+  <dd>La función <span class="Li">&quot;cond_signal&quot;</span> toma una variable
+      <b>bloqueada</b> como parámetro y desbloquea un hilo que está
+      realizando <span class="Li">&quot;cond_wait&quot;</span> sobre esa variable.
+      Si más de un hilo está bloqueado en un
+      <span class="Li">&quot;cond_wait&quot;</span> sobre esa variable, solo uno (y
+      cuál es indeterminado) será desbloqueado.
+    <p class="Pp">Si no hay hilos bloqueados en un
+        <span class="Li">&quot;cond_wait&quot;</span> sobre la variable, la
+        señal se descarta. Al bloquear siempre antes de señalar, puedes (con
+        cuidado) evitar señalar antes de que otro hilo haya entrado en
+        <b>cond_wait()</b>.</p>
+    <p class="Pp"><span class="Li">&quot;cond_signal&quot;</span> normalmente
+        generará una advertencia si intentas usarla en una variable no bloqueada.
+        En las raras ocasiones en que hacer esto pueda ser sensato, puedes suprimir
+        la advertencia con:</p>
+        <pre>{ no warnings 'threads'; cond_signal($foo); }
+</pre>
+  </dd>
+  <dt id="cond_broadcast"><a class="permalink" href="#cond_broadcast">cond_broadcast
+    VARIABLE</a></dt>
+  <dd>La función <span class="Li">&quot;cond_broadcast&quot;</span> funciona
+      de manera similar a <span class="Li">&quot;cond_signal&quot;</span>.
+      <span class="Li">&quot;cond_broadcast&quot;</span>, sin embargo, desbloqueará
+      <b>todos</b> los hilos que están bloqueados en un
+      <span class="Li">&quot;cond_wait&quot;</span> sobre la variable bloqueada,
+      en lugar de solo uno.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OBJETOS'><a class='permalink' href='#OBJETOS'>OBJETOS</a></h1>
+<p class="Pp">threads::shared exporta una versión de <b>bless()</b> que funciona
+    en objetos compartidos de tal manera que las *bendiciones* se propagan entre hilos.</p>
+<pre># Crear un objeto 'Foo' compartido
+my $foo :shared = shared_clone({});
+bless($foo, 'Foo');
+# Crear un objeto 'Bar' compartido
+my $bar :shared = shared_clone({});
+bless($bar, 'Bar');
+# Poner 'bar' dentro de 'foo'
+$foo-&gt;{'bar'} = $bar;
+# Rebendecir los objetos a través de un hilo
+threads-&gt;create(sub {
+    # Rebendecir el objeto externo
+    bless($foo, 'Yin');
+    # No se puede rebendecir directamente el objeto interno
+    #bless($foo-&gt;{'bar'}, 'Yang');
+    # Recuperar y rebendecir el objeto interno
+    my $obj = $foo-&gt;{'bar'};
+    bless($obj, 'Yang');
+    $foo-&gt;{'bar'} = $obj;
+})-&gt;join();
+print(ref($foo),          &quot;\n&quot;);    # Imprime 'Yin'
+print(ref($foo-&gt;{'bar'}), &quot;\n&quot;);    # Imprime 'Yang'
+print(ref($bar),          &quot;\n&quot;);    # También imprime 'Yang'</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<p class="Pp">threads::shared está diseñado para deshabilitarse silenciosamente si
+    los hilos no están disponibles. Esto te permite escribir módulos y paquetes que
+    pueden ser utilizados tanto en aplicaciones con hilos como sin ellos.</p>
+<p class="Pp">Si quieres acceso a los hilos, debes <span class="Li">&quot;use
+    threads&quot;</span> antes de <span class="Li">&quot;use
+    threads::shared&quot;</span>. threads emitirá una advertencia si lo usas
+    después de threads::shared.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ADVERTENCIAS'><a class='permalink' href='#ADVERTENCIAS'>ADVERTENCIAS</a></h1>
+<dl class="Bl-tag">
+  <dt id="cond_broadcast()"><a class="permalink" href="#cond_broadcast()"><b>cond_broadcast()</b>
+    llamado en variable no bloqueada</a></dt>
+  <dd></dd>
+  <dt id="cond_signal()"><a class="permalink" href="#cond_signal()"><b>cond_signal()</b>
+    llamado en variable no bloqueada</a></dt>
+  <dd>Ver &quot;cond_signal VARIABLE&quot;, arriba.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ERRORES_Y_LIMITACIONES'><a class='permalink' href='#ERRORES_Y_LIMITACIONES'>ERRORES
+    Y LIMITACIONES</a></h1>
+<p class="Pp">Cuando se usa <span class="Li">&quot;share&quot;</span> en arreglos,
+    hashes, referencias a arreglos o referencias a hashes, cualquier dato que contengan se perderá.</p>
+<pre>my @arr = qw(foo bar baz);
+share(@arr);
+# @arr está ahora vacío (es decir, == ());
+# Crear un objeto 'foo'
+my $foo = { 'data' =&gt; 99 };
+bless($foo, 'foo');
+# Compartir el objeto
+share($foo);        # El contenido se borra ahora
+print(&quot;ERROR: \$foo está vacío\n&quot;)
+    if (! exists($foo-&gt;{'data'}));</pre>
+<p class="Pp">Por lo tanto, llena dichas variables *después* de declararlas como
+    compartidas. (Los escalares y las referencias a escalares no se ven afectados
+    por este problema.)</p>
+<p class="Pp">Bendecir un objeto compartido después de que ha sido anidado en
+    otro objeto compartido no propaga la bendición a la referencia compartida:</p>
+<pre>my $foo = &amp;share({});
+my $bar = &amp;share({});
+$bar-&gt;{foo} = $foo;
+bless($foo, 'baz');   # $foo es ahora de clase 'baz',
+                      # pero $bar-&gt;{foo} no está bendecido.</pre>
+<p class="Pp">Por lo tanto, debes bendecir los objetos antes de compartirlos.</p>
+<p class="Pp">A menudo no es prudente compartir un objeto a menos que la clase
+    misma haya sido escrita para admitir la compartición. Por ejemplo, el destructor
+    de un objeto compartido puede ser llamado varias veces, una por cada salida
+    del ámbito del hilo, o puede que no sea llamado en absoluto si está incrustado
+    dentro de otro objeto compartido. Otro problema es que el contenido de los
+    objetos basados en hash se perderá debido a la limitación mencionada anteriormente.
+    Ver <i>examples/class.pl</i> (en la distribución CPAN de este módulo) para
+    saber cómo crear una clase que admita la compartición de objetos.</p>
+<p class="Pp">Los destructores pueden no ser llamados en objetos si esos objetos
+    todavía existen en el momento de la destrucción global. Si los destructores
+    deben ser llamados, asegúrate de que no haya referencias circulares y de que
+    nada esté haciendo referencia a los objetos antes de que termine el programa.</p>
+<p class="Pp">No soporta <span class="Li">&quot;splice&quot;</span> en arreglos.
+    No soporta cambiar explícitamente las longitudes de los arreglos a través de
+    $#array -- usa <span class="Li">&quot;push&quot;</span> y
+    <span class="Li">&quot;pop&quot;</span> en su lugar.</p>
+<p class="Pp">Tomar referencias a los elementos de arreglos y hashes compartidos
+    no autovivifica los elementos, ni tampoco el rebanado de un arreglo/hash
+    compartido sobre índices/claves inexistentes autovivifica los elementos.</p>
+<p class="Pp"><span class="Li">share()</span> te permite
+    <span class="Li">share($hashref-&gt;{key})</span> y
+    <span class="Li">share($arrayref-&gt;[idx])</span> sin dar ningún mensaje de
+    error. Pero <span class="Li">&quot;$hashref-&gt;{key}&quot;</span> o
+    <span class="Li">&quot;$arrayref-&gt;[idx]&quot;</span> <b>no</b> está
+    compartido, lo que provoca el error &quot;lock can only be used on shared
+    values&quot; cuando intentas
+    <span class="Li">lock($hashref-&gt;{key})</span> o
+    <span class="Li">lock($arrayref-&gt;[idx])</span> en otro hilo.</p>
+<p class="Pp">Usar <span class="Li">refaddr()</span> no es confiable para probar
+    si dos referencias compartidas son equivalentes (por ejemplo, al probar
+    referencias circulares). Usa <b>is_shared()</b> en su lugar:</p>
+<pre>use threads;
+use threads::shared;
+use Scalar::Util qw(refaddr);
+# Si ref es compartido, usa el ID interno de threads::shared.
+# De lo contrario, usa refaddr().
+my $addr1 = is_shared($ref1) || refaddr($ref1);
+my $addr2 = is_shared($ref2) || refaddr($ref2);
+if ($addr1 == $addr2) {
+    # Las referencias son equivalentes
+}</pre>
+<p class="Pp"><b>each()</b> no funciona correctamente en referencias compartidas
+    incrustadas en estructuras compartidas. Por ejemplo:</p>
+<pre>my %foo :shared;
+$foo{'bar'} = shared_clone({'a'=&gt;'x', 'b'=&gt;'y', 'c'=&gt;'z'});
+while (my ($key, $val) = each(%{$foo{'bar'}})) {
+    ...
+}</pre>
+<p class="Pp">Cualquiera de las siguientes opciones funcionará en su lugar:</p>
+<pre>my $ref = $foo{'bar'};
+while (my ($key, $val) = each(%{$ref})) {
+    ...
+}
+foreach my $key (keys(%{$foo{'bar'}})) {
+    my $val = $foo{'bar'}{$key};
+    ...
+}</pre>
+<p class="Pp">Este módulo soporta variables de doble valor creadas usando
+    <span class="Li">dualvar()</span> de Scalar::Util. Sin embargo, aunque
+    <span class="Li">$!</span> actúa como un dualvar, está implementado como un
+    SV enlazado. Para propagar su valor, usa la siguiente construcción, si es
+    necesario:</p>
+<pre>my $errno :shared = dualvar($!,$!);</pre>
+<p class="Pp">Ver los informes de errores existentes en, y enviar cualquier error
+    nuevo, problema, parche, etc. a:
+    <a href='http://rt.cpan.org/Public/Dist/Display.html?Name=threads-shared'>http://rt.cpan.org/Public/Dist/Display.html?Name=threads-shared</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIEN'><a class='permalink' href='#VER_TAMBIEN'>VER
+    TAMBIÉN</a></h1>
+<p class="Pp">threads::shared en MetaCPAN:
+    <a href='https://metacpan.org/release/threads-shared'>https://metacpan.org/release/threads-shared</a></p>
+<p class="Pp">Repositorio de código para la distribución CPAN:
+    <a href='https://github.com/Dual-Life/threads-shared'>https://github.com/Dual-Life/threads-shared</a></p>
+<p class="Pp">threads, perlthrtut</p>
+<p class="Pp"><a href='http://www.perl.com/pub/a/2002/06/11/threads.html'>http://www.perl.com/pub/a/2002/06/11/threads.html</a> y
+    <a href='http://www.perl.com/pub/a/2002/09/04/threads.html'>http://www.perl.com/pub/a/2002/09/04/threads.html</a></p>
+<p class="Pp">Lista de correo de hilos de Perl:
+    <a href='http://lists.perl.org/list/ithreads.html'>http://lists.perl.org/list/ithreads.html</a></p>
+<p class="Pp">Código de ejemplo en el directorio <i>examples</i> de esta distribución
+    en CPAN.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Artur Bergman &lt;sky AT crucially DOT net&gt;</p>
+<p class="Pp">Documentación prestada del antiguo Thread.pm.</p>
+<p class="Pp">Versión CPAN producida por Jerry D. Hedden</p>&lt;jdhedden AT cpan DOT
+    org&gt;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENCIA'><a class='permalink' href='#LICENCIA'>LICENCIA</a></h1>
+<p class="Pp">threads::shared se distribuye bajo la misma licencia que Perl.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#VERSIÓN">VERSIÓN</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EXPORTACIÓN">EXPORTACIÓN</a></li>
+        
+            <li><a href="#FUNCIONES">FUNCIONES</a></li>
+        
+            <li><a href="#OBJETOS">OBJETOS</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+            <li><a href="#ADVERTENCIAS">ADVERTENCIAS</a></li>
+        
+            <li><a href="#ERRORES_Y_LIMITACIONES">ERRORES Y LIMITACIONES</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#LICENCIA">LICENCIA</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/threads::shared.3perl.es.txt">txt</a>, 
+        
+            <a href="/man/threads::shared.3perl.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

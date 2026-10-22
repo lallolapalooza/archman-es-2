@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tracecmd_add_ts_offset(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tracecmd_add_ts_offset(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/trace-cmd/">trace-cmd</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LIBTRACECMD(3)</td>
+    <td class="head-vol">Manual de libtracefs</td>
+    <td class="head-rtitle">LIBTRACECMD(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">tracecmd_get_first_ts, tracecmd_add_ts_offset,
+    tracecmd_get_tsc2nsec - Manejar marcas de tiempo de un archivo de rastreo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;trace-cmd.h&gt;</b>
+unsigned long long <b>tracecmd_get_first_ts</b>(struct tracecmd_input *<i>handle</i>);
+void <b>tracecmd_add_ts_offset</b>(struct tracecmd_input *<i>handle</i>, long long <i>offset</i>);
+int <b>tracecmd_get_tsc2nsec</b>(struct tracecmd_input *<i>handle</i>, int *<i>mult</i>, int pass[*]<i>shift</i>, unsigned long long *<i>offset</i>);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este conjunto de APIs se puede usar para leer datos de rastreo de un
+    archivo de rastreo abierto con <i>tracecmd_open()(3)</i>, <i>tracecmd_open_fd()(3)</i>
+    o <i>tracecmd_open_head()(3)</i>.</p>
+<p class="Pp">La función <b>tracecmd_get_first_ts()</b> devuelve la marca de tiempo
+    del primer registro en el <i>handle</i>.</p>
+<p class="Pp">La función <b>tracecmd_add_ts_offset()</b> agrega un desplazamiento a
+    cada uno de los registros en el <i>handle</i> que representa un archivo de
+    rastreo. Esto es útil para asociar dos archivos de rastreo diferentes por su
+    desplazamiento (por ejemplo, un archivo de rastreo de un host y un archivo de
+    rastreo de un invitado que no se sincronizaron al crearse).</p>
+<p class="Pp">La función <b>tracecmd_get_tsc2nsec</b> devuelve los valores de
+    cálculo que convierten la marca de tiempo sin procesar a nanosegundos. Los
+    parámetros son punteros al almacenamiento para guardar los valores, o NULL
+    para ignorarlos. El multiplicador se guardará en <i>mult</i>, el valor de
+    desplazamiento se guardará en <i>shift</i> y el valor de offset se guardará
+    en <i>offset</i>, si los parámetros correspondientes no son NULL.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp">La función <b>tracecmd_get_first_ts()</b> devuelve la marca de tiempo
+    del primer registro en un archivo de rastreo para el <i>handle</i> dado.</p>
+<p class="Pp">La función <b>tracecmd_get_tsc2nsec</b>() devuelve 0 si el reloj de
+    rastreo admite los valores de desplazamiento y -1 en caso contrario. Tenga en
+    cuenta que, si el archivo de rastreo tiene la opción TSC2NSEC, los valores
+    devueltos en los parámetros aún pueden ser válidos incluso si la función
+    devuelve -1. El valor de retorno solo indica si los valores se utilizarán en
+    los cálculos del reloj dado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE'><a class='permalink' href='#EXAMPLE'>EJEMPLO</a></h1>
+<div class="Bd-indent">
+<pre>#include &lt;stdlib.h&gt;
+#include &lt;trace-cmd.h&gt;
+static int print_events(struct tracecmd_input *handle, struct tep_record *record, int cpu, void *data)
+{
+        static struct trace_seq seq;
+        struct tep_handle *tep = tracecmd_get_tep(handle);
+        const char *file = tracecmd_get_private(handle);
+        if (!seq.buffer)
+                trace_seq_init(&amp;seq);
+        trace_seq_reset(&amp;seq);
+        trace_seq_printf(&amp;seq, &quot;%s: &quot;, file);
+        trace_seq_printf(&amp;seq, &quot;%s: &quot;, file);
+        tep_print_event(tep, &amp;seq, record, &quot;%6.1000d [%03d] %s-%d %s: %s\n&quot;,
+                        TEP_PRINT_TIME, TEP_PRINT_CPU, TEP_PRINT_COMM, TEP_PRINT_PID,
+                        TEP_PRINT_NAME, TEP_PRINT_INFO);
+        trace_seq_terminate(&amp;seq);
+        trace_seq_do_printf(&amp;seq);
+        return 0;
+}
+int main(int argc, char **argv)
+{
+        struct tracecmd_input **handles = NULL;
+        unsigned long long ts, first_ts = 0;
+        unsigned long long offset;
+        int multi;
+        int shift;
+        int nr_handles = 0;
+        int ret;
+        int i;
+        if (argc &lt; 2) {
+                printf(&quot;usage: %s trace.dat [trace.dat ...]\n&quot;, argv[0]);
+                exit(-1);
+        }
+        for (i = 1; i &lt; argc; i++) {
+                handles = realloc(handles, sizeof(*handles) * (nr_handles + 1));
+                if (!handles)
+                        exit(-1);
+                handles[nr_handles] = tracecmd_open(argv[i], 0);
+                if (!handles[nr_handles])
+                        exit(-1);
+                ret = tracecmd_get_tsc2nsec(handles[nr_handles], &amp;multi, &amp;shift, &amp;offset);
+                if (!ret)
+                        printf(&quot; %s has tsc2nsec calculations of mult:%d shift:%d offset:%lld\n&quot;,
+                                argv[i], multi, shift, offset);
+                tracecmd_set_private(handles[nr_handles], argv[i]);
+                ts = tracecmd_get_first_ts(handles[nr_handles]);
+                if (!first_ts || ts &lt; first_ts)
+                        first_ts = ts;
+                nr_handles++;
+        }
+        /* Set the time stamp to start at the first record found */
+        for (i = 0; i &lt; nr_handles; i++)
+                tracecmd_add_ts_offset(handles[i], -first_ts);
+        tracecmd_iterate_events_multi(handles, nr_handles, print_events, NULL);
+        for (i = 0; i &lt; nr_handles; i++)
+                tracecmd_close(handles[i]);
+        free(handles);
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FILES'><a class='permalink' href='#FILES'>ARCHIVOS</a></h1>
+<div class="Bd-indent">
+<pre><b>trace-cmd.h</b>
+        Archivo de cabecera para incluir con el fin de tener acceso a las APIs de la biblioteca.
+<b>-ltracecmd</b>
+        Opción del enlazador para añadir al compilar un programa que utiliza la biblioteca.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/libtracefs.3.en'>libtracefs(3)</a>, <a href='/man/libtraceevent.3.en'>libtraceevent(3)</a>, <a href='/man/trace-cmd.1.en'>trace-cmd(1)</a>
+    <a href='/man/trace-cmd.dat.5.en'>trace-cmd.dat(5)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<div class="Bd-indent">
+<pre><b>Steven Rostedt</b> &lt;<b>rostedt@goodmis.org</b>[1]&gt;
+<b>Tzvetomir Stoyanov</b> &lt;<b>tz.stoyanov@gmail.com</b>[2]&gt;</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTING_BUGS'><a class='permalink' href='#REPORTING_BUGS'>INFORMACIÓN DE ERRORES</a></h1>
+<p class="Pp">Reportar errores a
+  &lt;<b>linux-trace-devel@vger.kernel.org</b>[3]&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCIA</a></h1>
+<p class="Pp">libtracecmd es Software Libre bajo licencia GNU LGPL 2.1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESOURCES'><a class='permalink' href='#RESOURCES'>RECURSOS</a></h1>
+<p class="Pp"><a href='https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/'>https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYING'><a class='permalink' href='#COPYING'>COPIA</a></h1>
+<p class="Pp">Copyright (C) 2020 VMware, Inc. Uso libre de este software concedido bajo los
+    términos de la Licencia Pública de GNU (GPL).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>rostedt@goodmis.org</dd>
+</dl>
+<div class="Bd-indent">mailto:rostedt@goodmis.org</div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>tz.stoyanov@gmail.com</dd>
+</dl>
+<div class="Bd-indent">mailto:tz.stoyanov@gmail.com</div>
+<dl class="Bl-tag">
+  <dt> 3.</dt>
+  <dd>linux-trace-devel@vger.kernel.org</dd>
+</dl>
+<div class="Bd-indent">mailto:linux-trace-devel@vger.kernel.org</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">08/02/2025</td>
+    <td class="foot-os">libtracefs</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/trace-cmd/">extra/trace-cmd</a></dd>
+        <dt>Versión:</dt>
+        <dd>3.3.3-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git">https://git.kernel.org/pub/scm/utils/trace-cmd/trace-cmd.git</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/trace-cmd/">/listing/extra/trace-cmd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EXAMPLE">EJEMPLO</a></li>
+        
+            <li><a href="#FILES">ARCHIVOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#REPORTING_BUGS">INFORMACIÓN DE ERRORES</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#RESOURCES">RECURSOS</a></li>
+        
+            <li><a href="#COPYING">COPIA</a></li>
+        
+            <li><a href="#NOTES">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+</nav>
+
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+    <p>Otros formatos:
+        
+            <a href="/man/tracecmd_add_ts_offset.3.en.txt">txt</a>, 
+        
+            <a href="/man/tracecmd_add_ts_offset.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

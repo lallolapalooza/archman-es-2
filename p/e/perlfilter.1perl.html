@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlfilter(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlfilter.1perl</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLFILTER(1perl)</td>
+    <td class="head-vol">Guía de referencia para programadores de Perl</td>
+    <td class="head-rtitle">PERLFILTER(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlfilter - Filtros de código fuente</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este artículo trata sobre una característica poco conocida de Perl llamada
+    <i>filtros de código fuente</i>. Los filtros de código fuente modifican el texto del programa de un módulo antes de que Perl lo vea, de forma similar a como un preprocesador C modifica el texto fuente de un programa C antes de que el compilador lo vea. Este artículo te cuenta más sobre qué son los filtros de código fuente, cómo funcionan y cómo escribir los tuyos propios.</p>
+<p class="Pp">El propósito original de los filtros de código fuente era permitirte cifrar el código fuente de tu programa para evitar lecturas casuales. Esto no es todo lo que pueden hacer, como pronto aprenderás. Pero primero, lo básico.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONCEPTOS'><a class='permalink' href='#CONCEPTOS'>CONCEPTOS</a></h1>
+<p class="Pp">Antes de que el intérprete de Perl pueda ejecutar un script de Perl, primero debe leerlo desde un archivo a la memoria para su análisis y compilación. Si ese script, a su vez, incluye otros scripts con una declaración
+    <span class="Li">&quot;use&quot;</span> o
+    <span class="Li">&quot;require&quot;</span>, entonces cada uno de esos scripts deberá leerse también de sus respectivos archivos.</p>
+<p class="Pp">Ahora piensa en cada conexión lógica entre el analizador de Perl y un archivo individual como un <i>flujo de código fuente</i>. Se crea un flujo de código fuente cuando el analizador de Perl abre un archivo, continúa existiendo mientras el código fuente se lee en memoria y se destruye cuando Perl termina de analizar el archivo. Si el analizador encuentra una declaración de <span class="Li">&quot;require&quot;</span> o <span class="Li">&quot;use&quot;</span> en un flujo de código fuente, se crea un flujo nuevo y distinto solo para ese archivo.</p>
+<p class="Pp">El siguiente diagrama representa un único flujo de código fuente, con el flujo del código fuente de un archivo de script de Perl a la izquierda hacia el analizador de Perl a la derecha. Así es como Perl opera normalmente.</p>
+<pre>archivo -------&gt; analizador</pre>
+<p class="Pp">Hay dos puntos importantes a recordar:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Aunque puede haber cualquier número de flujos de código fuente en existencia en un momento dado, solo uno estará activo.</dd>
+  <dt>2.</dt>
+  <dd>Cada flujo de código fuente está asociado con un solo archivo.</dd>
+</dl>
+<p class="Pp">Un filtro de código fuente es un tipo especial de módulo de Perl que intercepta y modifica un flujo de código fuente antes de que llegue al analizador. Un filtro de código fuente cambia nuestro diagrama de esta manera:</p>
+<pre>archivo ----&gt; filtro ----&gt; analizador</pre>
+<p class="Pp">Si eso no tiene mucho sentido, considera la analogía de una tubería de comandos. Supongamos que tienes un script de shell almacenado en el archivo comprimido
+    <i>trial.gz</i>. El simple comando de tubería a continuación ejecuta el script sin necesidad de crear un archivo temporal para contener el archivo descomprimido.</p>
+<pre>gunzip -c trial.gz | sh</pre>
+<p class="Pp">En este caso, el flujo de datos de la tubería se puede representar de la siguiente manera:</p>
+<pre>trial.gz ----&gt; gunzip ----&gt; sh</pre>
+<p class="Pp">Con los filtros de código fuente, puedes almacenar el texto de tu script
+    comprimido y usar un filtro de código fuente para descomprimirlo para el analizador de Perl:</p>
+<pre> código fuente        descompresión
+Perl ---&gt; filtro de código fuente ---&gt; analizador</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_DE_FILTROS'><a class='permalink' href='#USO_DE_FILTROS'>USO DE FILTROS</a></h1>
+<p class="Pp">Entonces, ¿cómo se usa un filtro de código fuente en un script de Perl? Arriba, dije que un filtro de código fuente es solo un tipo especial de módulo. Como todos los módulos de Perl, un filtro de código fuente se invoca con una declaración use.</p>
+<p class="Pp">Digamos que quieres pasar tu código fuente de Perl a través del preprocesador C antes de la ejecución. Da la casualidad de que la distribución de filtros de código fuente viene con un módulo de filtro preprocesador C llamado Filter::cpp.</p>
+<p class="Pp">A continuación se muestra un programa de ejemplo,
+    <span class="Li">&quot;cpp_test&quot;</span>, que utiliza este filtro. Se han añadido números de línea para permitir la referencia específica de líneas.</p>
+<pre>1: use Filter::cpp;
+2: #define TRUE 1
+3: $a = TRUE;
+4: print &quot;a = $a\n&quot;;</pre>
+<p class="Pp">Cuando ejecutas este script, Perl crea un flujo de código fuente para el archivo. Antes de que el analizador procese alguna de las líneas del archivo, el flujo de código fuente se ve así:</p>
+<pre>cpp_test ---------&gt; analizador</pre>
+<p class="Pp">La línea 1, <span class="Li">&quot;use Filter::cpp&quot;</span>, incluye e instala el módulo de filtro
+    <span class="Li">&quot;cpp&quot;</span>. Todos los filtros de código fuente funcionan de esta manera. La declaración use se compila y ejecuta en tiempo de compilación, antes de que se lea más del archivo, y adjunta el filtro cpp al flujo de código fuente en segundo plano. Ahora el flujo de datos se ve así:</p>
+<pre>cpp_test ----&gt; filtro cpp ----&gt; analizador</pre>
+<p class="Pp">A medida que el analizador lee la segunda y las líneas subsiguientes del flujo de código fuente, las pasa a través del filtro de código fuente
+    <span class="Li">&quot;cpp&quot;</span> antes de procesarlas. El filtro
+    <span class="Li">&quot;cpp&quot;</span> simplemente pasa cada línea a través del preprocesador C real. La salida del preprocesador C se inserta nuevamente en el flujo de código fuente por el filtro.</p>
+<pre>               .-&gt; cpp --.
+               |         |
+               |         |
+               |       &lt;-'
+cpp_test ----&gt; filtro cpp ----&gt; analizador</pre>
+<p class="Pp">El analizador ve entonces el siguiente código:</p>
+<pre>use Filter::cpp;
+$a = 1;
+print &quot;a = $a\n&quot;;</pre>
+<p class="Pp">Consideremos qué sucede cuando el código filtrado incluye otro módulo con use:</p>
+<pre>1: use Filter::cpp;
+2: #define TRUE 1
+3: use Fred;
+4: $a = TRUE;
+5: print &quot;a = $a\n&quot;;</pre>
+<p class="Pp">El filtro
+    <span class="Li">&quot;cpp&quot;</span> no se aplica al texto del módulo Fred, solo al texto del archivo que lo utilizó (
+    <span class="Li">&quot;cpp_test&quot;</span>). Aunque la declaración use en la línea 3 pasará a través del filtro cpp, el módulo que se incluirá (
+    <span class="Li">&quot;Fred&quot;</span>) no lo hará. Los flujos de código fuente se ven así después de que la línea 3 ha sido analizada y antes de que la línea 4 sea analizada:</p>
+<pre>cpp_test ---&gt; filtro cpp ---&gt; analizador (INACTIVO)
+Fred.pm ----&gt; analizador</pre>
+<p class="Pp">Como puedes ver, se ha creado un nuevo flujo para leer el código fuente de
+    <span class="Li">&quot;Fred.pm&quot;</span>. Este flujo permanecerá activo hasta que se haya analizado todo
+    <span class="Li">&quot;Fred.pm&quot;</span>. El flujo de código fuente para
+    <span class="Li">&quot;cpp_test&quot;</span> seguirá existiendo, pero está inactivo. Una vez que el analizador termine de leer Fred.pm, el flujo de código fuente asociado con él será destruido. El flujo de código fuente para
+    <span class="Li">&quot;cpp_test&quot;</span> se vuelve a activar y el analizador lee la línea 4 y las subsiguientes de
+    <span class="Li">&quot;cpp_test&quot;</span>.</p>
+<p class="Pp">Puedes usar más de un filtro de código fuente en un solo archivo.
+    De manera similar, puedes reutilizar el mismo filtro en tantos archivos como desees.</p>
+<p class="Pp">Por ejemplo, si tienes un archivo fuente codificado en uuencoded y comprimido, es posible apilar un filtro de decodificación uu y un filtro de descompresión de esta manera:</p>
+<pre>use Filter::uudecode; use Filter::uncompress;
+M'XL(&quot;.H&lt;US4''V9I;F%L')Q;&gt;7/;1I;_&gt;_I3=&amp;E=%:F*I&quot;T?22Q/
+M6]9*&lt;IQCO*XFT&quot;0[PL%%'Y+IG?WN^ZYN-$'J.[.JE$,20/?K=_[&gt;
+...</pre>
+<p class="Pp">Una vez que se ha procesado la primera línea, el flujo se verá así:</p>
+<pre>archivo ---&gt; decodificador uu ---&gt; descompresor ---&gt; analizador
+             filtro             filtro</pre>
+<p class="Pp">Los datos fluyen a través de los filtros en el mismo orden en que aparecen en el archivo fuente. El filtro de decodificación uu apareció antes que el filtro de descompresión, por lo que el archivo fuente se decodificará uu antes de descomprimirse.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE'><a class='permalink' href='#ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE'>ESCRIBIR UN FILTRO DE CÓDIGO FUENTE</a></h1>
+<p class="Pp">Hay tres formas de escribir tu propio filtro de código fuente. Puedes escribirlo en C, usar un programa externo como filtro o escribir el filtro en Perl. No cubriré los dos primeros en gran detalle, así que me los quitaré de encima primero. Escribir el filtro en Perl es lo más conveniente, así que dedicaré más espacio a ello.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE_EN_C'><a class='permalink' href='#ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE_EN_C'>ESCRIBIR UN FILTRO DE CÓDIGO FUENTE EN C</a></h1>
+<p class="Pp">La primera de las tres técnicas disponibles es escribir el filtro completamente en C. El módulo externo que creas se interconecta directamente con los ganchos de filtro de código fuente proporcionados por Perl.</p>
+<p class="Pp">La ventaja de esta técnica es que tienes control total sobre la implementación de tu filtro. La gran desventaja es la mayor complejidad requerida para escribir el filtro: no solo necesitas comprender los ganchos de filtro de código fuente, sino que también necesitas un conocimiento razonable de las tripas de Perl. Una de las pocas veces que vale la pena pasar por este problema es al escribir un ofuscador de código. El filtro <span class="Li">&quot;decrypt&quot;</span> (que descifra el código fuente antes de que Perl lo analice) incluido con la distribución de filtros de código fuente es un ejemplo de filtro de código fuente en C (ver Filtros de Descifrado, abajo).</p>
+<dl class="Bl-tag">
+  <dt id="Filtros_de_Descifrado"><a class="permalink" href="#Filtros_de_Descifrado"><b>Filtros de Descifrado</b></a></dt>
+  <dd>Todos los filtros de descifrado funcionan en th</dd>
+</dl>
+</section>
+</div>
+</section>
+
+            </article>
+        
+        </main>
+        <footer>
+        
+        </footer>
+    </body>
+</html>
+principio de "seguridad por ofuscación".
+      Por muy bien que escribas un filtro de descifrado y por muy robusto que sea
+      tu algoritmo de cifrado, cualquiera con suficiente determinación podrá
+      recuperar el código fuente original. La razón es bastante simple: para
+      ejecutar tu programa, Perl debe procesar su código fuente. Esto significa
+      que Perl debe tener toda la información necesaria para descifrar tu programa,
+      y eso significa que esa información también está disponible para cualquiera
+      que pueda ejecutar el programa.
+    <p class="Pp">Dicho esto, existen varios pasos que se pueden tomar para
+        hacerle la vida difícil al lector potencial. El más importante: escribe
+        tu filtro de descifrado en C y enlaza estáticamente el módulo de descifrado
+        en el binario de Perl. Para obtener más consejos para hacer la vida difícil
+        al lector potencial, consulta el archivo <i>decrypt.pm</i> en la distribución
+        de filtros de código fuente.</p>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CREACIÓN_DE_UN_FILTRO_DE_CÓDIGO_FUENTE_COMO_EJECUTABLE_SEPARADO'><a class='permalink' href='#CREACIÓN_DE_UN_FILTRO_DE_CÓDIGO_FUENTE_COMO_EJECUTABLE_SEPARADO'>CREACIÓN DE UN FILTRO DE CÓDIGO FUENTE COMO EJECUTABLE SEPARADO</a></h1>
+<p class="Pp">Una alternativa a escribir el filtro en C es crear un ejecutable
+    separado en el lenguaje de tu elección. El ejecutable separado lee de la
+    entrada estándar, realiza cualquier procesamiento necesario y escribe los
+    datos filtrados en la salida estándar.
+    <span class="Li">&quot;Filter::cpp&quot;</span> es un ejemplo de filtro de código
+    fuente implementado como un ejecutable separado: el ejecutable es el preprocesador
+    C incluido con tu compilador C.</p>
+<p class="Pp">La distribución de filtros de código fuente incluye dos módulos
+    que simplifican esta tarea: <span class="Li">&quot;Filter::exec&quot;</span> y
+    <span class="Li">&quot;Filter::sh&quot;</span>. Ambos te permiten ejecutar
+    cualquier ejecutable externo. Ambos utilizan un coproceso para controlar el
+    flujo de datos hacia y desde el ejecutable externo. (Para obtener detalles
+    sobre coprocesos, consulta Stephens, W.R., &quot;Advanced Programming in the
+    UNIX Environment.&quot; Addison-Wesley, ISBN 0-210-56317-7, páginas
+    441-445.) La diferencia entre ellos es que <span class="Li">&quot;Filter::exec&quot;</span>
+    lanza el comando externo directamente, mientras que
+    <span class="Li">&quot;Filter::sh&quot;</span> lanza un shell para ejecutar el
+    comando externo. (Unix utiliza el shell Bourne; NT utiliza el shell cmd.)
+    Lanzar un shell te permite utilizar los metacaracteres y las facilidades de
+    redirección del shell.</p>
+<p class="Pp">Aquí tienes un ejemplo de script que utiliza
+    <span class="Li">&quot;Filter::sh&quot;</span>:</p>
+<pre>use Filter::sh 'tr XYZ PQR';
+$a = 1;
+print &quot;XYZ a = $a\n&quot;;</pre>
+<p class="Pp">La salida que obtendrás cuando se ejecute el script:</p>
+<pre>PQR a = 1</pre>
+<p class="Pp">Escribir un filtro de código fuente como un ejecutable separado
+    funciona bien, pero se incurre en una pequeña penalización de rendimiento.
+    Por ejemplo, si ejecutas el pequeño ejemplo anterior, se creará un subproceso
+    separado para ejecutar el comando <span class="Li">&quot;tr&quot;</span> de
+    Unix. Cada uso del filtro requiere su propio subproceso. Si la creación de
+    subprocesos es costosa en tu sistema, podrías considerar otras opciones para
+    crear filtros de código fuente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE_EN_PERL'><a class='permalink' href='#ESCRIBIR_UN_FILTRO_DE_CÓDIGO_FUENTE_EN_PERL'>ESCRIBIR UN FILTRO DE CÓDIGO FUENTE EN PERL</a></h1>
+<p class="Pp">La opción más fácil y portátil disponible para crear tu propio filtro
+    de código fuente es escribirlo completamente en Perl. Para distinguirlo de
+    las dos técnicas anteriores, lo llamaré un filtro de código fuente Perl.</p>
+<p class="Pp">Para comprender cómo escribir un filtro de código fuente Perl,
+    necesitamos un ejemplo para estudiar. Aquí tienes un filtro de código fuente
+    completo que realiza la decodificación rot13. (Rot13 es un esquema de cifrado
+    muy simple utilizado en las publicaciones de Usenet para ocultar el contenido
+    de las publicaciones ofensivas. Mueve cada letra trece posiciones hacia
+    adelante, de modo que A se convierte en N, B en O y Z en M).</p>
+<pre>package Rot13;
+use Filter::Util::Call;
+sub import {
+   my ($type) = @_;
+   my ($ref) = [];
+   filter_add(bless $ref);
+}
+sub filter {
+   my ($self) = @_;
+   my ($status);
+   tr/n-za-mN-ZA-M/a-zA-Z/
+      if ($status = filter_read()) &gt; 0;
+   $status;
+}
+1;</pre>
+<p class="Pp">Todos los filtros de código fuente de Perl se implementan como
+    clases de Perl y tienen la misma estructura básica que el ejemplo anterior.</p>
+<p class="Pp">Primero, incluimos el módulo
+    <span class="Li">&quot;Filter::Util::Call&quot;</span>, que exporta varias
+    funciones a tu espacio de nombres de filtro. El filtro que se muestra arriba
+    utiliza dos de estas funciones, <span class="Li">filter_add()</span> y
+    <span class="Li">filter_read()</span>.</p>
+<p class="Pp">A continuación, creamos el objeto filtro y lo asociamos con el
+    flujo de código fuente definiendo la función
+    <span class="Li">&quot;import&quot;</span>. Si conoces Perl lo suficiente,
+    sabrás que <span class="Li">&quot;import&quot;</span> se llama automáticamente
+    cada vez que se incluye un módulo con una declaración use. Esto hace de
+    <span class="Li">&quot;import&quot;</span> el lugar ideal para crear e instalar
+    un objeto filtro.</p>
+<p class="Pp">En el filtro de ejemplo, el objeto (<span class="Li">$ref</span>)
+    se bendice (blessed) como cualquier otro objeto Perl. Nuestro ejemplo utiliza
+    un array anónimo, pero esto no es un requisito. Como este ejemplo no necesita
+    almacenar ninguna información de contexto, podríamos haber utilizado una
+    referencia escalar o de hash igual de bien. La siguiente sección demuestra
+    los datos de contexto.</p>
+<p class="Pp">La asociación entre el objeto filtro y el flujo de código fuente
+    se realiza con la función <span class="Li">filter_add()</span>. Esta toma un
+    objeto filtro como parámetro (<span class="Li">$ref</span> en este caso) y lo
+    instala en el flujo de código fuente.</p>
+<p class="Pp">Finalmente, está el código que realmente realiza el filtrado. Para
+    este tipo de filtro de código fuente Perl, todo el filtrado se realiza en un
+    método llamado <span class="Li">filter()</span>. (También es posible escribir
+    un filtro de código fuente Perl utilizando un cierre. Consulta la página del
+    manual de <span class="Li">&quot;Filter::Util::Call&quot;</span> para obtener
+    más detalles.) Se llama cada vez que el analizador de Perl necesita otra
+    línea de código fuente para procesar. El método <span class="Li">filter()</span>,
+    a su vez, lee líneas del flujo de código fuente utilizando la función
+    <span class="Li">filter_read()</span>.</p>
+<p class="Pp">Si había una línea disponible en el flujo de código fuente,
+    <span class="Li">filter_read()</span> devuelve un valor de estado mayor que
+    cero y añade la línea a <span class="Li">$_</span>. Un valor de estado de
+    cero indica fin de archivo, y menos de cero significa un error. Se espera que
+    la función de filtro devuelva su estado de la misma manera, y que ponga la
+    línea filtrada que quiere que se escriba en el flujo de código fuente en
+    <span class="Li">$_</span>. El uso de <span class="Li">$_</span> explica la
+    brevedad de la mayoría de los filtros de código fuente de Perl.</p>
+<p class="Pp">Para poder utilizar el filtro rot13, necesitamos alguna forma de
+    cifrar el archivo fuente en formato rot13. El script siguiente,
+    <span class="Li">&quot;mkrot13&quot;</span>, hace precisamente eso.</p>
+<pre>die &quot;usage mkrot13 filename\n&quot; unless @ARGV;
+my $in = $ARGV[0];
+my $out = &quot;$in.tmp&quot;;
+open(IN, &quot;&lt;$in&quot;) or die &quot;Cannot open file $in: $!\n&quot;;
+open(OUT, &quot;&gt;$out&quot;) or die &quot;Cannot open file $out: $!\n&quot;;
+print OUT &quot;use Rot13;\n&quot;;
+while (&lt;IN&gt;) {
+   tr/a-zA-Z/n-za-mN-ZA-M/;
+   print OUT;
+}
+close IN;
+close OUT;
+unlink $in;
+rename $out, $in;</pre>
+<p class="Pp">Si ciframos esto con
+    <span class="Li">&quot;mkrot13&quot;</span>:</p>
+<pre>print &quot; hello fred \n&quot;;</pre>
+<p class="Pp">el resultado será este:</p>
+<pre>use Rot13;
+cevag &quot;uryyb serq\a&quot;;</pre>
+<p class="Pp">Ejecutarlo produce esta salida:</p>
+<pre>hello fred</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_DE_CONTEXTO:_EL_FILTRO_DEBUG'><a class='permalink' href='#USO_DE_CONTEXTO:_EL_FILTRO_DEBUG'>USO DE CONTEXTO: EL FILTRO DEBUG</a></h1>
+<p class="Pp">El ejemplo rot13 fue un ejemplo trivial. Aquí tienes otra
+    demostración que muestra algunas características más.</p>
+<p class="Pp">Supongamos que quieres incluir mucho código de depuración en tu
+    script de Perl durante el desarrollo, pero no quieres que esté disponible en
+    el producto final. Los filtros de código fuente ofrecen una solución. Para
+    mantener el ejemplo simple, digamos que quieres que la salida de depuración
+    sea controlada por una variable de entorno, <span class="Li">&quot;DEBUG&quot;</span>.
+    El código de depuración se habilita si la variable existe, de lo contrario se
+    deshabilita.</p>
+<p class="Pp">Dos líneas marcadoras especiales delimitarán el código de depuración,
+    así:</p>
+<pre>## DEBUG_BEGIN
+if ($year &gt; 1999) {
+   warn &quot;Debug: millennium bug in year $year\n&quot;;
+}
+## DEBUG_END</pre>
+<p class="Pp">El filtro asegura que Perl analice el código entre los marcadores
+    &lt;DEBUG_BEGIN&gt; y <span class="Li">&quot;DEBUG_END&quot;</span> solo cuando
+    la variable de entorno <span class="Li">&quot;DEBUG&quot;</span> exista. Esto
+    significa que cuando <span class="Li">&quot;DEBUG&quot;</span> exista, el código
+    anterior debería pasar a través del filtro sin cambios. Las líneas marcadoras
+    también pueden pasarse tal cual, ya que el analizador de Perl las verá como
+    líneas de comentario. Cuando <span class="Li">&quot;DEBUG&quot;</span> no está
+    configurado, necesitamos una forma de deshabilitar el código de depuración.
+    Una forma sencilla de lograrlo es convertir las líneas entre los dos
+    marcadores en comentarios:</p>
+<pre>## DEBUG_BEGIN
+#if ($year &gt; 1999) {
+#     warn &quot;Debug: millennium bug in year $year\n&quot;;
+#}
+## DEBUG_END</pre>
+<p class="Pp">Aquí tienes el filtro Debug completo:</p>
+<pre>package Debug;
+use v5.36;
+use Filter::Util::Call;
+use constant TRUE =&gt; 1;
+use constant FALSE =&gt; 0;
+sub import {
+   my ($type) = @_;
+   my (%context) = (
+     Enabled =&gt; defined $ENV{DEBUG},
+     InTraceBlock =&gt; FALSE,
+     Filename =&gt; (caller)[1],
+     LineNo =&gt; 0,
+     LastBegin =&gt; 0,
+   );
+   filter_add(bless \%context);
+}
+sub Die {
+   my ($self) = shift;
+   my ($message) = shift;
+   my ($line_no) = shift || $self-&gt;{LastBegin};
+   die &quot;$message at $self-&gt;{Filename} line $line_no.\n&quot;
+}
+sub filter {
+   my ($self) = @_;
+   my ($status);
+   $status = filter_read();
+   ++ $self-&gt;{LineNo};
+   # deal with EOF/error first
+   if ($status &lt;= 0) {
+       $self-&gt;Die(&quot;DEBUG_BEGIN has no DEBUG_END&quot;)
+           if $self-&gt;{InTraceBlock};
+       return $status;
+   }
+   if ($self-&gt;{InTraceBlock}) {
+      if (/^\s*##\s*DEBUG_BEGIN/ ) {
+          $self-&gt;Die(&quot;Nested DEBUG_BEGIN&quot;, $self-&gt;{LineNo})
+      } elsif (/^\s*##\s*DEBUG_END/) {
+          $self-&gt;{InTraceBlock} = FALSE;
+      }
+      # comment out the debug lines when the filter is disabled
+      s/^/#/ if ! $self-&gt;{Enabled};
+   } elsif ( /^\s*##\s*DEBUG_BEGIN/ ) {
+      $self-&gt;{InTraceBlock} = TRUE;
+      $self-&gt;{LastBegin} = $self-&gt;{LineNo};
+   } elsif ( /^\s*##\s*DEBUG_END/ ) {
+      $self-&gt;Die(&quot;DEBUG_END has no DEBUG_BEGIN&quot;, $self-&gt;{LineNo});
+   }
+   return $status;
+}
+1;</pre>
+<p class="Pp">La gran diferencia entre este filtro y el ejemplo anterior es el
+    uso de datos de contexto en el objeto filtro. El objeto filtro se basa en una
+    referencia de hash y se utiliza para mantener varias piezas de información de
+    contexto entre llamadas a la función de filtro. Todos los campos del hash,
+    excepto dos, se utilizan para informar de errores. El primero de esos dos,
+    Enabled, lo utiliza el filtro para determinar si el código de depuración debe
+    pasarse al analizador de Perl. El segundo, InTraceBlock, es verdadero cuando
+    el filtro se ha encontrado con un <span class="Li">&quot;DEBUG_BEGIN</span>
+<html>
+    <head>
+        <meta charset="utf-8"/>
+        <title>perlfilter(1perl) — Arch manual pages</title>
+        <link rel="stylesheet" type="text/css" href="/css/manual.css"/>
+    </head>
+    <body>
+        <article>
+            
+<meta name="robots" content="noindex">
+<meta name="generator" content="mandoc 1.30.0">
+<meta name="mtime" content="2025-07-13T16:10:08+00:00">
+<meta name="source" content="perlfilter.1perl">
+<meta name="section" content="1perl">
+<meta name="arch" content="x86_64">
+<meta name="man-version" content="5.42.0">
+<meta name="package" content="core/perl">
+
+<p class="Sh"><b>NAME</b></p>
+<p class="Nm">perlfilter — The Perl Source Filter facility</p>
+<p class="Sh"><b>DESCRIPTION</b></p>
+<p class="Pp">Perl source filters are a mechanism whereby the source code for a
+    Perl script or module can be preprocessed before Perl compiles it. This
+    allows for transformations of the source code to be performed on the fly.</p>
+<p class="Pp">Source filters are implemented as a stack. When Perl reads a
+    source file, it passes the file through each filter in the stack, in order.
+    Each filter receives the output of the previous filter, processes it, and
+    passes its own output to the next filter. The output of the last filter is
+    then compiled by Perl.</p>
+<p class="Pp">Filters can be added to the stack using the <span class="Li">&quot;use
+    Filter::*&quot;</span> pragma. The most common ones are:</p>
+<ul class="Bl-item">
+  <li><span class="Li">use Filter::Simple;</span></li>
+  <li><span class="Li">use Filter::pmpp;</span></li>
+  <li><span class="Li">use Filter::Discard;</span></li>
+  <li><span class="Li">use Filter::String;</span></li>
+  <li><span class="Li">use Filter::Substitute;</span></li>
+  <li><span class="Li">use Filter::Decl::Syntax;</span></li>
+  <li><span class="Li">use Filter::Decl::Rewrite;</span></li>
+</ul>
+<p class="Pp">The standard source filter distribution comes with a set of example
+    filters, including the <span class="Li">Filter::Debug</span> module, which is
+    used in the example below.</p>
+<p class="Sh"><b>CONCEPTS</b></p>
+<p class="Pp">Source filters operate on the text of a Perl program before it is
+    compiled. They allow you to modify the source code on the fly. This is
+    achieved by inserting filter modules into the source code compilation
+    pipeline. When Perl starts compiling a script or module, it reads the source
+    code. If any source filters have been invoked via <span class="Li">&quot;use
+    Filter::*&quot;</span>, the source code is passed through each filter in
+    turn before compilation takes place.</p>
+<p class="Pp">Think of it as a pipeline. The source code enters at one end, and
+    the compiled code emerges at the other. Filters sit in the middle, each
+    receiving the output of the previous one and passing its own output to the
+    next.</p>
+<p class="Pp">The <span class="Li">Filter::Util::Call</span> module provides the
+    core functionality for writing source filters. It allows you to create a
+    filter that reads input line by line, or in chunks, processes it, and returns
+    the modified source code.</p>
+<p class="Sh"><b>USING FILTERS</b></p>
+<p class="Pp">To use a source filter, you simply <span class="Li">&quot;use&quot;</span>
+    it at the beginning of your script or module:</p>
+<pre>    #!/usr/bin/perl
+    use strict;
+    use warnings;
+
+    use Filter::Debug; # Invoke the Debug filter
+
+    print "Hello, world!\n";
+    ## DEBUG BEGIN
+    print "This is a debug message.\n";
+    ## DEBUG END
+    print "Goodbye, world!\n";</pre>
+<p class="Pp">When this script is run, the <span class="Li">Filter::Debug</span>
+    module will process the source code. It recognizes the <span class="Li">##
+    DEBUG_BEGIN</span> and <span class="Li">## DEBUG_END</span> lines.
+    The <span class="Li">DEBUG_BEGIN</span> line sets an internal flag
+    <span class="Li">$InTraceBlock</span> to TRUE. The <span class="Li">DEBUG_END</span>
+    line resets this flag to FALSE. Any lines between these two markers are
+    treated as debugging code. If the filter is enabled (which it is by default),
+    these lines are passed through to the compiler. If the filter is disabled
+    (e.g., by setting the <span class="Li">$Filter::Debug::Enabled</span> variable
+    to FALSE), the debugging lines are commented out by prepending a <span class="Li">#</span>
+    to them.</p>
+<p class="Sh"><b>WRITING A SOURCE FILTER</b></p>
+<p class="Pp">Writing a source filter can be done in several ways:</p>
+<ul class="Bl-item">
+  <li><p class="Li">As a Perl module using <span class="Li">Filter::Util::Call</span>
+      or <span class="Li">Filter::Simple</span>.</p>
+  </li>
+  <li><p class="Li">As a separate executable program.</p>
+  </li>
+  <li><p class="Li">As a C extension module.</p>
+  </li>
+</ul>
+<p class="Pp">The most common and recommended way is to write a Perl module.</p>
+<p class="Sh"><b>WRITING A SOURCE FILTER IN C</b></p>
+<p class="Pp">This is the most powerful but also the most complex method. You
+    write a C module that implements the <span class="Li">xs_init</span> function
+    and registers a filter callback. This callback receives the source code
+    (usually line by line) and returns the modified source code. This approach
+    is typically used for performance-critical filters or when interfacing with
+    external C libraries.</p>
+<p class="Sh"><b>CREATING A SOURCE FILTER AS A SEPARATE EXECUTABLE</b></p>
+<p class="Pp">You can write a standalone program that reads source code from
+    standard input and writes the processed source code to standard output. Perl
+    can then be configured to use this executable as a filter. This is less
+    common but can be useful for integrating external tools or scripts.</p>
+<p class="Sh"><b>WRITING A SOURCE FILTER IN PERL</b></p>
+<p class="Pp">This is the easiest and most common way to write a source filter.
+    The <span class="Li">Filter::Simple</span> module provides a convenient
+    high-level interface. You define a subroutine that takes the source code
+    (usually as a list of lines) and returns the modified source code.
+    <span class="Li">Filter::Simple</span> handles the low-level details of
+    interacting with Perl's compilation system.</p>
+<p class="Pp">Here's a simplified example of a filter that comments out lines
+    starting with <span class="Li">## DEBUG</span>:</p>
+<pre>    package Filter::MyDebug;
+    use strict;
+    use warnings;
+    use Filter::Simple;
+
+    our $DEBUG = 1; # Set to 0 to disable debugging
+
+    # This is the filter subroutine
+    sub filter {
+        my @lines = @_;
+        my @output;
+        for my $line (@lines) {
+            if ($line =~ /^\s*##\s*DEBUG/) {
+                $line = "# $line" unless $DEBUG;
+            }
+            push @output, $line;
+        }
+        return @output;
+    }
+
+    1;
+</pre>
+<p class="Sh"><b>USING CONTEXT: THE DEBUG FILTER</b></p>
+<p class="Pp">The <span class="Li">Filter::Debug</span> module provides a simple
+    way to include or exclude blocks of debugging code from your script. It uses
+    special comment markers <span class="Li">&quot;## DEBUG_BEGIN&quot;</span> and
+    <span class="Li">&quot;## DEBUG_END&quot;</span> to delimit these blocks.</p>
+<p class="Pp">The filter operates by maintaining a state variable,
+    <span class="Li">$self-&gt;{InTraceBlock}</span>, which indicates whether the
+    current line being processed is inside a debugging block. When the filter
+    encounters a <span class="Li">## DEBUG_BEGIN</span> line, it sets this flag to
+    TRUE. When it sees a <span class="Li">## DEBUG_END</span> line, it sets the
+    flag to FALSE. Lines within a debugging block (i.e., when
+    <span class="Li">$self-&gt;{InTraceBlock}</span> is TRUE) are subject to
+    conditional processing. If debugging is disabled (controlled by another
+    variable, likely <span class="Li">$self-&gt;{Enabled}</span>), these lines are
+    commented out.</p>
+<p class="Pp">Here is a simplified representation of the filter's logic:</p>
+<pre>sub filter {
+   my ($self) = @_;
+   my ($status);
+   $status = filter_read(); # Read the next chunk of source code
+   # deal with EOF/error first
+   return $status if $status &lt;= 0;
+   if ($self-&gt;{InTraceBlock}) {
+      if (/^\s*##\s*DEBUG_END/) {
+         $self-&gt;{InTraceBlock} = FALSE
+      }
+      # comment out debug lines when the filter is disabled
+      s/^/#/ if ! $self-&gt;{Enabled};
+   } elsif ( /^\s*##\s*DEBUG_BEGIN/ ) {
+      $self-&gt;{InTraceBlock} = TRUE;
+   }
+   return $status;
+}</pre>
+<p class="Pp">It's important to note that source filters work on the text level
+    and have no understanding of Perl's syntax. This can lead to unexpected
+    behavior. For instance, a here-doc that contains the marker strings could
+    fool the filter:</p>
+<pre>print &lt;&lt;EOM;
+##DEBUG_BEGIN
+EOM</pre>
+<p class="Pp">Despite these limitations, source filters offer a flexible way to
+    modify Perl code behavior.</p>
+<p class="Sh"><b>CONCLUSION</b></p>
+<p class="Pp">Source filters provide a powerful mechanism for modifying Perl source
+    code before compilation. They can be used for various purposes, from
+    conditional debugging to implementing new syntax or language features.</p>
+<p class="Pp">If you want to experiment further with source filters, consider
+    these extensions to the Debug filter:</p>
+<ul class="Bl-item">
+  <li><p class="Li">Allowing specific named debugging blocks to be enabled or
+        disabled via the <span class="Li">DEBUG</span> environment variable.</p>
+  </li>
+  <li><p class="Li">Implementing nested debugging blocks.</p>
+  </li>
+  <li><p class="Li">Creating a source filter that supports named parameters for
+        subroutines, transforming:</p>
+      <pre>        sub MySub ($first, $second, @rest) { ... }</pre>
+      <p class="Pp">into:</p>
+      <pre>        sub MySub($$@) {
+           my ($first) = shift;
+           my ($second) = shift;
+           my (@rest) = @_;
+           ...
+        }</pre>
+  </li>
+  <li><p class="Li">Developing a full-fledged macro preprocessor, similar to C's
+        preprocessor, as a source filter.</p>
+  </li>
+</ul>
+<p class="Sh"><b>LIMITATIONS</b></p>
+<p class="Pp">Source filters operate at the string level and have limited ability
+    to understand the nuances of Perl's syntax. They cannot reliably distinguish
+    between code, comments, strings, or heredocs. Therefore, they are not a
+    replacement for a full parser. Their most stable uses are for tasks like
+    encryption, compression, or enabling binary code loaders (byteloader).</p>
+<p class="Pp">The <span class="Li">Switch</span> module, which uses source filters,
+    illustrates some limitations. It may not work correctly within string
+    evaluations. Additionally, regex delimiters like <span class="Li">&quot;/.../&quot;</span>
+    can be ambiguous. For example, a regex with embedded newlines might be
+    mistaken for code beginning with the division operator. The recommended
+    workaround is to use explicit delimiters like <span class="Li">&quot;m/.../&quot;</span>
+    or <span class="Li">&quot;m?...?&quot;</span>. Similarly, raw
+    <span class="Li">&quot;?...?&quot;</span> delimiters in regexes can cause
+    issues, and using <span class="Li">&quot;m?...?&quot;</span> is advised.</p>
+<p class="Pp">The content of <span class="Li">&quot;__DATA__&quot;</span> blocks is
+    currently not filtered.</p>
+<p class="Pp">Internal buffer lengths are currently limited to 32-bit integers.</p>
+<p class="Sh"><b>THINGS TO LOOK OUT FOR</b></p>
+<dl class="Bl-tag">
+  <dt id="Some">Some Filters Clobber the &quot;DATA&quot; Handle</dt>
+  <dd>Some source filters utilize the <span class="Li">&quot;DATA&quot;</span>
+      handle to read the calling program. When using such filters, you should not
+      rely on this handle or expect any specific behavior when operating on it.
+      Filters based on <span class="Li">Filter::Util::Call</span> (and thus
+      <span class="Li">Filter::Simple</span>) do not modify the
+      <span class="Li">&quot;DATA&quot;</span> filehandle but, conversely, ignore
+      any text following <span class="Li">&quot;__DATA__&quot;</span>.</dd>
+</dl>
+<p class="Sh"><b>REQUIREMENTS</b></p>
+<p class="Pp">The Source Filters distribution is available on CPAN, under the
+    directory:</p>
+<pre>CPAN/modules/by-module/Filter</pre>
+<p class="Pp">Starting with Perl 5.8, <span class="Li">Filter::Util::Call</span>,
+    which forms the core of the Source Filters distribution, is included in the
+    standard Perl distribution. A more user-friendly interface,
+    <span class="Li">Filter::Simple</span> by Damian Conway, is also included.</p>
+<p class="Sh"><b>AUTHOR</b></p>
+<p class="Pp">Paul Marquess &lt;Paul.Marquess@btinternet.com&gt;</p>
+<p class="Pp">Reini Urban &lt;rurban@cpan.org&gt;</p>
+<p class="Sh"><b>Copyrights</b></p>
+<p class="Pp">This article, in its initial form, was first published in The Perl
+    Journal #11 and is copyrighted by The Perl Journal in 1998. It is reproduced
+    here with the kind permission of Jon Orwant and The Perl Journal. This
+    document may be distributed under the same terms as the Perl programming
+    language itself.</p>
+
+            <table class="foot">
+                <tr>
+                    <td class="foot-date">2025-07-13</td>
+                    <td class="foot-os">perl v5.42.0</td>
+                </tr>
+            </table>
+        </article>
+    </body>
+</html>

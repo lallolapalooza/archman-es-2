@@ -1,0 +1,1685 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-query-digest(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-query-digest(1p)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-QUERY-DIGEST(1)</td>
+    <td class="head-vol">Documentación Perl Contribuida por Usuarios</td>
+    <td class="head-rtitle">PT-QUERY-DIGEST(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pt-query-digest - Analiza consultas MySQL de logs, processlist y
+    tcpdump.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-query-digest [OPCIONES] [ARCHIVOS] [DSN]</p>
+<p class="Pp">pt-query-digest analiza consultas MySQL de archivos de log lentos,
+    generales y binarios. También puede analizar consultas de
+    <span class="Li">&quot;SHOW PROCESSLIST&quot;</span> y datos del protocolo
+    MySQL de tcpdump. Por defecto, las consultas se agrupan por huella digital
+    (fingerprint) y se reportan en orden descendente de tiempo de consulta (es
+    decir, primero las consultas más lentas). Si no se proporcionan
+    <span class="Li">&quot;ARCHIVOS&quot;</span>, la herramienta lee desde
+    <span class="Li">&quot;STDIN&quot;</span>. El
+    <span class="Li">&quot;DSN&quot;</span> opcional se utiliza para ciertas
+    opciones como &quot;--since&quot; y &quot;--until&quot;.</p>
+<p class="Pp">Reportar las consultas más lentas de
+    <span class="Li">&quot;slow.log&quot;</span>:</p>
+<pre>pt-query-digest slow.log</pre>
+<p class="Pp">Reportar las consultas más lentas de la lista de procesos en
+    host1:</p>
+<pre>pt-query-digest --processlist h=host1</pre>
+<p class="Pp">Capturar datos del protocolo MySQL con tcpdump y luego reportar
+    las consultas más lentas:</p>
+<pre>tcpdump -s 65535 -x -nn -q -tttt -i any -c 1000 port 3306 &gt; mysql.tcp.txt
+pt-query-digest --type tcpdump mysql.tcp.txt</pre>
+<p class="Pp">Guardar datos de consultas de <span class="Li">&quot;slow.log&quot;</span>
+    en host2 para revisión posterior y análisis de tendencias:</p>
+<pre>pt-query-digest --review h=host2 --no-report slow.log</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RIESGOS'><a class='permalink' href='#RIESGOS'>RIESGOS</a></h1>
+<p class="Pp">Percona Toolkit es maduro, probado en el mundo real y bien
+    probado, pero todas las herramientas de bases de datos pueden representar un
+    riesgo para el sistema y el servidor de base de datos. Antes de usar esta
+    herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lea la documentación de la herramienta</li>
+  <li>Revise los &quot;BUGS&quot; conocidos de la herramienta</li>
+  <li>Pruebe la herramienta en un servidor no productivo</li>
+  <li>Haga una copia de seguridad de su servidor de producción y verifique las copias de seguridad</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">pt-query-digest es una herramienta sofisticada pero fácil de usar
+    para analizar consultas MySQL. Puede analizar consultas de logs lentos,
+    generales y binarios de MySQL. (Los logs binarios deben ser convertidos a
+    texto primero, ver &quot;--type&quot;). También puede usar
+    <span class="Li">&quot;SHOW PROCESSLIST&quot;</span> y datos del protocolo
+    MySQL de tcpdump. Por defecto, la herramienta reporta cuáles consultas son
+    las más lentas y, por lo tanto, las más importantes de optimizar. Se pueden
+    crear reportes más complejos y personalizados utilizando opciones como
+    &quot;--group-by&quot;, &quot;--filter&quot; y
+    &quot;--embedded-attributes&quot;.</p>
+<p class="Pp">El análisis de consultas es una buena práctica que debe realizarse
+    con frecuencia. Para facilitar esto, pt-query-digest tiene dos funciones:
+    revisión de consultas (&quot;--review&quot;) e historial de consultas
+    (&quot;--history&quot;). Cuando se utiliza la opción &quot;--review&quot;,
+    todas las consultas únicas se guardan en una base de datos. Cuando la
+    herramienta se ejecuta de nuevo con &quot;--review&quot;, las consultas
+    marcadas como revisadas en la base de datos no se imprimen en el informe.
+    Esto resalta las nuevas consultas que necesitan ser revisadas. Cuando se
+    utiliza la opción &quot;--history&quot;, las métricas de consulta (tiempo
+    de consulta, tiempo de bloqueo, etc.) para cada consulta única se guardan
+    en una base de datos. Cada vez que la herramienta se ejecuta con
+    &quot;--history&quot;, se guardan más datos históricos que pueden usarse para
+    analizar las tendencias del rendimiento de las consultas a lo largo del
+    tiempo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ATRIBUTOS'><a class='permalink' href='#ATRIBUTOS'>ATRIBUTOS</a></h1>
+<p class="Pp">pt-query-digest opera sobre eventos, que son una colección de
+    pares clave-valor llamados atributos. Reconocerá la mayoría de los atributos
+    inmediatamente: <span class="Li">&quot;Query_time&quot;</span>,
+    <span class="Li">&quot;Lock_time&quot;</span>, y así sucesivamente. Puede
+    simplemente mirar un log lento y verlos. Sin embargo, hay algunos que no
+    existen en el log lento, y los logs lentos pueden incluir diferentes tipos de
+    atributos (por ejemplo, puede tener un servidor con los parches de Percona).</p>
+<p class="Pp">Consulte &quot;REFERENCIA DE ATRIBUTOS&quot; cerca del final de
+    esta documentación para obtener una lista de atributos comunes y específicos
+    de &quot;--type&quot;. Es necesaria una familiaridad con estos atributos para
+    trabajar con &quot;--filter&quot;, &quot;--ignore-attributes&quot;, y
+    otras opciones relacionadas con atributos.</p>
+<p class="Pp">Con un uso creativo de &quot;--filter&quot;, puede crear nuevos
+    atributos derivados de atributos existentes. Por ejemplo, para crear un
+    atributo llamado <span class="Li">&quot;Row_ratio&quot;</span> para examinar
+    la relación entre <span class="Li">&quot;Rows_sent&quot;</span> y
+    <span class="Li">&quot;Rows_examined&quot;</span>, especifique un filtro
+  como:</p>
+<pre>--filter '($event-&gt;{Row_ratio} = $event-&gt;{Rows_sent} / ($event-&gt;{Rows_examined})) &amp;&amp; 1'</pre>
+<p class="Pp">El truco <span class="Li">&quot;&amp;&amp; 1&quot;</span> es
+    necesario para crear una sintaxis de una sola línea válida que siempre sea
+    cierta, incluso si la asignación resulta falsa. El nuevo atributo aparecerá
+    automáticamente en la salida:</p>
+<pre># Row ratio        1.00    0.00      1    0.50      1    0.71    0.50</pre>
+<p class="Pp">Los atributos creados de esta manera se pueden especificar para
+    &quot;--order-by&quot; o cualquier opción que requiera un atributo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SALIDA'><a class='permalink' href='#SALIDA'>SALIDA</a></h1>
+<p class="Pp">La &quot;--output&quot; por defecto es un informe de análisis de
+    consultas. La opción &quot;--[no]report&quot; controla si este informe se
+    imprime o no. A veces puede querer analizar todas las consultas pero suprimir
+    el informe, por ejemplo, al usar &quot;--review&quot; o
+    &quot;--history&quot;.</p>
+<p class="Pp">Hay un párrafo por cada clase de consulta analizada. Una
+    &quot;clase&quot; de consultas tiene el mismo valor para el atributo
+    &quot;--group-by&quot;, que por defecto es
+    <span class="Li">&quot;fingerprint&quot;</span>. (Ver
+    &quot;ATRIBUTOS&quot;). Una huella digital es una versión abstracta del texto
+    de la consulta con literales eliminados, espacios colapsados, etc. El informe
+    está formateado de manera que sea fácil de pegar en correos electrónicos sin
+    saltos de línea, y todas las líneas que no son de consulta comienzan con un
+    comentario, para que pueda guardarlo en un archivo .sql y abrirlo en su editor
+    de texto favorito con resaltado de sintaxis. Hay un perfil de tiempo de
+    respuesta al principio.</p>
+<p class="Pp">La salida descrita aquí está controlada por
+    &quot;--report-format&quot;. Esa opción le permite especificar qué imprimir
+    y en qué orden. La salida por defecto en el orden por defecto se describe
+    aquí.</p>
+<p class="Pp">El informe, por defecto, comienza con un párrafo sobre toda la
+    ejecución del análisis. La información es muy similar a la que verá para cada
+    clase de consultas en el log, pero no tiene información que sería demasiado
+    costosa de mantener globalmente para el análisis. También tiene estadísticas
+    sobre la ejecución del código en sí, como el uso de CPU y memoria, la fecha y
+    hora local de la ejecución y una lista de los archivos de entrada leídos/analizados.</p>
+<p class="Pp">A continuación, se imprime el perfil de tiempo de respuesta de los
+    eventos. Esta es una vista muy resumida de los eventos únicos en el informe de
+    consultas detallado que sigue. Contiene las siguientes columnas:</p>
+<pre>Columna        Significado
+============  ==========================================================
+Rango         El rango de la consulta dentro del conjunto completo de
+              consultas analizadas
+ID de Consulta  La huella digital de la consulta
+Tiempo de Respuesta El tiempo total de respuesta y el porcentaje del total
+Llamadas      El número de veces que se ejecutó esta consulta
+R/Llamada     El tiempo medio de respuesta por ejecución
+V/M           La relación Varianza-a-media del tiempo de respuesta
+Elemento      La consulta destilada</pre>
+<p class="Pp">Una línea final cuyo rango se muestra como MISC contiene estadísticas
+    agregadas sobre las consultas que no se incluyeron en el informe, debido a
+    opciones como &quot;--limit&quot; y &quot;--outliers&quot;. Para obtener
+    detalles sobre la relación varianza-a-media, consulte
+    <a href='http://en.wikipedia.org/wiki/Index_of_dispersion'>http://en.wikipedia.org/wiki/Index_of_dispersion</a>.</p>
+<p class="Pp">A continuación, se imprime el informe detallado de consultas. Cada
+    consulta aparece en un párrafo. Aquí hay una muestra, ligeramente reformateada
+    para que 'perldoc' no salte líneas en una terminal. Lo siguiente será un solo
+    párrafo, pero lo dividiremos para comentarlo.</p>
+<pre># Consulta 2: 0.01 QPS, 0.02x conc, ID 0xFDEA8D2993C9CAF3 en byte 160665</pre>
+<p class="Pp">Esta línea identifica el número secuencial de la consulta en el
+    orden de clasificación especificado por &quot;--order-by&quot;. Luego está
+    el número de consultas por segundo y la concurrencia aproximada para esta
+    consulta (calculada como una función del lapso de tiempo y el tiempo total de
+    Consulta_tiempo). Luego hay un ID de consulta. Este ID es una versión en
+    hexadecimal de la suma de verificación de la consulta en la base de datos, si
+    está utilizando &quot;--review&quot;. Puede seleccionar los detalles de la
+    consulta revisada de la base de datos con una consulta como
+    <span class="Li">&quot;SELECT</span> <span class="Li">.... WHERE</span>
+    <span class="Li">checksum=0xFDEA8D2993C9CAF3&quot;</span>.</p>
+<p class="Pp">Si está investigando el informe y desea imprimir cada muestra de una
+    consulta en particular, entonces el siguiente &quot;--filter&quot; puede</p>
+</div>
+</section>
+
+                
+</section>
+            </article>
+            <aside id="content-right">
+                
+            </aside>
+        </main>
+        <footer>
+            <p>
+                ¡Este documento fue generado por <a href="https://github.com/archlinux/man-to-html">man-to-html</a>!
+            </p>
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id="ANÁLISIS_DE_REGISTROS_LENTOS"><a class="permalink" href="#ANÁLISIS_DE_REGISTROS_LENTOS">ANÁLISIS DE REGISTROS LENTOS</a></h1>
+<p class="Pp">Este es un fragmento de un registro lento de MySQL:</p>
+<pre># Time, ID, User, Host, Query_time, Lock_time, Rows_sent, Rows_examined, SQL_query
+# YYYY-MM-DD HH:MM:SS, [id], [user] [hostname] : [db] &lt;= SET timestamp=...;
+#                   [id] [user] [hostname] : [db] &lt;= &lt;Query Text&gt;
+# administrator command: Query end
+</pre>
+<p class="Pp">Aquí, una consulta específica (ya que solo estamos interesado en
+    una) es:</p>
+<pre># Time, ID, User, Host, Query_time, Lock_time, Rows_sent, Rows_examined, SQL_query
+# YYYY-MM-DD HH:MM:SS, [id], [user] [hostname] : [db] &lt;= SET timestamp=...;
+#                   [id] [user] [hostname] : [db] &lt;= SELECT ... FROM ... WHERE
+#                   ... some query ...
+#                   ...
+#                   ... LIMIT 1, 1000000;
+# administrator command: Query end
+</pre>
+<p class="Pp">Podemos buscarla de forma más eficiente usando el checksum:</p>
+<pre>pt-query-digest slow.log \
+   --no-report \
+   --output slowlog \
+   --filter '$event-&gt;{fingerprint} \
+        &amp;&amp; make_checksum($event-&gt;{fingerprint}) eq "FDEA8D2993C9CAF3"'</pre>
+<p class="Pp">Ten en cuenta que debes eliminar el prefijo <span class="Li">"0x"</span>
+    del checksum.</p>
+<p class="Pp">Finalmente, en caso de que quieras encontrar una muestra de la
+    consulta en el archivo de registro, existe el desplazamiento de bytes donde
+    puedes buscar. (Esto no siempre es exacto, debido a algunas anomalías en el
+    formato del registro lento, pero generalmente es correcto). La posición se
+    refiere a la peor muestra, de la que veremos más a continuación.</p>
+<p class="Pp">A continuación, se presenta la tabla de métricas sobre esta clase
+    de consultas.</p>
+<pre>#           pct   total    min    max     avg     95%  stddev  median
+# Count       0       2
+# Exec time  13   1105s   552s   554s    553s    554s      2s    553s
+# Lock time   0   216us   99us  117us   108us   117us    12us   108us
+# Rows sent  20   6.26M  3.13M  3.13M   3.13M   3.13M   12.73   3.13M
+# Rows exam   0   6.26M  3.13M  3.13M   3.13M   3.13M   12.73   3.13M</pre>
+<p class="Pp">La primera línea son los encabezados de columna de la tabla. El
+    porcentaje es el porcentaje del total para toda la ejecución del análisis, y
+    el total es el valor real de la métrica especificada. Por ejemplo, en este
+    caso podemos ver que la consulta se ejecutó 2 veces, lo que representa el 13%
+    del número total de consultas en el archivo. Las columnas min, max y avg son
+    autoexplicativas. La columna 95% muestra el percentil 95; el 95% de los
+    valores son menores o iguales a este valor. La desviación estándar te muestra
+    qué tan agrupados están los valores. La desviación estándar y la mediana se
+    calculan a partir del percentil 95, descartando los valores extremadamente
+    grandes.</p>
+<p class="Pp">Las estadísticas de stddev, median y percentil 95 son
+    aproximadas. Las estadísticas exactas requieren conservar cada valor visto,
+    ordenarlo y realizar algunos cálculos sobre ellos. Esto consume mucha
+    memoria. Para evitar esto, mantenemos 1000 cubetas, cada una un 5% más
+    grande que la anterior, que van desde .000001 hasta un número muy grande.
+    Cuando vemos un valor, incrementamos la cubeta en la que cae. Así tenemos
+    memoria fija por clase de consulta. La desventaja es la imprecisión, que
+    típicamente cae en el rango del 5 por ciento.</p>
+<p class="Pp">A continuación, tenemos estadísticas sobre los usuarios, bases de
+    datos y el rango de tiempo para la consulta.</p>
+<pre># Users       1   user1
+# Databases   2     db1(1), db2(1)
+# Time range 2008-11-26 04:55:18 to 2008-11-27 00:15:15</pre>
+<p class="Pp">Los usuarios y las bases de datos se muestran como un recuento de
+    valores distintos, seguido de los valores. Si solo hay uno, se muestra solo;
+    si hay muchos, mostramos cada uno de los más frecuentes, seguido del número
+    de veces que aparece.</p>
+<pre># Query_time distribution
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms  #####
+# 100ms  ####################
+#    1s  ##########
+#  10s+</pre>
+<p class="Pp">Los tiempos de ejecución muestran un gráfico logarítmico de
+    agrupación de tiempos. Cada consulta entra en una de las "cubetas" y se
+    cuenta. Las cubetas son potencias de diez. La primera cubeta son todos los
+    valores en el "rango de microsegundos individuales", es decir, menos de
+    10us. La segunda son "decenas de microsegundos", que es de 10us hasta
+    (pero sin incluir) 100us; y así sucesivamente. El atributo graficado se
+    puede cambiar especificando "--report-histogram", pero está limitado a
+    atributos basados en tiempo.</p>
+<pre># Tables
+#    SHOW TABLE STATUS LIKE 'table1'\G
+#    SHOW CREATE TABLE `table1`\G
+# EXPLAIN
+SELECT * FROM table1\G</pre>
+<p class="Pp">Esta sección es una conveniencia: si estás intentando optimizar
+    las consultas que ves en el registro lento, probablemente quieras examinar la
+    estructura y el tamaño de la tabla. Estos son comandos listos para copiar y
+    pegar para hacerlo.</p>
+<p class="Pp">Finalmente, vemos una muestra de las consultas en esta clase de
+    consulta. Esta no es una muestra aleatoria. Es la consulta que tuvo el peor
+    rendimiento, según el orden de clasificación dado por "--order-by".
+    Normalmente verás una línea comentada <span class="Li">"# EXPLAIN"</span>
+    justo antes de ella, para que puedas copiar y pegar la consulta para examinar
+    su plan EXPLAIN. Pero para consultas que no son SELECT, no es posible hacerlo,
+    por lo que la herramienta intenta transformar la consulta en una consulta
+    SELECT aproximadamente equivalente y la agrega a continuación.</p>
+<p class="Pp">Si quieres encontrar este evento de muestra en el registro, usa
+    el desplazamiento mencionado anteriormente y algo como lo siguiente:</p>
+<pre>tail -c +&lt;offset&gt; /ruta/al/archivo | head</pre>
+<p class="Pp">Ver también "--report-format".</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="REVISIÓN_DE_CONSULTAS"><a class="permalink" href="#REVISIÓN_DE_CONSULTAS">REVISIÓN DE CONSULTAS</a></h1>
+<p class="Pp">Una consulta "--review" es el proceso de almacenar todas las
+    huellas digitales de consultas analizadas. Esto tiene varios beneficios:</p>
+<ul class="Bl-bullet">
+  <li>Puedes agregar metadatos a clases de consultas, como marcarlas para
+      seguimiento, agregar notas a las consultas o marcarlas con un ID de
+      incidencia para tu sistema de seguimiento de incidencias.</li>
+  <li>Puedes referirte a los valores almacenados en ejecuciones posteriores para
+      saber si has visto una consulta antes. Esto puede ayudarte a reducir el
+      trabajo duplicado.</li>
+  <li>Puedes almacenar datos históricos como el recuento de filas, tiempos de
+      consulta y, en general, cualquier cosa que puedas ver en el informe.</li>
+</ul>
+<p class="Pp">Para usar esta función, ejecuta pt-query-digest con la opción
+    "--review". Almacenará las huellas digitales y otra información en la tabla
+    que especifiques. La próxima vez que lo ejecutes con la misma opción, hará lo
+    siguiente:</p>
+<ul class="Bl-bullet">
+  <li>No te mostrará las consultas que ya has revisado. Una consulta se considera
+      ya revisada si has establecido un valor para la columna
+      <span class="Li">"reviewed_by"</span>. (Si quieres ver las consultas que
+      ya has revisado, usa la opción "--report-all").</li>
+  <li>Las consultas que has revisado y que no aparecen en la salida causarán
+      brechas en la secuencia de números de consulta en la primera línea de cada
+      párrafo. Y el valor que hayas especificado para "--limit" seguirá siendo
+      respetado. Por lo tanto, si has revisado todas las consultas en el top 10
+      y pides el top 10, no verás nada en la salida.</li>
+  <li>Si quieres ver las consultas que ya has revisado, puedes especificar
+      "--report-all". Entonces verás la salida normal del análisis, pero
+      también verás la información de la tabla de revisión, justo debajo del
+      gráfico de tiempo de ejecución. Por ejemplo,
+        <pre># Review information
+#      comments: really bad IN() subquery, fix soon!
+#    first_seen: 2008-12-01 11:48:57
+#   jira_ticket: 1933
+#     last_seen: 2008-12-18 11:49:07
+#      priority: high
+#   reviewed_by: xaprb
+#   reviewed_on: 2008-12-18 15:03:11
+</pre>
+    <p class="Pp">Estos metadatos son útiles porque, a medida que analizas tus
+        consultas, tus comentarios se integran directamente en el informe.</p>
+  </li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="HUELLAS_DIGITALES_DE_CONSULTAS"><a class="permalink" href="#HUELLAS_DIGITALES_DE_CONSULTAS">HUELLAS DIGITALES DE CONSULTAS</a></h1>
+<p class="Pp">Una huella digital de consulta es la forma abstracta de una
+    consulta, que permite agrupar consultas similares. La abstracción de una
+    consulta elimina valores literales, normaliza el espacio en blanco, etc. Por
+    ejemplo, considera estas dos consultas:</p>
+<pre>SELECT name, password FROM user WHERE id='12823';
+select name,   password from user
+   where id=5;</pre>
+<p class="Pp">Ambas consultas tendrán la siguiente huella digital:</p>
+<pre>select name, password from user where id=?</pre>
+<p class="Pp">Una vez que se conoce la huella digital de la consulta, podemos
+    hablar de una consulta como si representara a todas las consultas
+    similares.</p>
+<p class="Pp">Lo que hace <span class="Li">"pt-query-digest"</span> es análogo
+    a una sentencia GROUP BY en SQL. (¡Pero ten en cuenta que "múltiples
+    columnas" no define una agrupación de múltiples columnas; define múltiples
+    informes!). Si tu comando se ve así,</p>
+<pre>pt-query-digest \
+    --group-by fingerprint \
+    --order-by Query_time:sum \
+    --limit 10 \
+    slow.log</pre>
+<p class="Pp">El SQL pseudo-equivalente se vería así:</p>
+<pre>SELECT WORST(query BY Query_time), SUM(Query_time), ...
+FROM /ruta/al/slow.log
+GROUP BY FINGERPRINT(query)
+ORDER BY SUM(Query_time) DESC
+LIMIT 10</pre>
+<p class="Pp">También puedes usar el valor <span class="Li">"distill"</span>,
+    que es una especie de super-huella digital. Ver "--group-by" para más
+    detalles.</p>
+<p class="Pp">La creación de huellas digitales de consultas acomoda muchos casos
+    especiales, que han demostrado ser necesarios en el mundo real. Por ejemplo,
+    una lista <span class="Li">"IN"</span> con 5 literales es realmente equivalente
+    a una con 4 literales, por lo que las listas de literales se colapsan a una
+    sola. Si encuentras algo que no se está creando una huella digital
+    correctamente, por favor envía un informe de error con un caso de prueba
+    reproducible.</p>
+<p class="Pp">Aquí hay una lista de transformaciones durante la creación de
+    huellas digitales, que podría no ser exhaustiva:</p>
+<ul class="Bl-bullet">
+  <li>Agrupar todas las consultas SELECT de mysqldump juntas, incluso si son
+      contra tablas diferentes. Lo mismo se aplica a todas las consultas de
+      pt-table-checksum.</li>
+  <li>Acortar sentencias INSERT de múltiples valores a una sola lista
+      <b>VALUES()</b>.</li>
+  <li>Eliminar comentarios.</li>
+  <li>Abstraer las bases de datos en sentencias USE, para que todas las sentencias
+      USE se agrupen juntas.</li>
+  <li>Reemplazar todos los literales, como cadenas entre comillas. Para mayor
+      eficiencia, el código que reemplaza números literales es algo no
+      selectivo, y podría reemplazar algunas cosas como números cuando realmente
+      no lo son. Los literales hexadecimales también se reemplazan. NULL se
+      trata como un literal. Los números incrustados en identificadores también
+      se reemplazan, por lo que las tablas con nombres similares tendrán la misma
+      huella digital (por ejemplo, users_2009 y users_2010 tendrán la misma
+      huella digital).</li>
+  <li>Colapsar todo el espacio en blanco en un solo espacio.</li>
+  <li>Convertir toda la consulta a minúsculas.</li>
+  <li>Reemplazar todos los literales dentro de las listas <b>IN()</b> y
+      <b>VALUES()</b> con un solo marcador de posición, independientemente de la
+      cardinalidad.</li>
+  <li>Colapsar múltiples consultas UNION idénticas en una sola.</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPCIONES"><a class="permalink" href="#OPCIONES">OPCIONES</a></h1>
+<p class="Pp">Esta herramienta acepta argumentos de línea de comandos adicionales.
+    Consulte la "SINOPSIS" y la información de uso para obtener detalles.</p>
+<dl class="Bl-tag">
+  <dt id="ask"><a class="permalink" href="#ask">--ask-pass</a></dt>
+  <dd>Solicitar una contraseña al conectarse a MySQL.</dd>
+  <dt id="attribute"><a class="permalink" href="#attribute">--attribute-aliases</a></dt>
+  <dd>tipo: array; por defecto: db|Schema
+    <p class="Pp">Lista de atributo|alias, etc.</p>
+    <p class="Pp">Ciertos atributos tienen múltiples nombres, como db y Schema. Si
+        un evento no tiene el atributo principal, pt-query-digest busca un
+        atributo alias. Si encuentra un alias, crea el atributo principal con el
+        valor del atributo alias y elimina el atributo alias.</p>
+    <p class="Pp">Si el evento tiene el atributo principal, todos los atributos
+        alias se eliminan.</p>
+    <p class="Pp">Esto ayuda a simplificar los atributos del evento para que,
+        por ejemplo, no haya líneas de informe tanto para db como para Schema.</p>
+  </dd>
+  <dt id="attribute~2"><a class="permalink" href="#attribute~2">--attribute-value-limit</a></dt>
+  <dd>tipo: int; por defecto: 0
+    <p class="Pp">Un límite de cordura para los valores de los atributos.</p>
+    <p class="Pp">Esta opción maneja errores en la funcionalidad de registro
+        lento que causan valores grandes para los attribut</p>
+</section>
+es. Si el valor del atributo es mayor
+        que este, se utiliza en su lugar el valor visto por última vez para esa clase de consulta.
+        Deshabilitado por defecto.</p>
+  </dd>
+  <dt id="charset"><a class="permalink" href="#charset">--charset</a></dt>
+  <dd>forma corta: -A; tipo: cadena
+    <p class="Pp">Juego de caracteres predeterminado. Si el valor es utf8, establece el modo binario de Perl en STDOUT a utf8, pasa la opción mysql_enable_utf8 a DBD::mysql y ejecuta SET NAMES UTF8 después de conectarse a MySQL. Cualquier otro valor establece el modo binario en STDOUT sin la capa utf8, y ejecuta SET NAMES después de conectarse a MySQL.</p>
+  </dd>
+  <dt id="config"><a class="permalink" href="#config">--config</a></dt>
+  <dd>tipo: Array
+    <p class="Pp">Lee esta lista de archivos de configuración separada por comas; si se especifica, esta debe ser la primera opción en la línea de comandos.</p>
+  </dd>
+  <dt>--[no]continue-on-error</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Continúa analizando incluso si hay un error. La herramienta no continuará para siempre: se detiene una vez que cualquier proceso cause 100 errores, en cuyo caso probablemente haya un error en la herramienta o la entrada sea inválida.</p>
+  </dd>
+  <dt>--[no]create-history-table</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Crea la tabla "--history" si no existe.</p>
+    <p class="Pp">Esta opción hace que la tabla especificada por "--history" se cree con la estructura predeterminada que se muestra en la documentación de "--history".</p>
+  </dd>
+  <dt>--[no]create-review-table</dt>
+  <dd>predeterminado: sí
+    <p class="Pp">Crea la tabla "--review" si no existe.</p>
+    <p class="Pp">Esta opción hace que la tabla especificada por "--review" se cree con la estructura predeterminada que se muestra en la documentación de "--review".</p>
+  </dd>
+  <dt id="daemonize"><a class="permalink" href="#daemonize">--daemonize</a></dt>
+  <dd>Se bifurca en segundo plano y se desvincula del shell. Solo en sistemas operativos POSIX.</dd>
+  <dt id="database"><a class="permalink" href="#database">--database</a></dt>
+  <dd>forma corta: -D; tipo: cadena
+    <p class="Pp">Conéctate a esta base de datos.</p>
+  </dd>
+  <dt id="defaults"><a class="permalink" href="#defaults">--defaults-file</a></dt>
+  <dd>forma corta: -F; tipo: cadena
+    <p class="Pp">Lee solo las opciones de MySQL del archivo dado. Debes proporcionar una ruta de acceso absoluta.</p>
+  </dd>
+  <dt id="embedded"><a class="permalink" href="#embedded">--embedded-attributes</a></dt>
+  <dd>tipo: array
+    <p class="Pp">Dos patrones de expresiones regulares de Perl para capturar pseudo-atributos incrustados en consultas.</p>
+    <p class="Pp">Los atributos incrustados pueden ser pares de atributos-valor especiales que hayas ocultado en comentarios. La primera expresión regular debe coincidir con todo el conjunto de atributos (en caso de que haya varios). La segunda expresión regular debe coincidir y capturar pares de atributos-valor de la primera expresión regular.</p>
+    <p class="Pp">Por ejemplo, supongamos que tu consulta se ve así:</p>
+        <pre>SELECT * from users -- file: /login.php, line: 493;
+</pre>
+    <p class="Pp">Podrías ejecutar pt-query-digest con la siguiente opción:</p>
+        <pre>pt-query-digest --embedded-attributes ' -- .*','(\w+): ([^\,]+)'
+</pre>
+    <p class="Pp">La primera expresión regular captura todo el comentario:</p>
+        <pre>&quot; -- file: /login.php, line: 493;&quot;
+</pre>
+    <p class="Pp">La segunda lo divide en pares de atributos-valor y los agrega al evento:</p>
+        <pre>ATTRIBUTE  VALUE
+=========  ==========
+file       /login.php
+line       493
+</pre>
+    <p class="Pp"><b>NOTA</b>: Todas las comas en los patrones de expresiones regulares deben escaparse con \ de lo contrario, el patrón se romperá.</p>
+  </dd>
+  <dt id="expected"><a class="permalink" href="#expected">--expected-range</a></dt>
+  <dd>tipo: array; predeterminado: 5,10
+    <p class="Pp">Explica los elementos cuando hay más o menos de lo esperado.</p>
+    <p class="Pp">Define el número de elementos que se espera ver en el informe proporcionado por "--[no]report", controlado por "--limit" y "--outliers". Si hay más o menos elementos en el informe, cada uno explicará por qué fue incluido.</p>
+  </dd>
+  <dt id="explain"><a class="permalink" href="#explain">--explain</a></dt>
+  <dd>tipo: DSN
+    <p class="Pp">Ejecuta EXPLAIN para la consulta de ejemplo con este DSN e imprime los resultados.</p>
+    <p class="Pp">Esto solo funciona cuando "--group-by" incluye "fingerprint". Hace que pt-query-digest ejecute EXPLAIN e incluya la salida en el informe. Por seguridad, las consultas que parezcan tener una subconsulta que EXPLAIN ejecutará no se explicarán. Esas son típicamente consultas de "tabla derivada" de la forma</p>
+        <pre>select ... from ( select .... ) der;
+</pre>
+    <p class="Pp">Los resultados de EXPLAIN se imprimen como un formato vertical completo en el informe del evento, que aparece al final de cada informe de evento en estilo vertical (<span class="Li">&quot;\G&quot;</span>) tal como lo imprime MySQL.</p>
+  </dd>
+  <dt id="filter"><a class="permalink" href="#filter">--filter</a></dt>
+  <dd>tipo: cadena
+    <p class="Pp">Descarta eventos para los cuales este código Perl no devuelve verdadero.</p>
+    <p class="Pp">Esta opción es una cadena de código Perl o un archivo que contiene código Perl que se compila en una subrutina con un argumento: <span class="Li">$event</span>. Esto es un hashref. Si el valor dado es un archivo legible, entonces pt-query-digest lee el archivo completo y usa su contenido como código. El archivo no debe contener una línea shebang (#!/usr/bin/perl).</p>
+    <p class="Pp">Si el código devuelve verdadero, la cadena de callbacks continúa; de lo contrario, termina. El código es la última declaración en la subrutina aparte de <span class="Li">&quot;return $event&quot;</span>. La plantilla de la subrutina es:</p>
+        <pre>sub { $event = shift; filter &amp;&amp; return $event; }
+</pre>
+    <p class="Pp">Los filtros dados en la línea de comandos se envuelven entre paréntesis como <span class="Li">&quot;( filter )&quot;</span>. Para filtros complejos y de varias líneas, debes poner el código dentro de un archivo para que no se envuelva entre paréntesis. De cualquier manera, el filtro debe producir código sintácticamente válido dado la plantilla. Por ejemplo, una rama if-else dada en la línea de comandos no sería válida:</p>
+        <pre>--filter 'if () { } else { }'  # INCORRECTO
+</pre>
+    <p class="Pp">Dado que se proporciona en la línea de comandos, la rama if-else se envolvería entre paréntesis, lo que no es sintácticamente válido. Por lo tanto, para lograr algo más complejo como esto, se requeriría poner el código en un archivo, por ejemplo, filter.txt:</p>
+        <pre>my $event_ok; if (...) { $event_ok=1; } else { $event_ok=0; } $event_ok
+</pre>
+    <p class="Pp">Luego, especifica <span class="Li">&quot;--filter
+        filter.txt&quot;</span> para leer el código de filter.txt.</p>
+    <p class="Pp">Si el código del filtro no compila, pt-query-digest morirá con un error. Si el código del filtro compila, aún puede ocurrir un error en tiempo de ejecución si el código intenta hacer algo incorrecto (como hacer coincidencia de patrones con un valor indefinido). pt-query-digest no proporciona ninguna salvaguarda, ¡así que codifica con cuidado!</p>
+    <p class="Pp">Un ejemplo de filtro que descarta todo excepto las declaraciones SELECT:</p>
+        <pre>--filter '$event-&gt;{arg} =~ m/^select/i'
+</pre>
+    <p class="Pp">Esto se compila en una subrutina como la siguiente:</p>
+        <pre>sub { $event = shift; ( $event-&gt;{arg} =~ m/^select/i ) &amp;&amp; return $event; }
+</pre>
+    <p class="Pp">Es permisible que el código tenga efectos secundarios (para alterar <span class="Li">$event</span>).</p>
+    <p class="Pp">Consulta "REFERENCIA DE ATRIBUTOS" para obtener una lista de atributos comunes y específicos de "--type".</p>
+    <p class="Pp">Aquí hay más ejemplos de código de filtro:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Host/IP"><a class="permalink" href="#Host/IP">Host/IP coincide con
+    domain.com</a></dt>
+  <dd>--filter '($event-&gt;{host} || <span class="Li">$event</span>-&gt;{ip} ||
+      &quot;&quot;) =~ m/domain.com/'
+    <p class="Pp">A veces MySQL registra el host donde se espera la IP.
+        Por lo tanto, comprobamos ambos.</p>
+  </dd>
+  <dt id="User"><a class="permalink" href="#User">Usuario coincide con john</a></dt>
+  <dd>--filter '($event-&gt;{user} || &quot;&quot;) =~ m/john/'</dd>
+  <dt id="More"><a class="permalink" href="#More">Más de 1 advertencia</a></dt>
+  <dd>--filter '($event-&gt;{Warning_count} || 0) &gt; 1'</dd>
+  <dt id="Query"><a class="permalink" href="#Query">La consulta realiza un escaneo completo de tabla
+    o una unión completa</a></dt>
+  <dd>--filter '(($event-&gt;{Full_scan} || &quot;&quot;) eq &quot;Yes&quot;) ||
+      (($event-&gt;{Full_join} || &quot;&quot;) eq &quot;Yes&quot;)'</dd>
+  <dt id="Query~2"><a class="permalink" href="#Query~2">La consulta no se sirvió
+    de la caché de consultas</a></dt>
+  <dd>--filter '($event-&gt;{QC_Hit} || &quot;&quot;) eq &quot;No&quot;'</dd>
+  <dt id="Query~3"><a class="permalink" href="#Query~3">La consulta es de 1 MB o
+    más grande</a></dt>
+  <dd>--filter '$event-&gt;{bytes} &gt;= 1_048_576'</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Dado que "--filter" te permite alterar
+    <span class="Li">$event</span>, puedes usarlo para hacer otras cosas, como
+    crear nuevos atributos. Consulta "ATRIBUTOS" para ver un ejemplo.</p>
+</div>
+<dl class="Bl-tag">
+  <dt id="group"><a class="permalink" href="#group">--group-by</a></dt>
+  <dd>tipo: Array; predeterminado: fingerprint
+    <p class="Pp">Qué atributo de los eventos agrupar.</p>
+    <p class="Pp">En general, puedes agrupar consultas en clases según cualquier
+        atributo de la consulta, como <span class="Li">&quot;user&quot;</span>
+        o <span class="Li">&quot;db&quot;</span>, lo que por defecto te mostrará
+        qué usuarios y qué bases de datos reciben la mayor parte de
+        <span class="Li">&quot;Query_time&quot;</span>. El atributo predeterminado,
+        <span class="Li">&quot;fingerprint&quot;</span>, agrupa consultas similares y
+        abstractas en clases; consulta más abajo y también "FINGERPRINTS".</p>
+    <p class="Pp">Se imprime un informe para cada valor de "--group-by" (a menos que se especifique "--no-report").
+        Por lo tanto, <span class="Li">&quot;--group-by user,db&quot;</span> significa
+        "informar sobre consultas con el mismo usuario e informar sobre consultas con la misma base de datos"; no significa "informar sobre consultas con el mismo usuario y base de datos". Consulta también "SALIDA".</p>
+    <p class="Pp">Cada valor debe tener un valor correspondiente en la misma posición en "--order-by". Sin embargo, agregar valores a "--group-by" agregará automáticamente valores a "--order-by", para tu conveniencia.</p>
+    <p class="Pp">Hay varios valores mágicos que causan que se realicen minería de datos adicional antes de la agrupación:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="fingerprint"><a class="permalink" href="#fingerprint">fingerprint</a></dt>
+  <dd>Esto hace que los eventos se marquen con huellas digitales para abstraer las consultas en una forma canónica, que luego se utiliza para agrupar eventos en una clase. Consulta "FINGERPRINTS" para más información sobre las huellas digitales.</dd>
+  <dt id="tables"><a class="permalink" href="#tables">tables</a></dt>
+  <dd>Esto hace que los eventos se inspeccionen en busca de lo que parecen ser tablas, y luego se agreguen por ellas. Ten en cuenta que una consulta que contiene dos o más tablas se contará tantas veces como haya tablas; por lo tanto, una unión contra dos tablas contará el Query_time contra ambas tablas.</dd>
+  <dt id="distill"><a class="permalink" href="#distill">distill</a></dt>
+<div>
+<dl class="Bl-tag">
+  <dt id="fingerprint"><a class="permalink" href="#fingerprint">--fingerprint</a></dt>
+  <dd>This is a sort of super-fingerprint that collapses queries down into a
+      suggestion of what they do, such as <span class="Li">&quot;INSERT SELECT
+      table1 table2&quot;</span>.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="help"><a class="permalink" href="#help">--help</a></dt>
+  <dd>Mostrar ayuda y salir.</dd>
+  <dt id="history"><a class="permalink" href="#history">--history</a></dt>
+  <dd>tipo: DSN
+    <p class="Pp">Guarda métricas para cada clase de consulta en la tabla dada.
+        pt-query-digest guarda métricas de consultas (tiempo de consulta, tiempo de bloqueo, etc.) en
+        esta tabla para que puedas ver cómo cambian las clases de consulta con el tiempo.</p>
+    <p class="Pp">La tabla predeterminada es
+        <span class="Li">&quot;percona_schema.query_history&quot;</span>.
+        Especifica las opciones DSN de base de datos (D) y tabla (t) para anular el valor predeterminado.
+        La base de datos y la tabla se crean automáticamente a menos que
+        se especifique <span class="Li">&quot;--no-create-history-table&quot;</span> (ver &quot;--[no]create-history-table&quot;).</p>
+    <p class="Pp">pt-query-digest inspecciona las columnas de la tabla. La tabla
+        debe tener al menos las siguientes columnas:</p>
+        <pre>CREATE TABLE query_review_history (
+  checksum     CHAR(32) NOT NULL,
+  sample       TEXT NOT NULL
+);
+</pre>
+    <p class="Pp">Cualquier columna no mencionada anteriormente se inspecciona para ver si
+        sigue una cierta convención de nombres. La columna es especial si el nombre
+        termina en un guion bajo seguido de alguno de estos valores:</p>
+        <pre>pct|avg|cnt|sum|min|max|pct_95|stddev|median|rank
+</pre>
+    <p class="Pp">Si la columna termina con uno de esos valores, entonces el prefijo
+        se interpreta como el atributo del evento a almacenar en esa columna, y el
+        sufijo se interpreta como la métrica a almacenar. Por ejemplo, una columna
+        llamada <span class="Li">&quot;Query_time_min&quot;</span> se usará para
+        almacenar el <span class="Li">&quot;Query_time&quot;</span> mínimo para la
+        clase de eventos.</p>
+    <p class="Pp">La tabla también debe tener una clave primaria, pero eso depende de ti,
+        dependiendo de cómo quieras almacenar los datos históricos. Sugerimos
+        agregar columnas ts_min y ts_max y hacerlas parte de la clave primaria
+        junto con el checksum. Pero también podrías simplemente agregar una columna ts_min y
+        hacerla de tipo DATE, de modo que obtendrías una fila por clase de consultas por
+      día.</p>
+    <p class="Pp">La siguiente definición de tabla se utiliza para
+        &quot;--[no]create-history-table&quot;:</p>
+        <pre>CREATE TABLE IF NOT EXISTS query_history (
+  checksum             CHAR(32) NOT NULL,
+  sample               TEXT NOT NULL,
+  ts_min               DATETIME,
+  ts_max               DATETIME,
+  ts_cnt               FLOAT,
+  Query_time_sum       FLOAT,
+  Query_time_min       FLOAT,
+  Query_time_max       FLOAT,
+  Query_time_pct_95    FLOAT,
+  Query_time_stddev    FLOAT,
+  Query_time_median    FLOAT,
+  Lock_time_sum        FLOAT,
+  Lock_time_min        FLOAT,
+  Lock_time_max        FLOAT,
+  Lock_time_pct_95     FLOAT,
+  Lock_time_stddev     FLOAT,
+  Lock_time_median     FLOAT,
+  Rows_sent_sum        FLOAT,
+  Rows_sent_min        FLOAT,
+  Rows_sent_max        FLOAT,
+  Rows_sent_pct_95     FLOAT,
+  Rows_sent_stddev     FLOAT,
+  Rows_sent_median     FLOAT,
+  Rows_examined_sum    FLOAT,
+  Rows_examined_min    FLOAT,
+  Rows_examined_max    FLOAT,
+  Rows_examined_pct_95 FLOAT,
+  Rows_examined_stddev FLOAT,
+  Rows_examined_median FLOAT,
+  -- Percona extended slowlog attributes
+  -- https://docs.percona.com/percona-server/8.0/slow-extended.html
+  Rows_affected_sum             FLOAT,
+  Rows_affected_min             FLOAT,
+  Rows_affected_max             FLOAT,
+  Rows_affected_pct_95          FLOAT,
+  Rows_affected_stddev          FLOAT,
+  Rows_affected_median          FLOAT,
+  Rows_read_sum                 FLOAT,
+  Rows_read_min                 FLOAT,
+  Rows_read_max                 FLOAT,
+  Rows_read_pct_95              FLOAT,
+  Rows_read_stddev              FLOAT,
+  Rows_read_median              FLOAT,
+  Merge_passes_sum              FLOAT,
+  Merge_passes_min              FLOAT,
+  Merge_passes_max              FLOAT,
+  Merge_passes_pct_95           FLOAT,
+  Merge_passes_stddev           FLOAT,
+  Merge_passes_median           FLOAT,
+  InnoDB_IO_r_ops_min           FLOAT,
+  InnoDB_IO_r_ops_max           FLOAT,
+  InnoDB_IO_r_ops_pct_95        FLOAT,
+  InnoDB_IO_r_ops_stddev        FLOAT,
+  InnoDB_IO_r_ops_median        FLOAT,
+  InnoDB_IO_r_bytes_min         FLOAT,
+  InnoDB_IO_r_bytes_max         FLOAT,
+  InnoDB_IO_r_bytes_pct_95      FLOAT,
+  InnoDB_IO_r_bytes_stddev      FLOAT,
+  InnoDB_IO_r_bytes_median      FLOAT,
+  InnoDB_IO_r_wait_min          FLOAT,
+  InnoDB_IO_r_wait_max          FLOAT,
+  InnoDB_IO_r_wait_pct_95       FLOAT,
+  InnoDB_IO_r_wait_stddev       FLOAT,
+  InnoDB_IO_r_wait_median       FLOAT,
+  InnoDB_rec_lock_wait_min      FLOAT,
+  InnoDB_rec_lock_wait_max      FLOAT,
+  InnoDB_rec_lock_wait_pct_95   FLOAT,
+  InnoDB_rec_lock_wait_stddev   FLOAT,
+  InnoDB_rec_lock_wait_median   FLOAT,
+  InnoDB_queue_wait_min         FLOAT,
+  InnoDB_queue_wait_max         FLOAT,
+  InnoDB_queue_wait_pct_95      FLOAT,
+  InnoDB_queue_wait_stddev      FLOAT,
+  InnoDB_queue_wait_median      FLOAT,
+  InnoDB_pages_distinct_min     FLOAT,
+  InnoDB_pages_distinct_max     FLOAT,
+  InnoDB_pages_distinct_pct_95  FLOAT,
+  InnoDB_pages_distinct_stddev  FLOAT,
+  InnoDB_pages_distinct_median  FLOAT,
+  -- Boolean (Yes/No) attributes.  Only the cnt and sum are needed
+  -- for these.  cnt is how many times is attribute was recorded,
+  -- and sum is how many of those times the value was Yes.  So
+  -- sum/cnt * 100 equals the percentage of recorded times that
+  -- the value was Yes.
+  QC_Hit_cnt          FLOAT,
+  QC_Hit_sum          FLOAT,
+  Full_scan_cnt       FLOAT,
+  Full_scan_sum       FLOAT,
+  Full_join_cnt       FLOAT,
+  Full_join_sum       FLOAT,
+  Tmp_table_cnt       FLOAT,
+  Tmp_table_sum       FLOAT,
+  Tmp_table_on_disk_cnt FLOAT,
+  Tmp_table_on_disk_sum FLOAT,
+  Filesort_cnt          FLOAT,
+  Filesort_sum          FLOAT,
+  Filesort_on_disk_cnt  FLOAT,
+  Filesort_on_disk_sum  FLOAT,
+  PRIMARY KEY(checksum, ts_min, ts_max)
+);
+</pre>
+    <p class="Pp">Ten en cuenta que almacenamos el recuento (cnt) solo para el atributo ts;
+        será redundante almacenar esto para otros atributos.</p>
+    <p class="Pp">A partir de Percona Toolkit 3.0.11, la función checksum se ha actualizado para usar 32 caracteres en la suma MD5. Esto hace que el campo checksum en la tabla de historial tenga un valor diferente al de las versiones anteriores de la herramienta.</p>
+  </dd>
+  <dt id="host"><a class="permalink" href="#host">--host</a></dt>
+  <dd>forma corta: -h; tipo: string
+    <p class="Pp">Conectar al host.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore-attributes</a></dt>
+  <dd>tipo: array; predeterminado: arg, cmd, insert_id, ip, port, Thread_id, timestamp,
+      exptime, flags, key, res, val, server_id, offset, end_log_pos, Xid
+    <p class="Pp">No agregar estos atributos. Algunos atributos no son métricas de consulta sino metadatos que no necesitan (o no pueden) agregarse.</p>
+  </dd>
+  <dt id="inherit"><a class="permalink" href="#inherit">--inherit-attributes</a></dt>
+  <dd>tipo: array; predeterminado: db,ts
+    <p class="Pp">Si falta, heredar estos atributos del último evento que los tuvo.</p>
+    <p class="Pp">Esta opción establece qué atributos se heredan o se transfieren a los eventos que no los tienen. Por ejemplo, si un evento tiene el atributo db igual a &quot;foo&quot;, pero el siguiente evento no tiene el atributo db, entonces hereda &quot;foo&quot; para su atributo db.</p>
+  </dd>
+  <dt id="interval"><a class="permalink" href="#interval">--interval</a></dt>
+  <dd>tipo: float; predeterminado: .1
+    <p class="Pp">Con qué frecuencia consultar la lista de procesos, en segundos.</p>
+  </dd>
+  <dt id="iterations"><a class="permalink" href="#iterations">--iterations</a></dt>
+  <dd>tipo: int; predeterminado: 1
+    <p class="Pp">Cuántas veces iterar a través del ciclo de recopilación e informe. Si es 0, iterar hasta el infinito. Cada iteración se ejecuta durante el tiempo especificado por &quot;--run-time&quot;. Una iteración se determina normalmente por una cantidad de tiempo y se imprime un informe cuando transcurre esa cantidad de tiempo. Con &quot;--run-time-mode&quot;
+        <span class="Li">&quot;interval&quot;</span>, un intervalo se determina en su lugar por el tiempo de intervalo que especifica con &quot;--run-time&quot;.
+        Ver &quot;--run-time&quot; y &quot;--run-time-mode&quot; para más información.</p>
+  </dd>
+  <dt id="limit"><a class="permalink" href="#limit">--limit</a></dt>
+  <dd>tipo: Array; predeterminado: 95%:20
+    <p class="Pp">Limitar la salida al porcentaje o recuento dado.</p>
+    <p class="Pp">Si el argumento es un entero, informar solo las N peores consultas. Si el argumento es un entero seguido del signo
+        <span class="Li">&quot;%&quot;</span>, informar ese porcentaje de las peores consultas. Si el porcentaje va seguido de dos puntos y otro entero, informar el porcentaje superior o el número especificado por ese entero, lo que ocurra primero.</p>
+    <p class="Pp">El valor es en realidad un array separado por comas de valores, uno por cada elemento en &quot;--group-by&quot;. Si no especifica un valor para alguno de esos elementos, el valor predeterminado es el 95% superior.</p>
+    <p class="Pp">Ver también &quot;--outliers&quot;.</p>
+  </dd>
+  <dt id="log"><a class="permalink" href="#log">--log</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Imprimir toda la salida en este archivo cuando esté en modo demonio.</p>
+  </dd>
+  <dt id="max"><a class="permalink" href="#max">--max-hostname-length</a></dt>
+  <dd>tipo: int; predeterminado: 10
+    <p class="Pp">Recortar los nombres de host en los informes a esta longitud. 0 = No recortar nombres de host.</p>
+  </dd>
+  <dt id="max~2"><a class="permalink" href="#max~2">--max-line-length</a></dt>
+  <dd>tipo: int; predeterminado: 74
+    <p class="Pp">Recortar líneas a esta longitud. 0 = No recortar líneas.</p>
+  </dd>
+  <dt id="order"><a class="permalink" href="#order">--order-by</a></dt>
+  <dd>tipo: Array; predeterminado: Query_time:sum
+    <p class="Pp">Ordenar eventos por este atributo y función de agregación.</p>
+    <p class="Pp">Esta es una lista separada por comas de expresiones de ordenación, una por cada atributo de &quot;--group-by&quot;. El valor predeterminado
+        <span class="Li">&quot;Query_time:sum&quot;</span> se utiliza para los atributos de &quot;--group-by&quot; sin atributos de &quot;--order-by&quot; explícitamente dados (es decir, si especifica más atributos de &quot;--group-by&quot; que atributos de &quot;--order-by&quot; correspondientes). La sintaxis es
+        <span class="Li">&quot;attribute:aggregate&quot;</span>. Ver
+        &quot;ATTRIBUTES&quot; para atributos válidos. Los agregados válidos son:</p>
+        <pre>Aggregate Meaning
+========= ============================
+sum       Suma/valor total del atributo
+min       Valor mínimo del atributo
+max       Valor máximo del atributo
+cnt       Frecuencia/recuento de la consulta
+</pre>
+    <p class="Pp">Por ejemplo, el valor predeterminado
+        <span class="Li">&quot;Query_time:sum&quot;</span> significa que las consultas en el informe de análisis de consultas se ordenarán (clasificarán) por su tiempo total de ejecución de consulta (&quot;Exec time&quot;).
+        <span class="Li">&quot;Query_time:max&quot;</span> ordena las consultas por su tiempo de ejecución de consulta máximo, de modo que la consulta con el mayor <span class="Li">&quot;Query_time&quot;</span> individual se listará primero.
+        <span class="Li">&quot;cnt&quot;</span> se refiere más a la frecuencia de la consulta en su conjunto, cuántas veces aparece; &quot;Count&quot; es su línea correspondiente en el informe de análisis de consultas. Por lo tanto, cualquier atributo y
+        <span class="Li">&quot;cnt&quot;</span> debería producir el mismo informe
+        en el que las consultas se ordenan por el número de veces que a</p>
+  </dd>
+</dl>
+</dl>
+    <dt id="order-by"><a class="permalink" href="#order-by">--order-by</a></dt>
+    <dd>type: string; default: Query_time:sum
+      <p class="Pp">How to sort the aggregated query classes. This option
+          accepts a comma-separated list of attributes and aggregate functions.
+          For example, to sort by the count of queries, then by the sum of their
+          times, use
+          <span class="Li">&quot;cnt:sum,Query_time:sum&quot;</span>. The default
+          sort is by the sum of Query_time.</p>
+      <p class="Pp">The following aggregate functions are available:</p>
+      <pre>Aggregate Function  Description
+==================  ==================================================
+avg                 Average value of the attribute
+cnt                 Number of occurrences of the attribute
+max                 Maximum value of the attribute
+min                 Minimum value of the attribute
+sum                 Sum of the values of the attribute
+</pre>
+      <p class="Pp">You can also sort by an attribute that doesn't exist in
+          the events if you define it with &quot;--filter&quot;.</p>
+      <p class="Pp">When parsing general logs (&quot;--type&quot;
+          <span class="Li">&quot;genlog&quot;</span>), the default
+          &quot;--order-by&quot; becomes
+          <span class="Li">&quot;Query_time:cnt&quot;</span>. General logs do not
+          report query times so only the <span class="Li">&quot;cnt&quot;</span>
+          aggregate makes sense because all query times are zero.</p>
+      <p class="Pp">If you specify an attribute that doesn't exist in the events,
+          then pt-query-digest falls back to the default
+          <span class="Li">&quot;Query_time:sum&quot;</span> and prints a notice
+          at the beginning of the report for each query class. You can create
+          attributes with &quot;--filter&quot; and order by them; see
+          &quot;ATTRIBUTES&quot; for an example.</p>
+    </dd>
+    <dt id="outliers"><a class="permalink" href="#outliers">--outliers</a></dt>
+    <dd>type: array; default: Query_time:1:10
+      <p class="Pp">Report outliers by attribute:percentile:count.</p>
+      <p class="Pp">The syntax of this option is a comma-separated list of
+          colon-delimited strings. The first field is the attribute by which an
+          outlier is defined. The second is a number that is compared to the
+          attribute's 95th percentile. The third is optional, and is compared to
+          the attribute's cnt aggregate. Queries that pass this specification are
+          added to the report, regardless of any limits you specified in
+          &quot;--limit&quot;.</p>
+      <p class="Pp">For example, to report queries whose 95th percentile
+          Query_time is at least 60 seconds and which are seen at least 5 times,
+          use the following argument:</p>
+      <pre>--outliers Query_time:60:5
+</pre>
+      <p class="Pp">You can specify an --outliers option for each value in
+          &quot;--group-by&quot;.</p>
+    </dd>
+    <dt id="output"><a class="permalink" href="#output">--output</a></dt>
+    <dd>type: string; default: report
+      <p class="Pp">How to format and print the query analysis results. Accepted
+          values are:</p>
+      <pre>VALUE          FORMAT
+=======        ===============================
+report         Standard query analysis report
+slowlog        MySQL slow log
+json           JSON, one array per query class
+json-anon      JSON without example queries
+secure-slowlog JSON without example queries
+</pre>
+      <p class="Pp">The entire <span class="Li">&quot;report&quot;</span> output
+          can be disabled by specifying
+          <span class="Li">&quot;--no-report&quot;</span> (see
+          &quot;--[no]report&quot;), and its sections can be disabled or
+          rearranged by specifying &quot;--report-format&quot;.</p>
+    </dd>
+    <dt id="password"><a class="permalink" href="#password">--password</a></dt>
+    <dd>short form: -p; type: string
+      <p class="Pp">Password to use when connecting. If password contains commas
+          they must be escaped with a backslash: &quot;exam\,ple&quot;</p>
+    </dd>
+    <dt id="pid"><a class="permalink" href="#pid">--pid</a></dt>
+    <dd>type: string
+      <p class="Pp">Create the given PID file. The tool won't start if the PID
+          file already exists and the PID it contains is different than the
+          current PID. However, if the PID file exists and the PID it contains is
+          no longer running, the tool will overwrite the PID file with the current
+          PID. The PID file is removed automatically when the tool exits.</p>
+    </dd>
+    <dt id="port"><a class="permalink" href="#port">--port</a></dt>
+    <dd>short form: -P; type: int
+      <p class="Pp">Port number to use for connection.</p>
+    </dd>
+    <dt id="preserve"><a class="permalink" href="#preserve">--preserve-embedded-numbers</a></dt>
+    <dd>Preserve numbers in database/table names when fingerprinting queries. The
+        standard fingerprint method replaces numbers in db/tables names, making a
+        query like 'SELECT * FROM db1.table2' to be fingerprinted as 'SELECT *
+        FROM db?.table?'. This option changes that behaviour and the fingerprint
+        will become 'SELECT * FROM db1.table2'.</dd>
+    <dt id="processlist"><a class="permalink" href="#processlist">--processlist</a></dt>
+    <dd>type: DSN
+      <p class="Pp">Poll this DSN's processlist for queries, with
+          &quot;--interval&quot; sleep between.</p>
+      <p class="Pp">If the connection fails, pt-query-digest tries to reopen it
+          once per second.</p>
+    </dd>
+    <dt id="progress"><a class="permalink" href="#progress">--progress</a></dt>
+    <dd>type: array; default: time,30
+      <p class="Pp">Print progress reports to STDERR. The value is a
+          comma-separated list with two parts. The first part can be percentage,
+          time, or iterations; the second part specifies how often an update
+          should be printed, in percentage, seconds, or number of iterations.</p>
+    </dd>
+    <dt id="read"><a class="permalink" href="#read">--read-timeout</a></dt>
+    <dd>type: time; default: 0
+      <p class="Pp">Wait this long for an event from the input; 0 to wait
+          forever.</p>
+      <p class="Pp">This option sets the maximum time to wait for an event from
+          the input. It applies to all types of input except
+          &quot;--processlist&quot;. If an event is not received after the
+          specified time, the script stops reading the input and prints its
+          reports. If &quot;--iterations&quot; is 0 or greater than 1, the next
+          iteration will begin, else the script will exit.</p>
+      <p class="Pp">This option requires the Perl POSIX module.</p>
+    </dd>
+    <dt>--[no]report</dt>
+    <dd>default: yes
+      <p class="Pp">Print query analysis reports for each &quot;--group-by&quot;
+          attribute. This is the standard slow log analysis functionality. See
+          &quot;OUTPUT&quot; for the description of what this does and what the
+          results look like.</p>
+      <p class="Pp">If you don't need a report (for example, when using
+          &quot;--review&quot; or &quot;--history&quot;), it is best to specify
+          <span class="Li">&quot;--no-report&quot;</span> because this allows the
+          tool to skip some expensive operations.</p>
+    </dd>
+    <dt id="report"><a class="permalink" href="#report">--report-all</a></dt>
+    <dd>Report all queries, even ones that have been reviewed. This only affects
+        the <span class="Li">&quot;report&quot;</span> &quot;--output&quot; when
+        using &quot;--review&quot;. Otherwise, all queries are always
+      printed.</dd>
+    <dt id="report~2"><a class="permalink" href="#report~2">--report-format</a></dt>
+    <dd>type: Array; default:
+        rusage,date,hostname,files,header,profile,query_report,prepared
+      <p class="Pp">Print these sections of the query analysis report.</p>
+      <pre>SECTION      PRINTS
+============ ======================================================
+rusage       CPU times and memory usage reported by ps
+date         Current local date and time
+hostname     Hostname of machine on which pt-query-digest was run
+files        Input files read/parsed
+header       Summary of the entire analysis run
+profile      Compact table of queries for an overview of the report
+query_report Detailed information about each unique query
+prepared     Prepared statements
+</pre>
+      <p class="Pp">The sections are printed in the order specified. The rusage,
+          date, files and header sections are grouped together if specified
+          together; other sections are separated by blank lines.</p>
+      <p class="Pp">See &quot;OUTPUT&quot; for more information on the various
+          parts of the query report.</p>
+    </dd>
+    <dt id="report~3"><a class="permalink" href="#report~3">--report-histogram</a></dt>
+    <dd>type: string; default: Query_time
+      <p class="Pp">Chart the distribution of this attribute's values.</p>
+      <p class="Pp">The distribution chart is limited to time-based attributes, so
+          charting <span class="Li">&quot;Rows_examined&quot;</span>, for example,
+          will produce a useless chart. Charts look like:</p>
+      <pre># Query_time distribution
+#   1us
+#  10us
+# 100us
+#   1ms
+#  10ms  ###########################
+# 100ms  ########################################################
+#    1s  ########
+#  10s+
+</pre>
+      <p class="Pp">See &quot;OUTPUT&quot; for more information.</p>
+    </dd>
+    <dt id="resume"><a class="permalink" href="#resume">--resume</a></dt>
+    <dd>type: string
+      <p class="Pp">If specified, the tool writes the last file offset, if there
+          is one, to the given filename. When ran again with the same value for
+          this option, the tool reads the last file offset from the file, seeks to
+          that position in the log, and resumes parsing events from that point
+          onward.</p>
+    </dd>
+    <dt id="review"><a class="permalink" href="#review">--review</a></dt>
+    <dd>type: DSN
+      <p class="Pp">Save query classes for later review, and don't report already
+          reviewed classes.</p>
+      <p class="Pp">The default table is
+          <span class="Li">&quot;percona_schema.query_review&quot;</span>. Specify
+          database (D) and table (t) DSN options to override the default. The
+          database and table are automatically created unless
+          <span class="Li">&quot;--no-create-review-table&quot;</span> is
+          specified (see &quot;--[no]create-review-table&quot;).</p>
+      <p class="Pp">If the table was created manually, it must have at least the
+          following columns. You can add more columns for your own special
+          purposes, but they won't be used by pt-query-digest.</p>
+      <pre>CREATE TABLE IF NOT EXISTS query_review (
+   checksum     CHAR(32) NOT NULL PRIMARY KEY,
+   fingerprint  TEXT NOT NULL,
+   sample       TEXT NOT NULL,
+   first_seen   DATETIME,
+   last_seen    DATETIME,
+   reviewed_by  VARCHAR(20),
+   reviewed_on  DATETIME,
+   comments     TEXT
+)
+</pre>
+      <p class="Pp">The columns are:</p>
+      <pre>COLUMN       MEANING
+===========  ====================================================
+checksum     A 64-bit checksum of the query fingerprint
+fingerprint  The abstracted version of the query; its primary key
+sample       The query text of a sample of the class of queries
+first_seen   The smallest timestamp of this class of queries
+last_seen    The largest timestamp of this class of queries
+reviewed_by  Initially NULL; if set, query is skipped thereafter
+reviewed_on  Initially NULL; not assigned any special meaning
+comments     Initially NULL; not assigned any special meaning
+</pre>
+      <p class="Pp">Note that the <span class="Li">&quot;fingerprint&quot;</span>
+          column is the true primary key for a class of queries. The
+          <span class="Li">&quot;checksum&quot;</span> is just a cryptographic
+          hash of this value, which provides a shorter value that is very likely
+          to also be unique.</p>
+      <p class="Pp">After parsing and aggregating events, your table should
+          contain a row for each fingerprint. This option depends on
+          <span class="Li">&quot;--group-by fingerprint&quot;</span> (which is the
+          default). It will not work otherwise.</p>
+    </dd>
+    <dt id="run"><a class="permalink" href="#run">--run-time</a></dt>
+    <dd>type: time
+      <p class="Pp">How long to run for each &quot;--iterations&quot;. The default
+          is to run forever (you can interrupt with CTRL-C). Because
+          &quot;--iterations&quot; defaults to 1, if you only specify
+          &quot;--run-time&quot;, pt-query-digest runs for that amount of time and
+          then exits. The two options are specified together to do
+          collect-and-report cycles. For example, specifying
+          &quot;--iterations&quot; <span class="Li">4</span>
+          &quot;--run-time&quot; <span class="Li">&quot;15m&quot;</span> with a
+          continuous input (like STDIN or &quot;--processlist&quot;) will cause
+          pt-query-digest to run for 1 hour (15 minutes x 4), reporting four
+          times, once at each 15 minute interval.</p>
+    </dd>
+    <dt id="run~2"><a class="permalink" href="#run~2">--run-time-mode</a></dt>
+    <dd>type: string; default: clock
+      <p class="Pp">Set what the value of &quot;--run</p>-time&quot; opera.
+        A continuación, se muestran los valores posibles para esta opción:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="clock"><a class="permalink" href="#clock">reloj</a></dt>
+  <dd>&quot;--run-time&quot; especifica una cantidad de tiempo real de reloj durante
+      la cual la herramienta debe ejecutarse por cada &quot;--iterations&quot;.</dd>
+  <dt id="event"><a class="permalink" href="#event">evento</a></dt>
+  <dd>&quot;--run-time&quot; especifica una cantidad de tiempo de registro. El tiempo
+      de registro se determina mediante marcas de tiempo en el registro. Se
+      recuerda la primera marca de tiempo vista y cada marca de tiempo posterior
+      se compara con la primera para determinar cuánto tiempo de registro ha
+      transcurrido. Por ejemplo, si la primera marca de tiempo vista es
+      <span class="Li">&quot;12:00:00&quot;</span> y la siguiente es
+      <span class="Li">&quot;12:01:30&quot;</span>, eso son 1 minuto y 30 segundos
+      de tiempo de registro. La herramienta leerá eventos hasta que el tiempo de
+      registro sea mayor o igual al valor especificado de
+      &quot;--run-time&quot;.
+    <p class="Pp">Dado que las marcas de tiempo en los registros no siempre se
+        imprimen, o no siempre se imprimen con frecuencia, este modo varía en
+        precisión.</p>
+  </dd>
+  <dt id="interval~2"><a class="permalink" href="#interval~2">intervalo</a></dt>
+  <dd>&quot;--run-time&quot; especifica los límites del intervalo de tiempo de
+      registro en los que se dividen los eventos y se generan los informes. Este
+      modo es diferente de los demás porque no especifica cuánto tiempo
+      ejecutar. El valor de &quot;--run-time&quot; debe ser un intervalo que se
+      divida uniformemente en minutos, horas o días. Por ejemplo,
+      <span class="Li">&quot;5m&quot;</span> se divide uniformemente en horas
+      (60/5=12, por lo que 12 intervalos de 5 minutos por hora), pero
+      <span class="Li">&quot;7m&quot;</span> no (60/7=8.6).
+    <p class="Pp">Especificar
+        <span class="Li">&quot;--run-time-mode interval --run-time 30m --iterations
+        0&quot;</span> es similar a especificar
+        <span class="Li">&quot;--run-time-mode clock --run-time 30m
+        --iterations 0&quot;</span>. En este último caso, pt-query-digest se
+        ejecutará indefinidamente, produciendo informes cada 30 minutos, pero
+        esto solo funciona de manera efectiva con entradas continuas como STDIN
+        y la lista de procesos. Para entradas fijas, como archivos de registro,
+        el primer ejemplo produce múltiples informes al dividir el registro en
+        intervalos de 30 minutos basados en marcas de tiempo.</p>
+    <p class="Pp">Los intervalos se calculan a partir del segundo/minuto/hora
+        cero en el que ocurre una marca de tiempo, no a partir de la hora que
+        especifica. Por ejemplo, con intervalos de 30 minutos y una marca de
+        tiempo de <span class="Li">&quot;12:10:30&quot;</span>, el intervalo
+        *no* es de <span class="Li">&quot;12:10:30&quot;</span> a
+        <span class="Li">&quot;12:40:30&quot;</span>, sino de
+        <span class="Li">&quot;12:00:00&quot;</span> a
+        <span class="Li">&quot;12:29:59&quot;</span>. O, con intervalos de 1
+        hora, es de <span class="Li">&quot;12:00:00&quot;</span> a
+        <span class="Li">&quot;12:59:59&quot;</span>. Cuando una nueva marca de
+        tiempo excede el intervalo, se imprime un informe y se recalcula el
+        siguiente intervalo basándose en la nueva marca de tiempo.</p>
+    <p class="Pp">Dado que &quot;--iterations&quot; es 1 por defecto, probablemente
+        querrá especificar un nuevo valor, de lo contrario, pt-query-digest
+        solo obtendrá e informará sobre el primer intervalo del registro, ya que
+        1 intervalo = 1 iteración. Si desea obtener e informar sobre cada
+        intervalo en un registro, especifique &quot;--iterations&quot;
+        <span class="Li">0</span>.</p>
+  </dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="sample"><a class="permalink" href="#sample">--sample</a></dt>
+  <dd>tipo: int
+    <p class="Pp">Filtra todas las ocurrencias de cada consulta excepto la primera
+        N. Las consultas se filtran por el primer valor en
+        &quot;--group-by&quot;, por lo que, por defecto, esto filtrará por la
+        huella digital de la consulta. Por ejemplo,
+        <span class="Li">&quot;--sample 2&quot;</span> permitirá dos consultas
+        de muestra para cada huella digital. Útil en combinación con
+        <span class="Li">&quot;--output slowlog&quot;</span> para imprimir las
+        consultas. Probablemente querrá establecer
+        <span class="Li">&quot;--no-report&quot;</span> para evitar la sobrecarga
+        de agregar y generar informes si solo está utilizando esto para imprimir
+        muestras de consultas. Un ejemplo completo:</p>
+        <pre>pt-query-digest --sample 2 --no-report --output slowlog slow.log
+</pre>
+  </dd>
+  <dt id="set"><a class="permalink" href="#set">--set-vars</a></dt>
+  <dd>tipo: Array
+    <p class="Pp">Establece las variables de MySQL en esta lista separada por
+        comas de pares <span class="Li">&quot;variable=valor&quot;</span>.</p>
+    <p class="Pp">Por defecto, la herramienta establece:</p>
+        <pre>wait_timeout=10000
+</pre>
+    <p class="Pp">Las variables especificadas en la línea de comandos anulan
+        estos valores predeterminados. Por ejemplo, especificar
+        <span class="Li">&quot;--set-vars wait_timeout=500&quot;</span> anula el
+        valor predeterminado de <span class="Li">10000</span>.</p>
+    <p class="Pp">La herramienta imprime una advertencia y continúa si una variable
+        no se puede establecer.</p>
+  </dd>
+  <dt id="show"><a class="permalink" href="#show">--show-all</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Muestra todos los valores para estos atributos.</p>
+    <p class="Pp">Por defecto, pt-query-digest solo muestra tantos valores de un
+        atributo como quepan en una sola línea. Esta opción le permite especificar
+        atributos para los que se mostrarán todos los valores (se ignora el ancho
+        de línea). Esto solo funciona para atributos con valores de cadena como
+        usuario, host, db, etc. Se pueden especificar varios atributos, separados
+        por comas.</p>
+  </dd>
+  <dt id="since"><a class="permalink" href="#since">--since</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Analiza solo las consultas más recientes que este valor (analiza
+        las consultas desde esta fecha).</p>
+    <p class="Pp">Esta opción le permite ignorar las consultas anteriores a un
+        determinado valor y analizar solo aquellas consultas que son más recientes
+        que el valor. El valor puede ser de varios tipos:</p>
+        <pre>* Valor de tiempo simple N con sufijo opcional: N[shmd], donde
+  s=segundos, h=horas, m=minutos, d=días (s por defecto si no se
+  indica sufijo); esto es como decir "desde hace N[shmd]"
+* Fecha completa con horas opcionales:minutos:segundos:
+  YYYY-MM-DD [HH:MM:SS]
+* Fecha corta, estilo MySQL:
+  YYMMDD [HH:MM:SS]
+* Cualquier expresión de tiempo evaluada por MySQL:
+  CURRENT_DATE - INTERVAL 7 DAY
+</pre>
+    <p class="Pp">Si proporciona una expresión de tiempo de MySQL y no ha
+        especificado una DSN para &quot;--explain&quot;, &quot;--processlist&quot;
+        o &quot;--review&quot;, entonces debe especificar una DSN en la línea de
+        comandos para que pt-query-digest pueda conectarse a MySQL para evaluar
+        la expresión.</p>
+    <p class="Pp">La expresión de tiempo de MySQL se envuelve dentro de una
+        consulta como &quot;SELECT UNIX_TIMESTAMP(&lt;expresión&gt;)&quot;, así que
+        asegúrese de que la expresión sea válida dentro de esta consulta. Por
+        ejemplo, no use <b>UNIX_TIMESTAMP()</b> porque
+        UNIX_TIMESTAMP(<b>UNIX_TIMESTAMP()</b>) devuelve 0.</p>
+    <p class="Pp">Se asume que los eventos están en orden cronológico: eventos
+        más antiguos al principio del registro y eventos más recientes al final
+        del registro. &quot;--since&quot; es estricto: ignora todas las consultas
+        hasta que se encuentra una que sea lo suficientemente reciente. Por lo
+        tanto, si los eventos de consulta no tienen marcas de tiempo consistentes,
+        algunos que son lo suficientemente recientes pueden ser ignorados.</p>
+    <p class="Pp">Ver también &quot;--until&quot;.</p>
+  </dd>
+  <dt id="socket"><a class="permalink" href="#socket">--socket</a></dt>
+  <dd>forma corta: -S; tipo: string
+    <p class="Pp">Archivo de socket a utilizar para la conexión.</p>
+  </dd>
+  <dt id="timeline"><a class="permalink" href="#timeline">--timeline</a></dt>
+  <dd>Muestra una línea de tiempo de eventos.
+    <p class="Pp">Esta opción hace que pt-query-digest imprima otro tipo de
+        informe: una línea de tiempo de los eventos. Cada consulta todavía se agrupa
+        y agrega en clases según &quot;--group-by&quot;, pero luego se imprimen
+        en orden cronológico. El informe de línea de tiempo imprime la marca de
+        tiempo, el intervalo, la cuenta y el valor de cada clase.</p>
+    <p class="Pp">Si lo único que desea es el informe de línea de tiempo, entonces
+        especifique <span class="Li">&quot;--no-report&quot;</span> para suprimir
+        el informe de análisis de consulta predeterminado. De lo contrario, el
+        informe de línea de tiempo se imprimirá al final antes del perfil de
+        tiempo de respuesta (ver &quot;--report-format&quot; y
+        &quot;OUTPUT&quot;).</p>
+    <p class="Pp">Por ejemplo, esto:</p>
+        <pre>pt-query-digest /path/to/log --group-by distill --timeline
+</pre>
+    <p class="Pp">imprimirá algo como:</p>
+        <pre># ########################################################
+# informe de destilación
+# ########################################################
+# 2009-07-25 11:19:27 1+00:00:01   2 SELECT foo
+# 2009-07-27 11:19:30      00:01   2 SELECT bar
+# 2009-07-27 11:30:00 1+06:30:00   2 SELECT foo
+</pre>
+  </dd>
+  <dt id="type"><a class="permalink" href="#type">--type</a></dt>
+  <dd>tipo: Array; por defecto: slowlog
+    <p class="Pp">El tipo de entrada a analizar. Los tipos permitidos son</p>
+  </dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="binlog"><a class="permalink" href="#binlog">binlog</a></dt>
+  <dd>Analiza un archivo de registro binario que primero ha sido convertido a
+      texto usando mysqlbinlog.
+    <p class="Pp">Por ejemplo:</p>
+        <pre>mysqlbinlog mysql-bin.000441 &gt; mysql-bin.000441.txt
+pt-query-digest --type binlog mysql-bin.000441.txt
+</pre>
+  </dd>
+  <dt id="genlog"><a class="permalink" href="#genlog">genlog</a></dt>
+  <dd>Analiza un archivo de registro general de MySQL. Los registros generales
+      carecen de muchos &quot;ATTRIBUTES&quot;, en particular
+      <span class="Li">&quot;Query_time&quot;</span>. El
+      &quot;--order-by&quot; predeterminado para los registros generales cambia a
+      <span class="Li">&quot;Query_time:cnt&quot;</span>.</dd>
+  <dt id="slowlog"><a class="permalink" href="#slowlog">slowlog</a></dt>
+  <dd>Analiza un archivo de registro en cualquier variación del formato de registro
+      lento de MySQL.</dd>
+  <dt id="tcpdump"><a class="permalink" href="#tcpdump">tcpdump</a></dt>
+  <dd>Inspecciona paquetes de red y decodifica el protocolo cliente de MySQL,
+      extrayendo consultas y respuestas del mismo.
+    <p class="Pp">pt-query-digest en realidad no observa la red (es decir, NO
+        &quot;escucha paquetes&quot;). En cambio, solo analiza la salida de
+        tcpdump. Usted es responsable de generar esta salida;
+        pt-query-digest no lo hace por usted. Luego, envía esto a
+        pt-query-digest como lo haría con cualquier archivo de registro: como
+        archivos en la línea de comandos o a STDIN.</p>
+    <p class="Pp">El analizador espera que la entrada tenga el formato con las
+        siguientes opciones: <span class="Li">&quot;-x -n -q -tttt&quot;</span>.
+        Por ejemplo, si desea capturar la salida de su máquina local, puede hacer
+        algo como lo siguiente (el puerto debe ser el último en FreeBSD):</p>
+        <pre>tcpdump -s 65535 -x -nn -q -tttt -i any -c 1000 port 3306 \
+  &gt; mysql.tcp.txt
+pt-query-digest --type tcpdump mysql.tcp.txt
+</pre>
+    <p class="Pp">Los otros parámetros de tcpdump, como -s, -c e -i, dependen de
+        usted. Solo asegúrese de que la salida se vea así (hay un salto de línea
+        en la primera línea para evitar problemas de página de manual):</p>
+        <pre>2009-04-12 09:50:16.804849 IP 127.0.0.1.42167
+       &gt; 127.0.0.1.3306: tcp 37
+    0x0000:  4508 0059 6eb2 4000 4006 cde2 7f00 0001
+    0x0010:  ....
+</pre>
+    <p class="Pp">¡Recuerde que tcpdump tiene una útil opción -c para detenerse
+        después de capturar un cierto número de paquetes! Eso es muy útil para
+        probar su comando tcpdump. Tenga en cuenta que tcpdump no puede capturar
+        tráfico en un socket Unix. Lea
+        <a href='http://bugs.mysql.com/bug.php?id=31577'>http://bugs.mysql.com/bug.php?id=31577</a> si
+        está confundido acerca de esto</p>
+  </dd>
+</dl>
+</div><p class="Pp">Devananda Van Der Veen explicó en el blog de rendimiento de MySQL
+cómo capturar tráfico sin perder paquetes en servidores ocupados. La pérdida
+de paquetes hace que pt-query-digest no vea la respuesta a una solicitud, luego
+vea la respuesta a una solicitud posterior y asigne un tiempo de ejecución
+incorrecto a la consulta. Puede cambiar el filtro a algo como lo siguiente para
+ayudar a capturar un subconjunto de las consultas. (Ver
+<a href='https://www.percona.com/blog/how-to-use-tcpdump-on-very-busy-hosts/'>https://www.percona.com/blog/how-to-use-tcpdump-on-very-busy-hosts/</a>
+para más detalles.)</p>
+<pre>tcpdump -i any -s 65535 -x -n -q -tttt \
+   'port 3306 and tcp[1] &amp; 7 == 2 and tcp[3] &amp; 7 == 2'
+</pre>
+<p class="Pp">Todos los servidores MySQL que se ejecutan en el puerto 3306 se
+detectan automáticamente en la salida de tcpdump. Por lo tanto, si la salida de
+tcpdump contiene paquetes de varios servidores en el puerto 3306 (por ejemplo,
+10.0.0.1:3306, 10.0.0.2:3306, etc.), todos los paquetes/consultas de todos estos
+servidores se analizarán juntos como si fueran un solo servidor.</p>
+<p class="Pp">Si está analizando tráfico para un servidor MySQL que no se está
+ejecutando en el puerto 3306, consulte &quot;--watch-server&quot;.</p>
+<p class="Pp">Tenga en cuenta también que pt-query-digest puede no informar la
+base de datos para las consultas al analizar la salida de tcpdump. La base de
+datos se descubre solo en los eventos de conexión iniciales para un nuevo cliente
+o cuando se ejecuta &lt;USE db&gt;. Si la salida de tcpdump no contiene
+ninguno de estos, entonces pt-query-digest no puede descubrir la base de
+datos.</p>
+<p class="Pp">Se admiten las sentencias preparadas del lado del servidor. El
+tráfico cifrado con SSL no se puede inspeccionar ni decodificar.</p>
+</dd>
+<dt id="rawlog"><a class="permalink" href="#rawlog">rawlog</a></dt>
+<dd>Los registros sin procesar no son registros de MySQL, sino archivos de texto
+simples con una instrucción SQL por línea, como:</dd>
+<pre>SELECT c FROM t WHERE id=1
+/* Hello, world! */ SELECT * FROM t2 LIMIT 1
+INSERT INTO t (a, b) VALUES ('foo', 'bar')
+INSERT INTO t SELECT * FROM monkeys
+</pre>
+<p class="Pp">Dado que los registros sin procesar no tienen métricas, muchas
+opciones y funciones de pt-query-digest no funcionan con ellos.</p>
+<p class="Pp">Un caso de uso para registros sin procesar es clasificar consultas
+por recuento cuando la única información disponible es una lista de consultas,
+obtenida al consultar
+<span class="Li">&quot;SHOW PROCESSLIST&quot;</span>, por ejemplo.</p>
+</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+<dt id="until"><a class="permalink" href="#until">--until</a></dt>
+<dd>tipo: string
+<p class="Pp">Analiza solo consultas más antiguas que este valor (analiza
+consultas hasta esta fecha).</p>
+<p class="Pp">Esta opción le permite ignorar consultas más nuevas que un valor
+determinado y analizar solo aquellas consultas que son más antiguas que el
+valor. El valor puede ser de uno de los tipos enumerados para &quot;--since&quot;.</p>
+<p class="Pp">A diferencia de &quot;--since&quot;, &quot;--until&quot; no es
+estricto: todas las consultas se analizan hasta que una tenga una marca de
+tiempo igual o mayor que &quot;--until&quot;. Luego, todas las consultas
+posteriores se ignoran.</p>
+</dd>
+<dt id="user"><a class="permalink" href="#user">--user</a></dt>
+<dd>forma corta: -u; tipo: string
+<p class="Pp">Usuario para iniciar sesión si no es el usuario actual.</p>
+</dd>
+<dt id="variations"><a class="permalink" href="#variations">--variations</a></dt>
+<dd>tipo: Array
+<p class="Pp">Informa el número de variaciones en los valores de estos
+atributos.</p>
+<p class="Pp">Las variaciones muestran cuántos valores distintos tuvo un
+atributo dentro de una clase. El valor habitual para esta opción es
+<span class="Li">&quot;arg&quot;</span>, que muestra cuántas consultas
+distintas hubo en la clase. Esto puede ser útil para determinar la
+cachabilidad de una consulta.</p>
+<p class="Pp">Los valores distintos se determinan mediante sumas de verificación
+CRC32 de los valores de los atributos. Estas sumas de verificación se informan
+en el informe de consulta para los atributos especificados por esta opción,
+como:</p>
+<pre># arg crc      109 (1/25%), 144 (1/25%)... 2 more
+</pre>
+<p class="Pp">En esa clase hubo 4 consultas distintas. Se muestran las sumas de
+verificación de las dos primeras variaciones, y cada una ocurrió una vez (o,
+el 25% de las veces).</p>
+<p class="Pp">Los recuentos de variaciones distintas son aproximados porque solo
+se guardan 1000 variaciones. Se guarda el mod (%) 1000 de la suma de
+verificación CRC32 completa, por lo que algunas sumas de verificación
+distintas se tratan como iguales.</p>
+</dd>
+<dt id="version"><a class="permalink" href="#version">--version</a></dt>
+<dd>Muestra la versión y sale.</dd>
+<dt>--[no]version-check</dt>
+<dd>predeterminado: yes
+<p class="Pp">Verifica la última versión de Percona Toolkit, MySQL y otros
+programas.</p>
+<p class="Pp">Esta es una característica estándar de &quot;verificar actualizaciones
+automáticamente&quot;, con dos características adicionales. Primero, la
+herramienta verifica su propia versión y también las versiones del siguiente
+software: sistema operativo, Percona Monitoring and Management (PMM), MySQL,
+Perl, controlador MySQL para Perl (DBD::mysql) y Percona Toolkit. Segundo,
+verifica y advierte sobre versiones con problemas conocidos. Por ejemplo, MySQL
+5.5.25 tenía un error crítico y fue relanzado como 5.5.25a.</p>
+<p class="Pp">Se establece una conexión segura al servidor de base de datos de
+verificación de versiones de Percona para realizar estas verificaciones. Cada
+solicitud es registrada por el servidor, incluyendo los números de versión del
+software y el ID único del sistema verificado. El ID es generado por el script
+de instalación de Percona Toolkit o cuando se realiza la llamada a la base de
+datos de verificación de versiones por primera vez.</p>
+<p class="Pp">Cualquier actualización o problema conocido se imprime en STDOUT
+antes de la salida normal de la herramienta. Esta característica nunca debería
+interferir con el funcionamiento normal de la herramienta.</p>
+<p class="Pp">Para obtener más información, visite
+<a href='https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html'>https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html</a>.</p>
+</dd>
+<dt>--[no]vertical-format</dt>
+<dd>predeterminado: yes
+<p class="Pp">Imprime un carácter de barra diagonal invertida (&quot;\G&quot;)
+al final de las consultas SQL reportadas.</p>
+<p class="Pp">Esto hace que el cliente mysql muestre el resultado utilizando el
+formato vertical. Los clientes MySQL no nativos como phpMyAdmin no admiten
+esto.</p>
+</dd>
+<dt id="watch"><a class="permalink" href="#watch">--watch-server</a></dt>
+<dd>tipo: string
+<p class="Pp">Esta opción le indica a pt-query-digest qué dirección IP y puerto
+del servidor (como &quot;10.0.0.1:3306&quot;) debe monitorear al analizar
+tcpdump (para el tipo &quot;--type&quot; tcpdump); todos los demás servidores
+se ignoran. Si no lo especifica, pt-query-digest monitorea todos los servidores
+buscando cualquier dirección IP que use el puerto 3306 o &quot;mysql&quot;.
+Si está monitoreando un servidor con un puerto no estándar, esto no
+funcionará, por lo que debe especificar la dirección IP y el puerto a
+monitorear.</p>
+<p class="Pp">Si desea monitorear una combinación de servidores, algunos que se
+ejecutan en el puerto estándar 3306 y otros en puertos no estándar, debe crear
+salidas de tcpdump separadas para los servidores con puertos no estándar y luego
+especificar esta opción para cada uno. Actualmente, pt-query-digest no puede
+detectar automáticamente servidores en el puerto 3306 y al mismo tiempo
+se le indica que monitoree un servidor en un puerto no estándar.</p>
+</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DSN_OPTIONS'><a class='permalink' href='#DSN_OPTIONS'>OPCIONES DSN</a></h1>
+<p class="Pp">Estas opciones DSN se utilizan para crear un DSN. Cada opción se
+proporciona como <span class="Li">&quot;opcion=valor&quot;</span>. Las opciones
+distinguen entre mayúsculas y minúsculas, por lo que P y p no son la misma
+opción. No puede haber espacios en blanco antes o después del signo
+<span class="Li">&quot;=&quot;</span> y si el valor contiene espacios en blanco
+debe entrecomillarse. Las opciones DSN están separadas por comas. Consulte la
+página del manual de percona-toolkit para obtener detalles completos.</p>
+<ul class="Bl-bullet">
+<li>A
+<p class="Pp">dsn: charset; copia: yes</p>
+<p class="Pp">Juego de caracteres predeterminado.</p>
+</li>
+<li>D
+<p class="Pp">dsn: database; copia: yes</p>
+<p class="Pp">Base de datos predeterminada a usar al conectarse a MySQL.</p>
+</li>
+<li>F
+<p class="Pp">dsn: mysql_read_default_file; copia: yes</p>
+<p class="Pp">Lee solo las opciones predeterminadas del archivo dado.</p>
+</li>
+<li>h
+<p class="Pp">dsn: host; copia: yes</p>
+<p class="Pp">Conéctate al host.</p>
+</li>
+<li>p
+<p class="Pp">dsn: password; copia: yes</p>
+<p class="Pp">Contraseña a usar al conectarse. Si la contraseña contiene comas,
+deben escaparse con una barra invertida: &quot;exam\,ple&quot;</p>
+</li>
+<li>P
+<p class="Pp">dsn: port; copia: yes</p>
+<p class="Pp">Número de puerto a usar para la conexión.</p>
+</li>
+<li>S
+<p class="Pp">dsn: mysql_socket; copia: yes</p>
+<p class="Pp">Archivo de socket a usar para la conexión.</p>
+</li>
+<li>t
+<p class="Pp">La tabla &quot;--review&quot; o &quot;--history&quot;.</p>
+</li>
+<li>u
+<p class="Pp">dsn: user; copia: yes</p>
+<p class="Pp">Usuario para iniciar sesión si no es el usuario actual.</p>
+</li>
+<li>s
+<p class="Pp">dsn: mysql_ssl; copia: yes</p>
+<p class="Pp">Crear conexión SSL</p>
+</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENVIRONMENT'><a class='permalink' href='#ENVIRONMENT'>ENTORNO</a></h1>
+<p class="Pp">La variable de entorno
+<span class="Li">&quot;PTDEBUG&quot;</span> habilita la salida detallada de
+depuración a STDERR. Para habilitar la depuración y capturar toda la salida en
+un archivo, ejecute la herramienta de la siguiente manera:</p>
+<pre>PTDEBUG=1 pt-query-digest ... &gt; FILE 2&gt;&amp;1</pre>
+<p class="Pp">Tenga cuidado: la salida de depuración es voluminosa y puede generar
+varios megabytes de salida.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ATTENTION'><a class='permalink' href='#ATTENTION'>ATENCIÓN</a></h1>
+<p class="Pp">Usar &lt;PTDEBUG&gt; podría exponer contraseñas. Cuando la depuración
+está habilitada, todos los parámetros de la línea de comandos se muestran en la
+salida.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYSTEM_REQUIREMENTS'><a class='permalink' href='#SYSTEM_REQUIREMENTS'>REQUISITOS DEL SISTEMA</a></h1>
+<p class="Pp">Necesita Perl, DBI, DBD::mysql y algunos paquetes básicos que
+deberían estar instalados en cualquier versión razonablemente nueva de Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>ERRORES</a></h1>
+<p class="Pp">Para ver una lista de errores conocidos, visite
+<a href='https://jira.percona.com/projects/PT/issues'>https://jira.percona.com/projects/PT/issues</a>.</p>
+<p class="Pp">Por favor, reporte errores en
+<a href='https://jira.percona.com/projects/PT'>https://jira.percona.com/projects/PT</a>. Incluya la siguiente
+información en su informe de error:</p>
+<ul class="Bl-bullet">
+<li>Comando completo utilizado para ejecutar la herramienta</li>
+<li>&quot;--version&quot; de la herramienta</li>
+<li>Versión de MySQL de todos los servidores involucrados</li>
+<li>Salida de la herramienta, incluido STDERR</li>
+<li>Archivos de entrada (registros/volcados/archivos de configuración, etc.)</li>
+</ul>
+<p class="Pp">Si es posible, incluya la salida de depuración ejecutando la
+herramienta con
+<span class="Li">&quot;PTDEBUG&quot;</span>; consulte
+&quot;ENTORNO&quot;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DOWNLOADING'><a class='permalink' href='#DOWNLOADING'>DESCARGA</a></h1>
+<p class="Pp">Visite <a href='http://www.percona.com/software/percona-toolkit/'>http://www.percona.com/software/percona-toolkit/</a>
+para descargar la última versión de Percona Toolkit. O, obtenga la última
+versión desde la línea de comandos:</p>
+<pre>wget percona.com/get/percona-toolkit.tar.gz
+wget percona.com/get/percona-toolkit.rpm
+wget percona.com/get/percona-toolkit.deb</pre>
+<p class="Pp">También puede obtener herramientas individuales de la última
+versión:</p>
+<pre>wget percona.com/get/TOOL</pre>
+<p cl
+<section class="Sh">
+<h1 class="Sh" id='ATTRIBUTES_REFERENCE'><a class='permalink' href='#ATTRIBUTES_REFERENCE'>REFERENCIA   DE ATRIBUTOS</a></h1>
+<p class="Pp">Los eventos pueden tener los siguientes atributos. Si estás escribiendo un
+    filtro, asegúrate de que un atributo esté definido en cada evento antes de usarlo,
+    de lo contrario, el código del filtro podría bloquear la herramienta con un
+    error de &quot;uso de valor no inicializado&quot;.</p>
+<p class="Pp">Puedes volcar los atributos de eventos para cualquier entrada como:</p>
+<pre>$ pt-query-digest                  \
+    slow.log                       \
+    --filter 'print Dumper $event' \
+    --no-report                    \
+    --sample 1</pre>
+<p class="Pp">Eso producirá una gran cantidad de salida con pares de
+    &quot;atributo =&gt; valor&quot; como:</p>
+<pre>$VAR1 = {
+  Query_time =&gt; '0.033384',
+  Rows_examined =&gt; '0',
+  Rows_sent =&gt; '0',
+  Thread_id =&gt; '10',
+  Tmp_table =&gt; 'No',
+  Tmp_table_on_disk =&gt; 'No',
+  arg =&gt; 'SELECT col FROM tbl WHERE id=5',
+  bytes =&gt; 103,
+  cmd =&gt; 'Query',
+  db =&gt; 'db1',
+  fingerprint =&gt; 'select col from tbl where id=?',
+  host =&gt; '',
+  pos_in_log =&gt; 1334,
+  ts =&gt; '071218 11:48:27',
+  user =&gt; '[SQL_SLAVE]'
+};</pre>
+<section class="Ss">
+<h2 class="Ss" id='COMMON'><a class='permalink' href='#COMMON'>COMÚN</a></h2>
+<p class="Pp">Estos atributos son comunes a todos los &quot;--type&quot; de entrada y
+    &quot;--processlist&quot;, excepto donde se indique lo contrario.</p>
+<dl class="Bl-tag">
+  <dt id="arg"><a class="permalink" href="#arg">arg</a></dt>
+  <dd>El texto de la consulta, o el comando para comandos de administración como
+      <span class="Li">&quot;Ping&quot;</span>.</dd>
+  <dt id="bytes"><a class="permalink" href="#bytes">bytes</a></dt>
+  <dd>La longitud en bytes del <span class="Li">&quot;arg&quot;</span>.</dd>
+  <dt id="cmd"><a class="permalink" href="#cmd">cmd</a></dt>
+  <dd>&quot;Query&quot; o &quot;Admin&quot;.</dd>
+  <dt id="db"><a class="permalink" href="#db">db</a></dt>
+  <dd>La base de datos actual. El valor proviene de las sentencias USE database. Por
+      defecto, <span class="Li">&quot;Schema&quot;</span> es un alias que se cambia
+      automáticamente a <span class="Li">&quot;db&quot;</span>; ver
+      &quot;--attribute-aliases&quot;.</dd>
+  <dt id="fingerprint~2"><a class="permalink" href="#fingerprint~2">fingerprint</a></dt>
+  <dd>Una forma abstracta de la consulta. Ver &quot;FINGERPRINTS&quot;.</dd>
+  <dt id="host~2"><a class="permalink" href="#host~2">host</a></dt>
+  <dd>El host del cliente que ejecutó la consulta.</dd>
+  <dt id="pos_in_log"><a class="permalink" href="#pos_in_log">pos_in_log</a></dt>
+  <dd>El desplazamiento en bytes del evento en el log o tcpdump, excepto para
+      &quot;--processlist&quot;.</dd>
+  <dt id="Query_time"><a class="permalink" href="#Query_time">Query_time</a></dt>
+  <dd>El tiempo total que tardó la consulta, incluido el tiempo de bloqueo.</dd>
+  <dt id="ts"><a class="permalink" href="#ts">ts</a></dt>
+  <dd>La marca de tiempo de cuándo finalizó la consulta.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='SLOW,_GENERAL,_AND_BINARY_LOGS'><a class='permalink' href='#SLOW,_GENERAL,_AND_BINARY_LOGS'>LOGS LENTOS, GENERALES Y BINARIOS</a></h2>
+<p class="Pp">Los eventos tienen todos los atributos disponibles del archivo de log.
+    Por lo tanto, solo necesitas mirar el archivo de log para ver qué eventos están
+    disponibles, pero recuerda: no todos los eventos tienen los mismos
+    atributos.</p>
+<p class="Pp">Percona Server añade muchos atributos al log lento; ver
+    <a href='http://www.percona.com/docs/wiki/patches:slow_extended'>http://www.percona.com/docs/wiki/patches:slow_extended</a> para más
+    información.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='TCPDUMP'><a class='permalink' href='#TCPDUMP'>TCPDUMP</a></h2>
+<p class="Pp">Estos atributos están disponibles cuando se parsea &quot;--type&quot;
+    tcpdump.</p>
+<dl class="Bl-tag">
+  <dt id="Error_no"><a class="permalink" href="#Error_no">Error_no</a></dt>
+  <dd>El número de error de MySQL si la consulta causó un error.</dd>
+  <dt id="ip"><a class="permalink" href="#ip">ip</a></dt>
+  <dd>La dirección IP del cliente. Ciertos archivos de log también pueden contener
+      este atributo.</dd>
+  <dt id="No_good_index_used"><a class="permalink" href="#No_good_index_used">No_good_index_used</a></dt>
+  <dd>Sí o No si no existía un buen índice para la consulta (bandera establecida por
+      el servidor).</dd>
+  <dt id="No_index_used"><a class="permalink" href="#No_index_used">No_index_used</a></dt>
+  <dd>Sí o No si la consulta no utilizó ningún índice (bandera establecida por el
+      servidor).</dd>
+  <dt id="port~2"><a class="permalink" href="#port~2">port</a></dt>
+  <dd>El número de puerto del cliente.</dd>
+  <dt id="Warning_count"><a class="permalink" href="#Warning_count">Warning_count</a></dt>
+  <dd>El número de advertencias, como se muestra de otra manera con <span class="Li">&quot;SHOW
+      WARNINGS&quot;</span>.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='PROCESSLIST'><a class='permalink' href='#PROCESSLIST'>PROCESSLIST</a></h2>
+<p class="Pp">Si se usa &quot;--processlist&quot;, hay un atributo
+    <span class="Li">&quot;id&quot;</span> disponible para el ID del proceso, además
+    de los atributos comunes.</dd>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORES</a></h1>
+<p class="Pp">Baron Schwartz, Daniel Nichter y Brian Fraser</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ABOUT_PERCONA_TOOLKIT'><a class='permalink' href='#ABOUT_PERCONA_TOOLKIT'>SOBRE PERCONA TOOLKIT</a></h1>
+<p class="Pp">Esta herramienta es parte de Percona Toolkit, una colección de
+    herramientas de línea de comandos avanzadas para MySQL desarrolladas por
+    Percona. Percona Toolkit se bifurcó de dos proyectos en junio de 2011:
+    Maatkit y Aspersa. Esos proyectos fueron creados por Baron Schwartz y
+    desarrollados principalmente por él y Daniel Nichter. Visita
+    <a href='http://www.percona.com/software/'>http://www.percona.com/software/</a> para conocer otro
+    software gratuito y de código abierto de Percona.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT,_LICENSE,_AND_WARRANTY'><a class='permalink' href='#COPYRIGHT,_LICENSE,_AND_WARRANTY'>DERECHOS DE AUTOR, LICENCIA Y GARANTÍA</a></h1>
+<p class="Pp">Este programa tiene derechos de autor 2008-2024 Percona LLC y/o sus
+    afiliados.</p>
+<p class="Pp">ESTE PROGRAMA SE PROPORCIONA &quot;TAL CUAL&quot; Y SIN NINGUNA
+    GARANTÍA EXPRESA O IMPLÍCITA, INCLUIDAS, ENTRE OTRAS, LAS GARANTÍAS
+    IMPLÍCITAS DE COMERCIABILIDAD Y ADECUACIÓN PARA UN PROPÓSITO PARTICULAR.</p>
+<p class="Pp">Este programa es software libre; puedes redistribuirlo y/o modificarlo
+    bajo los términos de la Licencia Pública General de GNU publicada por la Free
+    Software Foundation, versión 2; O la Licencia Artística de Perl. En sistemas
+    UNIX y similares, puedes ejecutar `man perlgpl` o `man perlartistic` para
+    leer estas licencias.</p>
+<p class="Pp">Deberías haber recibido una copia de la Licencia Pública General de
+    GNU junto con este programa; si no es así, escribe a la Free Software
+    Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
+    USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSIÓN</a></h1>
+<p class="Pp">pt-query-digest 3.7.0</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='POD_ERRORS'><a class='permalink' href='#POD_ERRORS'>ERRORES DE POD</a></h1>
+<p class="Pp">¡Oye! <b>El documento anterior tuvo algunos errores de codificación, que se
+    explican a continuación:</b></p>
+<dl class="Bl-tag">
+  <dt id="Around"><a class="permalink" href="#Around">Alrededor de la línea
+    16813:</a></dt>
+  <dd>Carácter no ASCII visto antes de =encoding en 'Percona&#x2019;s'. Asumiendo
+      UTF-8</dd>
+</dl>
+</section>

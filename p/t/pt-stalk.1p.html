@@ -1,0 +1,695 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-stalk(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-stalk(1p)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/percona-toolkit/">percona-toolkit</a></p>
+<p class="lic">Licencias: GPL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-STALK(1p)</td>
+    <td class="head-vol">Documentación Perl contribuida por el usuario</td>
+    <td class="head-rtitle">PT-STALK(1p)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pt-stalk - Recopilar datos forenses de MySQL cuando ocurren problemas.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-stalk [OPCIONES]</p>
+<p class="Pp">pt-stalk espera a que ocurra una condición de activación y luego
+    recopila datos para ayudar a diagnosticar problemas. La herramienta está
+    diseñada para ejecutarse como un demonio con privilegios de root, para que
+    pueda diagnosticar problemas intermitentes que no puede observar
+    directamente. También puede usarla para ejecutar un comando personalizado o
+    para recopilar datos bajo demanda sin esperar a que ocurra el activador.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RIESGOS'><a class='permalink' href='#RIESGOS'>RIESGOS</a></h1>
+<p class="Pp">Percona Toolkit es maduro, probado en el mundo real y bien
+    verificado, pero todas las herramientas de bases de datos pueden suponer un
+    riesgo para el sistema y el servidor de la base de datos. Antes de usar esta
+    herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lea la documentación de la herramienta</li>
+  <li>Revise los &quot;BUGS&quot; conocidos de la herramienta</li>
+  <li>Pruebe la herramienta en un servidor no productivo</li>
+  <li>Haga una copia de seguridad de su servidor de producción y verifique las
+    copias de seguridad</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">A veces, un problema ocurre con poca frecuencia y durante un corto
+    período de tiempo, dándole ninguna oportunidad de ver el sistema cuando
+    ocurre. ¿Cómo resuelve problemas intermitentes de MySQL cuando no puede
+    observarlos? Para eso existe pt-stalk. Además de usarla cuando hay un
+    problema conocido en sus servidores, es una buena idea ejecutar pt-stalk
+    todo el tiempo, incluso cuando cree que nada está mal. Apreciará los datos
+    que recopila cuando ocurre un problema, ya que problemas como bloqueos de
+    MySQL o picos de actividad típicamente no dejan evidencia para usar en el
+    análisis de causa raíz.</p>
+<p class="Pp">pt-stalk hace dos cosas: observa un servidor MySQL y espera a que
+    ocurra una condición de activación, y recopila datos de diagnóstico cuando
+    esa activación ocurre. Para evitar falsos positivos causados por problemas
+    de corta duración, la condición de activación debe ser verdadera al menos
+    &quot;--cycles&quot; veces antes de que se active una recopilación
+    &quot;--collect&quot;.</p>
+<p class="Pp">Para usar pt-stalk de manera efectiva, necesita definir un buen
+    activador. Un buen activador es lo suficientemente sensible como para
+    dispararse de manera confiable cuando ocurre un problema, para que no pierda
+    la oportunidad de resolver problemas. Por otro lado, un buen activador no es
+    propenso a falsos positivos, por lo que no recopila información cuando el
+    servidor funciona normalmente.</p>
+<p class="Pp">Los activadores más confiables para MySQL tienden a ser el número de
+    conexiones al servidor y el número de consultas ejecutándose
+    concurrentemente. Estos están disponibles en el comando SHOW GLOBAL STATUS
+    como Threads_connected y Threads_running. A veces, Threads_connected no es
+    un indicador confiable de problemas, pero Threads_running sí lo es
+    generalmente. Su trabajo, como usuario de la herramienta, es definir una
+    condición de activación apropiada para la herramienta. Elija con cuidado,
+    ya que la calidad de sus resultados dependerá del activador que elija.</p>
+<p class="Pp">Define el activador con las opciones &quot;--function&quot;,
+    &quot;--variable&quot;, &quot;--threshold&quot; y &quot;--cycles&quot;. Los
+    valores predeterminados para estas opciones definen un activador razonable,
+    pero debe ajustarlos o cambiarlos para adaptarse a su sistema y necesidades
+    particulares.</p>
+<p class="Pp">Por defecto, la herramienta pt-stalk observa MySQL para siempre
+    hasta que ocurre el activador, luego recopila datos de diagnóstico durante un
+    tiempo y duerme después para evitar recopilar datos repetidamente si el
+    activador permanece verdadero. El orden general de las operaciones es:</p>
+<pre>while true; do
+   if --variable de --function &gt; --threshold; then
+      cycles_true++
+      if cycles_true &gt;= --cycles; then
+         --notify-by-email
+         if --collect; then
+            if --disk-bytes-free y --disk-pct-free ok; then
+               (--collect para --run-time segundos) &amp;
+            fi
+            rm archivos en --dest anteriores a --retention-time
+         fi
+         iter++
+         cycles_true=0
+      fi
+      if iter &lt; --iterations; then
+         sleep segundos --sleep
+      else
+         break
+      fi
+   else
+      if iter &lt; --iterations; then
+         sleep segundos --interval
+      else
+         break
+      fi
+   fi
+done
+rm archivos viejos en --dest anteriores a --retention-time
+if procesos --collect siguen en ejecución; then
+   esperar hasta --run-time * 3 segundos
+   matar cualquier proceso --collect restante
+fi</pre>
+<p class="Pp">Los datos de diagnóstico se escriben en archivos cuyos nombres
+    comienzan con una marca de tiempo, por lo que puede distinguir las muestras
+    entre sí en caso de que la herramienta recopile datos varias veces. La
+    herramienta pt-sift está diseñada para ayudarlo a explorar y analizar las
+    muestras de datos resultantes.</p>
+<p class="Pp">Aunque esto suena lo suficientemente simple, en la práctica hay una
+    serie de sutilezas, como detectar cuándo el disco está empezando a llenarse
+    para que la herramienta no provoque que el servidor se quede sin espacio en
+    disco. Esta herramienta maneja este tipo de problemas potenciales, por lo que
+    es una buena idea usar esta herramienta en lugar de escribir algo desde cero
+    y posiblemente experimentar algunos de los peligros que esta herramienta
+    está diseñada para evitar.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN'><a class='permalink' href='#CONFIGURACIÓN'>CONFIGURACIÓN</a></h1>
+<p class="Pp">Puede usar los archivos de configuración estándar de Percona Toolkit
+    para establecer opciones de línea de comandos.</p>
+<p class="Pp">Probablemente querrá ejecutar la herramienta como un demonio y
+    personalizar al menos el &quot;--threshold&quot;. Aquí hay un archivo de
+    configuración de ejemplo para activarse cuando hay más de 20 consultas
+    ejecutándose a la vez:</p>
+<pre>daemonize
+threshold=20</pre>
+<p class="Pp">Si no ejecuta la herramienta como root, deberá especificar varias
+    opciones, como &quot;--pid&quot;, &quot;--log&quot; y &quot;--dest&quot;, de
+    lo contrario, la herramienta probablemente fallará al iniciarse.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES'><a class='permalink' href='#OPCIONES'>OPCIONES</a></h1>
+<dl class="Bl-tag">
+  <dt id="preguntar"><a class="permalink" href="#preguntar">--ask-pass</a></dt>
+  <dd>Solicitar una contraseña al conectarse a MySQL.</dd>
+  <dt id="recolectar"><a class="permalink" href="#recolectar">--collect</a></dt>
+  <dd>predeterminado: sí; negable: sí
+    <p class="Pp">Recopilar datos de diagnóstico cuando ocurre el activador.
+        Especifique <span class="Li">&quot;--no-collect&quot;</span> para que la
+        herramienta observe el sistema pero no recopile datos.</p>
+    <p class="Pp">Ver también &quot;--stalk&quot;.</p>
+  </dd>
+  <dt>--collect-gdb</dt>
+  <dd>Recopilar volcados de pila de GDB. Esto se logra adjuntándose a MySQL e
+      imprimiendo volcados de pila de todos los hilos. Esto congelará el servidor
+      durante un período de tiempo, que varía desde un segundo aproximadamente
+      hasta mucho más tiempo en sistemas muy ocupados con mucha memoria y muchos
+      hilos en el servidor. Por esta razón, está deshabilitado por defecto. Sin
+      embargo, si está intentando diagnosticar un bloqueo o congelamiento del
+      servidor, congelar el servidor no causa daño adicional, y los volcados de
+      pila pueden ser vitales para el diagnóstico.
+    <p class="Pp">Además de congelar el servidor, también existe el riesgo de que
+        el servidor se bloquee o funcione mal después de que GDB se desconecte
+        de él.</p>
+  </dd>
+  <dt>--collect-oprofile</dt>
+  <dd>Recopilar datos de oprofile. Esto se logra iniciando una sesión de oprofile,
+      dejándola ejecutarse durante el tiempo de recopilación, y luego deteniéndola
+      y guardando los datos de perfil resultantes en la ubicación predeterminada
+      del sistema. Lea la documentación de oprofile de su sistema para
+      aprender más al respecto.</dd>
+  <dt>--collect-strace</dt>
+  <dd>Recopilar datos de strace. Esto se logra adjuntando strace al servidor, lo
+      que hará que funcione muy lentamente hasta que strace se desconecte. Las
+      mismas precauciones se aplican a las enumeradas en --collect-gdb. No debe
+      habilitar esta opción junto con --collect-gdb, ya que GDB y strace no
+      pueden adjuntarse al proceso del servidor simultáneamente.</dd>
+  <dt>--collect-tcpdump</dt>
+  <dd>Recopilar datos de tcpdump. Esta opción hace que tcpdump capture todo el
+      tráfico en todas las interfaces para el puerto en el que escucha MySQL.
+      Más tarde, puede usar pt-query-digest para decodificar el protocolo MySQL
+      y extraer un registro de tráfico de consultas de él.</dd>
+  <dt id="config"><a class="permalink" href="#config">--config</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Lea esta lista de archivos de configuración separados por
+        comas. Si se especifica, esta debe ser la primera opción en la línea de
+        comandos.</p>
+  </dd>
+  <dt id="ciclos"><a class="permalink" href="#ciclos">--cycles</a></dt>
+  <dd>tipo: int; predeterminado: 5
+    <p class="Pp">¿Cuántas veces debe &quot;--variable&quot; ser mayor que
+        &quot;--threshold&quot; antes de activar &quot;--collect&quot;? Esto
+        ayuda a prevenir falsos positivos y hace que la condición de
+        activación sea menos probable que se dispare cuando el problema se
+        recupera rápidamente.</p>
+  </dd>
+  <dt id="daemonizar"><a class="permalink" href="#daemonizar">--daemonize</a></dt>
+  <dd>Daemonizar la herramienta. Esto hace que la herramienta se bifurque en segundo
+      plano y registre su salida según lo especificado en --log.</dd>
+  <dt id="valores-predeterminados"><a class="permalink" href="#valores-predeterminados">--defaults-file</a></dt>
+  <dd>forma corta: -F; tipo: string
+    <p class="Pp">Lea solo las opciones de mysql del archivo dado. Debe
+        proporcionar una ruta de nombre de archivo absoluta.</p>
+  </dd>
+  <dt id="destino"><a class="permalink" href="#destino">--dest</a></dt>
+  <dd>tipo: string; predeterminado: /var/lib/pt-stalk
+    <p class="Pp">Dónde guardar los datos de diagnóstico de &quot;--collect&quot;.
+        Cada</p>
+  </dd>
+</dl>
+</section>
+
+</div>
+</section>
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+[
+  {
+    "type": "text",
+    "value": "el momento en que la herramienta recopila datos, escribe en un nuevo conjunto de archivos, que se nombran con la marca de tiempo actual del sistema.</p>\n  </dd>\n  <dt id=\"disk\"><a class=\"permalink\" href=\"#disk\">--disk-bytes-free</a></dt>\n  <dd>type: size; default: 100M\n    <p class=\"Pp\">No recopile datos si el disco tiene menos espacio libre que este. Esto evita que la herramienta llene el disco con datos de diagnóstico.</p>\n    <p class=\"Pp\">Si el directorio de \"--dest\" contiene una muestra de datos capturada previamente, la herramienta medirá su tamaño y lo utilizará como una estimación de cuántos datos es probable que se recopilen esta vez también. Será aún más pesimista y se negará a recopilar datos a menos que el disco tenga suficiente espacio libre para contener la muestra y aún así tener la cantidad deseada de espacio libre. Por ejemplo, si le gustaría tener 100 MB de espacio libre y la muestra de diagnóstico anterior consumió 100 MB, la herramienta no recopilará ningún dato a menos que el disco tenga 200 MB libres.</p>\n    <p class=\"Pp\">Los sufijos válidos para los valores de tamaño son k, M, G y T.</p>\n  </dd>\n  <dt id=\"disk~2\"><a class=\"permalink\" href=\"#disk~2\">--disk-pct-free</a></dt>\n  <dd>type: int; default: 5\n    <p class=\"Pp\">No recopile datos si el disco tiene menos de este porcentaje de espacio libre. Esto evita que la herramienta llene el disco con datos de diagnóstico.</p>\n    <p class=\"Pp\">Esta opción funciona de manera similar a \"--disk-bytes-free\" pero especifica un margen de seguridad en porcentaje en lugar de un margen de seguridad en bytes. La herramienta respeta ambas opciones y no recopilará ningún dato a menos que se cumplan ambos márgenes.</p>\n  </dd>\n  <dt id=\"function\"><a class=\"permalink\" href=\"#function\">--function</a></dt>\n  <dd>type: string; default: status\n    <p class=\"Pp\">Qué observar para el disparador. El valor predeterminado observa <span class=\"Li\">\"SHOW GLOBAL STATUS\"</span>, pero también puede observar <span class=\"Li\">\"SHOW PROCESSLIST\"</span> y especificar un archivo con su propio código personalizado. Esta función proporciona el valor de \"--variable\", que luego se compara con \"--threshold\" para ver si se cumple la condición del disparador. Es posible que también se requieran opciones adicionales; consulte a continuación. Los valores posibles son:</p>\n  </dd>\n</dl>\n<div class=\"Bd-indent\">\n<ul class=\"Bl-bullet\">\n  <li>status\n    <p class=\"Pp\">Observe <span class=\"Li\">\"SHOW GLOBAL STATUS\"</span> para el disparador. El valor de \"--variable\" define qué contador de estado es el disparador.</p>\n  </li>\n  <li>processlist\n    <p class=\"Pp\">Observe <span class=\"Li\">\"SHOW FULL PROCESSLIST\"</span> para el disparador. El valor del disparador es el recuento de procesos cuya columna de \"--variable\" coincide con la opción \"--match\". Por ejemplo, para disparar \"--collect\" cuando más de 10 procesos están en el estado \"statistics\", especifique:</p>\n    <pre>--function processlist \\\n--variable State       \\\n--match statistics     \\\n--threshold 10\n</pre>\n  </li>\n</ul>\n</div>\n<div class=\"Bd-indent\">\n<p class=\"Pp\">Además, puede especificar un archivo que contenga su función de disparador personalizada, escrita en script de shell de Unix. Puede ser un script de envoltura que ejecute lo que desee. Si el argumento para \"--function\" es un archivo, tiene prioridad sobre las funciones integradas, por lo que si hay un archivo en el directorio de trabajo llamado \"status\" o \"processlist\", la herramienta utilizará ese archivo aunque sean valores integrados válidos.</p>\n<p class=\"Pp\">El archivo funciona proporcionando una función llamada <span class=\"Li\">\"trg_plugin\"</span>, y la herramienta simplemente carga el archivo y ejecuta la función. Por ejemplo, el archivo podría contener:</p>\n<pre>trg_plugin() {\n   mysql $EXT_ARGV -e \"SHOW ENGINE INNODB STATUS\"\n     | grep -c \"has waited at\"\n}\n</pre>\n<p class=\"Pp\">Este fragmento contará el número de esperas de mutex dentro de InnoDB. Ilustra el principio general: la función debe generar un número, que luego se compara con \"--threshold\" como de costumbre. La variable <span class=\"Li\">$EXT_ARGV</span> contiene las opciones de MySQL mencionadas en la \"SYNOPSIS\" anterior.</p>\n<p class=\"Pp\">El archivo no debe alterar las variables globales existentes de la herramienta. Prefije cualquier variable global específica del archivo con <span class=\"Li\">\"PLUGIN_\"</span> o hágalas locales.</p>\n</div>\n<dl class=\"Bl-tag\">\n  <dt id=\"help\"><a class=\"permalink\" href=\"#help\">--help</a></dt>\n  <dd>Imprima la ayuda y salga.</dd>\n  <dt id=\"host\"><a class=\"permalink\" href=\"#host\">--host</a></dt>\n  <dd>forma corta: -h; type: string\n    <p class=\"Pp\">Host al que conectarse.</p>\n  </dd>\n  <dt id=\"interval\"><a class=\"permalink\" href=\"#interval\">--interval</a></dt>\n  <dd>type: int; default: 1\n    <p class=\"Pp\">Con qué frecuencia verificar si el disparador es verdadero, en segundos.</p>\n  </dd>\n  <dt id=\"iterations\"><a class=\"permalink\" href=\"#iterations\">--iterations</a></dt>\n  <dd>type: int\n    <p class=\"Pp\">Cuántas veces recopilar datos de diagnóstico. Por defecto, la herramienta se ejecuta indefinidamente y recopila datos cada vez que ocurre el disparador. Especifique \"--iterations\" para recopilar datos un número limitado de veces. Esta opción también es útil con <span class=\"Li\">\"--no-stalk\"</span> para recopilar datos una vez y salir, por ejemplo.</p>\n  </dd>\n  <dt id=\"log\"><a class=\"permalink\" href=\"#log\">--log</a></dt>\n  <dd>type: string; default: /var/log/pt-stalk.log\n    <p class=\"Pp\">Imprimir toda la salida en este archivo cuando esté demonizado.</p>\n  </dd>\n  <dt id=\"match\"><a class=\"permalink\" href=\"#match\">--match</a></dt>\n  <dd>type: string\n    <p class=\"Pp\">El patrón a usar al observar SHOW PROCESSLIST. Consulte \"--function\" para obtener detalles.</p>\n  </dd>\n  <dt id=\"notify\"><a class=\"permalink\" href=\"#notify\">--notify-by-email</a></dt>\n  <dd>type: string\n    <p class=\"Pp\">Enviar un correo electrónico a estas direcciones por cada \"--collect\".</p>\n  </dd>\n  <dt id=\"password\"><a class=\"permalink\" href=\"#password\">--password</a></dt>\n  <dd>forma corta: -p; type: string\n    <p class=\"Pp\">Contraseña a utilizar al conectarse. Si la contraseña contiene comas, deben escaparse con una barra invertida: &quot;exam\\,ple&quot;</p>\n  </dd>\n  <dt id=\"pid\"><a class=\"permalink\" href=\"#pid\">--pid</a></dt>\n  <dd>type: string; default: /var/run/pt-stalk.pid\n    <p class=\"Pp\">Crear el archivo PID especificado. La herramienta no se iniciará si el archivo PID ya existe y el PID que contiene es diferente del PID actual. Sin embargo, si el archivo PID existe y el PID que contiene ya no se está ejecutando, la herramienta sobrescribirá el archivo PID con el PID actual. El archivo PID se elimina automáticamente cuando la herramienta se cierra.</p>\n  </dd>\n  <dt id=\"plugin\"><a class=\"permalink\" href=\"#plugin\">--plugin</a></dt>\n  <dd>type: string\n    <p class=\"Pp\">Cargar un plugin para engancharse a la herramienta y extender su funcionalidad. El archivo especificado no necesita ser ejecutable, ni su primera línea necesita ser una línea shebang. Solo necesita definir una o más de estas funciones de Bash:</p>\n  </dd>\n</dl>\n<div class=\"Bd-indent\">\n<dl class=\"Bl-tag\">\n  <dt id=\"before_stalk\"><a class=\"permalink\" href=\"#before_stalk\">before_stalk</a></dt>\n  <dd>Se llama antes de rastrear.</dd>\n  <dt id=\"before_collect\"><a class=\"permalink\" href=\"#before_collect\">before_collect</a></dt>\n  <dd>Se llama cuando ocurre el disparador, antes de ejecutar un subproceso de \"--collect\" en segundo plano.</dd>\n  <dt id=\"after_collect\"><a class=\"permalink\" href=\"#after_collect\">after_collect</a></dt>\n  <dd>Se llama después de ejecutar un proceso recopilador. El PID del proceso recopilador se pasa como primer argumento. Este hook se llama antes de <span class=\"Li\">\"after_collect_sleep\"</span>.</dd>\n  <dt id=\"after_collect_sleep\"><a class=\"permalink\" href=\"#after_collect_sleep\">after_collect_sleep</a></dt>\n  <dd>Se llama después de dormir <span class=\"Li\">\"--sleep\"</span> segundos para que el proceso recopilador termine. Este hook se llama después de <span class=\"Li\">\"after_collect\"</span>.</dd>\n  <dt id=\"after_interval_sleep\"><a class=\"permalink\" href=\"#after_interval_sleep\">after_interval_sleep</a></dt>\n  <dd>Se llama después de dormir <span class=\"Li\">\"--interval\"</span> segundos después de cada verificación del disparador.</dd>\n  <dt id=\"after_stalk\"><a class=\"permalink\" href=\"#after_stalk\">after_stalk</a></dt>\n  <dd>Se llama después de rastrear. Dado que pt-stalk rastrea indefinidamente por defecto, este hook solo se llama si se especifica \"--iterations\".</dd>\n</dl>\n</div>\n<div class=\"Bd-indent\">\n<p class=\"Pp\">Por ejemplo, un plugin muy simple que toca un archivo cuando se dispara \"--collect\":</p>\n<pre>before_collect() {\n   touch /tmp/foo\n}\n</pre>\n<p class=\"Pp\">Dado que el plugin se carga completamente (se importa) en el espacio de nombres de la herramienta, tenga cuidado de no definir otras funciones o variables globales que ya existan en la herramienta. Debe prefijar todas las funciones y variables globales específicas del plugin con <span class=\"Li\">\"plugin_\"</span> o <span class=\"Li\">\"PLUGIN_\"</span>.</p>\n<p class=\"Pp\">Los plugins tienen acceso a todas las opciones de la línea de comandos, pero no deben modificarlas. Cada opción es una variable global como <span class=\"Li\">$OPT_DEST</span> que corresponde a \"--dest\". Por lo tanto, la variable global para cada opción de línea de comandos es <span class=\"Li\">\"OPT_\"</span> más el nombre de la opción en mayúsculas y reemplazando los guiones por guiones bajos.</p>\n<p class=\"Pp\">Los plugins pueden detener la herramienta estableciendo la variable global <span class=\"Li\">\"OKTORUN\"</span> a <span class=\"Li\">1</span>. En este caso, la variable global <span class=\"Li\">\"EXIT_REASON\"</span> también debe establecerse para indicar por qué se detuvo la herramienta.</p>\n<p class=\"Pp\">Los escritores de plugins deben tener en cuenta que el prefijo de destino del archivo actualmente en uso debe accederse a través de la variable <span class=\"Li\">$prefix</span>, en lugar de <span class=\"Li\">$OPT_PREFIX</span>.</p>\n</div>\n<dl class=\"Bl-tag\">\n  <dt id=\"mysql\"><a class=\"permalink\" href=\"#mysql\">--mysql-only</a></dt>\n  <dd>Disparar solo capturas relacionadas con MySQL, ignorando todas las demás. El único valor no relacionado con MySQL que se recopila es el espacio en disco, porque es necesario para calcular el espacio libre disponible en disco para escribir los archivos de resultado. Esta opción es útil para instancias de RDS.</dd>\n  <dt id=\"port\"><a class=\"permalink\" href=\"#port\">--port</a></dt>\n  <dd>forma corta: -P; type: int\n    <p class=\"Pp\">Número de puerto a utilizar para la conexión.</p>\n  </dd>\n  <dt id=\"prefix\"><a class=\"permalink\" href=\"#prefix\">--prefix</a></dt>\n  <dd>type: string\n    <p class=\"Pp\">El prefijo del nombre de archivo para las muestras de diagnóstico. Por defecto, todos los archivos creados por la misma instancia de \"--collect\" tienen un prefijo de marca de tiempo basado en la hora local actual, como <span class=\"Li\">\"2011_12_06_14_02_02\"</span>, que es el 6 de diciembre de 2011 a las 14:02:02.</p>\n  </dd>\n  <dt id=\"retention\"><a class=\"permalink\" href=\"#retention\">--retention-count</a></dt>\n  <dd>type: int; default: 0\n    <p class=\"Pp\">Mantener los datos de las últimas N ejecuciones. Si N &gt; 0, el programa mantendrá los datos de las últimas N ejecuciones y eliminará los datos más antiguos.</p>\n  </dd>\n  <dt id=\"retention~2\"><a class=\"permalink\" href=\"#retention~2\">--retention-size</a></dt>\n  <dd>type: int; default: 0\n    <p class=\"Pp\">Mantener hasta --retention-size MB de datos. Mantendrá al menos 1 ejecución incluso si el tamaño es mayor que el especificado en este parámetro.</p>\n  </dd>\n  <dt id=\"retention~3\"><a class=\"permalink\" href=\"#retention~3\">--retention-time</a></dt>\n  <dd>type: int; default: 30\n    <p class=\"Pp\">Número de días para conservar las muestras recopiladas. Cualquier muestra que</p>\n  </dd>\n</dl>"
+  }
+]
+-
+  =
+  --run-time:
+    description: |
+      Cuánto tiempo se ejecutará
+      `--collect'
+      para recopilar datos de diagnóstico
+      cuando ocurra el
+      disparador. El valor está en segundos y no debe ser
+      más largo que `--sleep'.
+      Normalmente no es necesario cambiar esto; si el
+      valor predeterminado de 30 segundos no recopila suficientes
+      datos, es poco probable que una ejecución más larga ayude
+      porque el sistema o el servidor MySQL probablemente estén
+      demasiado ocupados para responder. De hecho, en muchos casos,
+      un período de recopilación más corto es apropiado.
+    type: int
+    default: 30
+  -
+    =
+    --sleep:
+      description: |
+        Cuánto tiempo esperar después de
+        `--collect'.
+        Esto evita que la herramienta se active
+        continuamente, lo que podría ser un problema si el
+        proceso de recopilación es intrusivo. También evita
+        llenar el disco o recopilar demasiados datos para
+        analizar razonablemente.
+      type: int
+      default: 300
+    -
+      =
+      --sleep-collect:
+        description: |
+          Cuánto tiempo esperar entre ciclos de
+          recopilación. Esto es útil con
+          `--no-stalk' para realizar recopilaciones largas.
+          Por ejemplo, para recopilar datos cada minuto durante una
+          hora, especifique:
+          `--no-stalk --run-time 3600 --sleep-collect 60'.
+        type: int
+        default: 1
+      -
+        =
+        --socket:
+          description: Archivo de socket a utilizar para la conexión.
+          short_form: -S
+          type: string
+        -
+          =
+          --stalk:
+            description: |
+              Observa el servidor y espera a que ocurra el
+              disparador. Especifique
+              `--no-stalk' para recopilar datos de diagnóstico
+              inmediatamente, es decir, sin esperar a que ocurra el
+              disparador. Probablemente también querrá especificar
+              valores para `--interval', `--iterations' y
+              `--sleep'. Por ejemplo, para recopilar datos
+              inmediatamente durante 1 minuto y luego salir, especifique:
+              `--no-stalk --run-time 60 --iterations 1'.
+              `--cycles', `--daemonize', `--log' y `--pid' no tienen
+              efecto con `--no-stalk'. Las opciones de salvaguarda,
+              como `--disk-bytes-free' y `--disk-pct-free', todavía
+              se respetan.
+              Ver también `--collect'.
+            default: true
+            negatable: true
+          -
+            =
+            --system-only:
+              description: Activa solo capturas relacionadas con el sistema operativo, ignorando todas las demás.
+            -
+              =
+              --threshold:
+                description: |
+                  El valor máximo aceptable para `--variable'.
+                  `--collect' se activa cuando el valor de
+                  `--variable' es mayor que `--threshold'
+                  durante `--cycles' veces. Actualmente, no hay forma de
+                  definir un umbral inferior para comprobar si el valor de
+                  `--variable' es demasiado bajo.
+                  Ver también `--function'.
+                type: int
+                default: 25
+              -
+                =
+                --user:
+                  description: Usuario para iniciar sesión si no es el usuario actual.
+                  short_form: -u
+                  type: string
+                -
+                  =
+                  --variable:
+                    description: |
+                      La variable a comparar con `--threshold'. Ver también
+                      `--function'.
+                    type: string
+                    default: Threads_running
+                  -
+                    =
+                    --verbose:
+                      description: |
+                        Imprime más o menos información mientras se ejecuta. Dado que la herramienta está diseñada para ser un demonio de larga ejecución, el nivel de verbosidad predeterminado solo imprime la información más importante. Si ejecuta la herramienta interactivamente, es posible que desee utilizar un nivel de verbosidad más alto.
+                        LEVEL PRINTS
+                        ===== =====================================
+                        0     Errors
+                        1     Warnings
+                        2     Matching triggers and collection info
+                        3     Non-matching triggers
+                      type: int
+                      default: 2
+                    -
+                      =
+                      --version:
+                        description: Imprime la versión de la herramienta y sale.
+-
+  =
+  ENVIRONMENT:
+    description: |
+      Esta herramienta no requiere variables de entorno para
+      configuración, aunque puede influirse para que funcione de
+      manera diferente a través de varias variables. Tenga en cuenta
+      que esta es una configuración experta y no debe usarse en la
+      mayoría de los casos.
+      Específicamente, las variables que se pueden establecer son:
+    variables:
+      - CMD_GDB
+      - CMD_IOSTAT
+      - CMD_MPSTAT
+      - CMD_MYSQL
+      - CMD_MYSQLADMIN
+      - CMD_OPCONTROL
+      - CMD_OPREPORT
+      - CMD_PMAP
+      - CMD_STRACE
+      - CMD_SYSCTL
+      - CMD_TCPDUMP
+      - CMD_VMSTAT
+    example: |
+      Por ejemplo, durante la recopilación se llama a iostat con un
+      argumento -dx, pero como tienes una partición NFS, también
+      necesitas la bandera -n allí. En lugar de editar el código fuente,
+      puedes llamar a pt-stalk como
+      `CMD_IOSTAT="iostat -n" pt-stalk ...'
+      lo que hará exactamente lo que necesitas. Combinado con los
+      hooks de plugin, esto te da un control detallado de lo que
+      hace la herramienta.
+      Es posible habilitar el modo `debug' en mysqladmin especificando:
+      `CMD_MYSQLADMIN="mysqladmin debug" pt-stalk params ...'
+-
+  =
+  SYSTEM_REQUIREMENTS:
+    description: |
+      Esta herramienta requiere Bash v3 o posterior. Ciertas opciones
+      requieren otros programas:
+    requirements:
+      - '"--collect-gdb"' requires '"gdb"'
+      - '"--collect-oprofile"' requires '"opcontrol"' and '"opreport"'
+      - '"--collect-strace"' requires '"strace"'
+      - '"--collect-tcpdump"' requires '"tcpdump"'
+-
+  =
+  BUGS:
+    description: |
+      Para obtener una lista de errores conocidos, consulta
+      https://jira.percona.com/projects/PT/issues.
+      Informa de los errores en
+      https://jira.percona.com/projects/PT. Incluye la siguiente
+      información en tu informe de error:
+    bug_report_info:
+      - Comando completo utilizado para ejecutar la herramienta
+      - Herramienta `"--version"'
+      - Versión de MySQL de todos los servidores implicados
+      - Salida de la herramienta, incluido STDERR
+      - Archivos de entrada (archivos de registro/volcado/configuración, etc.)
+    debug_info: |
+      Si es posible, incluye información de depuración ejecutando la
+      herramienta con `PTDEBUG'; consulta
+      `ENVIRONMENT'.
+-
+  =
+  ATTENTION:
+    description: |
+      Usar <PTDEBUG> podría exponer contraseñas. Cuando la depuración
+      está habilitada, todos los parámetros de la línea de comandos se
+      muestran en la salida.
+-
+  =
+  DOWNLOADING:
+    description: |
+      Visita http://www.percona.com/software/percona-toolkit/
+      para descargar la última versión de Percona Toolkit. O bien,
+      obten la última versión desde la línea de comandos:
+    download_commands:
+      - wget percona.com/get/percona-toolkit.tar.gz
+      - wget percona.com/get/percona-toolkit.rpm
+      - wget percona.com/get/percona-toolkit.deb
+    individual_tools: |
+      También puedes obtener herramientas individuales de la última
+      versión:
+    individual_tool_command: wget percona.com/get/TOOL
+    individual_tool_description: Reemplaza TOOL con el nombre de cualquier herramienta.
+-
+  =
+  AUTHORS:
+    description: |
+      Baron Schwartz, Justin Swanhart, Fernando Ipar, Daniel Nichter,
+      y Brian Fraser
+-
+  =
+  ABOUT_PERCONA_TOOLKIT:
+    description: |
+      Esta herramienta forma parte de Percona Toolkit, una colección
+      de herramientas avanzadas de línea de comandos para MySQL
+      desarrolladas por Percona. Percona Toolkit se bifurcó de dos
+      proyectos en junio de 2011: Maatkit y Aspersa. Esos proyectos
+      fueron creados por Baron Schwartz y desarrollados principalmente
+      por él y Daniel Nichter. Visita
+      http://www.percona.com/software/ para obtener más información
+      sobre otro software gratuito y de código abierto de Percona.
+-
+  =
+  COPYRIGHT,_LICENSE,_AND_WARRANTY:
+    description: |
+      Este programa tiene copyright 2011-2024 Percona LLC y/o sus
+      afiliados, 2010-2011 Baron Schwartz.
+      ESTE PROGRAMA SE PROPORCIONA "TAL CUAL" Y SIN GARANTÍAS EXPRESAS O
+      IMPLÍCITAS, INCLUYENDO, SIN LIMITACIÓN, LAS GARANTÍAS IMPLÍCITAS DE
+      COMERCIABILIDAD Y ADECUACIÓN PARA UN PROPÓSITO PARTICULAR.
+      Este programa es software libre; puedes redistribuirlo y/o modificarlo
+      bajo los términos de la GNU General Public License publicada por
+      la Free Software Foundation, versión 2; O la Perl Artistic License.
+      En sistemas UNIX y similares, puedes ejecutar `man perlgpl' o `man
+      perlartistic' para leer estas licencias.
+      Deberías haber recibido una copia de la GNU General Public License
+      junto con este programa; si no es así, escribe a la Free Software
+      Foundation, Inc., 59 Temp
+<html>
+    <head>
+        <title>pt-stalk(1p) - Percona Toolkit Documentation</title>
+        <link rel="stylesheet" type="text/css" href="/css/style.css" />
+        <meta charset="utf-8" />
+    </head>
+    <body>
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp">pt-stalk - Collects performance data and system information from MySQL servers.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Pp"><pre>pt-stalk [OPTIONS]</pre></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RISKS'><a class='permalink' href='#RISKS'>RISKS</a></h1>
+<p class="Pp">This tool is designed to collect data from your MySQL servers. It is important to understand the risks associated with its use, including potential performance impacts and data storage requirements. Ensure you have adequate disk space and understand how to interpret the collected data before deploying this tool in a production environment.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">pt-stalk is a powerful tool for collecting performance data and system information from MySQL servers. It can be used to diagnose performance issues, troubleshoot problems, and monitor server health over time. The tool can collect a wide range of data, including MySQL status variables, process lists, slow queries, system metrics, and more.</p>
+<p class="Pp">It operates by monitoring the server and collecting data at predefined intervals or when specific events occur. The collected data is stored in files, which can then be analyzed using other tools or scripts.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURING'><a class='permalink' href='#CONFIGURING'>CONFIGURING</a></h1>
+<p class="Pp">pt-stalk can be configured using command-line options or a configuration file. The configuration file allows for more detailed settings and is recommended for complex setups. Key configuration options include:</p>
+<ul class="Bl-item">
+<li class="Li">Connection details for the MySQL server.</li>
+<li class="Li">Data collection intervals and triggers.</li>
+<li class="Li">Types of data to collect.</li>
+<li class="Li">Output file locations and formats.</li>
+</ul>
+<p class="Pp">Refer to the tool's documentation for a complete list of configuration options and examples.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+<p class="Pp">pt-stalk offers a comprehensive set of options to control its behavior. Some of the most important options include:</p>
+<dl class="Bl-tag">
+<dt><b>--defaults-file</b>, <b>-f</b></dt>
+<dd>Specify a configuration file to use.</dd>
+<dt><b>--host</b>, <b>-h</b></dt>
+<dd>MySQL host to connect to.</dd>
+<dt><b>--user</b>, <b>-u</b></dt>
+<dd>MySQL user to connect with.</dd>
+<dt><b>--password</b>, <b>-p</b></dt>
+<dd>MySQL password.</dd>
+<dt><b>--interval</b>, <b>-i</b></dt>
+<dd>Interval in seconds between data collections.</dd>
+<dt><b>--collect</b></dt>
+<dd>Specify which data collectors to enable (e.g., <i>'status'</i>, <i>'processlist'</i>, <i>'slowlog'</i>).</dd>
+<dt><b>--run-time</b></dt>
+<dd>Duration in seconds to run the tool.</dd>
+<dt><b>--log-dir</b></dt>
+<dd>Directory to store the collected data files.</dd>
+</dl>
+<p class="Pp">For a full list of options, see the tool's manual page or run `pt-stalk --help`.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENVIRONMENT'><a class='permalink' href='#ENVIRONMENT'>ENVIRONMENT</a></h1>
+<p class="Pp">The tool may use environment variables for connection parameters if not specified on the command line or in a configuration file. For example, <code>MYSQL_HOST</code>, <code>MYSQL_USER</code>, <code>MYSQL_PASSWORD</code>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYSTEM_REQUIREMENTS'><a class='permalink' href='#SYSTEM_REQUIREMENTS'>SYSTEM REQUIREMENTS</a></h1>
+<p class="Pp">Requires Perl and several Perl modules, including DBD::mysql. Ensure that your system meets the necessary requirements for running Percona Toolkit.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">Report bugs to the Percona Toolkit bug tracker at <a href="https://jira.percona.com/">https://jira.percona.com/</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ATTENTION'><a class='permalink' href='#ATTENTION'>ATTENTION</a></h1>
+<p class="Pp">Running this tool can generate a significant amount of data, especially on busy servers. Ensure you have sufficient disk space and that the data collection process does not negatively impact server performance. Monitor your system closely during operation.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DOWNLOADING'><a class='permalink' href='#DOWNLOADING'>DOWNLOADING</a></h1>
+<p class="Pp">Percona Toolkit is available for download from the Percona website: <a href="https://www.percona.com/software/database-tools/percona-toolkit">https://www.percona.com/software/database-tools/percona-toolkit</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTHORS</a></h1>
+<p class="Pp">Percona Toolkit is developed by Percona Inc. and its community contributors.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ABOUT_PERCONA_TOOLKIT'><a class='permalink' href='#ABOUT_PERCONA_TOOLKIT'>ABOUT PERCONA TOOLKIT</a></h1>
+<p class="Pp">Percona Toolkit is a collection of advanced command-line tools that solve a wide range of MySQL database administration problems. It is developed and supported by Percona, the leading provider of open-source solutions for MySQL and MongoDB.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT,_LICENSE,_AND_WARRANTY'><a class='permalink' href='#COPYRIGHT,_LICENSE,_AND_WARRANTY'>COPYRIGHT, LICENSE, AND WARRANTY</a></h1>
+<p class="Pp">Copyright © 2006-2023 Percona Inc. and/or its affiliates. All rights reserved.</p>
+<p class="Pp">Percona Toolkit is free and open-source software. It is licensed under the GNU General Public License, version 2.</p>
+<p class="Pp">This software is provided "as is" without warranty of any kind, either expressed or implied, including, but not limited to, the implied warranties of merchantability and fitness for a particular purpose. See the LICENSE file for more details.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSION</a></h1>
+<p class="Pp">pt-stalk 3.7.0</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-01-01</td>
+    <td class="foot-os">perl v5.40.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/percona-toolkit/">extra/percona-toolkit</a></dd>
+        <dt>Version:</dt>
+        <dd>3.7.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.percona.com/software/database-tools/percona-toolkit">https://www.percona.com/software/database-tools/percona-toolkit</a></dd>
+        <dt>Licenses:</dt>
+        <dd>GPL</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/percona-toolkit/">/listing/extra/percona-toolkit/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#RISKS">RISKS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#CONFIGURING">CONFIGURING</a></li>
+        
+            <li><a href="#OPTIONS">OPTIONS</a></li>
+        
+            <li><a href="#ENVIRONMENT">ENVIRONMENT</a></li>
+        
+            <li><a href="#SYSTEM_REQUIREMENTS">SYSTEM REQUIREMENTS</a></li>
+        
+            <li><a href="#BUGS">BUGS</a></li>
+        
+            <li><a href="#ATTENTION">ATTENTION</a></li>
+        
+            <li><a href="#DOWNLOADING">DOWNLOADING</a></li>
+        
+            <li><a href="#AUTHORS">AUTHORS</a></li>
+        
+            <li><a href="#ABOUT_PERCONA_TOOLKIT">ABOUT PERCONA TOOLKIT</a></li>
+        
+            <li><a href="#COPYRIGHT,_LICENSE,_AND_WARRANTY">COPYRIGHT, LICENSE, AND WARRANTY</a></li>
+        
+            <li><a href="#VERSION">VERSION</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/pt-stalk.1p.en.txt">txt</a>, 
+        
+            <a href="/man/pt-stalk.1p.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tc-sfb(8) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tc-sfb(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/iproute2/">iproute2</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SFB(8)</td>
+    <td class="head-vol">Linux</td>
+    <td class="head-rtitle">SFB(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NOMBRE</a></h1>
+<p class="Pp">sfb - Stochastic Fair Blue</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SINOPSIS</a></h1>
+<p class="Pp"><b>tc qdisc ... blue</b> <b>rehash</b> milisegundos <b>db</b>
+    milisegundos <b>limit</b> paquetes <b>max</b> paquetes <b>target</b> paquetes
+    <b>increment</b> float <b>decrement</b> float <b>penalty_rate</b> paquetes
+    por segundo <b>penalty_burst</b> paquetes</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPCIÓN</a></h1>
+<p class="Pp">Stochastic Fair Blue es una qdisc sin clase para gestionar la
+    congestión basándose en el historial de pérdida de paquetes y utilización del
+    enlace, mientras se intenta evitar que los flujos no responsivos (es decir,
+    flujos que no reaccionan a las marcas de congestión o paquetes descartados)
+    afecten el rendimiento de los flujos responsivos. A diferencia de RED, donde
+    la probabilidad de marcado tiene que ser configurada, BLUE intenta
+    determinar automáticamente la probabilidad de marcado ideal.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ALGORITHM"><a class="permalink" href="#ALGORITHM">ALGORITMO</a></h1>
+<p class="Pp">El algoritmo <b>BLUE</b> mantiene una probabilidad que se utiliza para
+    marcar o descartar paquetes que van a ser encolados. Si la cola se desborda,
+    la probabilidad de marcado/descarte se incrementa. Si la cola queda vacía, la
+    probabilidad se decrementa. El algoritmo <b>Stochastic Fair Blue</b> (SFB)
+    está diseñado para proteger los flujos TCP contra flujos no responsivos.</p>
+<p class="Pp">Esta implementación de SFB mantiene 8 niveles de 16 compartimentos
+    cada uno para la contabilidad. Cada flujo se mapea en un compartimento de cada
+    nivel utilizando un valor hash por nivel.</p>
+<p class="Pp">Cada compartimento mantiene una probabilidad de marcado, que se
+    incrementa o decrementa basándose en la ocupación del compartimento. Si el
+    número de paquetes excede el tamaño de ese compartimento, la probabilidad de
+    marcado se incrementa. Si el número cae a cero, se decrementa.</p>
+<p class="Pp">La probabilidad de marcado se basa en el valor mínimo de todos los
+    compartimentos en los que se mapea un flujo, por lo tanto, cuando un flujo no
+    reacciona al marcado o a los descartes graduales de paquetes, la probabilidad
+    de marcado alcanza rápidamente uno.</p>
+<p class="Pp">En este caso, el flujo se limita a una tasa de <b>penalty_rate</b>
+    paquetes por segundo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LIMITATIONS"><a class="permalink" href="#LIMITATIONS">LIMITACIONES</a></h1>
+<p class="Pp">Debido a la naturaleza de SFB, es posible que los flujos responsivos
+    compartan todos sus compartimentos con un flujo no responsivo, lo que
+    provoca que el flujo responsivo sea identificado erróneamente como no
+    responsivo.</p>
+<p class="Pp">La probabilidad de que un flujo responsivo sea identificado
+    erróneamente depende del número de flujos no responsivos, M. Es (1 - (1 - (1
+    / 16.0)) ** M) **8, por lo que, por ejemplo, con 10 flujos no responsivos
+    aproximadamente el 0.2% de los flujos responsivos serán identificados
+    erróneamente.</p>
+<p class="Pp">Para mitigar esto, SFB realiza un re-hashing periódico para evitar
+    la clasificación errónea durante períodos prolongados.</p>
+<p class="Pp">El método de hashing predeterminado utilizará las direcciones IP de
+    origen y destino y los números de puerto si es posible, y también admite
+    protocolos de túnel. Alternativamente, también se puede configurar un
+    clasificador externo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PARAMETERS"><a class="permalink" href="#PARAMETERS">PARÁMETROS</a></h1>
+<dl class="Bl-tag">
+  <dt id="rehash"><a class="permalink" href="#rehash">rehash</a></dt>
+  <dd>Intervalo de tiempo en milisegundos cuando ocurre la perturbación de la
+      cola para evitar la detección errónea de flujos responsivos no
+      relacionados como parte de un flujo no responsivo durante períodos
+      prolongados. Predeterminado: 10 minutos.</dd>
+  <dt id="db"><a class="permalink" href="#db">db</a></dt>
+  <dd>Tiempo de espera de calentamiento de doble buffer, en milisegundos. Para
+      evitar destruir el historial de probabilidad cuando se realiza el
+      re-hashing, esta implementación mantiene un segundo conjunto de niveles/compartimentos
+      como se describe en la sección 4.4 de la referencia SFB. Mientras un conjunto
+      se usa para gestionar la cola, se calienta un segundo conjunto: cada vez que
+      un flujo se determina como no responsivo, las probabilidades de marcado en el
+      segundo conjunto se actualizan. Cuando ocurre el re-hashing, estos
+      compartimentos se utilizarán para gestionar la cola y todos los flujos no
+      responsivos pueden ser limitados en su tasa inmediatamente. Este valor
+      determina cuánto tiempo tiene que pasar antes de que el segundo conjunto
+      comience a calentarse. Predeterminado: un minuto, debe ser inferior a
+      <b>rehash</b>.</dd>
+  <dt id="limit"><a class="permalink" href="#limit">limit</a></dt>
+  <dd>Límite estricto del tamaño real (no promedio) de la cola total en paquetes.
+      Los paquetes adicionales se descartan. Predeterminado: la longitud de la
+      cola de transmisión del dispositivo al que está adjunta la qdisc.</dd>
+  <dt id="max"><a class="permalink" href="#max">max</a></dt>
+  <dd>Longitud máxima de la cola de un bucket, en paquetes, antes de que los
+      paquetes comiencen a descartarse. Debe ser ligeramente mayor que
+      <b>target</b>, pero no debe configurarse a valores que excedan 1.5 veces
+      el de <b>target</b>. Predeterminado: 25.</dd>
+  <dt id="target"><a class="permalink" href="#target">target</a></dt>
+  <dd>La longitud promedio deseada del compartimento. Si la longitud de la cola
+      del compartimento alcanza este valor, la probabilidad de marcado se
+      incrementa en <b>increment</b>. El valor predeterminado depende de la
+      configuración de <b>max</b>; con max establecido en 25,
+      <b>target</b> será predeterminado a 20.</dd>
+  <dt id="increment"><a class="permalink" href="#increment">increment</a></dt>
+  <dd>Un valor utilizado para incrementar la probabilidad de marcado cuando la
+      cola parece estar sobreutilizada. Debe estar entre 0 y 1.0.
+      Predeterminado: 0.00050.</dd>
+  <dt id="decrement"><a class="permalink" href="#decrement">decrement</a></dt>
+  <dd>Valor utilizado para disminuir la probabilidad de marcado cuando se
+      encuentra que la cola está vacía. Debe estar entre 0 y 1.0.
+      Predeterminado: 0.00005.</dd>
+  <dt id="penalty_rate"><a class="permalink" href="#penalty_rate">penalty_rate</a></dt>
+  <dd>El número máximo de paquetes pertenecientes a flujos identificados como no
+      responsivos que pueden ser encolados por segundo. Una vez alcanzado este
+      número, los paquetes posteriores de dichos flujos no responsivos se
+      descartan. Establezca esto a una fracción razonable del rendimiento de su
+      enlace ascendente; el valor predeterminado de 10 paquetes es probablemente
+      demasiado bajo.</dd>
+  <dt id="penalty_burst"><a class="permalink" href="#penalty_burst">penalty_burst</a></dt>
+  <dd>El número de paquetes que un flujo tiene permitido exceder la tasa de
+      penalización antes de que los paquetes comiencen a descartarse.
+      Predeterminado: 20 paquetes.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="STATISTICS"><a class="permalink" href="#STATISTICS">ESTADÍSTICAS</a></h1>
+<p class="Pp">Esta qdisc expone estadísticas adicionales a través de la salida de
+    'tc -s qdisc'. Estas son:</p>
+<dl class="Bl-tag">
+  <dt id="earlydrop"><a class="permalink" href="#earlydrop">earlydrop</a></dt>
+  <dd>El número de paquetes descartados antes de que la cola por flujo estuviera
+      llena.</dd>
+  <dt id="ratedrop"><a class="permalink" href="#ratedrop">ratedrop</a></dt>
+  <dd>El número de paquetes descartados debido a la limitación de tasa. Si este
+      valor es alto, hay muchos flujos no reactivos que se envían a través de
+      sfb. En tales casos, podría ser mejor incrustar sfb dentro de una qdisc
+      clase para controlar mejor dichos flujos utilizando una qdisc de modelado
+      diferente.</dd>
+  <dt id="bucketdrop"><a class="permalink" href="#bucketdrop">bucketdrop</a></dt>
+  <dd>El número de paquetes descartados debido a que la cola por flujo estaba
+      llena. Un alto bucketdrop puede indicar un gran número de flujos agresivos
+      y de corta duración.</dd>
+  <dt id="queuedrop"><a class="permalink" href="#queuedrop">queuedrop</a></dt>
+  <dd>El número de paquetes descartados debido a alcanzar el límite. Normalmente
+      debería ser 0.</dd>
+  <dt id="marked"><a class="permalink" href="#marked">marked</a></dt>
+  <dd>El número de paquetes marcados con ECN.</dd>
+  <dt id="maxqlen"><a class="permalink" href="#maxqlen">maxqlen</a></dt>
+  <dd>La longitud de la cola virtual por flujo (virtual) más larga actual.</dd>
+  <dt id="maxprob"><a class="permalink" href="#maxprob">maxprob</a></dt>
+  <dd>La probabilidad de descarte por flujo máxima. 1 significa que algunos
+      flujos han sido detectados como no reactivos.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="NOTES"><a class="permalink" href="#NOTES">NOTAS</a></h1>
+<p class="Pp">SFB habilita automáticamente el uso de Notificación Explícita de
+    Congestión (ECN). Además, esta implementación de SFB no encola paquetes
+    por sí misma. Más bien, los paquetes se encolan en la qdisc interna
+    (predeterminada pfifo). Dado que sfb mantiene estados de cola virtuales, la
+    qdisc interna no debe descartar un paquete previamente encolado. Por otra
+    parte, si la cola de un bucket tiene una tasa de marcado muy alta, esta
+    implementación comenzará a descartar paquetes, ya que tal situación apunta a
+    una mala congestión o a un flujo no responsivo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLE_&amp;amp;_USAGE"><a class="permalink" href="#EXAMPLE_&amp;amp;_USAGE">EJEMPLO   &amp; USO</a></h1>
+<p class="Pp">Para adjuntar a la interfaz $DEV, usando las opciones predeterminadas:</p>
+<p class="Pp"># tc qdisc add dev $DEV handle 1: root sfb</p>
+<p class="Pp">Utilizar solo direcciones IP de destino para asignar paquetes a
+    compartimentos, perturbando los resultados del hash cada 10 minutos:</p>
+<p class="Pp"># tc filter add dev $DEV parent 1: handle 1 flow hash keys dst
+    perturb 600</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href="/man/tc.8.en">tc(8)</a>, <a href="/man/tc-red.8.en">tc-red(8)</a>, <a href="/man/tc-sfq.8.en">tc-sfq(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SOURCES"><a class="permalink" href="#SOURCES">FUENTES</a></h1>
+<p class="Pp">No se proporciona ninguna fuente específica en este momento.</p>
+</section>
+</div>
+</section>
+
+            </article>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<h1>CES</h1>
+<dl class="Bl-tag">
+  <dt id="o"><a class="permalink" href="#o">o</a></dt>
+  <dd>W. Feng, D. Kandlur, D. Saha, K. Shin, BLUE: A New Class of Active Queue
+      Management Algorithms, U. Michigan CSE-TR-387-99, April 1999.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp">Esta implementación de SFB fue contribuida por Juliusz Chroboczek y
+    Eric Dumazet.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">Agosto 2011</td>
+    <td class="foot-os">iproute2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/iproute2/">core/iproute2</a></dd>
+        <dt>Versión:</dt>
+        <dd>6.18.0-1</dd>
+        <dt>Principal:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git">https://git.kernel.org/pub/scm/network/iproute2/iproute2.git</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/iproute2/">/listing/core/iproute2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ALGORITMO">ALGORITMO</a></li>
+        
+            <li><a href="#LIMITACIONES">LIMITACIONES</a></li>
+        
+            <li><a href="#PARÁMETROS">PARÁMETROS</a></li>
+        
+            <li><a href="#ESTADÍSTICAS">ESTADÍSTICAS</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+            <li><a href="#EJEMPLO_&amp;amp;_USO">EJEMPLO &amp; USO</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#FUENTES">FUENTES</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/tc-sfb.8.en.txt">txt</a>, 
+        
+            <a href="/man/tc-sfb.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,680 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlunicook(1perl) — Manuales de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlunicook.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLUNICOOK(1perl)</td>
+    <td class="head-vol">Guía de referencia para programadores de Perl</td>
+    <td class="head-rtitle">PERLUNICOOK(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlunicook - ejemplos de libro de cocina para manejar Unicode en Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Esta página del manual contiene recetas cortas que demuestran cómo manejar operaciones comunes de Unicode en Perl, además de un programa completo al final. Se asume que cualquier variable no declarada en recetas individuales tiene un valor apropiado previo en ellas.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 0: Preámbulo estándar</h2>
+<p class="Pp">A menos que se indique lo contrario, todos los ejemplos a continuación requieren este preámbulo estándar para funcionar correctamente, con el <span class="Li">&quot;#!&quot;</span> ajustado para funcionar en tu sistema:</p>
+<pre>#!/usr/bin/env perl
+use v5.36;     # o posterior para obtener la característica "unicode_strings",
+               #   además de strict, warnings
+use utf8;      # para que los literales y identificadores puedan estar en UTF-8
+use warnings  qw(FATAL utf8);    # fatalizar fallos de codificación
+use open      qw(:std :encoding(UTF-8)); # flujos no declarados en UTF-8
+use charnames qw(:full :short);  # no necesario en v5.16</pre>
+<p class="Pp">Esto *sí* hace que incluso los programadores de Unix hagan
+    <span class="Li">&quot;binmode&quot;</span> en sus flujos binarios, o los abran
+    con <span class="Li">&quot;:raw&quot;</span>, pero es la única forma de
+    acceder a ellos de forma portátil de todos modos.</p>
+<p class="Pp"><b>ADVERTENCIA</b>: <span class="Li">&quot;use autodie&quot;</span>
+    (pre 2.26) y <span class="Li">&quot;use open&quot;</span> no se llevan bien
+    entre sí.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 1: Filtro genérico compatible con Unicode</h2>
+<p class="Pp">Siempre descompón al entrar, luego recompón al salir.</p>
+<pre>use Unicode::Normalize;
+while (&lt;&gt;) {
+    $_ = NFD($_);   # descomponer + reordenar canónicamente
+    ...
+} continue {
+    print NFC($_);  # recomponer (donde sea posible) + reordenar canónicamente
+}</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 2: Ajuste fino de advertencias de Unicode</h2>
+<p class="Pp">A partir de la v5.14, Perl distingue tres subclases de advertencias
+    UTF-8.</p>
+<pre>use v5.14;                  # subadvertencias no disponibles antes
+no warnings &quot;nonchar&quot;;      # los 66 no caracteres prohibidos
+no warnings &quot;surrogate&quot;;    # basura de UTF-16/CESU-8
+no warnings &quot;non_unicode&quot;;  # para puntos de código superiores a 0x10_FFFF</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 3: Declarar fuente en utf8 para identificadores y
+  literales</h2>
+<p class="Pp">Sin la declaración crucial <span class="Li">&quot;use
+    utf8&quot;</span>, poner UTF-8 en tus literales e identificadores no
+    funcionará correctamente. Si usaste el preámbulo estándar que se dio
+    arriba, esto ya sucedió. Si lo hiciste, puedes hacer cosas como
+  esta:</p>
+<pre>use utf8;
+my $measure   = &quot;&#x00C5;ngstr&#x00F6;m&quot;;
+my @&#x03BC;soft     = qw( cp852 cp1251 cp1252 );
+my @&#x1F51;&#x03C0;&#x03AD;&#x03C1;&#x03BC;&#x03B5;&#x03B3;&#x03B1;&#x03C2; = qw( &#x1F51;&#x03C0;&#x03AD;&#x03C1;  &#x03BC;&#x03B5;&#x03B3;&#x03B1;&#x03C2; );
+my @&#x9BC9;        = qw( koi8-f koi8-u koi8-r );
+my $motto     = &quot;&#x1F46A; &#x1F497; &#x1F42A;&quot;; # FAMILIA, CORAZÓN CRECIENDO, CAMELLO</pre>
+<p class="Pp">Si olvidas <span class="Li">&quot;use utf8&quot;</span>, los
+    bytes altos serán malinterpretados como caracteres separados, y nada
+    funcionará correctamente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 4: Caracteres y sus números</h2>
+<p class="Pp">Las funciones <span class="Li">&quot;ord&quot;</span> y
+    <span class="Li">&quot;chr&quot;</span> funcionan de forma transparente en todos
+    los puntos de código, no solo en ASCII; ni siquiera solo en Unicode.</p>
+<pre># Caracteres ASCII
+ord(&quot;A&quot;)
+chr(65)
+# caracteres del Plano Básico Multilingüe
+ord(&quot;&#x03A3;&quot;)
+chr(0x3A3)
+# más allá del BMP
+ord(&quot;&#x1D45B;&quot;)               # LETRA PEQUEÑA MATH MAYÚSCULA N EN CURSIVA
+chr(0x1D45B)
+# ¡más allá de Unicode! (hasta MAXINT)
+ord(&quot;\x{20_0000}&quot;)
+chr(0x20_0000)</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 5: Literales de Unicode por número de carácter</h2>
+<p class="Pp">En un literal interpolado, ya sea una cadena entre comillas dobles o
+    una expresión regular, puedes especificar un carácter por su número usando
+    el escape <span class="Li">&quot;\x{</span><span class="Li"><i>HHHHHH</i></span><span class="Li">}&quot;</span>.</p>
+<pre>Cadena: &quot;\x{3a3}&quot;
+Expresión regular:  /\x{3a3}/
+Cadena: &quot;\x{1d45b}&quot;
+Expresión regular:  /\x{1d45b}/
+# incluso los rangos que no son del BMP en expresiones regulares funcionan bien
+/[\x{1D434}-\x{1D467}]/</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 6: Obtener nombre de carácter por número</h2>
+<pre>use charnames ();
+my $name = charnames::viacode(0x03A3);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 7: Obtener número de carácter por nombre</h2>
+<pre>use charnames ();
+my $number = charnames::vianame(&quot;GREEK CAPITAL LETTER SIGMA&quot;);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 8: Caracteres con nombre de Unicode</h2>
+<p class="Pp">Usa la notación <span class="Li">&quot;\N{</span><span class="Li"><i>nombre_caracter</i></span><span class="Li">}&quot;</span> para obtener el carácter por ese nombre para usarlo en literales interpolados (cadenas entre comillas dobles y expresiones regulares). En v5.16, hay un implícito</p>
+<pre>use charnames qw(:full :short);</pre>
+<p class="Pp">Pero antes de la v5.16, debes ser explícito sobre qué conjunto de
+    nombres de caracteres quieres. Los nombres <span class="Li">&quot;:full&quot;</span>
+    son el nombre oficial del carácter Unicode, alias o secuencia, que comparten
+    un espacio de nombres.</p>
+<pre>use charnames qw(:full :short latin greek);
+&quot;\N{MATHEMATICAL ITALIC SMALL N}&quot;      # :full
+&quot;\N{GREEK CAPITAL LETTER SIGMA}&quot;       # :full</pre>
+<p class="Pp">Cualquier otra cosa es una abreviatura de conveniencia específica de
+    Perl. Especifica uno o más scripts por nombre si quieres nombres cortos
+    específicos del script.</p>
+<pre>&quot;\N{Greek:Sigma}&quot;                      # :short
+&quot;\N{ae}&quot;                               #  latin
+&quot;\N{epsilon}&quot;                          #  greek</pre>
+<p class="Pp">La versión v5.16 también admite la importación <span class="Li">&quot;:loose&quot;</span>
+    para una coincidencia laxa de nombres de caracteres, que funciona igual
+    que la coincidencia laxa de nombres de propiedades: es decir, ignora
+    mayúsculas, minúsculas, espacios en blanco y guiones bajos:</p>
+<pre>&quot;\N{euro sign}&quot;                        # :loose (desde v5.16)</pre>
+<p class="Pp">A partir de la v5.32, también puedes usar</p>
+<pre>qr/\p{name=euro sign}/</pre>
+<p class="Pp">para obtener caracteres con nombre oficiales de Unicode en
+    expresiones regulares. Siempre se realiza una coincidencia laxa para estos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 9: Secuencias con nombre de Unicode</h2>
+<p class="Pp">Estas se ven igual que los nombres de caracteres pero devuelven
+    múltiples puntos de código. Nota la funcionalidad de impresión de vectores
+    <span class="Li">&quot;%vx&quot;</span> en <span class="Li">&quot;printf&quot;</span>.</p>
+<pre>use charnames qw(:full);
+my $seq = &quot;\N{LATIN CAPITAL LETTER A WITH MACRON AND GRAVE}&quot;;
+printf &quot;U+%v04X\n&quot;, $seq;
+U+0100.0300</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 10: Caracteres personalizados con nombre</h2>
+<p class="Pp">Usa <span class="Li">&quot;:alias&quot;</span> para dar tus propios
+    apodos léxicamente escopados a caracteres existentes, o incluso para dar
+    nombres útiles a caracteres sin nombre de uso privado.</p>
+<pre>use charnames &quot;:full&quot;, &quot;:alias&quot; =&gt; {
+    ecute =&gt; &quot;LATIN SMALL LETTER E WITH ACUTE&quot;,
+    &quot;APPLE LOGO&quot; =&gt; 0xF8FF, # carácter de uso privado
+};
+&quot;\N{ecute}&quot;
+&quot;\N{APPLE LOGO}&quot;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 11: Nombres de puntos de código CJK</h2>
+<p class="Pp">Los sinogramas como &#x201C;&#x6771;&#x4EAC;&#x201D; devuelven nombres de
+    caracteres como <span class="Li">&quot;CJK UNIFIED
+    IDEOGRAPH-6771&quot;</span> y <span class="Li">&quot;CJK UNIFIED
+    IDEOGRAPH-4EAC&quot;</span>, porque sus &#x201C;nombres&#x201D; varían. El
+    módulo CPAN <span class="Li">&quot;Unicode::Unihan&quot;</span> tiene una gran
+    base de datos para decodificar estos (y mucho más), siempre que sepas
+    entender su salida.</p>
+<pre># cpan -i Unicode::Unihan
+use Unicode::Unihan;
+my $str = &quot;&#x6771;&#x4EAC;&quot;;
+my $unhan = Unicode::Unihan-&gt;new;
+for my $lang (qw(Mandarin Cantonese Korean JapaneseOn JapaneseKun)) {
+    printf &quot;CJK $str en %-12s es &quot;, $lang;
+    say $unhan-&gt;$lang($str);
+}</pre>
+<p class="Pp">imprime:</p>
+<pre>CJK &#x6771;&#x4EAC; en Mandarin     es DONG1JING1
+CJK &#x6771;&#x4EAC; en Cantonese    es dung1ging1
+CJK &#x6771;&#x4EAC; en Korean       es TONGKYENG
+CJK &#x6771;&#x4EAC; en JapaneseOn   es TOUKYOU KEI KIN
+CJK &#x6771;&#x4EAC; en JapaneseKun  es HIGASHI AZUMAMIYAKO</pre>
+<p class="Pp">Si tienes un esquema de romanización específico en mente, usa el
+    módulo específico:</p>
+<pre># cpan -i Lingua::JA::Romanize::Japanese
+use Lingua::JA::Romanize::Japanese;
+my $k2r = Lingua::JA::Romanize::Japanese-&gt;new;
+my $str = &quot;&#x6771;&#x4EAC;&quot;;
+say &quot;Japonés para $str es &quot;, $k2r-&gt;chars($str);</pre>
+<p class="Pp">imprime</p>
+<pre>Japonés para &#x6771;&#x4EAC; es toukyou</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 12: Codificar/decodificar explícitamente</h2>
+<p class="Pp">En raras ocasiones, como al leer una base de datos, se te puede
+    dar texto codificado que necesitas decodificar.</p>
+<pre> use Encode qw(encode decode);
+ my $chars = decode(&quot;shiftjis&qu</pre>
+</section>
+</div>
+</section>
+            </article>
+        </main>
+    </body>
+</html>
+ot;", $bytes, 1);
+# O
+ my $bytes = encode("MIME-Header-ISO_2022_JP", $chars, 1);</pre>
+<p class="Pp">Para flujos en la misma codificación, no uses encode/decode;
+    en lugar de eso, establece la codificación del archivo cuando lo abras o inmediatamente después
+    con <span class="Li">"binmode"</span> como se describe más adelante.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 13: Decodificar argumentos del programa como utf8</h2>
+<pre>    $ perl -CA ...
+o
+    $ export PERL_UNICODE=A
+o
+   use Encode qw(decode);
+   @ARGV = map { decode('UTF-8', $_, 1) } @ARGV;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 14: Decodificar argumentos del programa como codificación local</h2>
+<pre># cpan -i Encode::Locale
+use Encode qw(locale);
+use Encode::Locale;
+# use "locale" como argumento para encode/decode
+@ARGV = map { decode(locale => $_, 1) } @ARGV;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 15: Declarar STD{IN,OUT,ERR} como utf8</h2>
+<p class="Pp">Usa una opción de línea de comandos, una variable de entorno, o llama
+    a <span class="Li">"binmode"</span> explícitamente:</p>
+<pre>    $ perl -CS ...
+o
+    $ export PERL_UNICODE=S
+o
+    use open qw(:std :encoding(UTF-8));
+o
+    binmode(STDIN,  ":encoding(UTF-8)");
+    binmode(STDOUT, ":utf8");
+    binmode(STDERR, ":utf8");</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 16: Declarar STD{IN,OUT,ERR} como codificación local
+  </h2>
+<pre># cpan -i Encode::Locale
+use Encode;
+use Encode::Locale;
+# o como flujo para binmode o open
+binmode STDIN,  ":encoding(console_in)"  if -t STDIN;
+binmode STDOUT, ":encoding(console_out)" if -t STDOUT;
+binmode STDERR, ":encoding(console_out)" if -t STDERR;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 17: Hacer que la E/S de archivos sea utf8 por defecto</h2>
+<p class="Pp">Los archivos abiertos sin un argumento de codificación estarán en UTF-8:</p>
+<pre>    $ perl -CD ...
+o
+    $ export PERL_UNICODE=D
+o
+    use open qw(:encoding(UTF-8));</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 18: Hacer que toda la E/S y los argumentos sean utf8 por defecto</h2>
+<pre>    $ perl -CSDA ...
+o
+    $ export PERL_UNICODE=SDA
+o
+    use open qw(:std :encoding(UTF-8));
+    use Encode qw(decode);
+    @ARGV = map { decode('UTF-8', $_, 1) } @ARGV;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 19: Abrir archivo con codificación específica</h2>
+<p class="Pp">Especificar la codificación del flujo. Esta es la forma normal de tratar
+    texto codificado, no llamando a funciones de bajo nivel.</p>
+<pre># archivo de entrada
+    open(my $in_file, "< :encoding(UTF-16)", "wintext");
+O
+    open(my $in_file, "<", "wintext");
+    binmode($in_file, ":encoding(UTF-16)");
+ENTONCES
+    my $line = <$in_file>;
+# archivo de salida
+    open($out_file, "> :encoding(cp1252)", "wintext");
+O
+    open(my $out_file, ">", "wintext");
+    binmode($out_file, ":encoding(cp1252)");
+ENTONCES
+    print $out_file "algún texto\n";</pre>
+<p class="Pp">Se pueden especificar más capas que solo la codificación aquí. Por
+    ejemplo, la incantación <span class="Li">":raw :encoding(UTF-16LE)
+    :crlf"</span> incluye manejo implícito de CRLF.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 20: Mayúsculas/minúsculas Unicode</h2>
+<p class="Pp">Las mayúsculas/minúsculas de Unicode son muy diferentes de las de ASCII.</p>
+<pre>uc("henry Ⅻ")  # "HENRY Ⅸ"
+uc("tschüß")   # "TSCHÜSS"  notar ß => SS
+# ambas son verdaderas:
+"tschüß"  =~ /TSCHÜSS/i   # notar ß => SS
+"Σίσυφος" =~ /ΣίσΥΦΟΣ/i   # notar Σ, σ, ς semejanza</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 21: Comparaciones de Unicode sin distinción entre mayúsculas y minúsculas</h2>
+<p class="Pp">También disponible en el módulo CPAN Unicode::CaseFold, la nueva
+    función <span class="Li">"fc"</span> "foldcase"
+    de v5.16 otorga acceso al mismo plegado de mayúsculas/minúsculas de Unicode que el
+    modificador de patrón <span class="Li">"/i"</span> siempre ha usado:</p>
+<pre>use feature "fc"; # la función fc() es de v5.16
+# ordenar sin distinción entre mayúsculas y minúsculas
+my @sorted = sort { fc($a) cmp fc($b) } @list;
+# ambas son verdaderas:
+fc("tschüß")  eq fc("TSCHÜSS")
+fc("Σίσυφος") eq fc("ΣίσΥΦΟΣ")</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 22: Coincidir secuencia de salto de línea Unicode en expresiones regulares</h2>
+<p class="Pp">Un salto de línea Unicode coincide con el grafema CRLF de dos caracteres o cualquiera
+    de los siete caracteres de espacio en blanco verticales. Bueno para tratar con archivos de texto
+    provenientes de diferentes sistemas operativos.</p>
+<pre>\R
+s/\R/\n/g;  # normalizar todos los saltos de línea a \n</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 23: Obtener categoría de carácter</h2>
+<p class="Pp">Encontrar la categoría general de un punto de código numérico.</p>
+<pre>use Unicode::UCD qw(charinfo);
+my $cat = charinfo(0x3A3)->{category};  # "Lu"</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 24: Deshabilitar la conciencia de Unicode en clases de caracteres integradas
+  </h2>
+<p class="Pp">Deshabilitar que <span class="Li">"\w"</span>,
+    <span class="Li">"\b"</span>,
+    <span class="Li">"\s"</span>,
+    <span class="Li">"\d"</span>, y las clases POSIX funcionen
+    correctamente en Unicode, ya sea en este ámbito o en una sola expresión regular.</p>
+<pre>use v5.14;
+use re "/a";
+# O
+my($num) = $str =~ /(\d+)/a;</pre>
+<p class="Pp">O usar propiedades específicas no Unicode, como
+    <span class="Li">"\p{ahex}"</span> y
+    <span class="Li">"\p{POSIX_Digit}"</span>. Las propiedades aún funcionan
+    normalmente independientemente de los modificadores de conjunto de caracteres (<span class="Li">"/d /u /l
+    /a /aa"</span>) que estén activos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 25: Coincidir propiedades Unicode en expresiones regulares con \p, \P</h2>
+<p class="Pp">Todas estas coinciden con un solo punto de código con la propiedad dada. Usa
+    <span class="Li">"\P"</span> en lugar de
+    <span class="Li">"\p"</span> para que coincida con un punto de código que carece de esa
+    propiedad.</p>
+<pre>\pL, \pN, \pS, \pP, \pM, \pZ, \pC
+\p{Sk}, \p{Ps}, \p{Lt}
+\p{alpha}, \p{upper}, \p{lower}
+\p{Latin}, \p{Greek}
+\p{script_extensions=Latin}, \p{scx=Greek}
+\p{East_Asian_Width=Wide}, \p{EA=W}
+\p{Line_Break=Hyphen}, \p{LB=HY}
+\p{Numeric_Value=4}, \p{NV=4}</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 26: Propiedades de caracteres personalizadas</h2>
+<p class="Pp">Define en tiempo de compilación tus propias propiedades de caracteres personalizadas para
+    su uso en expresiones regulares.</p>
+<pre># usando caracteres de uso privado
+sub In_Tengwar { "E000\tE07F\n" }
+if (/\p{In_Tengwar}/) { ... }
+# combinando propiedades existentes
+sub Is_GraecoRoman_Title {&lt;&lt;'END_OF_SET'}
++utf8::IsLatin
++utf8::IsGreek
+&amp;utf8::IsTitle
+END_OF_SET
+if (/\p{Is_GraecoRoman_Title}/) { ... }</pre>
+</section>
+<section class=" Ss">
+<h2 class="Ss">&#x211E; 27: Normalización Unicode</h2>
+<p class="Pp">Normalmente se renderiza a NFD en la entrada y a NFC en la salida. El uso de
+    funciones NFKC o NFKD mejora la recuperación en búsquedas, asumiendo que ya has realizado
+    la misma operación al texto que se va a buscar. Ten en cuenta que esto es mucho más que solo
+    glifos pre-combinados de compatibilidad; también reordena las marcas según sus clases de combinación canónicas y elimina los singleton.</p>
+<pre>use Unicode::Normalize;
+my $nfd  = NFD($orig);
+my $nfc  = NFC($orig);
+my $nfkd = NFKD($orig);
+my $nfkc = NFKC($orig);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 28: Convertir números Unicode no ASCII</h2>
+<p class="Pp">A menos que hayas usado <span class="Li">"/a"</span>
+    o <span class="Li>"/aa"</span>,
+    <span class="Li">"\d"</span> coincide con más que solo dígitos ASCII,
+    pero la conversión implícita de cadena a número de Perl no los reconoce actualmente.
+    Aquí se muestra cómo convertir dichas cadenas manualmente.</p>
+<pre>use utf8;
+use v5.14;  # necesario para la función num()
+use Unicode::UCD qw(num);
+my $str = "contiene Ⅻ y  complex 90789 y ½ y 伍 here";
+my @nums = ();
+while ($str =~ /(\d+|\N)/g) {  # ¡no solo ASCII!
+   push @nums, num($1);
+}
+say "@nums";   # 12 4567 0.875 1000000000000
+use charnames qw(:full);
+my $nv = num(" a౧౨");
+say $nv;  # 12</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 29: Coincidir clúster de grafemas Unicode en expresiones regulares</h2>
+<p class="Pp">Los "caracteres" visibles para el programador son puntos de código
+    coincidentes por <span class="Li>"/./s"</span>, pero los "caracteres" visibles para el usuario
+    son grafemas coincidentes por <span class="Li>"/\\X/"</span>.</p>
+<pre># Encontrar vocal *más* cualquier diacrítico combinado, subrayado, etc.
+my $nfd = NFD($orig);
+$nfd =~ / (?=[aeiou]) \X /xi</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 30: Extraer por grafema en lugar de por punto de código
+  (expresión regular)</h2>
+<pre># hacer coincidir y extraer los cinco primeros grafemas
+my($first_five) = $str =~ /^ ( \X{5} ) /x;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 31: Extraer por grafema en lugar de por punto de código
+  (substr)</h2>
+<pre># cpan -i Unicode::GCString
+use Unicode::GCString;
+my $gcs = Unicode::GCString->new($str);
+my $first_five = $gcs->substr(0, 5);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 32: Invertir cadena por grafema</h2>
+<p class="Pp">Invertir por punto de código arruina los diacríticos, convirtiendo erróneamente
+    "crème brûlée" en "elûrb emèrc"
+    en lugar de "eé lûrb emèrc"; así que invierte por grafema en su lugar. Ambos enfoques funcionan correctamente sin importar la normalización en la que se encuentre la cadena:</p>
+<pre>$str = join("", reverse $str =~ /\X/g);
+# O: cpan -i Unicode::GCString
+use Unicode::GCString;
+$str = reverse Unicode::GCString->new($str);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 33: Longitud de cadena en grafemas</h2>
+<p class="Pp">La cadena
+    "brûlée" tiene seis grafemas
+    pero hasta ocho puntos de código. Esto cuenta por grafema, no por punto de código:</p>
+<pre>my $str = "brûlée";
+my $count = 0;
+while ($str =~ /\X/g) { $count++ }
+ # O: cpan -i Unicode::GCString
+use Unicode::GCString;
+my $gcs = Unicode::GCString->new($str);
+my $count = $gcs->length;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 34: Ancho de columna Unicode para imprimir</h2>
+<p class="Pp">El <span class="Li">"printf"</span> de Perl,
+    <span class="Li">"sprintf"</span> y
+    <span class="Li">"format"</span> piensan que todos los puntos de código ocupan 1
+    columna de impresión, pero muchos ocupan 0 o 2. Aquí, para mostrar que la normalización no hace ninguna diferencia, imprimimos ambas formas:</p>
+<pre>use Unicode::GCString;
+use Unicode::Normalize;
+my @words = qw/crème brûlée/;
+@words = map { NFC($_), NFD($_) } @words;
+for my $str (@words) {
+    my $gcs = Unicode::GCString->new($str);
+    my $cols = $gcs->columns;
+    my $pad = " " x (10 - $cols);
+    say $str, $pad, " |";
+}</pre>
+<p class="Pp">genera esto para mostrar que rellena correctamente sin importar la
+    normalización:</p>
+<pre>crème      |
+crème      |
+brûlée     |
+brûlée     |</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">&#x211E; 35: Colación Unicode</h2>
+<p class="Pp">El texto ordenado por punto de código numérico no sigue ningún al</p>
+[
+  {
+    "section_title": "Ordenación alfabética; use UCA para ordenar texto.",
+    "content": "<p>Use el algoritmo de ordenación de Unicode (UCA) para ordenar texto.</p>\n<pre>use Unicode::Collate;\nmy $col = Unicode::Collate-&gt;new();\nmy @list = $col-&gt;sort(@old_list);</pre>\n<p>Consulte el programa <i>ucsort</i> del módulo CPAN Unicode::Tussle para\n    obtener una interfaz de línea de comandos conveniente para este módulo.</p>"
+  },
+  {
+    "section_title": "36: Ordenación Unicode insensible a mayúsculas y acentos",
+    "content": "<p>Especifique una fuerza de collation de nivel 1 para ignorar mayúsculas y\n    diacríticos, fijándose solo en el carácter básico.</p>\n<pre>use Unicode::Collate;\nmy $col = Unicode::Collate-&gt;new(level =&gt; 1);\nmy @list = $col-&gt;sort(@old_list);</pre>"
+  },
+  {
+    "section_title": "37: Collación de localización Unicode",
+    "content": "<p>Algunas localizaciones tienen reglas de ordenación especiales.</p>\n<pre># use v5.12, O: cpan -i Unicode::Collate::Locale\nuse Unicode::Collate::Locale;\nmy $col = Unicode::Collate::Locale-&gt;new(locale =&gt; \"de__phonebook\");\nmy @list = $col-&gt;sort(@old_list);</pre>\n<p>El programa <i>ucsort</i> mencionado anteriormente acepta un parámetro\n    <span class=\"Li\">--locale</span>.</p>"
+  },
+  {
+    "section_title": "38: Hacer que \"cmp\" funcione en texto en lugar de puntos de código",
+    "content": "<p>En lugar de esto:</p>\n<pre>@srecs = sort {\n    $b-&gt;{AGE}   &lt;=&gt;  $a-&gt;{AGE}\n                ||\n    $a-&gt;{NAME}  cmp  $b-&gt;{NAME}\n} @recs;</pre>\n<p>Use esto:</p>\n<pre>my $coll = Unicode::Collate-&gt;new();\nfor my $rec (@recs) {\n    $rec-&gt;{NAME_key} = $coll-&gt;getSortKey( $rec-&gt;{NAME} );\n}\n@srecs = sort {\n    $b-&gt;{AGE}       &lt;=&gt;  $a-&gt;{AGE}\n                    ||\n    $a-&gt;{NAME_key}  cmp  $b-&gt;{NAME_key}\n} @recs;</pre>"
+  },
+  {
+    "section_title": "39: Comparaciones insensibles a mayúsculas y acentos",
+    "content": "<p>Use un objeto collator para comparar texto Unicode por carácter en lugar de\n    por punto de código.</p>\n<pre>use Unicode::Collate;\nmy $es = Unicode::Collate-&gt;new(\n    level =&gt; 1,\n    normalization =&gt; undef\n);\n # ahora ambas son verdaderas:\n$es-&gt;eq(\"Garc&#x00ED;a\",  \"GARCIA\" );\n$es-&gt;eq(\"M&#x00E1;rquez\", \"MARQUEZ\");</pre>"
+  },
+  {
+    "section_title": "40: Comparaciones locales insensibles a mayúsculas y acentos",
+    "content": "<p>Lo mismo, pero en una localización específica.</p>\n<pre>my $de = Unicode::Collate::Locale-&gt;new(\n           locale =&gt; \"de__phonebook\",\n         );\n# ahora esto es verdadero:\n$de-&gt;eq(\"tsch&#x00FC;&#x00DF;\", \"TSCHUESS\");  # note &#x00FC; =&gt; UE, &#x00DF; =&gt; SS</pre>"
+  },
+  {
+    "section_title": "41: Saltos de línea Unicode",
+    "content": "<p>Divida el texto en líneas de acuerdo con las reglas de Unicode.</p>\n<pre># cpan -i Unicode::LineBreak\nuse Unicode::LineBreak;\nuse charnames qw(:full);\nmy $para = \"This is a super\\N{HYPHEN}long string. \" x 20;\nmy $fmt = Unicode::LineBreak-&gt;new;\nprint $fmt-&gt;break($para), \"\\n\";</pre>"
+  },
+  {
+    "section_title": "42: Texto Unicode en hashes DBM, de forma tediosa",
+    "content": "<p>Usar una cadena Perl normal como clave o valor para un hash DBM activará\n    una excepción de carácter ancho si algún punto de código no cabe en un byte.\n    Así es como se gestiona manualmente la traducción:</p>\n<pre>   use DB_File;\n   use Encode qw(encode decode);\n   tie %dbhash, \"DB_File\", \"pathname\";\n# ALMACENAR\n   # suponga que $uni_key y $uni_value son cadenas Unicode abstractas\n   my $enc_key   = encode(\"UTF-8\", $uni_key, 1);\n   my $enc_value = encode(\"UTF-8\", $uni_value, 1);\n   $dbhash{$enc_key} = $enc_value;\n# OBTENER\n   # suponga que $uni_key contiene una cadena Perl normal (Unicode abstracta)\n   my $enc_key   = encode(\"UTF-8\", $uni_key, 1);\n   my $enc_value = $dbhash{$enc_key};\n   my $uni_value = decode(\"UTF-8\", $enc_value, 1);</pre>"
+  },
+  {
+    "section_title": "43: Texto Unicode en hashes DBM, de forma fácil",
+    "content": "<p>Así es como se gestiona implícitamente la traducción; toda la codificación y\n    decodificación se realiza automáticamente, al igual que con los flujos que\n    tienen una codificación particular adjunta:</p>\n<pre>   use DB_File;\n   use DBM_Filter;\n   my $dbobj = tie %dbhash, \"DB_File\", \"pathname\";\n   $dbobj-&gt;Filter_Value(\"utf8\");  # este es el truco mágico\n# ALMACENAR\n   # suponga que $uni_key y $uni_value son cadenas Unicode abstractas\n   $dbhash{$uni_key} = $uni_value;\n # OBTENER\n   # $uni_key contiene una cadena Perl normal (Unicode abstracta)\n   my $uni_value = $dbhash{$uni_key};</pre>"
+  },
+  {
+    "section_title": "44: PROGRAMA: Demostración de collation y impresión Unicode",
+    "content": "<p>Aquí hay un programa completo que muestra cómo hacer uso de la ordenación\n    sensible a la localización, el manejo de mayúsculas y minúsculas Unicode, y\n    la gestión de anchos de impresión cuando algunos de los caracteres ocupan\n    cero o dos columnas, no solo una columna cada vez. Cuando se ejecuta, el\n    siguiente programa produce esta salida bien alineada:</p>\n<pre>Cr&#x00E8;me Br&#x00FB;l&#x00E9;e....... &#x20AC;2.00\n&#x00C9;clair............. &#x20AC;1.60\nFideu&#x00E0;............. &#x20AC;4.20\nHamburger.......... &#x20AC;6.00\nJam&#x00F3;n Serrano...... &#x20AC;4.45\nLingui&#x00E7;a........... &#x20AC;7.00\nP&#x00E2;t&#x00E9;............... &#x20AC;4.15\nPears.............. &#x20AC;2.00\nP&#x00EA;ches............. &#x20AC;2.25\nSm&#x00F8;rbr&#x00F8;d........... &#x20AC;5.75\nSp&#x00E4;tzle............ &#x20AC;5.50\nXori&#x00E7;o............. &#x20AC;3.00\n&#x0393;&#x03CD;&#x03C1;&#x03BF;&#x03C2;.............. &#x20AC;6.50\n&#xB9C9;&#xAC78;&#xB9AC;............. &#x20AC;4.00\n&#x304A;&#x3082;&#x3061;............. &#x20AC;2.65\n&#x304A;&#x597D;&#x307F;&#x713C;&#x304D;......... &#x20AC;8.00\n&#x30B7;&#x30E5;&#x30FC;&#x30AF;&#x30EA;&#x30FC;&#x30E0;..... &#x20AC;1.85\n&#x5BFF;&#x53F8;............... &#x20AC;9.99\n&#x5305;&#x5B50;............... &#x20AC;7.50</pre>\n<p>Aquí está ese programa.</p>\n<pre>#!/usr/bin/env perl\n# umenu - demo sorting and printing of Unicode food\n#\n# (preámbulo obligatorio y cada vez más largo)\n#\nuse v5.36;\nuse utf8;\nuse warnings  qw(FATAL utf8);    # fatalizar fallos de codificación\nuse open      qw(:std :encoding(UTF-8)); # flujos no declarados en UTF-8\nuse charnames qw(:full :short);  # no necesario en v5.16\n# módulos estándar\nuse Unicode::Normalize;          # distribución estándar de Perl a partir de v5.8\nuse List::Util qw(max);          # distribución estándar de Perl a partir de v5.10\nuse Unicode::Collate::Locale;    # distribución estándar de Perl a partir de v5.14\n# módulos de CPAN\nuse Unicode::GCString;           # de CPAN\nmy %price = (\n    \"&#x03B3;&#x03CD;&#x03C1;&#x03BF;&#x03C2;\"             =&gt; 6.50, # gyros\n    \"pears\"             =&gt; 2.00, # como um, peras\n    \"lingui&#x00E7;a\"          =&gt; 7.00, # salchicha picante, portugués\n    \"xori&#x00E7;o\"            =&gt; 3.00, # salchicha chorizo, catalán\n    \"hamburger\"         =&gt; 6.00, # burgermeister meisterburger\n    \"&#x00E9;clair\"            =&gt; 1.60, # postre, francés\n    \"sm&#x00F8;rbr&#x00F8;d\"          =&gt; 5.75, # sándwiches, noruego\n    \"sp&#x00E4;tzle\"           =&gt; 5.50, # fideos bávaros, pajaritos\n    \"&#x5305;&#x5B50;\"              =&gt; 7.50, # bao1 zi5, bollos de cerdo al vapor, mandarín\n    \"jam&#x00F3;n serrano\"     =&gt; 4.45, # jamón de campo, español\n    \"p&#x00EA;ches\"            =&gt; 2.25, # melocotones, francés\n    \"&#x30B7;&#x30E5;&#x30FC;&#x30AF;&#x30EA;&#x30FC;&#x30E0;\"    =&gt; 1.85, # pastelería rellena de crema como eclair\n    \"&#xB9C9;&#xAC78;&#xB9AC;\"            =&gt; 4.00, # makgeolli, vino de arroz coreano\n    \"&#x5BFF;&#x53F8;\"              =&gt; 9.99, # sushi, japonés\n    \"&#x304A;&#x3082;&#x3061;\"            =&gt; 2.65, # omochi, pasteles de arroz, japonés\n    \"cr&#x00E8;me br&#x00FB;l&#x00E9;e\"      =&gt; 2.00, # crema catalana\n    \"fideu&#x00E0;\"            =&gt; 4.20, # más fideos, valenciano\n                                 # (catalán=fideuada)\n    \"p&#x00E2;t&#x00E9;\"              =&gt; 4.15, # paté de hígado de oca, francés\n    \"&#x304A;&#x597D;&#x307F;&#x713C;&#x304D;\"        =&gt; 8.00, # okonomiyaki, japonés\n);\nmy $width = 5 + max map { colwidth($_) } keys %price;\n# Para que las cosas asiáticas salgan en un orden que alguien\n# que lee esos scripts no se asuste; las cosas CJK estarán en orden JIS X 0208 de esa manera.\nmy $coll  = Unicode::Collate::Locale-&gt;new(locale =&gt; \"ja\");\nfor my $item ($coll-&gt;sort(keys %price)) {\n    print pad(entitle($item), $width, \".\");\n    printf \" &#x20AC;%.2f\\n\", $price{$item};\n}\nsub pad ($str, $width, $padchar) {\n    return $str . ($padchar x ($width - colwidth($str)));\n}\nsub colwidth ($str) {\n    return Unicode::GCString-&gt;new($str)-&gt;columns;\n}\nsub entitle ($str) {\n    $str =~ s{ (?=\\pL)(\\S)     (\\S*) }\n             { ucfirst($1) . lc($2)  }xge;\n    return $str;\n}</pre>"
+  },
+  {
+    "section_title": "VER TAMBIÉN",
+    "content": "<p>Vea estas páginas de manual, algunas de las cuales son módulos CPAN: perlunicode, perluniprops, perlre, perlrecharclass, perluniintro, perlunifut, perlunifaq, PerlIO, DB_File, DBM_Filter, DBM_Filter::utf8, Encode, Encode::Locale, Unicode::UCD, Unicode::Normalize, Unicode::GCString, Unicode::LineBreak, Unicode::Collate, Unicode::Collate::Locale, Unicode::Unihan, Unicode::CaseFold, Unicode::Tussle, Lingua::JA::Romanize::Japanese, Lingua::ZH::Romanize::Pinyin, Lingua::KO::Romanize::Hangul.</p>\n<p>El módulo CPAN Unicode::Tussle incluye muchos programas para ayudar a trabajar con Unicode, incluyendo estos programas para reemplazar total o parcialmente utilidades estándar: <i>tcgrep</i> en lugar de <i>egrep</i>, <i>uniquote</i> en lugar de <i>cat -v</i> o <i>hexdump</i>, <i>uniwc</i> en lugar de <i>wc</i>, <i>unilook</i> en lugar de <i>look</i>, <i>unifmt</i> en lugar de <i>fmt</i>, y <i>ucsort</i> en lugar de <i>sort</i>. Para explorar nombres de caracteres Unicode y propiedades de caracteres, consulte sus programas <i>uniprops</i>, <i>unichars</i> y <i>uninames</i>. También proporciona estos programas, todos los cuales son filtros generales que realizan cosas relacionadas con Unicode: <i>unititle</i> y <i>unicaps</i>; <i>uniwide</i> y <i>uninarrow</i>; <i>unisupers</i> y <i>unisubs</i>; <i>nfd</i>, <i>nfc</i>, <i>nfkd</i> y <i>nfkc</i>; y <i>uc</i>, <i>lc</i> y <i>tc</i>.</p>\n<p>Finalmente, consulte el Estándar Unicode publicado (los números de página son de la versión 6.0.0), incluyendo estos anexos y reportes técnicos específicos:</p>\n<dl class=\"Bl-tag\">\n  <dt>&#x00A7;3.13 Algoritmos de mayúsculas y minúsculas predeterminados, página 113; &#x00A7;4.2 Mayúsculas y minúsculas, páginas 120–122; Mapeos de mayúsculas y minúsculas, páginas 166–172, especialmente Coincidencia sin mayúsculas y minúsculas a partir de la página 170.</dt>\n  <dd></dd>\n  <dt id=\"UAX\"><a class=\"permalink\" href=\"#UAX\">UAX #44: Base de datos de caracteres Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UTS\"><a class=\"permalink\" href=\"#UTS\">UTS #18: Expresiones regulares Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UAX~2\"><a class=\"permalink\" href=\"#UAX~2\">UAX #15: Formas de normalización Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UTS~2\"><a class=\"permalink\" href=\"#UTS~2\">UTS #10: Algoritmo de collation Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UAX~3\"><a class=\"permalink\" href=\"#UAX~3\">UAX #29: Segmentación de texto Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UAX~4\"><a class=\"permalink\" href=\"#UAX~4\">UAX #14: Algoritmo de salto de línea Unicode</a></dt>\n  <dd></dd>\n  <dt id=\"UAX~5\"><a class=\"permalink\" href=\"#UAX~5\">UAX #11: Ancho de Asia Oriental</a></dt>\n  <dd></dd>\n</dl>"
+  },
+  {
+    "section_title": "AUTOR",
+    "content": "<p>Tom Christiansen &lt;tchrist@perl.com&gt; escribió esto, con\n    ocasionales contribuciones de</p>"
+  }
+]
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Tom Christiansen &lt;tchrist@perl.com&gt;.</p>
+<p class="Pp">Con amables aportaciones de Larry Wall y Jeffrey Friedl en el
+    fondo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DERECHOS_DE_AUTOR_Y_LICENCIA'><a class='permalink' href='#DERECHOS_DE_AUTOR_Y_LICENCIA'>DERECHOS DE AUTOR Y LICENCIA</a></h1>
+<p class="Pp">Copyright &#x00A9; 2012 Tom Christiansen.</p>
+<p class="Pp">Este programa es software libre; puede redistribuirlo y/o
+    modificarlo bajo los mismos términos que el propio Perl.</p>
+<p class="Pp">La mayoría de estos ejemplos están tomados de la edición actual
+    del &#x201C;Libro del Camello&#x201D;; es decir, de la 4&#x1D57;&#x02B0; Edición
+    de <i>Programming Perl</i>, Copyright &#x00A9; 2012 Tom Christiansen &lt;et
+    al.&gt;, 2012-02-13 por O&#x2019;Reilly Media. El código en sí es libremente
+    redistribuible, y se le anima a trasplantar, doblar, perforar y mutilar
+    cualquiera de los ejemplos en esta página de manual como desee para su
+    inclusión en sus propios programas sin ninguna carga whatsoever. El
+    reconocimiento a través de comentarios en el código es educado pero no
+    requerido.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORIAL_DE_REVISIONES'><a class='permalink' href='#HISTORIAL_DE_REVISIONES'>HISTORIAL DE REVISIONES</a></h1>
+<p class="Pp">v1.0.0 &#x2013; primer lanzamiento público, 2012-02-27</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#DERECHOS_DE_AUTOR_Y_LICENCIA">DERECHOS DE AUTOR Y LICENCIA</a></li>
+        
+            <li><a href="#HISTORIAL_DE_REVISIONES">HISTORIAL DE REVISIONES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/perlunicook.1perl.es.txt">txt</a>, 
+        
+            <a href="/man/perlunicook.1perl.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

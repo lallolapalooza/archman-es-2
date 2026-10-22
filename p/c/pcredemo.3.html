@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pcredemo(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pcredemo(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/pcre/">pcre</a></p>
+<p class="lic">Licencias: BSD</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">()</td>
+    <td class="head-vol"></td>
+    <td class="head-rtitle">()</td>
+  </tr>
+</table>
+<div class="manual-text">
+<pre><span class="Li">/*************************************************</span>
+<span class="Li">*           PROGRAMA DE DEMOSTRACIÓN PCRE           *</span>
+<span class="Li">*************************************************/</span>
+<span class="Li">/* Este es un programa de demostración para ilustrar las formas más sencillas de</span>
+<span class="Li">llamar a la biblioteca de expresiones regulares PCRE desde un programa C. Ver la</span>
+<span class="Li">documentación de pcresample para una breve discusión (&quot;man pcresample&quot; si tiene</span>
+<span class="Li">las páginas del manual de PCRE instaladas).</span>
+<span class="Li">En entornos similares a Unix, si PCRE está instalado en las bibliotecas del sistema</span>
+<span class="Li">estándar, debería poder compilar este programa usando este comando:</span>
+<span class="Li">gcc -Wall pcredemo.c -lpcre -o pcredemo</span>
+<span class="Li">Si PCRE no está instalado en un lugar estándar, es probable que esté instalado con</span>
+<span class="Li">soporte para el mecanismo pkg-config. Si tiene pkg-config, puede compilar este</span>
+<span class="Li">programa usando este comando:</span>
+<span class="Li">gcc -Wall pcredemo.c `pkg-config --cflags --libs libpcre` -o pcredemo</span>
+<span class="Li">Si no tiene pkg-config, puede tener que usar esto:</span>
+<span class="Li">gcc -Wall pcredemo.c -I/usr/local/include -L/usr/local/lib \</span>
+<span class="Li">  -R/usr/local/lib -lpcre -o pcredemo</span>
+<span class="Li">Reemplace &quot;/usr/local/include&quot; y &quot;/usr/local/lib&quot; por donde estén instalados los</span>
+<span class="Li">archivos de inclusión y de bibliotecas de PCRE en su sistema. Solo algunos sistemas</span>
+<span class="Li">operativos (por ejemplo, Solaris) usan la opción -R.</span>
+<span class="Li">Compilación en Windows:</span>
+<span class="Li">Si desea enlazar estáticamente este programa contra un archivo .a no DLL, debe</span>
+<span class="Li">definir PCRE_STATIC antes de incluir pcre.h, de lo contrario, las funciones</span>
+<span class="Li">pcre_malloc() y pcre_free() exportadas se declararán como __declspec(dllimport),</span>
+<span class="Li">con resultados no deseados. Así que en este entorno, descomente la siguiente línea. */</span>
+<span class="Li">/* #define PCRE_STATIC */</span>
+<span class="Li">#include &lt;stdio.h&gt;</span>
+<span class="Li">#include &lt;string.h&gt;</span>
+<span class="Li">#include &lt;pcre.h&gt;</span>
+<span class="Li">#define OVECCOUNT 30    /* debe ser un múltiplo de 3 */</span>
+<span class="Li">int main(int argc, char **argv)</span>
+<span class="Li">{</span>
+<span class="Li">pcre *re;</span>
+<span class="Li">const char *error;</span>
+<span class="Li">char *pattern;</span>
+<span class="Li">char *subject;</span>
+<span class="Li">unsigned char *name_table;</span>
+<span class="Li">unsigned int option_bits;</span>
+<span class="Li">int erroffset;</span>
+<span class="Li">int find_all;</span>
+<span class="Li">int crlf_is_newline;</span>
+<span class="Li">int namecount;</span>
+<span class="Li">int name_entry_size;</span>
+<span class="Li">int ovector[OVECCOUNT];</span>
+<span class="Li">int subject_length;</span>
+<span class="Li">int rc, i;</span>
+<span class="Li">int utf8;</span>
+<span class="Li">/**************************************************************************</span>
+<span class="Li">* Primero, ordenemos la línea de comandos. Solo hay una opción posible en *</span>
+<span class="Li">* el momento, &quot;-g&quot; para solicitar coincidencias repetidas para encontrar *</span>
+<span class="Li">* todas las ocurrencias, como la opción /g de Perl. Establecemos la variable *</span>
+<span class="Li">* find_all a un valor distinto de cero si está presente la opción -g.  *</span>
+<span class="Li">* Aparte de eso, debe haber exactamente dos argumentos.                    *</span>
+<span class="Li">**************************************************************************/</span>
+<span class="Li">find_all = 0;</span>
+<span class="Li">for (i = 1; i &lt; argc; i++)</span>
+<span class="Li">  {</span>
+<span class="Li">  if (strcmp(argv[i], &quot;-g&quot;) == 0) find_all = 1;</span>
+<span class="Li">    else break;</span>
+<span class="Li">  }</span>
+<span class="Li">/* Después de las opciones, requerimos exactamente dos argumentos, que son el patrón</span>
+<span class="Li">y la cadena de sujeto. */</span>
+<span class="Li">if (argc - i != 2)</span>
+<span class="Li">  {</span>
+<span class="Li">  printf(&quot;Se requieren dos argumentos: una expresión regular y una cadena de sujeto\n&quot;);</span>
+<span class="Li">  return 1;</span>
+<span class="Li">  }</span>
+<span class="Li">pattern = argv[i];</span>
+<span class="Li">subject = argv[i+1];</span>
+<span class="Li">subject_length = (int)strlen(subject);</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Ahora vamos a compilar el patrón de expresión regular, y manejar       *</span>
+<span class="Li">* cualquier error que se detecte.                                          *</span>
+<span class="Li">*************************************************************************/</span>
+<span class="Li">re = pcre_compile(</span>
+<span class="Li">  pattern,              /* el patrón */</span>
+<span class="Li">  0,                    /* opciones por defecto */</span>
+<span class="Li">  &amp;error,               /* para el mensaje de error */</span>
+<span class="Li">  &amp;erroffset,           /* para el desplazamiento del error */</span>
+<span class="Li">  NULL);                /* usar tablas de caracteres por defecto */</span>
+<span class="Li">/* La compilación falló: imprimir el mensaje de error y salir */</span>
+<span class="Li">if (re == NULL)</span>
+<span class="Li">  {</span>
+<span class="Li">  printf(&quot;La compilación de PCRE falló en el desplazamiento %d: %s\n&quot;, erroffset, error);</span>
+<span class="Li">  return 1;</span>
+<span class="Li">  }</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Si la compilación tuvo éxito, llamamos a PCRE de nuevo, para realizar   *</span>
+<span class="Li">* una coincidencia de patrón contra la cadena de sujeto. Esto hace solo UNA*</span>
+<span class="Li">* coincidencia. Si se necesitan más coincidencias, se harán abajo.         *</span>
+<span class="Li">*************************************************************************/</span>
+<span class="Li">rc = pcre_exec(</span>
+<span class="Li">  re,                   /* el patrón compilado */</span>
+<span class="Li">  NULL,                 /* sin datos extra - no estudiamos el patrón */</span>
+<span class="Li">  subject,              /* la cadena de sujeto */</span>
+<span class="Li">  subject_length,       /* la longitud del sujeto */</span>
+<span class="Li">  0,                    /* empezar en el desplazamiento 0 en el sujeto */</span>
+<span class="Li">  0,                    /* opciones por defecto */</span>
+<span class="Li">  ovector,              /* vector de salida para información de subcadenas */</span>
+<span class="Li">  OVECCOUNT);           /* número de elementos en el vector de salida */</span>
+<span class="Li">/* La coincidencia falló: manejar los casos de error */</span>
+<span class="Li">if (rc &lt; 0)</span>
+<span class="Li">  {</span>
+<span class="Li">  switch(rc)</span>
+<span class="Li">    {</span>
+<span class="Li">    case PCRE_ERROR_NOMATCH: printf(&quot;No hay coincidencia\n&quot;); break;</span>
+<span class="Li">    /*</span>
+<span class="Li">    Manejar otros casos especiales si lo desea</span>
+<span class="Li">    */</span>
+<span class="Li">    default: printf(&quot;Error de coincidencia %d\n&quot;, rc); break;</span>
+<span class="Li">    }</span>
+<span class="Li">  pcre_free(re);     /* Liberar la memoria usada para el patrón compilado */</span>
+<span class="Li">  return 1;</span>
+<span class="Li">  }</span>
+<span class="Li">/* Coincidencia exitosa */</span>
+<span class="Li">printf(&quot;\nCoincidencia exitosa en el desplazamiento %d\n&quot;, ovector[0]);</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Hemos encontrado la primera coincidencia dentro de la cadena de sujeto.  *</span>
+<span class="Li">* Si el vector de salida no era lo suficientemente grande, decirlo. Luego, *</span>
+<span class="Li">* mostrar cualquier subcadena que haya sido capturada.                   *</span>
+<span class="Li">*************************************************************************/</span>
+<span class="Li">/* El vector de salida no era lo suficientemente grande */</span>
+<span class="Li">if (rc == 0)</span>
+<span class="Li">  {</span>
+<span class="Li">  rc = OVECCOUNT/3;</span>
+<span class="Li">  printf(&quot;ovector solo tiene espacio para %d subcadenas capturadas\n&quot;, rc - 1);</span>
+<span class="Li">  }</span>
+<span class="Li">/* Mostrar subcadenas almacenadas en el vector de salida por número. Obviamente, en una</span>
+<span class="Li">aplicación real querría hacer cosas aparte de imprimirlas. */</span>
+<span class="Li">for (i = 0; i &lt; rc; i++)</span>
+<span class="Li">  {</span>
+<span class="Li">  char *substring_start = subject + ovector[2*i];</span>
+<span class="Li">  int substring_length = ovector[2*i+1] - ovector[2*i];</span>
+<span class="Li">  printf(&quot;%2d: %.*s\n&quot;, i, substring_length, substring_start);</span>
+<span class="Li">  }</span>
+<span class="Li">/**************************************************************************</span>
+<span class="Li">* Eso concluye la parte básica de este programa de demostración. Hemos    *</span>
+<span class="Li">* compilado un patrón y realizado una única coincidencia. El código que   *</span>
+<span class="Li">* sigue muestra primero cómo acceder a subcadenas con nombre, y luego cómo *</span>
+<span class="Li">* codificar para coincidencias repetidas en el mismo sujeto.               *</span>
+<span class="Li">**************************************************************************/</span>
+<span class="Li">/* Ver si hay alguna subcadena con nombre, y si es así, mostrarla por nombre. Primero</span>
+<span class="Li">tenemos que extraer el recuento de na</span>
+/* Elimina los paréntesis de la expresión regular. */</span>
+<span class="Li">(void)pcre_fullinfo(</span>
+<span class="Li">  re,                   /* el patrón compilado */</span>
+<span class="Li">  NULL,                 /* sin datos adicionales - no hemos estudiado el patrón */</span>
+<span class="Li">  PCRE_INFO_NAMECOUNT,  /* número de subcadenas nombradas */</span>
+<span class="Li">  &amp;namecount);          /* dónde poner la respuesta */</span>
+<span class="Li">if (namecount &lt;= 0) printf(&quot;No hay subcadenas nombradas\n&quot;); else</span>
+<span class="Li">  {</span>
+<span class="Li">  unsigned char *tabptr;</span>
+<span class="Li">  printf(&quot;Subcadenas nombradas\n&quot;);</span>
+<span class="Li">  /* Antes de poder acceder a las subcadenas, debemos extraer la tabla para</span>
+<span class="Li">  traducir nombres a números, y el tamaño de cada entrada en la tabla. */</span>
+<span class="Li">  (void)pcre_fullinfo(</span>
+<span class="Li">    re,                       /* el patrón compilado */</span>
+<span class="Li">    NULL,                     /* sin datos adicionales - no hemos estudiado el patrón */</span>
+<span class="Li">    PCRE_INFO_NAMETABLE,      /* dirección de la tabla */</span>
+<span class="Li">    &amp;name_table);             /* dónde poner la respuesta */</span>
+<span class="Li">  (void)pcre_fullinfo(</span>
+<span class="Li">    re,                       /* el patrón compilado */</span>
+<span class="Li">    NULL,                     /* sin datos adicionales - no hemos estudiado el patrón */</span>
+<span class="Li">    PCRE_INFO_NAMEENTRYSIZE,  /* tamaño de cada entrada en la tabla */</span>
+<span class="Li">    &amp;name_entry_size);        /* dónde poner la respuesta */</span>
+<span class="Li">  /* Ahora podemos escanear la tabla y, para cada entrada, imprimir el número, el nombre,</span>
+<span class="Li">  y la subcadena en sí. */</span>
+<span class="Li">  tabptr = name_table;</span>
+<span class="Li">  for (i = 0; i &lt; namecount; i++)</span>
+<span class="Li">    {</span>
+<span class="Li">    int n = (tabptr[0] &lt;&lt; 8) | tabptr[1];</span>
+<span class="Li">    printf(&quot;(%d) %*s: %.*s\n&quot;, n, name_entry_size - 3, tabptr + 2,</span>
+<span class="Li">      ovector[2*n+1] - ovector[2*n], subject + ovector[2*n]);</span>
+<span class="Li">    tabptr += name_entry_size;</span>
+<span class="Li">    }</span>
+<span class="Li">  }</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Si la opción "-g" se dio en la línea de comandos, queremos continuar *</span>
+<span class="Li">* buscando coincidencias adicionales en la cadena del sujeto, de forma similar *</span>
+<span class="Li">* a la opción /g en Perl. Esto resulta ser más complicado de lo que *</span>
+<span class="Li">* podrías pensar debido a la posibilidad de que coincida una cadena vacía. *</span>
+<span class="Li">* Lo que sucede es lo siguiente: *</span>
+<span class="Li">* *</span>
+<span class="Li">* Si la coincidencia anterior NO fue de una cadena vacía, podemos simplemente comenzar *</span>
+<span class="Li">* la siguiente coincidencia al final de la anterior. *</span>
+<span class="Li">* *</span>
+<span class="Li">* Si la coincidencia anterior FUE de una cadena vacía, no podemos hacer eso, ya que *</span>
+<span class="Li">* llevaría a un bucle infinito. En su lugar, se realiza una llamada especial a pcre_exec() *</span>
+<span class="Li">* con las banderas PCRE_NOTEMPTY_ATSTART y PCRE_ANCHORED establecidas. *</span>
+<span class="Li">* La primera de ellas indica a PCRE que una cadena vacía al principio del *</span>
+<span class="Li">* sujeto no es una coincidencia válida; deben probarse otras posibilidades. La *</span>
+<span class="Li">* segunda bandera restringe PCRE a un intento de coincidencia en la posición inicial de la cadena. *</span>
+<span class="Li">* Si esta coincidencia tiene éxito, se ha encontrado una alternativa a la coincidencia de cadena vacía, *</span>
+<span class="Li">* y podemos imprimirla y continuar el bucle, avanzando la longitud de lo que se encontró. Si esta coincidencia NO *</span>
+<span class="Li">* tiene éxito, todavía permanecemos en el bucle, avanzando solo un carácter. *</span>
+<span class="Li">* En modo UTF-8, que se puede establecer mediante (*UTF8) en el patrón, esto puede ser *</span>
+<span class="Li">* más de un byte. *</span>
+<span class="Li">* *</span>
+<span class="Li">* Sin embargo, hay una complicación relacionada con los saltos de línea. Cuando la *</span>
+<span class="Li">* convención de salto de línea es tal que CRLF es un salto de línea válido, debemos *</span>
+<span class="Li">* avanzar dos caracteres en lugar de uno. La convención de salto de línea puede *</span>
+<span class="Li">* establecerse en la expresión regular mediante (*CR), etc.; si no, debemos encontrar la configuración predeterminada. *</span>
+<span class="Li">*************************************************************************/</span>
+<span class="Li">if (!find_all)     /* Comprobar si está la opción -g */</span>
+<span class="Li">  {</span>
+<span class="Li">  pcre_free(re);   /* Liberar la memoria utilizada para el patrón compilado */</span>
+<span class="Li">  return 0;        /* Terminar a menos que se haya dado -g */</span>
+<span class="Li">  }</span>
+<span class="Li">/* Antes de ejecutar el bucle, comprobar si está en UTF-8 y si CRLF es una secuencia de salto de línea válida</span>
+<span class="Li">Por el momento, encontrar las opciones con las que se compiló la expresión regular; extraer</span>
+<span class="Li">el estado UTF-8, y enmascarar todas las opciones excepto las de salto de línea. */</span>
+<span class="Li">(void)pcre_fullinfo(re, NULL, PCRE_INFO_OPTIONS, &amp;option_bits);</span>
+<span class="Li">utf8 = option_bits &amp; PCRE_UTF8;</span>
+<span class="Li">option_bits &amp;= PCRE_NEWLINE_CR|PCRE_NEWLINE_LF|PCRE_NEWLINE_CRLF|</span>
+<span class="Li">               PCRE_NEWLINE_ANY|PCRE_NEWLINE_ANYCRLF;</span>
+<span class="Li">/* Si no se establecieron opciones de salto de línea, encontrar la convención de salto de línea predeterminada de la</span>
+<span class="Li">configuración de compilación. */</span>
+<span class="Li">if (option_bits == 0)</span>
+<span class="Li">  {</span>
+<span class="Li">  int d;</span>
+<span class="Li">  (void)pcre_config(PCRE_CONFIG_NEWLINE, &amp;d);</span>
+<span class="Li">  /* Nótese que estos valores son siempre los de ASCII, incluso en</span>
+<span class="Li">  entornos EBCDIC. CR = 13, NL = 10. */</span>
+<span class="Li">  option_bits = (d == 13)? PCRE_NEWLINE_CR :</span>
+<span class="Li">          (d == 10)? PCRE_NEWLINE_LF :</span>
+<span class="Li">          (d == (13&lt;&lt;8 | 10))? PCRE_NEWLINE_CRLF :</span>
+<span class="Li">          (d == -2)? PCRE_NEWLINE_ANYCRLF :</span>
+<span class="Li">          (d == -1)? PCRE_NEWLINE_ANY : 0;</span>
+<span class="Li">  }</span>
+<span class="Li">/* Ver si CRLF es una secuencia de salto de línea válida. */</span>
+<span class="Li">crlf_is_newline =</span>
+<span class="Li">     option_bits == PCRE_NEWLINE_ANY ||</span>
+<span class="Li">     option_bits == PCRE_NEWLINE_CRLF ||</span>
+<span class="Li">     option_bits == PCRE_NEWLINE_ANYCRLF;</span>
+<span class="Li">/* Bucle para la segunda y subsiguientes coincidencias */</span>
+<span class="Li">for (;;)</span>
+<span class="Li">  {</span>
+<span class="Li">  int options = 0;                 /* Normalmente sin opciones */</span>
+<span class="Li">  int start_offset = ovector[1];   /* Empezar al final de la coincidencia anterior */</span>
+<span class="Li">  /* Si la coincidencia anterior fue de una cadena vacía, hemos terminado si estamos</span>
+<span class="Li">  al final del sujeto. De lo contrario, organizar para ejecutar otra coincidencia en el</span>
+<span class="Li">  mismo punto para ver si se puede encontrar una coincidencia no vacía. */</span>
+<span class="Li">  if (ovector[0] == ovector[1])</span>
+<span class="Li">    {</span>
+<span class="Li">    if (ovector[0] == subject_length) break;</span>
+<span class="Li">    options = PCRE_NOTEMPTY_ATSTART | PCRE_ANCHORED;</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Ejecutar la siguiente operación de coincidencia */</span>
+<span class="Li">  rc = pcre_exec(</span>
+<span class="Li">    re,                   /* el patrón compilado */</span>
+<span class="Li">    NULL,                 /* sin datos adicionales - no hemos estudiado el patrón */</span>
+<span class="Li">    subject,              /* la cadena del sujeto */</span>
+<span class="Li">    subject_length,       /* la longitud del sujeto */</span>
+<span class="Li">    start_offset,         /* offset de inicio en el sujeto */</span>
+<span class="Li">    options,              /* opciones */</span>
+<span class="Li">    ovector,              /* vector de salida para información de subcadena */</span>
+<span class="Li">    OVECCOUNT);           /* número de elementos en el vector de salida */</span>
+<span class="Li">  /* Esta vez, un resultado de NOMATCH no es un error. Si el valor en "options"</span>
+<span class="Li">  es cero, solo significa que hemos encontrado todas las coincidencias posibles, por lo que el bucle termina.</span>
+<span class="Li">  De lo contrario, significa que no hemos logrado encontrar una coincidencia de cadena no vacía en un</span>
+<span class="Li">  punto donde hubo una coincidencia de cadena vacía anterior. En este caso, hacemos lo que</span>
+<span class="Li">  hace Perl: avanzamos la posición de coincidencia en un carácter y continuamos. Hacemos esto</span>
+<span class="Li">  estableciendo el desplazamiento "fin de la coincidencia anterior", porque eso se recoge al principio del bucle como el punto en el que comenzar de nuevo.</span>
+<span class="Li">  Hay dos complicaciones: (a) Cuando CRLF es un salto de línea válido, y</span>
+<span class="Li">  la posición actual está justo antes de él, avanzar un byte adicional. (b)</span>
+<span class="Li">  De lo contrario, debemos asegurarnos de saltar un carácter UTF-8 completo si estamos en</span>
+<span class="Li">  modo UTF-8. */</span>
+<span class="Li">  if (rc == PCRE_ERROR_NOMATCH)</span>
+<span class="Li">    {</span>
+<span class="Li">    if (options == 0) break;                    /* Todas las coincidencias encontradas */</span>
+<span class="Li">    ovector[1] = start_offset + 1;              /* Avanzar un byte */</span>
+<span class="Li">    if (crlf_is_newline &amp;&amp;                      /* Si CRLF es salto de línea y */</span>
+<span class="Li">        start_offset &lt; subject_length - 1 &amp;&amp;    /* estamos en CRLF, */</span>
+<span class="Li">        subject[start_offset] == '\r' &amp;&amp;</span>
+<span class="Li">        subject[start_offset + 1] == '\n')</span>
+<span class="Li">      ovector[1] += 1;                          /* Avanzar uno más. */</span>
+<span class="Li">    else if (utf8)                              /* De lo contrario, asegurar que */</span>
+<span class="Li">      {                                         /* avanzamos un carácter UTF-8 completo */</span>
+<span class="Li">      while (ovector[1] &lt; subject_length)       /* . */</span>
+<span class="Li">        {</span>
+<span class="Li">        if ((subject[ovector[1]] &amp; 0xc0) != 0x80) break;</span>
+<span class="Li">        ovector[1] += 1;</span>
+<span class="Li">        }</span>
+<span class="Li">      }</span>
+<span class="Li">    continue;    /* Volver a empezar el bucle */</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Otros errores de coincidencia no son recuperables. */</span>
+<span class="Li">  if (rc &lt; 0)</span>
+<span class="Li">    {</span>
+<span class="Li">    printf(&quot;Error de coincidencia %d\n&quot;, rc);</span>
+<span class="Li">    pcre_free(re);    /* Liberar la memoria utilizada para el patrón compilado */</span>
+<span class="Li">    return 1;</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Coincidencia exitosa */</span>
+<span class="Li">  printf(&quot;\nCoincidencia exitosa de nuevo en el offset %d\n&quot;, ovector[0]);</span>
+<span class="Li">  /* La coincidencia tuvo éxito, pero el vector de salida no era lo suficientemente grande. */</span>
+<span class="Li">  if (rc == 0)</span>
+<span class="Li">    {</span>
+<span class="Li">    rc = OVECCOUNT/3;</span>
+<span class="Li">    printf(&quot;ovector solo tiene espacio para %d subcadenas capturadas\n&quot;, rc - 1);</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Ahora imprimir la subcadena capturada si existe. */</span>
+<span class="Li">  for (i = 1; i &lt; rc; i++)</span>
+<span class="Li">    {</span>
+<span class="Li">    printf(&quot;  $%d: %.*s\n&quot;, i, ovector[2*i+1] - ovector[2*i],</span>
+<span class="Li">      subject + ovector[2*i]);</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Si la coincidencia fue de una cadena vacía, debemos salir aquí para evitar un bucle infinito.</span>
+<span class="Li">  Esto se maneja de forma especial al principio del bucle. */</span>
+<span class="Li">  if (ovector[0] == ovector[1]) break;</span>
+<span class="Li">  }</span>
+<span class="Li">pcre_free(re); /* Liberar la memoria utilizada para el patrón compilado */</span>
+<span class="Li">return 0;</span>
+<span class="Li">}</span>
+<span class="Li">    }</span>
+<span class="Li">  /* Igual que antes, muestra las subcadenas almacenadas en el vector de salida por número, y luego</span>
+<span class="Li">  también cualquier subcadena con nombre. */</span>
+<span class="Li">  for (i = 0; i &lt; rc; i++)</span>
+<span class="Li">    {</span>
+<span class="Li">    char *substring_start = subject + ovector[2*i];</span>
+<span class="Li">    int substring_length = ovector[2*i+1] - ovector[2*i];</span>
+<span class="Li">    printf(&quot;%2d: %.*s\n&quot;, i, substring_length, substring_start);</span>
+<span class="Li">    }</span>
+<span class="Li">  if (namecount &lt;= 0) printf(&quot;No hay subcadenas con nombre\n&quot;); else</span>
+<span class="Li">    {</span>
+<span class="Li">    unsigned char *tabptr = name_table;</span>
+<span class="Li">    printf(&quot;Subcadenas con nombre\n&quot;);</span>
+<span class="Li">    for (i = 0; i &lt; namecount; i++)</span>
+<span class="Li">      {</span>
+<span class="Li">      int n = (tabptr[0] &lt;&lt; 8) | tabptr[1];</span>
+<span class="Li">      printf(&quot;(%d) %*s: %.*s\n&quot;, n, name_entry_size - 3, tabptr + 2,</span>
+<span class="Li">        ovector[2*n+1] - ovector[2*n], subject + ovector[2*n]);</span>
+<span class="Li">      tabptr += name_entry_size;</span>
+<span class="Li">      }</span>
+<span class="Li">    }</span>
+<span class="Li">  }      /* Fin del bucle para encontrar la segunda y subsiguientes coincidencias */</span>
+<span class="Li">printf(&quot;\n&quot;);</span>
+<span class="Li">pcre_free(re);       /* Libera la memoria utilizada para el patrón compilado */</span>
+<span class="Li">return 0;</span>
+<span class="Li">}</span>
+<span class="Li">/* Fin de pcredemo.c */</span></pre>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/pcre/">core/pcre</a></dd>
+        <dt>Versión:</dt>
+        <dd>8.45-4</dd>
+        <dt>Principal:</dt>
+        <dd><a href="https://www.pcre.org/">https://www.pcre.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/pcre/">/listing/core/pcre/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pcredemo.3.en.txt">txt</a>, 
+        
+            <a href="/man/pcredemo.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

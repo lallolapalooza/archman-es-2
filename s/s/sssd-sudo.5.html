@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>sssd-sudo(5) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+        <link rel="alternate" href="/man/sssd-sudo.5.ru" hreflang="ru">
+    
+        <link rel="alternate" href="/man/sssd-sudo.5.sv" hreflang="sv">
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">sssd-sudo(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/sssd/">sssd</a></p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SSSD-SUDO(5)</td>
+    <td class="head-vol">Formatos y convenciones de archivos</td>
+    <td class="head-rtitle">SSSD-SUDO(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">sssd-sudo - Configuración de sudo con el backend SSSD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Esta página del manual describe cómo configurar <a href='/man/sudo.8.en'>sudo(8)</a> para que funcione
+    con <a href='/man/sssd.8.en'>sssd(8)</a> y cómo SSSD almacena en caché las reglas de sudo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DE_SUDO_PARA_COOPERAR_CON_SSSD'><a class='permalink' href='#CONFIGURACIÓN_DE_SUDO_PARA_COOPERAR_CON_SSSD'>CONFIGURACIÓN   DE SUDO PARA COOPERAR CON SSSD</a></h1>
+<p class="Pp">Para habilitar SSSD como fuente de reglas de sudo, agregue <i>sss</i>
+    a la entrada <i>sudoers</i> en <a href='/man/nsswitch.conf.5.en'>nsswitch.conf(5)</a>.</p>
+<p class="Pp">Por ejemplo, para configurar sudo para que primero busque reglas en
+    el archivo estándar <a href='/man/sudoers.5.en'>sudoers(5)</a> (que debería contener reglas que se aplican a
+    usuarios locales) y luego en SSSD, el archivo nsswitch.conf debería contener
+    la siguiente línea:</p>
+<div class="Bd-indent">
+<pre>sudoers: files sss</pre>
+</div>
+<p class="Pp">Puede encontrar más información sobre la configuración del orden de
+    búsqueda de sudoers desde el archivo nsswitch.conf, así como información
+    sobre el esquema LDAP que se utiliza para almacenar las reglas de sudo en el
+    directorio, en <a href='/man/sudoers.ldap.5.en'>sudoers.ldap(5)</a>.</p>
+<p class="Pp"><i>Nota</i>: para poder utilizar grupos de red (netgroups) o grupos
+    de hosts IPA en reglas de sudo, también debe configurar correctamente
+    <a href='/man/nisdomainname.1.en'>nisdomainname(1)</a> con el nombre de su dominio NIS (que es igual al
+    nombre de dominio IPA cuando se usan grupos de hosts).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DE_SSSD_PARA_OBTENER_REGLAS_DE_SUDO'><a class='permalink' href='#CONFIGURACIÓN_DE_SSSD_PARA_OBTENER_REGLAS_DE_SUDO'>CONFIGURACIÓN   DE SSSD PARA OBTENER REGLAS DE SUDO</a></h1>
+<p class="Pp">Toda la configuración necesaria en el lado de SSSD es extender la
+    lista de <i>services</i> con &quot;sudo&quot; en la sección [sssd] de
+    <a href='/man/sssd.conf.5.en'>sssd.conf(5)</a>. Para acelerar las búsquedas LDAP, también puede
+    establecer la base de búsqueda para las reglas de sudo usando la opción
+    <i>ldap_sudo_search_base</i>.</p>
+<p class="Pp">El siguiente ejemplo muestra cómo configurar SSSD para descargar
+    reglas de sudo de un servidor LDAP.</p>
+<div class="Bd-indent">
+<pre>[sssd]
+services = nss, pam, sudo
+domains = EXAMPLE
+[domain/EXAMPLE]
+id_provider = ldap
+sudo_provider = ldap
+ldap_uri = ldap://example.com
+ldap_sudo_search_base = ou=sudoers,dc=example,dc=com</pre>
+</div>
+<p class="Pp">Es importante tener en cuenta que en las plataformas donde se
+    soporta systemd, no es necesario agregar el proveedor &quot;sudo&quot; a la
+    lista de servicios, ya que se volvió opcional. Sin embargo, sssd-sudo.socket
+    debe estar habilitado en su lugar.</p>
+<p class="Pp">Cuando SSSD está configurado para usar IPA como proveedor de ID,
+    el proveedor sudo se habilita automáticamente. La base de búsqueda sudo se
+    configura para usar el árbol LDAP nativo de IPA (cn=sudo,$SUFFIX). Si se
+    define alguna otra base de búsqueda en sssd.conf, se utilizará este valor en
+    su lugar. El árbol de compatibilidad (ou=sudoers,$SUFFIX) ya no es
+    necesario para la funcionalidad sudo de IPA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EL_MECANISMO_DE_ALMACENAMIENTO_EN_CACHÉ_DE_REGLAS_DE_SUDO'><a class='permalink' href='#EL_MECANISMO_DE_ALMACENAMIENTO_EN_CACHÉ_DE_REGLAS_DE_SUDO'>EL   MECANISMO DE ALMACENAMIENTO EN CACHÉ DE REGLAS DE SUDO</a></h1>
+<p class="Pp">El mayor desafío, al desarrollar soporte para sudo en SSSD, fue
+    garantizar que ejecutar sudo con SSSD como fuente de datos proporcione la
+    misma experiencia de usuario y sea tan rápido como sudo, pero siga
+    proporcionando el conjunto de reglas más actual posible. Para satisfacer
+    estos requisitos, SSSD utiliza tres tipos de actualizaciones. Se les conoce
+    como actualización completa (full refresh), actualización inteligente (smart
+    refresh) y actualización de reglas (rules refresh).</p>
+<p class="Pp">La <i>actualización inteligente</i> descarga periódicamente las
+    reglas que son nuevas o fueron modificadas después de la última
+    actualización. Su objetivo principal es mantener la base de datos en
+    crecimiento al obtener solo pequeños incrementos que no generan grandes
+    cantidades de tráfico de red.</p>
+<p class="Pp">La <i>actualización completa</i> simplemente elimina todas las
+    reglas de sudo almacenadas en la caché y las reemplaza con todas las reglas
+    que están almacenadas en el servidor. Esto se utiliza para mantener la
+    coherencia de la caché eliminando cada regla que fue eliminada del servidor.
+    Sin embargo, la actualización completa puede generar mucho tráfico y, por lo
+    tanto, solo debe ejecutarse ocasionalmente dependiendo del tamaño y la
+    estabilidad de las reglas de sudo.</p>
+<p class="Pp">La <i>actualización de reglas</i> garantiza que no otorgamos al
+    usuario más permisos de los definidos. Se activa cada vez que el usuario
+    ejecuta sudo. La actualización de reglas encontrará todas las reglas que se
+    aplican a este usuario, verificará su tiempo de expiración y las volverá a
+    descargar si han expirado. En caso de que falten algunas de estas reglas en
+    el servidor, SSSD realizará una actualización completa fuera de banda porque
+    es posible que se hayan eliminado más reglas (que se aplican a otros
+    usuarios).</p>
+<p class="Pp">Si está habilitado, SSSD almacenará solo las reglas que se pueden
+    aplicar a esta máquina. Esto significa reglas que contienen uno de los
+    siguientes valores en el atributo <i>sudoHost</i>:</p>
+<div class="Bd-indent">&#x2022;palabra clave ALL</div>
+<div class="Bd-indent">&#x2022;comodín</div>
+<div class="Bd-indent">&#x2022;netgroup (en el formato
+  &quot;+netgroup&quot;)</div>
+<div class="Bd-indent">&#x2022;nombre de host o nombre de dominio completo de esta
+  máquina</div>
+<div class="Bd-indent">&#x2022;una de las direcciones IP de esta máquina</div>
+<div class="Bd-indent">&#x2022;una de las direcciones IP de la red (en el formato
+  &quot;dirección/máscara&quot;)</div>
+<p class="Pp">Hay muchas opciones de configuración que se pueden usar para
+    ajustar el comportamiento. Consulte &quot;ldap_sudo_*&quot; en <a href='/man/sssd-ldap.5.en'>sssd-ldap(5)</a>
+    y &quot;sudo_*&quot; en <a href='/man/sssd.conf.5.en'>sssd.conf(5)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AJUSTE_DEL_RENDIMIENTO'><a class='permalink' href='#AJUSTE_DEL_RENDIMIENTO'>AJUSTE   DEL RENDIMIENTO</a></h1>
+<p class="Pp">SSSD utiliza diferentes tipos de mecanismos con filtros LDAP más o
+    menos complejos para mantener actualizadas las reglas de sudo almacenadas en
+    caché. La configuración predeterminada se establece en valores que deberían
+    satisfacer a la mayoría de nuestros usuarios, pero los siguientes párrafos
+    contienen algunos consejos sobre cómo ajustar la configuración a sus
+    necesidades.</p>
+<p class="Pp">1. <i>Indexar atributos LDAP</i>. Asegúrese de que los siguientes
+    atributos LDAP estén indexados: objectClass, cn, entryUSN o
+    modifyTimestamp.</p>
+<p class="Pp">2. <i>Establecer ldap_sudo_search_base</i>. Establezca la base de
+    búsqueda en el contenedor que contiene las reglas de sudo para limitar el
+    alcance de la consulta.</p>
+<p class="Pp">3. <i>Establecer el intervalo de actualización completa e
+    inteligente</i>. Si sus reglas de sudo no cambian a menudo y no requiere una
+    actualización rápida de las reglas almacenadas en caché en sus clientes,
+    puede considerar aumentar el
+    <i>ldap_sudo_full_refresh_interval</i> y
+    <i>ldap_sudo_smart_refresh_interval</i>. También puede considerar deshabilitar
+    la actualización inteligente estableciendo
+    <i>ldap_sudo_smart_refresh_interval = 0</i>.</p>
+<p class="Pp">4. Si tiene un gran número de clientes, puede considerar
+    aumentar el valor de <i>ldap_sudo_random_offset</i> para distribuir mejor la
+    carga en el servidor.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/sssd.8.en'>sssd(8)</a>, <a href='/man/sssd.conf.5.en'>sssd.conf(5)</a>, <a href='/man/sssd-ldap.5.en'>sssd-ldap(5)</a>,
+    <a href='/man/sssd-ldap-attributes.5.en'>sssd-ldap-attributes(5)</a>, <a href='/man/sssd-krb5.5.en'>sssd-krb5(5)</a>, <a href='/man/sssd-simple.5.en'>sssd-simple(5)</a>,
+    <a href='/man/sssd-ipa.5.en'>sssd-ipa(5)</a>, <a href='/man/sssd-ad.5.en'>sssd-ad(5)</a>, <a href='/man/sssd-idp.5.en'>sssd-idp(5)</a>,
+    <a href='/man/sssd-sudo.5.en'>sssd-sudo(5)</a>, <a href='/man/sssd-session-recording.5.en'>sssd-session-recording(5)</a>, <a href='/man/sss_cache.8.en'>sss_cache(8)</a>,
+    <a href='/man/sss_debuglevel.8.en'>sss_debuglevel(8)</a>, <a href='/man/sss_obfuscate.8.en'>sss_obfuscate(8)</a>, <a href='/man/sss_seed.8.en'>sss_seed(8)</a>,
+    <a href='/man/sssd_krb5_locator_plugin.8.en'>sssd_krb5_locator_plugin(8)</a>, <a href='/man/sss_ssh_authorizedkeys.1.en'>sss_ssh_authorizedkeys(1)</a>,
+    <a href='/man/sss_ssh_knownhosts.1.en'>sss_ssh_knownhosts(1)</a>, <a href='/man/sssd-ifp.5.en'>sssd-ifp(5)</a>, <a href='/man/pam_sss.8.en'>pam_sss(8)</a>.
+    <a href='/man/sss_rpcidmapd.5.en'>sss_rpcidmapd(5)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp"><b>El upstream de SSSD - <a href='https://github.com/SSSD/sssd/'>https://github.com/SSSD/sssd/</a></b></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">26/08/2025</td>
+    <td class="foot-os">SSSD</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/sssd/">extra/sssd</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.11.1-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/SSSD/sssd">https://github.com/SSSD/sssd</a></dd>
+    </dl>
+</section>
+
+            </aside>
+        </main>
+        
+    </body>
+</html>
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <title>sssd-sudo.5.es</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        
+        <main>
+            <aside>
+                <dl>
+        <dt>Package:</dt>
+        <dd>
+            <a href="/listing/core/sssd/">/listing/core/sssd/</a>
+        </dd>
+        <dt>Section:</dt>
+        <dd>5</dd>
+        <dt>Description:</dt>
+        <dd>
+            <a href="/listing/extra/sssd/">/listing/extra/sssd/</a>
+        </dd>
+        <dt>Licenses:</dt>
+        <dd>GPL-3.0-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/sssd/">/listing/extra/sssd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#CONFIGURACIÓN_DE_SUDO_PARA_COOPERAR_CON_SSSD">CONFIGURACIÓN DE SUDO PARA COOPERAR CON SSSD</a></li>
+        
+            <li><a href="#CONFIGURACIÓN_DE_SSSD_PARA_OBTENER_LAS_REGLAS_DE_SUDO">CONFIGURACIÓN DE SSSD PARA OBTENER LAS REGLAS DE SUDO</a></li>
+        
+            <li><a href="#EL_MECANISMO_DE_CACHÉ_DE_REGLAS_DE_SUDO">EL MECANISMO DE CACHÉ DE REGLAS DE SUDO</a></li>
+        
+            <li><a href="#AJUSTE_DEL_RENDIMIENTO">AJUSTE DEL RENDIMIENTO</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+<nav class="other-languages">
+    <p>En otros idiomas:</p>
+    <ul>
+    
+        <li><a href="/man/sssd-sudo.5.ru">ru</a></li>
+    
+        <li><a href="/man/sssd-sudo.5.sv">sv</a></li>
+    
+    </ul>
+</nav>
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/sssd-sudo.5.en.txt">txt</a>, 
+        
+            <a href="/man/sssd-sudo.5.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

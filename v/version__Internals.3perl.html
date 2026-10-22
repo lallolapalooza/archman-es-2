@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>version::Internals(3perl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">version__Internals.3perl</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">version::Internals(3perl)</td>
+    <td class="head-vol">Perl Programmers Reference Guide</td>
+    <td class="head-rtitle">version::Internals(3perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NOMBRE</a></h1>
+<p class="Pp">version::Internals - Extensión de Perl para objetos de versión</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN"><a class="permalink" href="#DESCRIPCIÓN">DESCRIPCIÓN</a></h1>
+<p class="Pp">Objetos de versión sobrecargados para todas las versiones modernas
+    de Perl. Esto documenta la representación interna de datos y el código subyacente
+    de <i>version.pm</i>. Consulte <i>version.pod</i> para el uso diario. Este
+    documento solo es útil para los usuarios interesados en los detalles internos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="¿QUÉ_ES_UNA_VERSIÓN?"><a class="permalink" href="#¿QUÉ_ES_UNA_VERSIÓN?">¿QUÉ
+    ES UNA VERSIÓN?</a></h1>
+<p class="Pp">A efectos de este módulo, un número de versión es una secuencia de
+    valores enteros positivos separados por uno o más puntos decimales y opcionalmente
+    un único guion bajo. Esto se corresponde con lo que Perl mismo utiliza para
+    una versión, además de extender la &quot;versión como número&quot; que se
+    discute en las diversas ediciones del libro del Camello.</p>
+<p class="Pp">En realidad, hay dos tipos distintos de objetos de versión:</p>
+<dl class="Bl-tag">
+  <dt id="Decimal_1"><a class="permalink" href="#Decimal_1">Versiones Decimales</a></dt>
+  <dd>Cualquier versión que &quot;parezca un número&quot;, véase &quot;Versiones
+      Decimales&quot;. Esto incluye también versiones con un único punto decimal
+      y un único guion bajo incrustado, véase &quot;Versiones Alfa&quot;, aunque
+      estas deben ir entre comillas para preservar el formato del guion bajo.</dd>
+  <dt id="Dotted-Decimal"><a class="permalink" href="#Dotted-Decimal">Versiones Decimales
+      con Puntos</a></dt>
+  <dd>También conocidas como &quot;Enteros con Puntos&quot;, estas contienen más de
+      un punto decimal y pueden tener un guion bajo incrustado opcional, véase
+      Versiones Decimales con Puntos. Esta es la que se utiliza comúnmente en la
+      mayoría del software de código abierto como versión &quot;externa&quot; (la
+      que se utiliza como parte de la etiqueta o el nombre del archivo tar). Ahora
+      se requiere un carácter 'v' inicial y advertirá si falta.</dd>
+</dl>
+<p class="Pp">Ambos métodos producirán objetos de versión similares, en el sentido
+    de que la representación de cadena por defecto producirá la &quot;Forma
+    Normal&quot; de la versión solo si es necesario:</p>
+<pre>$v  = version-&gt;new(1.002);     # 1.002, pero compara como 1.2.0
+$v  = version-&gt;new(1.002003);  # 1.002003
+$v2 = version-&gt;new(&quot;v1.2.3&quot;);  # v1.2.3</pre>
+<p class="Pp">En concreto, los números de versión inicializados como &quot;Versiones
+    Decimales&quot; se representarán como cadenas tal como se crearon originalmente
+    (es decir, la misma cadena que se pasó a <span class="Li">new()</span>. Los
+    números de versión inicializados como &quot;Versiones Decimales con
+    Puntos&quot; se representarán como &quot;Forma Normal&quot;.</p>
+<section class="Ss">
+<h2 class="Ss" id="Versiones_Decimales"><a class="permalink" href="#Versiones_Decimales">Versiones Decimales</a></h2>
+<p class="Pp">Estas corresponden a versiones históricas de Perl anteriores a
+    5.6.0, así como a todos los demás módulos que siguen las reglas del Camello
+    para el escalar <span class="Li">$VERSION</span>. Una versión decimal se
+    inicializa con lo que parece un número de punto flotante. Los ceros iniciales
+    **son** significativos y los ceros finales se implican de manera que se mantenga
+    un mínimo de tres lugares entre subversiones. Lo que esto significa es que
+    cualquier subversión (dígitos a la derecha del lugar decimal) que contenga
+    menos de tres dígitos tendrá ceros finales añadidos para cubrir la diferencia,
+    pero solo para fines de comparación con otros objetos de versión. Por ejemplo:</p>
+<pre>                                 # Imprime     Equivalente a
+$v = version-&gt;new(      1.2);    # 1.2        v1.200.0
+$v = version-&gt;new(     1.02);    # 1.02       v1.20.0
+$v = version-&gt;new(    1.002);    # 1.002      v1.2.0
+$v = version-&gt;new(   1.0023);    # 1.0023     v1.2.300
+$v = version-&gt;new(  1.00203);    # 1.00203    v1.2.30
+$v = version-&gt;new( 1.002003);    # 1.002003   v1.2.3</pre>
+<p class="Pp">Todos los ejemplos anteriores son válidos independientemente de si
+    el valor de entrada está entre comillas o no. La característica importante es
+    que el valor de entrada contiene solo un punto decimal. Consulte también
+    &quot;Versiones Alfa&quot;.</p>
+<p class="Pp">NOTA IMPORTANTE: Como se muestra arriba, si su versión Decimal contiene
+    más de 3 dígitos significativos después del punto decimal, se dividirá en
+    cada múltiplo de 3, por lo que 1.0003 es equivalente a v1.0.300, debido a la
+    necesidad de mantener la compatibilidad con la interpretación 5.005_03 ==
+    5.5.30 de Perl. Los ceros finales se ignoran para fines de comparación
+    matemática.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Versiones Decimales con Puntos</h2>
+<p class="Pp">Estas son la forma más reciente de versiones y corresponden al estilo
+    de versión propio de Perl a partir de 5.6.0. A partir de Perl 5.10.0, y muy
+    probablemente Perl 6, esta será probablemente la forma preferida. Este método
+    normalmente requiere que el parámetro de entrada esté entre comillas, aunque
+    el Perl posterior a 5.8.1 puede usar cadenas v como forma especial de
+    comillas, pero esto está muy desaconsejado.</p>
+<p class="Pp">A diferencia de las &quot;Versiones Decimales&quot;, las Versiones
+    Decimales con Puntos tienen más de un punto decimal, por ejemplo:</p>
+<pre>                                 # Imprime
+$v = version-&gt;new( &quot;v1.200&quot;);    # v1.200.0
+$v = version-&gt;new(&quot;v1.20.0&quot;);    # v1.20.0
+$v = qv(&quot;v1.2.3&quot;);               # v1.2.3
+$v = qv(&quot;1.2.3&quot;);                # v1.2.3
+$v = qv(&quot;1.20&quot;);                 # v1.20.0</pre>
+<p class="Pp">En general, las Versiones Decimales con Puntos permiten la mayor
+    libertad para especificar una versión, mientras que las Versiones Decimales
+    imponen cierta uniformidad.</p>
+<p class="Pp">Al igual que las &quot;Versiones Decimales&quot;, las Versiones
+    Decimales con Puntos se pueden utilizar como &quot;Versiones
+    Alfa&quot;.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Versiones_Alfa"><a class="permalink" href="#Versiones_Alfa">Versiones Alfa</a></h2>
+<p class="Pp">Para los autores de módulos que utilizan CPAN, la convención ha sido
+    indicar lanzamientos inestables con un guion bajo en la cadena de versión.
+    (Véase CPAN). version.pm sigue esta convención y los lanzamientos alfa se
+    probarán como más nuevos que el lanzamiento estable más reciente, y menos que
+    el próximo lanzamiento estable. Solo el último elemento puede estar separado
+    por un guion bajo:</p>
+<pre># Declaración
+use version 0.77; our $VERSION = version-&gt;declare(&quot;v1.2_3&quot;);
+# Análisis
+$v1 = version-&gt;parse(&quot;v1.2_3&quot;);
+$v1 = version-&gt;parse(&quot;1.002_003&quot;);</pre>
+<p class="Pp">Tenga en cuenta que **debe** entrecomillar la versión al escribir
+    una versión Decimal alfa. La forma representada como cadena de las versiones
+    Decimales será siempre la misma cadena que se utilizó para inicializar el
+    objeto de versión.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Expresiones_Regulares_para_el_Análisis_de_Versiones"><a class="permalink" href="#Expresiones_Regulares_para_el_Análisis_de_Versiones">Expresiones
+    Regulares para el Análisis de Versiones</a></h2>
+<p class="Pp">Una definición formal de las formas legales para las cadenas de
+    versión se incluye en la clase <span class="Li">&quot;version::regex&quot;</span>.
+    Se incluyen primitivas para elementos comunes, aunque están limitadas al
+    archivo, por lo que son útiles solo como referencia. Hay dos escalares de acceso
+    público que se pueden usar en otro código (no exportados):</p>
+<dl class="Bl-tag">
+  <dt> $version::LAX</dt>
+  <dd> Esta expresión regular cubre todas las formas legales permitidas bajo el
+      analizador de cadenas de versión actual. Esto no quiere decir que todas
+      estas formas sean recomendadas, y algunas de ellas solo se pueden usar
+      cuando están entre comillas.
+    <p class="Pp">Para decimales con puntos:</p>
+        <pre>v1.2
+1.2345.6
+v1.23_4
+</pre>
+    <p class="Pp">La 'v' inicial es opcional si aparecen dos o más puntos decimales.
+      Si solo se incluye un punto decimal, la 'v' inicial es obligatoria para
+      activar el análisis decimal con puntos. Se permite un cero inicial, aunque
+      no se recomienda excepto cuando está entre comillas, debido al riesgo de que
+      Perl trate el número como octal. Un guion bajo final más uno o más dígitos
+      denota una versión alfa o de desarrollo (y debe ir entre comillas para ser
+      analizada correctamente).</p>
+    <p class="Pp">Para versiones decimales:</p>
+        <pre>1
+1.2345
+1.2345_01
+</pre>
+    <p class="Pp">Se requiere una parte entera, un punto decimal opcional y, opcionalmente,
+      uno o más dígitos a la derecha del punto decimal. Se permite un guion bajo
+      final y se permite un cero inicial. Al igual que la versión decimal con
+      puntos laxa, entrecomillar los valores es necesario para que las formas
+      alfa/desarrollo se analicen correctamente.</p>
+  </dd>
+  <dt>$version::STRICT</dt>
+  <dd> Esta expresión regular cubre un conjunto mucho más limitado de formatos y
+      constituye las mejores prácticas para inicializar objetos de versión. Si
+      elije emplear decimal o decimal con puntos es una preferencia personal sin
+      embargo.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="v1.234.5_1"><a class="permalink" href="#v1.234.5_1">v1.234.5</a></dt>
+  <dd>Para versiones decimales con puntos, se requiere una 'v' inicial, con tres o
+      más subversiones de no más de tres dígitos. También se prohíbe un 0 (cero)
+      inicial antes de la primera subversión (en el ejemplo anterior, '1').</dd>
+  <dt>2.3456_1</dt>
+  <dd>Para versiones decimales, se requiere una parte entera (sin cero inicial), un
+      punto decimal y uno o más dígitos a la derecha del punto decimal.</dd>
+</dl>
+</div>
+<p class="Pp">Ambos escalares proporcionados ya están compilados como expresiones
+    regulares y no contienen anclas ni agrupaciones implícitas, por lo que se
+    pueden incluir libremente en sus propias expresiones regulares. Por ejemplo,
+ </div>
+</section>
+
+</article>
+        </main>
+    </body>
+</html>
+consider the following code:</p>
+<pre>($pkg, $ver) =~ /
+        ^[ \t]*
+        use [ \t]+($PKGNAME)
+        (?:[ \t]+($version::STRICT))?
+        [ \t]*;
+/x;</pre>
+<p class="Pp">This would match a line of the form:</p>
+<pre>use Foo::Bar::Baz v1.2.3;       # legal only in Perl 5.8.1+</pre>
+<p class="Pp">where <span class="Li">$PKGNAME</span> is another regular
+    expression that defines the legal forms for package names.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETALLES_DE_IMPLEMENTACIÓN'><a class='permalink' href='#DETALLES_DE_IMPLEMENTACIÓN'>DETALLES DE IMPLEMENTACIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Equivalencia_entre_versiones_decimales_y_decimales_con_puntos'><a class='permalink' href='#Equivalencia_entre_versiones_decimales_y_decimales_con_puntos'>Equivalencia entre versiones decimales y decimales con puntos</a></h2>
+<p class="Pp">Cuando se lanzó Perl 5.6.0, se tomó la decisión de proporcionar una
+    transformación entre los números de versión de estilo antiguo (decimales) y
+    los de estilo nuevo (decimales con puntos):</p>
+<pre>5.6.0    == 5.006000
+5.005_04 == 5.5.40</pre>
+<p class="Pp">Se toma el número de punto flotante y se divide primero en el lugar
+    decimal único, luego cada grupo de tres dígitos a la derecha del decimal
+    compone el siguiente dígito, y así sucesivamente hasta que se agotan los
+    dígitos significativos, **más** los ceros finales necesarios para alcanzar
+    el siguiente múltiplo de tres.</p>
+<p class="Pp">Este fue el método que version.pm adoptó también. Algunos ejemplos
+    pueden ser útiles:</p>
+<pre>                          equivalente
+decimal    con ceros      decimal-con-puntos
+-------    -----------    ------------------
+1.2        1.200          v1.200.0
+1.02       1.020          v1.20.0
+1.002      1.002          v1.2.0
+1.0023     1.002300       v1.2.300
+1.00203    1.002030       v1.2.30
+1.002003   1.002003       v1.2.3</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Reglas_de_comillas'><a class='permalink' href='#Reglas_de_comillas'>Reglas de comillas</a></h2>
+<p class="Pp">Debido a la naturaleza de las rutinas de análisis y tokenización de
+    Perl, ciertos valores de inicialización **deben** ser citados para ser
+    analizados correctamente como la versión deseada, especialmente cuando se
+    usan los métodos <span class="Li">&quot;declare&quot;</span> o
+    &quot;<b>qv()</b>&quot;. Aunque no tenga que citar números decimales al
+    crear objetos de versión, siempre es seguro citar **todos** los valores
+    iniciales al usar los métodos de version.pm, ya que esto asegurará que lo que
+    escriba es lo que se utiliza.</p>
+<p class="Pp">Además, si cita su inicializador, el valor citado que entra será
+    exactamente lo que sale cuando su <span class="Li">$VERSION</span> se imprima
+    (se convierta a cadena). Si no cita su valor, la manipulación numérica normal
+    de Perl entra en juego y es posible que no obtenga lo que esperaba.</p>
+<p class="Pp">Si utiliza una fórmula matemática que se resuelve en un número de
+    punto flotante, dependerá de las rutinas de conversión de Perl para obtener
+    la versión que espera. Está bastante seguro dividiendo por una potencia de
+    10, por ejemplo, pero es poco probable que otras operaciones sean lo que
+    usted pretende. Por ejemplo:</p>
+<pre>$VERSION = version-&gt;new((qw$Revision: 1.4)[1]/10);
+print $VERSION;          # produce 0.14
+$V2 = version-&gt;new(100/9); # Desbordamiento de enteros en número decimal
+print $V2;               # produce algo como 11.111.111.100</pre>
+<p class="Pp">Perl 5.8.1 y posteriores son capaces de citar automáticamente v-strings,
+    pero eso no es posible en versiones anteriores de Perl. En otras palabras:</p>
+<pre>$version = version-&gt;new(&quot;v2.5.4&quot;);  # legal en todas las versiones de Perl
+$newvers = version-&gt;new(v2.5.4);    # legal solo en Perl &gt;= 5.8.1</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='¿Qué_pasa_con_las_v-strings?'><a class='permalink' href='#¿Qué_pasa_con_las_v-strings?'>¿Qué pasa con las v-strings?</a></h2>
+<p class="Pp">Hay dos formas de introducir v-strings: un número desnudo con dos o
+    más puntos decimales, o un número desnudo con uno o más puntos decimales y
+    un carácter 'v' delante (también desnudo). Por ejemplo:</p>
+<pre>$vs1 = 1.2.3; # codificado como \1\2\3
+$vs2 = v1.2;  # codificado como \1\2</pre>
+<p class="Pp">Sin embargo, el uso de v-strings desnudas para inicializar objetos de
+    versión **no se recomienda encarecidamente** en ninguna circunstancia.
+    Además, las v-strings desnudas no son completamente compatibles en ninguna
+    versión de Perl anterior a 5.8.1.</p>
+<p class="Pp">Si insiste en usar v-strings desnudas con Perl &gt; 5.6.0, tenga en
+    cuenta las siguientes limitaciones:</p>
+<p class="Pp">1) Para las versiones de Perl 5.6.0 a 5.8.0, el código de v-string
+    simplemente adivina, basándose en algunas características de las v-strings.
+    **Debe** usar una versión de tres partes, por ejemplo, 1.2.3 o v1.2.3 para
+    que esta heurística tenga éxito.</p>
+<p class="Pp">2) Para las versiones de Perl 5.8.1 y posteriores, las v-strings han
+    cambiado en el núcleo de Perl para ser mágicas, lo que significa que el código
+    de version.pm puede determinar automáticamente si se utilizó la codificación
+    de v-string.</p>
+<p class="Pp">3) En todos los casos, una versión creada usando v-strings tendrá una
+    forma de cadena con un carácter 'v' delante, por la simple razón de que a
+    veces es imposible decir si había una presente inicialmente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Reemplazo_de_UNIVERSAL::VERSION'><a class='permalink' href='#Reemplazo_de_UNIVERSAL::VERSION'>Reemplazo de UNIVERSAL::VERSION</a></h2>
+<p class="Pp">Además de los objetos de versión, este módulo también reemplaza la
+    función principal UNIVERSAL::VERSION con una que utiliza objetos de versión
+    para sus comparaciones. El retorno de este operador es siempre la forma de
+    cadena como un escalar simple (es decir, no un objeto), pero el mensaje de
+    advertencia generado incluye la forma de cadena o la forma normal, dependiendo
+    de cómo se llamó.</p>
+<p class="Pp">Por ejemplo:</p>
+<pre>package Foo;
+$VERSION = 1.2;
+package Bar;
+$VERSION = &quot;v1.3.5&quot;; # funciona con todos los Perl (ya que está entre comillas)
+package main;
+use version;
+print $Foo::VERSION; # imprime 1.2
+print $Bar::VERSION; # imprime 1.003005
+eval &quot;use foo 10&quot;;
+print $@; # imprime &quot;se requiere la versión 10 de foo...&quot;
+eval &quot;use foo 1.3.5; # funciona en Perl 5.6.1 o superior
+print $@; # imprime &quot;se requiere la versión 1.3.5 de foo...&quot;
+eval &quot;use bar 1.3.6&quot;;
+print $@; # imprime &quot;se requiere la versión 1.3.6 de bar...&quot;
+eval &quot;use bar 1.004&quot;; # nota la versión decimal
+print $@; # imprime &quot;se requiere la versión 1.004 de bar...&quot;</pre>
+<p class="Pp">NOTA IMPORTANTE: Esto puede significar que el código que busca una
+    cadena específica (para determinar si un módulo dado está disponible) puede
+    necesitar ser cambiado. Siempre es mejor usar la comparación incorporada
+    implícita en <span class="Li">&quot;use&quot;</span> o
+    <span class="Li">&quot;require&quot;</span>, en lugar de examinar manualmente
+    <span class="Li">&quot;class-&gt;VERSION&quot;</span> y luego hacer una
+    comparación usted mismo.</p>
+<p class="Pp">El reemplazo de UNIVERSAL::VERSION, cuando se usa como una función,
+    así:</p>
+<pre>print $module-&gt;VERSION;</pre>
+<p class="Pp">también devolverá exclusivamente la forma de cadena. Ver
+    &quot;Stringificación&quot; para más detalles.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETALLES_DE_USO'><a class='permalink' href='#DETALLES_DE_USO'>DETALLES DE USO</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Usando_módulos_que_usan_version.pm'><a class='permalink' href='#Usando_módulos_que_usan_version.pm'>Usando módulos que usan version.pm</a></h2>
+<p class="Pp">En la medida de lo posible, el módulo version.pm se mantiene compatible
+    con todo el código actual. Sin embargo, si su módulo utiliza un módulo que ha
+    definido <span class="Li">$VERSION</span> usando la clase version, hay un par
+    de cosas a tener en cuenta. A efectos de discusión, asumiremos que tenemos el
+    siguiente módulo instalado:</p>
+<pre>package Example;
+use version;  $VERSION = qv('1.2.2');
+...código del módulo aquí...
+1;</pre>
+<dl class="Bl-tag">
+  <dt id="Decimal~2"><a class="permalink" href="#Decimal~2">Las versiones decimales
+    siempre funcionan</a></dt>
+  <dd>Código de la forma:
+        <pre>use Example 1.002003;
+</pre>
+    <p class="Pp">siempre funcionará correctamente. La llamada
+        <span class="Li">&quot;use&quot;</span> realizará una comparación automática de
+        <span class="Li">$VERSION</span> utilizando el número de punto flotante
+        proporcionado como primer término después del nombre del módulo (por
+        ejemplo, arriba 1.002.003). En este caso, el módulo instalado es
+        demasiado antiguo para la línea solicitada, por lo que vería un error
+        como:</p>
+        <pre>se requiere la versión 1.002003 (v1.2.3) de Example--esta es solo la versión 1.002002 (v1.2.2)...
+</pre>
+  </dd>
+  <dt id="Dotted~2"><a class="permalink" href="#Dotted~2">Las versiones decimales
+    con puntos funcionan a veces</a></dt>
+  <dd>Con Perl &gt;= 5.6.2, también puede usar una línea como esta:
+        <pre>use Example 1.2.3;
+</pre>
+    <p class="Pp">y volverá a funcionar (es decir, dará el mensaje de error
+        anterior), incluso con versiones de Perl que normalmente no admiten
+        v-strings (ver &quot;¿Qué pasa con las v-strings?&quot; arriba). Esto
+        se debe al hecho de que <span class="Li">&quot;use&quot;</span> solo
+        comprueba si el segundo término **parece un número** y se lo pasa al
+        reemplazo de UNIVERSAL::VERSION. Sin embargo, esto no es cierto en
+        Perl 5.005_04, por lo que se le **recomienda encarecidamente** que
+        siempre utilice una versión Decimal en su código, incluso para aquellas
+        versiones de Perl que admiten la versión Decimal con Puntos.</p>
+  </dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Métodos_de_objeto'><a class='permalink' href='#Métodos_de_objeto'>Métodos de objeto</a></h2>
+<dl class="Bl-tag">
+  <dt id="new()"><a class="permalink" href="#new()"><b>new()</b></a></dt>
+  <dd>Al igual que muchas interfaces OO, el método <b>new()</b> se utiliza para
+      inicializar objetos de versión. Si se pasan dos argumentos a
+      <span class="Li">new()</span>, el **segundo** se utilizará como si tuviera
+      el prefijo &quot;v&quot;. Esto es para admitir el uso histórico del
+      operador <span class="Li">&quot;qw&quot;</span> con la variable CVS
+      <span class="Li">$Revision</span>, que se incrementa automáticamente por
+      CVS cada vez que el archivo se confirma en el repositorio.
+    <p class="Pp">Para facilitar esta característica, se puede emplear el
+        siguiente código:</p>
+        <pre>$VERSION = version-&gt;new(qw$Revision: 2.7 $);
+</pre>
+    <p class="Pp">y el objeto de versión se creará como si se utilizara el
+        siguiente código:</p>
+        <pre>$VERSION = version-&gt;new(&quot;v2.7&quot;);
+</pre>
+    <p class="Pp">En otras palabras, la versión se analizará automáticamente a
+        partir de la cadena y se citará para preservar el significado que CVS
+        normalmente conlleva para las versiones. El $Revision de CVS$ se
+        incrementa de manera diferente a las versiones decimales (es decir, 1.10
+        sigue a 1.9), por lo que debe manejarse como si fuera una versión
+        decimal con puntos.</p>
+    <p class="Pp">Se puede crear un nuevo objeto de versión como una copia de un
+        objeto de versión existente, ya sea como un método de clase:</p>
+        <pre>$v1 = version-&gt;new(12.3);
+$v2 = version-&gt;new($v1);
+</pre>
+    <p class="Pp">o como un método de objeto:</p>
+        <pre>$v1 = version-&gt;new(12.3);
+$v2 = $v1-&gt;new(12.3);
+</pre>
+    <p class="Pp">y en cada caso, <span class="Li">$v1</span> y
+        <span class="Li">$v2</span> serán idénticos. NOTA: si crea un nuevo objeto
+        usando un objeto existente de esta manera:</p>
+        <pre>$v2 = $v1-&gt;new();
+</pre>
+    <p class="Pp">el nuevo objeto **no** será un clon del objeto existente. En el
+        caso del ejemplo, <span class="Li">$v2</span> será un objeto vacío del
+        mismo tipo que <span class="Li">$v1</span>.</p>
+  </dd>
+  <dt id="qv()"><a class="permalink" href="#qv()"><b>qv()</b></a></dt>
+  <dd>Una forma alternativa de crear</dd>
+</dl>
+</section><!DOCTYPE html SYSTEM "about:legacy-compat">
+<html dir="ltr" lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>version::Internals(3perl) — Arch Linux</title>
+    <link rel="stylesheet" type="text/css" href="/css/style.css">
+    <link rel="stylesheet" type="text/css" href="/css/man.css">
+    <link rel="alternate" type="application/rss+xml" title="Arch Linux Packages" href="/feed.xml">
+    <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="shortcut icon" href="/favicon.ico" type="image/x-icon">
+    <link rel="search" type="application/opensearchdescription+xml" title="Arch Linux Search" href="/opensearch.xml">
+</head>
+<body class="man">
+    
+    <main>
+        <section class="man-page">
+            <article>
+<p class="Sh">
+  <a class="permalink" href="#NAME">NAME</a>
+</p>
+<p class="Nd">version::Internals - Implementation details and examples of the version package</p>
+<p class="Sh">
+  <a class="permalink" href="#DESCRIPTION">DESCRIPTION</a>
+</p>
+<p class="Pp">This manual page is intended to show the internals of the version
+    package, and the examples contained within are thus more complex than those
+    found in the main synopsis page.</p>
+<p class="Sh">
+  <a class="permalink" href="#WHAT_IS_A_VERSION?">WHAT IS A VERSION?</a>
+</p>
+<p class="Pp">This module allows you to work with software versions (e.g.
+    "1.2.3") in a robust and convenient way. It provides an object-oriented
+    interface to check whether one version is greater than, less than, or equal
+    to another, and to convert between the various formats that versions are
+    often represented.</p>
+<p class="Pp">It is possible to use either decimal (e.g. 1.2) or dotted-decimal
+    (e.g. 1.2.3) notation. Alpha, beta, and release candidate versions are also
+    supported. You can also use the version object as a boolean value to see if
+    it has been initialized.</p>
+<p class="Sh">
+  <a class="permalink" href="#IMPLEMENTATION_DETAILS">IMPLEMENTATION DETAILS</a>
+</p>
+<p class="Pp">The version package is implemented as a blessed reference. The
+    reference is an array containing the version number components as separate
+    elements. For example, the version object for "1.2.3" would be represented
+    internally as:</p>
+<pre>  bless( [ 1, 2, 3 ], 'version' )
+</pre>
+<p class="Pp">This allows for easy comparison and manipulation of version
+    components.</p>
+<p class="Sh">
+  <a class="permalink" href="#USAGE_DETAILS">USAGE DETAILS</a>
+</p>
+<p class="Pp">The following are examples of how to use the version package:</p>
+<dl class="Bl-tag">
+  <dt id="new">new</dt>
+  <dd>The constructor for the version package is:</dd>
+</dl>
+<pre>  version-&gt;new( $string )
+</pre>
+<p class="Pp">It takes a string representation of the version and returns a
+    version object. For example:</p>
+<pre>$v = version-&gt;new("1.2.3.4");
+</pre>
+<dl class="Bl-tag">
+  <dt id="qv">qv()</dt>
+  <dd>A new version object is created through the exported
+      <b>qv()</b> sub. This is not strictly like other q? operators (like qq,
+      qw), in that the only delimiters supported are parentheses (or spaces). It
+      is the best way to initialize a short version without triggering the
+      floating point interpretation. For example:
+        <pre>$v1 = qv(1.2);         # v1.2.0
+$v2 = qv(&quot;1.2&quot;);       # also v1.2.0
+</pre>
+    <p class="Pp">As you can see, either a bare number or a quoted string can
+        usually be used interchangeably, except in the case of a trailing zero,
+        which must be quoted to be converted properly. For this reason, it is
+        strongly recommended that all initializers to <b>qv()</b> be quoted
+        strings instead of bare numbers.</p>
+    <p class="Pp">To prevent the <span class="Li">qv()</span> function from
+        being exported to the caller's namespace, either use version with a null
+        parameter:</p>
+        <pre>use version ();
+</pre>
+    <p class="Pp">or just require version, like this:</p>
+        <pre>require version;
+</pre>
+    <p class="Pp">Both methods will prevent the <b>import()</b> method from
+        firing and exporting the <span class="Li">qv()</span> sub.</p>
+  </dd>
+</dl>
+<p class="Pp">For the subsequent examples, the following three objects will be
+    used:</p>
+<pre>$ver   = version-&gt;new(&quot;1.2.3.4&quot;); # see &quot;Quoting Rules&quot;
+$alpha = version-&gt;new(&quot;1.2.3_4&quot;); # see &quot;Alpha Versions&quot;
+$nver  = version-&gt;new(1.002);     # see &quot;Decimal Versions&quot;</pre>
+<dl class="Bl-tag">
+  <dt id="Normal">Normal Form</dt>
+  <dd>For any version object which is initialized with multiple decimal places
+      (either quoted or if possible v-string), or initialized using the
+      <b>qv()</b> operator, the stringified representation is returned in a
+      normalized or reduced form (no extraneous zeros), and with a leading 'v':
+        <pre>print $ver-&gt;normal;         # prints as v1.2.3.4
+print $ver-&gt;stringify;      # ditto
+print $ver;                 # ditto
+print $nver-&gt;normal;        # prints as v1.2.0
+print $nver-&gt;stringify;     # prints as 1.002,
+                            # see &quot;Stringification&quot;
+</pre>
+    <p class="Pp">In order to preserve the meaning of the processed version, the
+        normalized representation will always contain at least three sub terms.
+        In other words, the following is guaranteed to always be true:</p>
+        <pre>my $newver = version-&gt;new($ver-&gt;stringify);
+if ($newver eq $ver ) # always true
+  {...}
+</pre>
+  </dd>
+  <dt id="Numification">Numification</dt>
+  <dd>Although all mathematical operations on version objects are forbidden by
+      default, it is possible to retrieve a number which corresponds to the
+      version object through the use of the
+      <span class="Li">$obj</span>-&gt;numify method. For formatting purposes,
+      when displaying a number which corresponds a version object, all sub
+      versions are assumed to have three decimal places. So for example:
+        <pre>print $ver-&gt;numify;         # prints 1.002003004
+print $nver-&gt;numify;        # prints 1.002
+</pre>
+    <p class="Pp">Unlike the stringification operator, there is never any need
+        to append trailing zeros to preserve the correct version value.</p>
+  </dd>
+  <dt id="Stringification">Stringification</dt>
+  <dd>The default stringification for version objects returns exactly the same
+      string as was used to create it, whether you used
+      <span class="Li">new()</span> or <span class="Li">qv()</span>, with one
+      exception. The sole exception is if the object was created using
+      <span class="Li">qv()</span> and the initializer did not have two decimal
+      places or a leading 'v' (both optional), then the stringified form will
+      have a leading 'v' prepended, in order to support round-trip processing.
+    <p class="Pp">For example:</p>
+        <pre>Initialized as          Stringifies to
+==============          ==============
+version-&gt;new(&quot;1.2&quot;)       1.2
+version-&gt;new(&quot;v1.2&quot;)     v1.2
+qv(&quot;1.2.3&quot;)               1.2.3
+qv(&quot;v1.3.5&quot;)             v1.3.5
+qv(&quot;1.2&quot;)                v1.2   ### exceptional case
+</pre>
+    <p class="Pp">See also UNIVERSAL::VERSION, as this also returns the
+        stringified form when used as a class method.</p>
+    <p class="Pp">IMPORTANT NOTE: There is one exceptional cases shown in the
+        above table where the &quot;initializer&quot; is not stringwise
+        equivalent to the stringified representation. If you use the
+        <span class="Li">&quot;qv&quot;</span>() operator on a version without a
+        leading 'v' <b>and</b> with only a single decimal place, the stringified
+        output will have a leading 'v', to preserve the sense. See the
+        &quot;<b>qv()</b>&quot; operator for more details.</p>
+    <p class="Pp">IMPORTANT NOTE 2: Attempting to bypass the normal
+        stringification rules by manually applying <b>numify()</b> and
+        <b>normal()</b> will sometimes yield surprising results:</p>
+        <pre>print version-&gt;new(version-&gt;new(&quot;v1.0&quot;)-&gt;numify)-&gt;normal; # v1.0.0
+</pre>
+    <p class="Pp">The reason for this is that the <b>numify()</b> operator will
+        turn &quot;v1.0&quot; into the equivalent string &quot;1.000000&quot;.
+        Forcing the outer version object to <b>normal()</b> form will display
+        the mathematically equivalent &quot;v1.0.0&quot;.</p>
+    <p class="Pp">As the example in &quot;<b>new()</b>&quot; shows, you can
+        always create a copy of an existing version object with the same value
+        by the very compact:</p>
+        <pre>$v2 = $v1-&gt;new($v1);
+</pre>
+    <p class="Pp">and be assured that both <span class="Li">$v1</span> and
+        <span class="Li">$v2</span> will be completely equivalent, down to the
+        same internal representation as well as stringification.</p>
+  </dd>
+  <dt id="Comparison">Comparison
+    operators</dt>
+  <dd>Both <span class="Li">&quot;cmp&quot;</span> and
+      <span class="Li">&quot;&lt;=&gt;&quot;</span> operators perform the same
+      comparison between terms (upgrading to a version object automatically).
+      Perl automatically generates all of the other comparison operators based
+      on those two. In addition to the obvious equalities listed below,
+      appending a single trailing 0 term does not change the value of a version
+      for comparison purposes. In other words &quot;v1.2&quot; and
+      &quot;1.2.0&quot; will compare as identical.
+    <p class="Pp">For example, the following relations hold:</p>
+        <pre>As Number        As String           Truth Value
+-------------    ----------------    -----------
+$ver &gt;  1.0      $ver gt &quot;1.0&quot;       true
+$ver &lt;  2.5      $ver lt             true
+$ver != 1.3      $ver ne &quot;1.3&quot;       true
+$ver == 1.2      $ver eq &quot;1.2&quot;       false
+$ver == 1.2.3.4  $ver eq &quot;1.2.3.4&quot;   see discussion below
+</pre>
+    <p class="Pp">It is probably best to chose either the Decimal notation or
+        the string notation and stick with it, to reduce confusion. Perl6
+        version objects <b>may</b> only support Decimal comparisons. See also
+        &quot;Quoting Rules&quot;.</p>
+    <p class="Pp">WARNING: Comparing version with unequal numbers of decimal
+        points (whether explicitly or implicitly initialized), may yield
+        unexpected results at first glance. For example, the following
+        inequalities hold:</p>
+        <pre>version-&gt;new(0.96)     &gt; version-&gt;new(0.95); # 0.960.0 &gt; 0.950.0
+version-&gt;new(&quot;0.96.1&quot;) &lt; version-&gt;new(0.95); # 0.096.1 &lt; 0.950.0
+</pre>
+    <p class="Pp">For this reason, it is best to use either exclusively
+        &quot;Decimal Versions&quot; or &quot;Dotted-Decimal Versions&quot; with
+        multiple decimal points.</p>
+  </dd>
+  <dt id="Logical">Logical
+    Operators</dt>
+  <dd>If you need to test whether a version object has been initialized, you can
+      simply test it directly:
+        <pre>$vobj = version-&gt;new($something);
+if ( $vobj )   # true only if $something was non-blank
+</pre>
+    <p class="Pp">You can also test whether a version object is an alpha
+        version, for example to prevent the use of some feature not present in
+        the main release:</p>
+        <pre>$vobj = version-&gt;new(&quot;1.2_3&quot;); # MUST QUOTE
+...later...
+if ( $vobj-&gt;is_alpha )       # True
+</pre>
+  </dd>
+</dl>
+<p class="Sh">
+  <a class="permalink" href="#AUTHOR">AUTHOR</a>
+</p>
+<p class="Pp">John Peacock &lt;jpeacock@cpan.org&gt;</p>
+<p class="Sh">
+  <a class="permalink" href="#SEE_ALSO">SEE ALSO</a>
+</p>
+<p class="Pp">perl.</p>
+</article>
+        </section>
+    </main>
+    <footer>
+        
+        <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+           license, except for the contents of the manual pages, which have their own license
+           specified in the corresponding Arch Linux package.
+        </p>
+    </footer>
+</body>
+</html>

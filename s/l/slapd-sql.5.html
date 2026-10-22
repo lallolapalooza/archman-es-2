@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>slapd-sql(5) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">slapd-sql(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/openldap/">openldap</a></p>
+<p class="lic">Licencias: custom</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SLAPD-SQL(5)</td>
+    <td class="head-vol">Manual de formatos de archivo</td>
+    <td class="head-rtitle">SLAPD-SQL(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">slapd-sql - Backend SQL para slapd</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">/etc/openldap/slapd.conf</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El propósito principal de este backend de <a href='/man/slapd.8.en'>slapd(8)</a> es PRESENTAR la información almacenada en algún SGBDR como un subárbol LDAP sin ninguna programación (algunos SQL y quizás procedimientos almacenados no se pueden considerar programación, de todos modos ;).</p>
+<p class="Pp">Es decir, por ejemplo, cuando usted (un proveedor de servicios de Internet) tiene información de cuenta que utiliza en un SGBDR y desea utilizar soluciones modernas que esperan dicha información en LDAP (para autenticar usuarios, realizar búsquedas de correo electrónico, etc.). O desea sincronizar o distribuir información entre diferentes sitios/aplicaciones que utilizan SGBDR y/o LDAP. O cualquier otra cosa...</p>
+<p class="Pp">NO está diseñado como un backend de propósito general que utiliza SGBDR en lugar de LMDB (como lo hace el backend MDB estándar), aunque se puede utilizar como tal con varias limitaciones. Puede consultar <a href='http://www.openldap.org/faq/index.cgi?file=378'>http://www.openldap.org/faq/index.cgi?file=378</a> (Preguntas Frecuentes de OpenLDAP/Preguntas Frecuentes Generales sobre LDAP/Directorios vs. bases de datos convencionales) para obtener más información sobre este punto.</p>
+<p class="Pp">La idea (detallada a continuación) es utilizar cierta metainformación para traducir consultas LDAP a consultas SQL, dejando intacto el esquema relacional, de modo que las aplicaciones antiguas puedan seguir utilizándolo sin modificaciones. Esto permite que las aplicaciones SQL y LDAP interactúen sin replicación e intercambien datos según sea necesario.</p>
+<p class="Pp">El backend SQL está diseñado para ser adaptable a prácticamente cualquier esquema relacional sin tener que cambiar el código fuente (a través de esa metainformación mencionada). Además, utiliza ODBC para conectarse a SGBDR y es altamente configurable para los dialectos SQL que puedan utilizar los SGBDR, por lo que puede utilizarse para la integración y distribución de datos en diferentes SGBDR, sistemas operativos, hosts, etc., en otras palabras, en entornos altamente heterogéneos.</p>
+<p class="Pp">Este backend es <i>experimental</i>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN'><a class='permalink' href='#CONFIGURACIÓN'>CONFIGURACIÓN</a></h1>
+<p class="Pp">Estas opciones de <b>slapd.conf</b> se aplican a la base de datos del backend SQL, lo que significa que deben seguir una línea "database sql" y aparecer antes de cualquier línea posterior de "backend" o "database". Otras opciones de base de datos no específicas de este backend se describen en la página del manual <a href='/man/slapd.conf.5.en'>slapd.conf(5)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DEL_ORIGEN_DE_DATOS'><a class='permalink' href='#CONFIGURACIÓN_DEL_ORIGEN_DE_DATOS'>CONFIGURACIÓN DEL ORIGEN DE DATOS</a></h1>
+<dl class="Bl-tag">
+  <dt id="dbname"><a class="permalink" href="#dbname"><b>dbname &lt;nombre del origen de datos&gt;</b></a></dt>
+  <dd>El nombre del origen de datos ODBC a utilizar.</dd>
+</dl>
+<p class="Pp"><b>dbhost &lt;nombre del host&gt;</b>
+  <br/>
+  <b>dbpasswd &lt;contraseña&gt;</b>
+  <br/>
+  <b>dbuser &lt;nombre de usuario&gt;</b></p>
+<div class="Bd-indent">Las tres opciones anteriores generalmente no son necesarias, porque esta información se toma del origen de datos especificado por la directiva <b>dbname</b>. Permiten anular la configuración del origen de datos. Además, varios controladores de SGBDR tienden a requerir el paso explícito del usuario/contraseña, incluso si se proporcionan en el origen de datos (Nota: <b>dbhost</b> se ignora actualmente).</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DE_ÁMBITO'><a class='permalink' href='#CONFIGURACIÓN_DE_ÁMBITO'>CONFIGURACIÓN DE ÁMBITO</a></h1>
+<p class="Pp">Estas opciones especifican plantillas de consulta SQL para las búsquedas de ámbito.</p>
+<dl class="Bl-tag">
+  <dt id="subtree_cond"><a class="permalink" href="#subtree_cond"><b>subtree_cond
+    &lt;expresión SQL&gt;</b></a></dt>
+  <dd>Especifica una plantilla de cláusula where utilizada para formar una condición de búsqueda de subárbol (dn=&quot;(.+,)?&lt;dn&gt;$&quot;). Puede diferir de un dialecto SQL a otro (ver ejemplos). Por defecto, se construye basándose en el conocimiento de cómo normalizar los valores de DN (por ejemplo,
+      <b>&quot;&lt;upper_func&gt;(ldap_entries.dn) LIKE
+      CONCAT('%',?)&quot;</b>); consulte <b>upper_func</b>, <b>upper_needs_cast</b>,
+      <b>concat_pattern</b> y <b>strcast_func</b> en &quot;CONFIGURACIÓN DE AYUDA&quot; para obtener más detalles.
+      </dd>
+  <dt id="children_cond"><a class="permalink" href="#children_cond"><b>children_cond
+    &lt;expresión SQL&gt;</b></a></dt>
+  <dd>Especifica una plantilla de cláusula where utilizada para formar una condición de búsqueda de hijos (dn=&quot;.+,&lt;dn&gt;$&quot;). Puede diferir de un dialecto SQL a otro (ver ejemplos). Por defecto, se construye basándose en el conocimiento de cómo normalizar los valores de DN (por ejemplo,
+      <b>&quot;&lt;upper_func&gt;(ldap_entries.dn) LIKE
+      CONCAT('%,',?)&quot;</b>); consulte <b>upper_func</b>, <b>upper_needs_cast</b>,
+      <b>concat_pattern</b> y <b>strcast_func</b> en &quot;CONFIGURACIÓN DE AYUDA&quot; para obtener más detalles.
+      </dd>
+  <dt id="use_subtree_shortcut"><a class="permalink" href="#use_subtree_shortcut"><b>use_subtree_shortcut
+    { SÍ | no }</b></a></dt>
+  <dd>No utilice la condición de subárbol cuando la base de búsqueda sea el sufijo de la base de datos y el ámbito sea subárbol; en su lugar, recopile todas las entradas.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DE_SENTENCIAS'><a class='permalink' href='#CONFIGURACIÓN_DE_SENTENCIAS'>CONFIGURACIÓN DE SENTENCIAS</a></h1>
+<p class="Pp">Estas opciones especifican plantillas de consulta SQL para cargar metainformación de mapeo de esquema, añadir y eliminar entradas de ldap_entries, etc. Todas estas y subtree_cond deberían tener los valores predeterminados dados. Para el valor actual, se recomienda consultar las fuentes o la salida del registro cuando slapd se inicia con "-d 5" o superior. Tenga en cuenta que el número y el orden de los parámetros no deben cambiarse.</p>
+<dl class="Bl-tag">
+  <dt id="oc_query"><a class="permalink" href="#oc_query"><b>oc_query &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La consulta que se utiliza para recopilar los datos de mapeo de objectClass de la tabla <i>ldap_oc_mappings</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles. El valor predeterminado es <b>&quot;SELECT id, name, keytbl, keycol, create_proc,
+      delete_proc, expect_return</b> <b>FROM ldap_oc_mappings&quot;</b>.
+      </dd>
+  <dt id="at_query"><a class="permalink" href="#at_query"><b>at_query &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La consulta que se utiliza para recopilar los datos de mapeo de attributeType de la tabla <i>ldap_attr_mappings</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles. El valor predeterminado es <b>&quot;SELECT name, sel_expr, from_tbls,
+      join_where, add_proc, delete_proc,</b> <b>param_order, expect_return FROM
+      ldap_attr_mappings WHERE oc_map_id=?&quot;</b>.
+      </dd>
+  <dt id="id_query"><a class="permalink" href="#id_query"><b>id_query &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La consulta que se utiliza para mapear un DN a una entrada en la tabla
+      <i>ldap_entries</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles. El valor predeterminado es <b>&quot;SELECT id,keyval,oc_map_id,dn FROM ldap_entries WHERE
+      &lt;expresión de coincidencia de DN&gt;&quot;</b>, donde <b>&lt;expresión de coincidencia de DN&gt;</b> se construye basándose en el conocimiento de cómo normalizar los valores de DN (por ejemplo,
+      <b>&quot;dn=?&quot;</b> si no hay medios para convertir a mayúsculas las cadenas; típicamente, se utiliza <b>&quot;&lt;upper_func&gt;(dn)=?&quot;</b>); consulte
+      <b>upper_func</b>, <b>upper_needs_cast</b>, <b>concat_pattern</b> y
+      <b>strcast_func</b> en &quot;CONFIGURACIÓN DE AYUDA&quot; para obtener más detalles.
+      </dd>
+  <dt id="insentry_stmt"><a class="permalink" href="#insentry_stmt"><b>insentry_stmt
+    &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La sentencia que se utiliza para insertar una nueva entrada en la tabla
+      <i>ldap_entries</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles. El valor predeterminado es <b>&quot;INSERT INTO ldap_entries (dn, oc_map_id, parent,
+      keyval) VALUES</b> <b>(?, ?, ?, ?)&quot;</b>.
+      </dd>
+  <dt id="delentry_stmt"><a class="permalink" href="#delentry_stmt"><b>delentry_stmt
+    &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La sentencia que se utiliza para eliminar una entrada existente de la tabla
+      <i>ldap_entries</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles. El valor predeterminado es <b>&quot;DELETE FROM ldap_entries WHERE id=?&quot;</b>.
+      </dd>
+  <dt id="delobjclasses_stmt"><a class="permalink" href="#delobjclasses_stmt"><b>delobjclasses_stmt
+    &lt;expresión SQL&gt;</b></a></dt>
+  <dd>La sentencia que se utiliza para eliminar el ID de una entrada existente de la tabla
+      <i>ldap_entry_objclasses</i>; consulte &quot;METADATA UTILIZADA&quot; para obtener más detalles.
+      El valor predeterminado es <b>&quot;DELETE FROM ldap_entry_objclasses WHERE
+      entry_id=?&quot;</b>.
+      </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN_DE_AYUDA'><a class='permalink' href='#CONFIGURACIÓN_DE_AYUDA'>CONFIGURACIÓN DE AYUDA</a></h1>
+<p class="Pp">Estas sentencias se utilizan para modificar el comportamiento predeterminado del backend de acuerdo con cuestiones del dialecto del SGBDR. Las primeras opciones se refieren esencialmente a la normalización de cadenas y DN al construir filtros. La normalización de LDAP es más que convertir todo a mayúsculas (o minúsculas); sin embargo, como un compromiso razonable, para los SGBDR sensibles a mayúsculas y minúsculas, el backend puede instruirse para convertir cadenas y DN a mayúsculas proporcionando la directiva <b>upper_func</b>. Algunos SGBDR, para usar funciones en tipos de datos arbitrarios, por ejemplo,</p>
+</div>
+</section>
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+    cadena, lo que requiere una conversión de tipo, la cual se activa mediante
+    la directiva <b>upper_needs_cast</b>. Si es necesario, también se puede
+    proporcionar una función de conversión de cadenas mediante la directiva
+    <b>strcast_func</b>. Finalmente, puede ser necesario un patrón de
+    concatenación de cadenas personalizado; este se proporciona mediante la
+    directiva <b>concat_pattern</b>.</p>
+<dl class="Bl-tag">
+  <dt id="upper_func"><a class="permalink" href="#upper_func"><b>upper_func
+    &lt;nombre de función SQL&gt;</b></a></dt>
+  <dd>Especifica el nombre de una función que convierte un valor dado a
+      mayúsculas. Esto se utiliza para coincidencias sin distinción entre
+      mayúsculas y minúsculas cuando el SGBDR distingue entre mayúsculas y
+      minúsculas. Puede diferir de un dialecto SQL a otro (por ejemplo,
+      <b>UCASE</b>, <b>UPPER</b> o cualquier otro; véanse los ejemplos). Por
+      defecto, no se utiliza ninguna, es decir, las cadenas no se convierten a
+      mayúsculas, por lo que las coincidencias pueden distinguir entre
+      mayúsculas y minúsculas.</dd>
+  <dt id="upper_needs_cast"><a class="permalink" href="#upper_needs_cast"><b>upper_needs_cast
+    { NO | yes }</b></a></dt>
+  <dd>Establezca esta directiva en <b>yes</b> si <b>upper_func</b> necesita una
+      conversión explícita al aplicarse a cadenas literales. Se utiliza una
+      conversión de tipo en la forma <b>CAST
+      (&lt;argumento&gt; AS VARCHAR(&lt;longitud máxima del DN&gt;))</b>, donde
+      <b>&lt;longitud máxima del DN&gt;</b> está integrada en back-sql; véase
+      la macro <b>BACKSQL_MAX_DN_LEN</b> (actualmente 255; tenga en cuenta que
+      el límite integrado de slapd, en la macro <b>SLAP_LDAPDN_MAXLEN</b>, se
+      establece en 8192). Esto es <i>experimental</i> y puede cambiar en
+      futuras versiones.</dd>
+  <dt id="strcast_func"><a class="permalink" href="#strcast_func"><b>strcast_func
+    &lt;nombre de función SQL&gt;</b></a></dt>
+  <dd>Especifica el nombre de una función que convierte un valor dado a una
+      cadena para un ordenamiento adecuado. Esto se utiliza en sentencias
+      &quot;SELECT DISTINCT&quot; para SGBDR fuertemente tipados con poca
+      conversión implícita (como PostgreSQL), cuando se especifica una cadena
+      literal. Esto es <i>experimental</i> y puede cambiar en futuras
+      versiones.</dd>
+  <dt id="concat_pattern"><a class="permalink" href="#concat_pattern"><b>concat_pattern
+    &lt;patrón&gt;</b></a></dt>
+  <dd>Esta sentencia define el <b>patrón</b> que se utiliza para concatenar
+      cadenas. El <b>patrón</b> DEBE contener dos signos de interrogación, '?',
+      que serán reemplazados por las dos cadenas que deben concatenarse. El valor
+      por defecto es <b>CONCAT(?,?)</b>; una forma que se sabe que es muy
+      portable (IBM db2, PostgreSQL) es <b>?||?</b>, pero puede ser necesaria
+      una conversión explícita al operar sobre cadenas literales:
+      <b>CAST(?||? AS VARCHAR(&lt;longitud&gt;))</b>. En algunos SGBDR (IBM
+      db2, MSSQL) la forma <b>?+?</b> también funciona. Verifique cuidadosamente
+      la documentación de su SGBDR o quédese con los ejemplos para los
+      soportados. Esto es <i>experimental</i> y puede cambiar en futuras
+      versiones.</dd>
+  <dt id="aliasing_keyword"><a class="permalink" href="#aliasing_keyword"><b>aliasing_keyword
+    &lt;cadena&gt;</b></a></dt>
+  <dd>Define la palabra clave de alias. Algunos SGBDR utilizan la palabra
+      &quot;<i>AS</i>&quot; (por defecto), otros no utilizan ninguna.</dd>
+  <dt id="aliasing_quote"><a class="permalink" href="#aliasing_quote"><b>aliasing_quote
+    &lt;cadena&gt;</b></a></dt>
+  <dd>Define el carácter de comillas de la palabra clave de alias. Algunos
+      SGBDR no requieren ninguna (por defecto), otros pueden requerir comillas
+      simples o dobles.</dd>
+  <dt id="has_ldapinfo_dn_ru"><a class="permalink" href="#has_ldapinfo_dn_ru"><b>has_ldapinfo_dn_ru
+    { NO | yes }</b></a></dt>
+  <dd>Informa explícitamente al backend si la columna dn_ru (DN en forma
+      inversa en mayúsculas) está presente en la tabla <i>ldap_entries</i>.
+      Anula la comprobación automática (esto es necesario, por ejemplo, para
+      PostgreSQL/unixODBC). Esto es <i>experimental</i> y puede cambiar en
+      futuras versiones.</dd>
+  <dt id="fail_if_no_mapping"><a class="permalink" href="#fail_if_no_mapping"><b>fail_if_no_mapping
+    { NO | yes }</b></a></dt>
+  <dd>Cuando se establece en <b>yes</b>, fuerza que las operaciones de escritura
+      de <i>atributos</i> fallen si no hay una correspondencia adecuada entre
+      los atributos LDAP y los datos SQL disponibles. El comportamiento por
+      defecto es ignorar los cambios que no se pueden mapear. No tiene impacto
+      en el mapeo de objectClass, es decir, si la <i>structuralObjectClass</i>
+      de una entrada no se puede mapear a SQL buscando su nombre en
+      ldap_oc_mappings, una operación <i>add</i> fallará independientemente
+      del interruptor <b>fail_if_no_mapping</b>; véase la sección
+      &quot;INFORMACIÓN METADATOS UTILIZADA&quot; para más detalles. Esto es
+      <i>experimental</i> y puede cambiar en futuras versiones.</dd>
+  <dt id="allow_orphans"><a class="permalink" href="#allow_orphans"><b>allow_orphans
+    { NO | yes }</b></a></dt>
+  <dd>Cuando se establece en <b>yes</b>, se pueden añadir entradas huérfanas
+      (es decir, sin la entrada padre en la base de datos). Esta opción debe
+      usarse con cuidado, posiblemente en conjunto con alguna regla especial en
+      el lado del SGBDR que cree dinámicamente el padre faltante.</dd>
+  <dt id="baseObject"><a class="permalink" href="#baseObject"><b>baseObject [
+      &lt;nombre de archivo&gt; ]</b></a></dt>
+  <dd>Instruye a la base de datos para que cree y gestione una entrada
+      baseObject en memoria en lugar de buscar una en el SGBDR. Si se proporciona
+      el argumento (opcional) <b>&lt;nombre de archivo&gt;</b>, la entrada se
+      lee de ese archivo en formato <a href='/man/LDIF.5.en'>LDIF(5)</a>; de lo
+      contrario, se crea una entrada con objectClass <b>extensibleObject</b>
+      basada en el contenido del RDN del <i>baseObject</i>. Esto es
+      particularmente útil cuando la información de <i>ldap_entries</i> se
+      almacena en una vista en lugar de en una tabla, y <b>union</b> no es
+      compatible con vistas, por lo que la vista solo puede especificar una
+      regla para calcular la estructura de la entrada para una objectClass.
+      Este tema se discute con más detalle en la sección &quot;INFORMACIÓN
+      METADATOS UTILIZADA&quot;. Esto es <i>experimental</i> y puede
+      cambiar en futuras versiones.</dd>
+  <dt id="create_needs_select"><a class="permalink" href="#create_needs_select"><b>create_needs_select
+    { NO | yes }</b></a></dt>
+  <dd>Instruye a la base de datos si la creación de entradas en la tabla
+      <i>ldap_entries</i> necesita una selección posterior para recopilar el ID
+      asignado automáticamente, en lugar de ser devuelto por un procedimiento
+      almacenado.</dd>
+</dl>
+<p class="Pp"><b>fetch_attrs &lt;lista de atributos&gt;</b>
+  <br/>
+  <b>fetch_all_attrs { NO | yes }</b></p>
+<div class="Bd-indent">La primera sentencia permite proporcionar una lista de
+  atributos que siempre deben ser recuperados además de los solicitados por
+  cualquier operación específica, ya que son necesarios para el uso correcto
+  del backend. Por ejemplo, aquí deben listarse todos los atributos utilizados
+  en las ACL. La segunda sentencia es un atajo para requerir que todos los
+  atributos se carguen siempre. Tenga en cuenta que los atributos generados
+  dinámicamente, por ejemplo, <i>hasSubordinates</i>, <i>entryDN</i> y
+  otros atributos dependientes de la implementación, **NO** se generan en este
+  momento, por coherencia con el resto de slapd. Esto puede cambiar en el
+  futuro.</div>
+<dl class="Bl-tag">
+  <dt id="check_schema"><a class="permalink" href="#check_schema"><b>check_schema
+    { YES | no }</b></a></dt>
+  <dd>Instruye a la base de datos para que verifique la adherencia del esquema de
+      las entradas después de las modificaciones, y la cadena de objectClass
+      estructural cuando se construyen las entradas. Por defecto, se establece
+      en <b>yes</b>.</dd>
+  <dt id="sqllayer"><a class="permalink" href="#sqllayer"><b>sqllayer
+    &lt;nombre&gt; [...]</b></a></dt>
+  <dd>Carga la capa <b>&lt;nombre&gt;</b> en una pila de ayudantes que se utilizan
+      para mapear DNs de LDAP a representación SQL y viceversa. Los argumentos
+      subsiguientes se pasan a la rutina de configuración de la capa. Esto es
+      <i>altamente experimental</i> y debe usarse con extrema precaución. La API
+      de las capas aún no está fijada, por lo que no está publicada.</dd>
+  <dt id="autocommit"><a class="permalink" href="#autocommit"><b>autocommit { NO
+      | yes }</b></a></dt>
+  <dd>Activa el autocommit; por defecto, está desactivado.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='INFORMACIÓN_METADATOS_UTILIZADA'><a class='permalink' href='#INFORMACIÓN_METADATOS_UTILIZADA'>INFORMACIÓN METADATOS UTILIZADA</a></h1>
+<p class="Pp">Casi todo lo mencionado a continuación se ilustra en ejemplos
+    ubicados en el directorio <b>servers/slapd/back-sql/rdbms_depend/</b> en el
+    árbol de código fuente de OpenLDAP, y contiene scripts para generar bases
+    de datos de ejemplo para Oracle, MS SQL Server, mySQL y más (incluyendo
+    PostgreSQL e IBM db2).</p>
+<p class="Pp">Lo primero que hay que organizar es qué conjunto de clases de
+    objetos LDAP pueden presentar la información de su SGBDR.</p>
+<p class="Pp">La forma más sencilla es crear una objectClass para cada entidad
+    que tuviera en el diagrama ER al diseñar su esquema relacional. Cualquier
+    esquema relacional, por muy normalizado que esté, se diseñó a partir de
+    algún modelo del dominio de su aplicación (por ejemplo, cuentas, servicios,
+    etc. en un ISP), y se utiliza en términos de sus entidades, no solo tablas
+    de esquemas normalizados. Esto significa que para cada atributo de cada una
+    de estas instancias, hay una consulta SQL efectiva que carga sus valores.</p>
+<p class="Pp">También puede desear que sus objectClasses se ajusten a algunos
+    de los esquemas estándar como inetOrgPerson, etc.</p>
+<p class="Pp">Sin embargo, cuando lo piensa, debemos definir una forma de
+    traducir las solicitudes de operación LDAP a (una serie de) consultas SQL.
+    Tratemos la operación SEARCH.</p>
+<p class="Pp">Ejemplo: Supongamos que almacenamos información sobre personas
+    que trabajan en nuestra organización en dos tablas:</p>
+<pre>  PERSONAS              TELEFONOS
+  ----------           -------------
+  id entero            id entero
+  nombre varchar       pers_id entero references personas(id)
+  apellido varchar     telefono
+  segundo_nombre varchar
+  ...</pre>
+<p class="Pp">(TELEFONOS contiene números de teléfono asociados a personas). Una
+    persona puede tener varios números, entonces TELEFONOS contiene varios
+    registros con pers_id correspondiente, o ningún número (y ningún registro
+    en TELEFONOS con dicho pers_id). Una objectClass LDAP para presentar
+    dicha información podría verse así:</p>
+<pre>  persona
+  -------
+  DEBE cn
+  PUEDE telephoneNumber $ firstName $ lastName
+  ...</pre>
+<p class="Pp">Para recuperar todos los valores para el atributo cn dada una
+    identificación de persona, construimos la consulta:</p>
+<pre>  SELECT CONCAT(persons.first_name,' ',persons.last_name)
+      AS cn FROM persons WHERE persons.id=?</pre>
+<p class="Pp">para telephoneNumber podemos usar:</p>
+<pre>  SELECT phones.phone AS telephoneNumber FROM persons,phones
+      WHERE persons.id=phones.pers_id AND persons.id=?</pre>
+<p class="Pp">Si quisiéramos dar servicio a solicitudes LDAP con filtros como
+    (telephoneNumber=123*), construiríamos algo como:</p>
+<pre>  SELECT ... FROM persons,phones
+      WHERE persons.id=phones.pers_id
+          AND persons.id=?
+          AND phones.phone like '%1%2%3%'</pre>
+<p class="Pp">(observe cómo la coincidencia de telephoneNumber se expande en
+    múltiples comodines para tener en cuenta caracteres influyentes intercalados
+    como espacios, guiones y otros; esto ocurre por diseño porque telephoneNumber
+    se define después de una sintaxis especialmente reconocida). Por lo tanto,
+    si tuviéramos información sobre qué tablas contienen valores para cada
+    atributo, cómo unir estas tablas y organizar estos valores, podríamos intentar
+    generar automáticamente estas sentencias y traducir los filtros de búsqueda
+    a cláusulas WHERE de SQL.</p>
+<p class="Pp">Para almacenar dicha información, añadimos tres tablas más a
+    nuestro esquema y las llenamos con datos (ver ejemplos):</p>
+<pre>  ldap_oc_mappings (algunas columnas no se listan por claridad)
+  ---------------
+  id=1
+  name=&quot;person&quot;
+  keytbl=&quot;persons&quot;
+  keycol=&quot;id&quot;</pre>
+<p class="Pp">Esta tabla define un mapeo entre objectclass (su nombre se guarda
+    en la columna &quot;name&quot;), y una tabla que contiene la clave primaria
+    para las entidades correspondientes. Por ejemplo, en nuestro ejemplo, la
+    entidad persona</p>
+{
+  "title": "slapd-sql",
+  "sections": [
+    {
+      "heading": "NAME",
+      "content": "slapd-sql - SQL database backend for OpenLDAP"
+    },
+    {
+      "heading": "SYNOPSIS",
+      "content": "databases: ldap://sql/\nsql: dnqualify ds\nsql: uri \"ldap://ds\"\nsql: db /etc/openldap/schema/sql\"\nsql: saslmech EXTERNAL\nsql: binddn \"cn=DBA,dc=example,dc=com\"\nsql: bindpw secret"
+    },
+    {
+      "heading": "DESCRIPTION",
+      "content": "The SQL backend is a simple gateway to relational databases (RDBMS) that can be published under LDAP.  It relies on the existence of a number of tables which hold meta-information about the structure of your relational data and the mappings between RDBMS columns and LDAP attributes.\n\nThis backend is implemented as a shared library, `back_sql.so`, which must be located in the same directory as the other dynamic loadable modules, usually /usr/lib/openldap/ or /usr/local/etc/openldap/.\n\nThe configuration parameters below are to be added to the `slapd.conf(5)` file."
+    },
+    {
+      "heading": "SQL TABLES",
+      "content": "The SQL backend uses the following tables:\n\n* `ldap_oc_mappings`: maps LDAP objectclasses to RDBMS tables and primary keys.\n* `ldap_attr_mappings`: maps LDAP attributes to RDBMS columns and expressions.\n* `ldap_entries`: maps LDAP entry DNs to RDBMS primary keys and objectclasses.\n\nThese tables need to be created in your RDBMS.  See the SQL schema definition provided in the OpenLDAP distribution for details.\n\nExample:\nSuppose you have a database with persons and phones, and you want to publish it as an LDAP directory.\n\n* Entity 'person' objectclass is stored in the `persons` table, identified by `persons.id` (primary key).\n* Entity 'phone' attribute is stored in the `phones` table, linked to `persons` via `phones.pers_id`.\n\n`ldap_oc_mappings` table content:\n\n```\nid=1\nname='person'\nkeytbl='persons'\nkeycol='id'\n..."
+    },
+    {
+      "heading": "ldap_attr_mappings",
+      "content": "This table defines mappings between LDAP attributes and SQL queries that load their values. Note that, unlike LDAP schema, these are not *attribute types* - the attribute \"cn\" for \"person\" objectclass can have its values in different tables than \"cn\" for some other objectclass, so attribute mappings depend on objectclass mappings (unlike attribute types in LDAP schema, which are indifferent to objectclasses). Thus, we have oc_map_id column with link to oc_mappings table.\n\nNow we cut the SQL query that loads values for a given attribute into 3 parts. First goes into sel_expr column - this is the expression we had between SELECT and FROM keywords, which defines WHAT to load. Next is table list - text between FROM and WHERE keywords. It may contain aliases for convenience (see examples). The last is part of the where clause, which (if it exists at all) expresses the condition for joining the table containing values with the table containing the primary key (foreign key equality and such). If values are in the same table as the primary key, then this column is left NULL (as for cn attribute above).\n\nHaving this information in parts, we are able to not only construct queries that load attribute values by id of entry (for this we could store SQL query as a whole), but to construct queries that load id's of objects that correspond to a given search filter (or at least part of it). See below for examples."
+    },
+    {
+      "heading": "ldap_entries",
+      "content": "This table defines mappings between DNs of entries in your LDAP tree, and values of primary keys for corresponding relational data. It has recursive structure (parent column references id column of the same table), which allows you to add any tree structure(s) to your flat relational data. Having id of objectclass mapping, we can determine table and column for primary key, and keyval stores value of it, thus defining the exact tuple corresponding to the LDAP entry with this DN.\n\nNote that such design (see exact SQL table creation query) implies one important constraint - the key must be an integer. But all that I know about well-designed schemas makes me think that it's not very narrow ;) If anyone needs support for different types for keys - he may want to write a patch, and submit it to OpenLDAP ITS, then I'll include it.\n\nAlso, several users complained that they don't really need very structured trees, and they don't want to update one more table every time they add or delete an instance in the relational schema. Those people can use a view instead of a real table for ldap_entries, something like this (by Robin Elfrink):\n\n```sql\nCREATE VIEW ldap_entries (id, dn, oc_map_id, parent, keyval) AS\n    SELECT 0, UPPER('o=MyCompany,c=NL'),\n        3, 0, 'baseObject' FROM unixusers WHERE userid='root'\n    UNION\n        SELECT (1000000000+userid), \n            UPPER(CONCAT(CONCAT('cn=',gecos),',o=MyCompany,c=NL')),\n            1, 0, userid FROM unixusers\n    UNION\n        SELECT (2000000000+groupnummer), \n            UPPER(CONCAT(CONCAT('cn=',groupname),',o=MyCompany,c=NL')),\n            2, 0, groupnummer FROM groups;\n```\n\nIf your RDBMS does not support *unions* in views, only one objectClass can be mapped in *ldap_entries*, and the baseObject cannot be created; in this case, see the *baseObject* directive for a possible workaround."
+    },
+    {
+      "heading": "TYPICAL SQL BACKEND OPERATION",
+      "content": "Having meta-information loaded, the SQL backend uses these tables to determine a set of primary keys of candidates (depending on search scope and filter). It tries to do it for each objectclass registered in ldap_objclasses.\n\nExample: for our query with filter (telephoneNumber=123*) we would get the following query generated (which loads candidate IDs)\n\n```sql\nSELECT ldap_entries.id,persons.id, 'person' AS objectClass,\n       ldap_entries.dn AS dn\n  FROM ldap_entries,persons,phones\n WHERE persons.id=ldap_entries.keyval\n   AND ldap_entries.objclass=?\n   AND ldap_entries.parent=?\n   AND phones.pers_id=persons.id\n   AND (phones.phone LIKE '%1%2%3%')\n```\n\n(for ONELEVEL search) or \"... AND dn=?\" (for BASE search) or \"... AND dn LIKE '%?'\" (for SUBTREE)\n\nThen, for each candidate, we load the requested attributes using per-attribute queries like\n\n```sql\nSELECT phones.phone AS telephoneNumber\n  FROM persons,phones\n WHERE persons.id=? AND phones.pers_id=persons.id\n```\n\nThen, we use test_filter() from the frontend API to test the entry for a full LDAP search filter match (since we cannot effectively make sense of SYNTAX of corresponding LDAP schema attribute, we translate the filter into the most relaxed SQL condition to filter candidates), and send it to the user.\n\nADD, DELETE, MODIFY and MODRDN operations are also performed on per-attribute meta-information (add_proc etc.). In those fields one can specify an SQL statement or stored procedure call which can add, or delete given values of a given attribute, using the given entry keyval (see examples -- mostly PostgreSQL, ORACLE and MSSQL - since as of this writing there are no stored procs in MySQL).\n\nWe just add more columns to ldap_oc_mappings and ldap_attr_mappings, holding statements to execute (like create_proc, add_proc, del_proc etc.), and flags governing the order of parameters passed to those statements. Please see samples to find out what are the parameters passed, and other information on this matter - they are self-explanatory for those familiar with the concepts expressed above."
+    },
+    {
+      "heading": "COMMON TECHNIQUES",
+      "content": "First of all, let's recall that among other major differences to the complete LDAP data model, the above illustrated concept does not directly support such features as multiple objectclasses per entry, and referrals. Fortunately, they are easy to adopt in this scheme. The SQL backend requires that one more table is added to the schema: ldap_entry_objectclasses(entry_id,oc_name).\n\nThat table contains any number of objectclass names that corresponding entries will possess, in addition to that mentioned in mapping. The SQL backend automatically adds attribute mapping for the \"objectclass\" attribute to each objectclass mapping that loads values from this table. So, you may, for instance, have a mapping for inetOrgPerson, and use it for queries for \"person\" objectclass...\n\nReferrals used to be implemented in a loose manner by adding an extra table that allowed any entry to host a \"ref\" attribute, along with a \"referral\" extra objectClass in table ldap_entry_objclasses. In the current implementation, referrals are treated like any other user-defined schema, since \"referral\" is a structural objectclass. The suggested practice is to define a \"referral\" entry in ldap_oc_mappings, holding a naming attribute, e.g. \"ou\" or \"cn\", a \"ref\" attribute, containing the url; in case multiple referrals per entry are needed, a separate table for urls can be created, where urls are mapped to the respective entries. The use of the naming attribute usually requires to add an \"extensibleObject\" value to ldap_entry_objclasses."
+    },
+    {
+      "heading": "CAVEATS",
+      "content": "As previously stated, this backend should not be considered a replacement of other data storage backends, but rather a gateway to existing RDBMS storages that need to be published in LDAP form.\n\nThe *hasSubordinates* operational attribute is honored by back-sql in search results and in compare operations; it is partially honored also in filtering. Owing to design limitations, a (brain-dead?) filter of the form (!(hasSubordinates=TRUE)) will give no results instead of returning all the leaf entries, because it actually expands into ... AND NOT (1=1). If you need to find all the leaf entries, please use (hasSubordinates=FALSE) instead.\n\nA directoryString value of the form \"__First___Last_\" (where underscores mean spaces, ASCII 0x20 char) corresponds to its prettified counterpart \"First_Last\"; this is not currently honored by back-sql if non-prettified data is written via RDBMS; when non-prettified data is written through back-sql, the prettified values are actually used instead."
+    },
+    {
+      "heading": "BUGS",
+      "content": "When the ldap_entry_objclasses table is empty, filters on the objectClass attribute erroneously result in no candidates. A workaround consists in adding at least one row to that table, no matter if valid or not."
+    },
+    {
+      "heading": "PROXY CACHE OVERLAY",
+      "content": "The proxy cache overlay allows caching of LDAP search requests (queries) in a local database. See slapo-pcache(5) for details."
+    },
+    {
+      "heading": "EXAMPLES",
+      "content": "There are example SQL modules in the slapd/back-sql/rdbms_depend/ directory in the OpenLDAP source tree."
+    },
+    {
+      "heading": "ACCESS CONTROL",
+      "content": "The sql backend honors access control semantics as indicated in slapd.access(5) (including the disclose access privilege when enabled at compile time)."
+    },
+    {
+      "heading": "FILES",
+      "content": "* /etc/openldap/slapd.conf\n    default slapd configuration file"
+    },
+    {
+      "heading": "SEE ALSO",
+      "content": "slapd.conf(5), slapd(8)."
+    }
+  ],
+  "date": "2025/",
+  "version": "2.6.8"
+}
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>slapd-sql(5) - Arch Linux</title>
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        
+        <main>
+            <article>
+                
+
+<section class="man-section">
+    <p>slapd-sql(5) </p>
+    <p><strong>NAME</strong>
+        <br />
+        slapd-sql - SQL backend for OpenLDAP
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>SYNOPSIS</strong>
+        <br />
+        slapd-sql is a backend for the slapd(8) server that allows users and group
+        <br />
+        information to be stored in a relational database. It is designed to
+        <br />
+        replace the traditional LDAP database with a SQL database.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>DESCRIPTION</strong>
+        <br />
+        The SQL backend allows slapd to interact with a SQL database for storing
+        <br />
+        and retrieving LDAP entries. This can be useful for migrating existing
+        <br />
+        LDAP data to a SQL database, or for integrating LDAP with existing SQL
+        <br />
+        applications.
+    </p>
+    <p>The SQL backend uses a mapping between LDAP attributes and SQL columns,
+        <br />
+        and between LDAP entries and SQL tables. This mapping is defined in the
+        <br />
+        OpenLDAP configuration file.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>CONFIGURATION</strong>
+        <br />
+        The SQL backend is configured in the slapd.conf file. The following
+        <br />
+        options are available:
+    </p>
+    <dl>
+        <dt>database sql</dt>
+        <dd>Specifies that the SQL backend is being used.</dd>
+        <dt>sql_dialect</dt>
+        <dd>Specifies the SQL dialect to be used (e.g., MySQL, PostgreSQL,
+            <br />
+            SQLite).
+        </dd>
+        <dt>sql_dsn</dt>
+        <dd>Specifies the Data Source Name (DSN) for the SQL database.
+            <br />
+            This includes the database type, host, port, database name, username,
+            <br />
+            and password.
+        </dd>
+        <dt>sql_schema_table</dt>
+        <dd>Specifies the name of the table that stores the LDAP schema.</dd>
+        <dt>sql_entry_table</dt>
+        <dd>Specifies the name of the table that stores the LDAP entries.</dd>
+        <dt>sql_attribute_table</dt>
+        <dd>Specifies the name of the table that stores the LDAP attributes.</dd>
+        <dt>sql_oc_support</dt>
+        <dd>Specifies whether to support object classes.</dd>
+        <dt>sql_require_thread</dt>
+        <dd>Specifies whether to require thread-local storage.</dd>
+    </dl>
+</section>
+
+<section class="man-section">
+    <p><strong>DATA SOURCE CONFIGURATION</strong>
+        <br />
+        The <code>sql_dsn</code> option is used to specify the connection details
+        <br />
+        for the SQL database. The format of the DSN depends on the SQL dialect
+        <br />
+        being used. For example, for MySQL, it might look like:
+    </p>
+    <p><code>sql_dsn mysql://user:password@host:port/database</code></p>
+</section>
+
+<section class="man-section">
+    <p><strong>SCOPING CONFIGURATION</strong>
+        <br />
+        The SQL backend supports scoping of search results based on the base DN
+        <br />
+        of the search. This is configured using the
+        <br />
+        <code>sql_base_dn</code> directive in the slapd.conf file.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>STATEMENT CONFIGURATION</strong>
+        <br />
+        The SQL backend uses SQL statements to perform LDAP operations. These
+        <br />
+        statements can be customized using the following directives:
+    </p>
+    <dl>
+        <dt>sql_entry_statement</dt>
+        <dd>The SQL statement to use for retrieving entries.</dd>
+        <dt>sql_attribute_statement</dt>
+        <dd>The SQL statement to use for retrieving attributes.</dd>
+        <dt>sql_search_statement</dt>
+        <dd>The SQL statement to use for searching entries.</dd>
+        <dt>sql_add_statement</dt>
+        <dd>The SQL statement to use for adding entries.</dd>
+        <dt>sql_delete_statement</dt>
+        <dd>The SQL statement to use for deleting entries.</dd>
+        <dt>sql_mod_statement</dt>
+        <dd>The SQL statement to use for modifying entries.</dd>
+    </dl>
+</section>
+
+<section class="man-section">
+    <p><strong>HELPER CONFIGURATION</strong>
+        <br />
+        The SQL backend can use helper functions to assist with certain
+        <br />
+        operations, such as generating unique IDs or encoding passwords. These
+        <br />
+        helpers are configured using the
+        <br />
+        <code>sql_helper</code> directive.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>METAINFORMATION USED</strong>
+        <br />
+        The SQL backend uses the following meta-information to map LDAP entries
+        <br />
+        to SQL tables and columns:
+    </p>
+    <ul>
+        <li><code>objectClass</code>: Maps to the object class of the entry.</li>
+        <li><code>cn</code>, <code>uid</code>, <code>mail</code>, etc.: Maps to attributes
+            <br />
+            of the entry.
+        </li>
+        <li>DN: Maps to the Distinguished Name of the entry.</li>
+    </ul>
+</section>
+
+<section class="man-section">
+    <p><strong>TYPICAL SQL BACKEND OPERATION</strong>
+        <br />
+        When a client performs an LDAP operation (e.g., search, add, modify,
+        <br />
+        delete), the SQL backend translates the operation into one or more SQL
+        <br />
+        statements. These statements are then executed against the SQL database.
+        <br />
+        The results of the SQL query are then translated back into LDAP entries
+        <br />
+        and returned to the client.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>COMMON TECHNIQUES</strong>
+        <br />
+        <ol>
+            <li>
+                <strong>Table Mapping:</strong>
+                Designing SQL tables that closely mirror the structure of your
+                <br />
+                LDAP directory.
+            </li>
+            <li>
+                <strong>Attribute Mapping:</strong>
+                Defining how LDAP attributes map to specific columns within your
+                <br />
+                SQL tables.
+            </li>
+            <li>
+                <strong>Statement Customization:</strong>
+                Writing efficient SQL queries tailored to your database schema for
+                <br />
+                various LDAP operations.
+            </li>
+            <li>
+                <strong>Schema Definition:</strong>
+                Ensuring your SQL schema supports the necessary object classes and
+                <br />
+                attributes for your LDAP use case.
+            </li>
+            <li>
+                <strong>Performance Tuning:</strong>
+                Optimizing SQL queries and database indexing for faster LDAP
+                <br />
+                response times.
+            </li>
+        </ol>
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>CAVEATS</strong>
+        <br />
+        <ul>
+            <li>
+                <strong>Performance:</strong>
+                Depending on the complexity of the mapping and the efficiency of
+                <br />
+                the SQL queries, performance might be lower than a native LDAP
+                <br />
+                backend.
+            </li>
+            <li>
+                <strong>Schema Complexity:</strong>
+                Mapping complex LDAP schemas to relational databases can be
+                <br />
+                challenging.
+            </li>
+            <li>
+                <strong>Data Integrity:</strong>
+                Maintaining data consistency between the LDAP view and the SQL
+                <br />
+                database requires careful configuration.
+            </li>
+            <li>
+                <strong>Transaction Management:</strong>
+                Handling complex transactions involving multiple LDAP operations
+                <br />
+                can be intricate.
+            </li>
+            <li>
+                <strong>Attribute Uniqueness:</strong>
+                Ensuring uniqueness for attributes that are unique in LDAP but
+                <br />
+                might not be naturally unique in SQL tables requires specific
+                <br />
+                handling.
+            </li>
+        </ul>
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>BUGS</strong>
+        <br />
+        Report bugs to the OpenLDAP bug tracking system at
+        <br />
+        <a href="https://bugzilla.openldap.org/">https://bugzilla.openldap.org/</a>.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>PROXY CACHE OVERLAY</strong>
+        <br />
+        The SQL backend can be used in conjunction with the
+        <br />
+        <code>proxycache</code> overlay to improve the performance of read-heavy
+        <br />
+        workloads. The overlay caches LDAP entries retrieved from the SQL
+        <br />
+        database, reducing the number of direct database queries.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>EXAMPLES</strong>
+        <br />
+        A minimal configuration might look like this:
+    </p>
+    <pre>
+database sql
+sql_dialect mysql
+sql_dsn mysql://user:password@localhost/ldap_db
+sql_entry_table users
+sql_attribute_table user_attributes
+    </pre>
+    <p>For more complex configurations, refer to the OpenLDAP documentation.</p>
+</section>
+
+<section class="man-section">
+    <p><strong>ACCESS CONTROL</strong>
+        <br />
+        Access control to entries is handled by OpenLDAP's standard access control
+        <br />
+        lists (ACLs), which are applied to the entries returned by the SQL backend.
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>FILES</strong>
+        <br />
+        <ul>
+            <li>
+                <code>slapd.conf</code>: The main configuration file for slapd.
+            </li>
+            <li>
+                SQL Database Schema: The definition of the tables and columns used
+                <br />
+                by the SQL backend.
+            </li>
+        </ul>
+    </p>
+</section>
+
+<section class="man-section">
+    <p><strong>SEE ALSO</strong>
+        <br />
+        <code>slapd.conf(5)</code>, <code>slapo-auditlog(5)</code>,
+        <br />
+        <code>slapo-memberof(5)</code>, <code>slapo-overlay(5)</code>,
+        <br />
+        <code>slapd(8)</code>
+    </p>
+</section>
+
+<table>
+  <tr>
+    <td class="foot-date">May 22, 2023</td>
+    <td class="foot-os">OpenLDAP 2.6.10</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/openldap/">core/openldap</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.6.10-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.openldap.org/">https://www.openldap.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>custom</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/openldap/">/listing/core/openldap/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#CONFIGURATION">CONFIGURACIÓN</a></li>
+        
+            <li><a href="#DATA_SOURCE_CONFIGURATION">CONFIGURACIÓN DE LA FUENTE DE DATOS</a></li>
+        
+            <li><a href="#SCOPING_CONFIGURATION">CONFIGURACIÓN DEL ÁMBITO</a></li>
+        
+            <li><a href="#STATEMENT_CONFIGURATION">CONFIGURACIÓN DE SENTENCIAS</a></li>
+        
+            <li><a href="#HELPER_CONFIGURATION">CONFIGURACIÓN DE AYUDAS</a></li>
+        
+            <li><a href="#METAINFORMATION_USED">METAINFORMACIÓN UTILIZADA</a></li>
+        
+            <li><a href="#TYPICAL_SQL_BACKEND_OPERATION">OPERACIÓN TÍPICA DEL BACKEND SQL</a></li>
+        
+            <li><a href="#COMMON_TECHNIQUES">TÉCNICAS COMUNES</a></li>
+        
+            <li><a href="#CAVEATS">ADVERTENCIAS</a></li>
+        
+            <li><a href="#BUGS">ERRORES</a></li>
+        
+            <li><a href="#PROXY_CACHE_OVERLAY">OVERLAY DE CACHÉ DE PROXY</a></li>
+        
+            <li><a href="#EXAMPLES">EJEMPLOS</a></li>
+        
+            <li><a href="#ACCESS_CONTROL">CONTROL DE ACCESO</a></li>
+        
+            <li><a href="#FILES">ARCHIVOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/slapd-sql.5.en.txt">txt</a>, 
+        
+            <a href="/man/slapd-sql.5.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

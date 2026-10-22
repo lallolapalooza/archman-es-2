@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>lvmpersist(8) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">lvmpersist(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/lvm2/">lvm2</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LVMPERSIST(8)</td>
+    <td class="head-vol">Manual del Administrador del Sistema</td>
+    <td class="head-rtitle">LVMPERSIST(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">lvmpersist - gestiona reservas persistentes en un grupo de
+    dispositivos de bloque</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Las reservas persistentes (PR) proporcionan un mecanismo para controlar
+    el acceso a dispositivos de almacenamiento compartidos, típicamente para
+    proteger los dispositivos de ser modificados por hosts que no deberían
+    escribir en los dispositivos compartidos. Esto es usualmente una preocupación
+    en entornos SAN o agrupados, donde múltiples hosts tienen acceso a los
+    mismos dispositivos de almacenamiento.</p>
+<p class="Pp">Si un Grupo de Volúmenes LVM (VG) contiene dispositivos capaces de
+    PR, entonces los comandos LVM pueden ser utilizados para gestionar PR a nivel
+    del VG, aplicando PR a cada Volumen Físico (PV) en el VG. (Todos los PV en el
+    VG deben soportar PR.)</p>
+<p class="Pp"><b>lvmpersist</b> es una utilidad de bajo nivel utilizada para
+    realizar operaciones de PR en dispositivos de bloque individuales. LVM también
+    proporciona una interfaz de gestión de PR de nivel superior a través de una
+    interfaz de comandos LVM estándar:
+  <br/>
+  <b>vgchange</b> <b>--setpersist</b>, <b>vgchange --persist</b></p>
+<p class="Pp">lvmpersist es un script que no implementa las opciones o
+    capacidades comunes de la línea de comandos de LVM. El script utiliza los
+    comandos sg_persist, mpathpersist y nvme para realizar operaciones de PR
+    en dispositivos de bloque. Los comandos LVM de nivel superior (ej. vgchange)
+    ejecutan el script lvmpersist.</p>
+<section class="Ss">
+<h2 class="Ss" id='Tipos_de_dispositivos'><a class='permalink' href='#Tipos_de_dispositivos'>Tipos   de dispositivos</a></h2>
+<p class="Pp">Se admiten dispositivos SCSI o similares a SCSI (ej. iSCSI, SAS,
+    Fibre Channel), dm-multipath y NVME. Las PR se introdujeron con el estándar
+    SCSI Primary Commands Version 3 (SPC-3).</p>
+<p class="Pp">Cuando se utilizan dispositivos multipath, multipath.conf debe estar
+    configurado con &quot;reservation_key file&quot;. (Ejecute mpathconf --option
+    reservation_key:file, y reinicie multipathd.)</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Tipos_de_reserva_persistente'><a class='permalink' href='#Tipos_de_reserva_persistente'>Tipos   de reserva persistente</a></h2>
+<p class="Pp">LVM utiliza el tipo PR &quot;Write Exclusive&quot; (WE) para
+    dispositivos en un VG local, y &quot;Write Exclusive - all registrants&quot;
+    (WEAR) para dispositivos en un VG compartido. Una excepción son los
+    dispositivos dm-multipath, para los cuales se utiliza WEAR tanto en VGs
+    locales como compartidos (esto es necesario para que todas las rutas
+    permanezcan utilizables).</p>
+<p class="Pp">El comando lvmpersist tiene dos opciones para especificar el tipo
+    de PR:</p>
+<dl class="Bl-tag">
+  <dt id="acceso"><a class="permalink" href="#acceso"><b>--access
+    ex|sh</b></a></dt>
+  <dd>
+    <br/>
+    Establecer el acceso a &quot;ex&quot; (exclusivo) si los dispositivos solo deben
+      ser accedidos por un host (es decir, los dispositivos forman parte de un VG
+      local). Establecer el acceso a &quot;sh&quot; (compartido) si los
+      dispositivos están destinados a ser accedidos concurrentemente por múltiples
+      hosts (es decir, los dispositivos forman parte de un VG compartido).
+      lvmpersist elegirá el tipo de PR apropiado para cada dispositivo
+      (generalmente WE para &quot;ex&quot;, y WEAR para &quot;sh&quot;).</dd>
+  <dt id="tipopreserva"><a class="permalink" href="#tipopreserva"><b>--prtype</b><i>&#x00A0;TIPO_PR</i></a></dt>
+  <dd>Cuando se especifica un valor TIPO_PR, lvmpersist solo usará ese tipo para
+      todos los dispositivos.</dd>
+</dl>
+<p class="Pp">Tipos de PR y las abreviaturas utilizadas en interfaces/mensajes:</p>
+<p class="Pp"><b>WE</b> Write Exclusive
+  <br/>
+  <b>EA</b> Exclusive Access
+  <br/>
+  <b>WERO</b> Write Exclusive - registrants only
+  <br/>
+  <b>EARO</b> Exclusive Access - registrants only
+  <br/>
+  <b>WEAR</b> Write Exclusive - all registrants
+  <br/>
+  <b>EAAR</b> Exclusive Access - all registrants</p>
+<p class="Pp">(Los tipos WERO y EARO aún no son compatibles.)</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Claves_de_reserva_persistente'><a class='permalink' href='#Claves_de_reserva_persistente'>Claves   de reserva persistente</a></h2>
+<p class="Pp">Las claves PR pueden tener hasta 8 bytes de longitud, y se representan
+    con hasta 16 caracteres hexadecimales con un prefijo &quot;0x&quot;. No se
+    permiten ceros a la izquierda, por ejemplo, use 0x1234abcd, no
+    0x000000001234abcd. Se acepta un valor de clave decimal (sin prefijo 0x) como
+    entrada, pero aparecerá como hexadecimal en la salida.</p>
+<p class="Pp">Cada host que utiliza dispositivos compartidos debe utilizar una clave
+    PR única.</p>
+<p class="Pp">Las claves PR deben configurarse en cada host en
+    /etc/lvm/lvmlocal.conf (ver Configuración Local abajo.)</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO'><a class='permalink' href='#USO'>USO</a></h1>
+<p class="Pp">El conjunto básico de comandos y opciones para gestionar PR:</p>
+<p class="Pp">Utilidad de PR a nivel de dispositivo:
+  <br/>
+  <b>lvmpersist</b>
+    <b>start</b>|<b>stop</b>|<b>remove</b>|<b>clear</b>|<b>read</b>
+    [<i>OPCIONES</i>] <i>DEST</i></p>
+<p class="Pp">Configuración de PR de VG:
+  <br/>
+  <b>vgchange --setpersist</b> <b>y</b>|<b>n</b> <i>VG</i></p>
+<p class="Pp">Operaciones de PR de VG:
+  <br/>
+  <b>vgchange --persist</b>
+    <b>start</b>|<b>stop</b>|<b>remove</b>|<b>clear</b>|<b>read</b>|<b>check</b>
+    <i>VG</i></p>
+<section class="Ss">
+<h2 class="Ss" id='comandos_lvmpersist'><a class='permalink' href='#comandos_lvmpersist'>comandos   lvmpersist</a></h2>
+<p class="Pp"><b>lvmpersist start</b> <b>--ourkey</b><i>&#x00A0;CLAVE</i>
+    <i>DEST</i></p>
+<p class="Pp">&quot;start&quot; registra la clave local y reserva dispositivos. Si
+    una clave diferente del mismo host todavía está registrada, será reemplazada
+    por la clave especificada. Cuando --access o --prtype no se especifican, se
+    utiliza el acceso &quot;ex&quot;.</p>
+<p class="Pp"><b>lvmpersist stop</b> <b>--ourkey</b><i>&#x00A0;CLAVE</i>
+    <i>DEST</i></p>
+<p class="Pp">&quot;stop&quot; anula el registro de la clave local, lo que también
+    elimina una reserva local.</p>
+<p class="Pp"><b>lvmpersist remove</b>
+    <b>--ourkey</b><i>&#x00A0;CLAVE</i><b>&#x00A0;--removekey</b><i>&#x00A0;CLAVE_A_ELIMINAR</i>
+    <i>DEST</i></p>
+<p class="Pp">&quot;remove&quot; elimina la clave de otro host registrado. El host
+    con la clave eliminada pierde la capacidad de escribir en los dispositivos.
+    (Este comando se aplica a VGs compartidos, donde múltiples hosts se inician a
+    la vez.)</p>
+<p class="Pp"><b>lvmpersist start</b>
+    <b>--ourkey</b><i>&#x00A0;CLAVE</i><b>&#x00A0;--removekey</b><i>&#x00A0;CLAVE_A_ELIMINAR</i>
+    <i>DEST</i></p>
+<p class="Pp">&quot;start&quot; con removekey registra la clave local y toma la
+    reserva de otro host (usando preempt-abort). El otro host pierde la
+    capacidad de escribir en los dispositivos. (Este comando se aplica a VGs
+    locales, para los cuales un solo host puede iniciarse a la vez.)</p>
+<p class="Pp"><b>lvmpersist clear</b> <b>--ourkey</b><i>&#x00A0;CLAVE</i>
+    <i>DEST</i></p>
+<p class="Pp">&quot;clear&quot; elimina todas las claves y reservas de los
+    dispositivos.</p>
+<p class="Pp"><b>lvmpersist</b>
+    <b>devtest</b>|<b>read</b>|<b>read-keys</b>|<b>read-reservation</b>
+    <i>DEST</i></p>
+<p class="Pp">Estos comandos se utilizan para probar si los dispositivos soportan
+    PR, y para mostrar las claves y reservas PR actuales.</p>
+<p class="Pp"><b>lvmpersist check-key</b> <b>--key</b><i>&#x00A0;CLAVE</i>
+    <i>DEST</i></p>
+<p class="Pp">Verifica si una clave especificada está registrada.</p>
+<p class="Pp">OPCIONES:</p>
+<dl class="Bl-tag">
+  <dt id="nuestraclave"><a class="permalink" href="#nuestraclave"><b>--ourkey</b><i>&#x00A0;CLAVE</i></a></dt>
+  <dd>
+    <br/>
+    La clave PR local, por ejemplo, 0x123abc</dd>
+  <dt id="eliminarclave"><a class="permalink" href="#eliminarclave"><b>--removekey</b><i>&#x00A0;CLAVE_A_ELIMINAR</i></a></dt>
+  <dd>
+    <br/>
+    La clave de otro host.</dd>
+  <dt id="clave"><a class="permalink" href="#clave"><b>--key</b><i>&#x00A0;CLAVE</i></a></dt>
+  <dd>
+    <br/>
+    Cualquier clave para verificar.</dd>
+  <dt id="acceso~2"><a class="permalink" href="#acceso~2"><b>--access
+    ex|sh</b></a></dt>
+  <dd>
+    <br/>
+    Usar un tipo PR para acceso exclusivo o compartido al dispositivo.</dd>
+  <dt id="tipopreserva~2"><a class="permalink" href="#tipopreserva~2"><b>--prtype</b><i>&#x00A0;TIPO_PR</i></a></dt>
+  <dd>
+    <br/>
+    Usar el tipo de reserva especificado (alternativa a --access).</dd>
+  <dt id="ptpl"><a class="permalink" href="#ptpl"><b>--ptpl</b></a></dt>
+  <dd>
+    <br/>
+    Habilitar persistencia a través de pérdida de energía durante el inicio
+      (registro).</dd>
+</dl>
+<p class="Pp">DEST:</p>
+<dl class="Bl-tag">
+  <dt id="dispositivo"><a class="permalink" href="#dispositivo"><b>--device</b><i>&#x00A0;RUTA</i><b>&#x00A0;...</b></a></dt>
+  <dd>
+    <br/>
+    Uno o más dispositivos sobre los que operar.</dd>
+  <dt id="vg"><a class="permalink" href="#vg"><b>--vg</b><i>&#x00A0;NOMBRE_VG</i></a></dt>
+  <dd>
+    <br/>
+    Un VG sobre el que operar (todos los PV en el VG.)</dd>
+  <dt id="vg~2"><a class="permalink" href="#vg~2"><b>--vg</b><i>&#x00A0;NOMBRE_VG</i><b>&#x00A0;--device</b><i>&#x00A0;RUTA</i><b>&#x00A0;...</b></a></dt>
+  <dd>
+    <br/>
+    Uno o más dispositivos sobre los que operar, y un nombre de VG para usar como
+      identificador para el conjunto de dispositivos.</dd>
+</dl>
+<p class="Pp">lvmpersist requiere ya sea los nombres de dispositivos específicos,
+    cada uno especificado como --device /dev/nombre, o el nombre de un VG,
+    especificado con --vg NOMBRE_VG. Cuando se especifica un VG, sin dispositivos
+    de bloque individuales, lvmpersist ejecuta comandos PR en cada PV del VG.
+    Cuando se especifican dispositivos, y también se proporciona un VG con --vg,
+    entonces el nombre del VG simplemente se usa en los mensajes de registro para
+    identificar el conjunto de dispositivos en su totalidad. Cuando lvmpersist es
+    ejecutado por comandos LVM de nivel superior, cada dispositivo se especifica
+    con --device, y el nombre del VG se especifica con --vg.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='comandos_de_metadatos_del_VG'><a class='permalink' href='#comandos_de_metadatos_del_VG'>comandos   de metadatos del VG</a></h2>
+<p class="Pp">vgchange --setpersist se utiliza para configurar la automatización y
+    la aplicación de PR en relación con el uso más amplio del VG</p>
+</section>
+</section>
+</div>
+
+</section>
+                
+            </article>
+            
+        </main>
+    </body>
+</html>
+. La
+    configuración se almacena en la metadata del VG.</p>
+<p class="Pp"><b>vgchange --setpersist</b> <b>y</b>|<b>n</b> <i>VG</i></p>
+<p class="Pp">Habilita o deshabilita la automatización y la aplicación por defecto
+    de PR para el VG, estableciendo o borrando ambas configuraciones de PR
+    "autostart" y "require" (y potencialmente otras configuraciones futuras).</p>
+<p class="Pp"><b>vgchange --setpersist</b>
+    <b>autostart</b>|<b>noautostart</b>|<b>require</b>|<b>norequire</b>
+    <i>VG</i></p>
+<p class="Pp">Establece o borra individualmente las configuraciones de autostart y
+    require.</p>
+<p class="Pp">Cuando se establece "autostart", los comandos de autoactivación y
+    auto-lockstart (vgchange -aay, vgchange --lockstart --lockopt auto)
+    iniciarán primero PR en el VG. Si el inicio de PR falla, estos comandos se
+    detendrán y no intentarán la activación o el lockstart.</p>
+<p class="Pp">Cuando se establece "require", los comandos de lvm que escriban o
+    activen un VG requerirán que PR se inicie antes de intentar escribir o
+    activar.</p>
+<p class="Pp"><b>vgs -o persist</b> <i>VG</i></p>
+<p class="Pp">Muestra la configuración.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='comandos_VG_PR'><a class='permalink' href='#comandos_VG_PR'>Comandos   VG PR</a></h2>
+<p class="Pp">vgchange --persist se utiliza para realizar operaciones PR en los
+    dispositivos del VG.</p>
+<p class="Pp"><b>vgchange --persist start</b> <i>VG</i></p>
+<p class="Pp">Inicia PR en los dispositivos del VG. Registra la clave local y
+    adquiere una reserva.</p>
+<p class="Pp"><b>vgchange --persist stop</b> <i>VG</i></p>
+<p class="Pp">Detiene PR en los dispositivos del VG. Anula el registro de la clave
+    local, lo que libera una reserva si la tiene la clave.</p>
+<p class="Pp"><b>vgchange --persist remove --removekey</b> <i>remkey</i>
+    <i>VG</i></p>
+<p class="Pp">Elimina la clave PR de otro host de los dispositivos de un VG
+    compartido, deshabilitando inmediatamente la capacidad del otro host para
+    escribir en los dispositivos. (Este comando se aplica a VGs compartidos,
+    para los cuales varios hosts se inician a la vez).</p>
+<p class="Pp"><b>vgchange --persist start --removekey</b> <i>remkey</i>
+    <i>VG</i></p>
+<p class="Pp">Inicia PR en los dispositivos del VG, y al mismo tiempo elimina la
+    clave y la reserva de otro host de los dispositivos del VG, deshabilitando
+    la capacidad del otro host para escribir en los dispositivos. (Este comando
+    se aplica a VGs locales, para los cuales un solo host puede iniciarse a la
+    vez).</p>
+<p class="Pp"><b>vgchange --persist check</b> <i>VG</i></p>
+<p class="Pp">Comprueba si PR está iniciado (la clave local y la reserva existen en
+    todos los dispositivos). El comando finaliza con éxito si PR está iniciado
+    en todos los dispositivos del VG.</p>
+<p class="Pp"><b>vgchange --persist read</b> <i>VG</i></p>
+<p class="Pp">Muestra los registros y reservas PR en cada uno de los dispositivos
+    del VG.</p>
+<p class="Pp"><b>vgchange --persist clear</b> <i>VG</i></p>
+<p class="Pp">Borra todas las claves y reservas PR en los dispositivos del VG.</p>
+<p class="Pp"><b>vgchange --persist autostart</b> <i>VG</i></p>
+<p class="Pp">Inicia PR en los dispositivos del VG si autostart está configurado.
+    Esto está pensado para ser utilizado por la automatización del sistema,
+    como la autoactivación y el auto-lockstart.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Inicio_suplementario_de_PR'><a class='permalink' href='#Inicio_suplementario_de_PR'>Inicio   suplementario de PR</a></h2>
+<p class="Pp">La opción --persist start se puede agregar a otros comandos para que
+    estos intenten iniciar PR primero (independientemente de la configuración de
+    autostart).</p>
+<p class="Pp">vgchange -ay --persist start
+  <br/>
+  vgchange -aay --persist start
+  <br/>
+  vgchange --lockstart --persist start
+  <br/>
+  vgchange --setpersist y|require|autostart --persist start
+  <br/>
+  vgimport --persist start
+  <br/>
+  vgchange --systemid &lt;local_id&gt; --persist start</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Uso de VG local</h2>
+<p class="Pp">Al utilizar un VG local, solo un host se inicia a la vez, y normalmente
+    se mantiene una reserva WE (Write Exclusive) en los dispositivos.</p>
+<p class="Pp">El uso de PR con VGs locales protege los dispositivos del VG de ser
+    escritos por error por otro host con acceso a los mismos dispositivos. Es
+    complementario al uso del ID de sistema del VG para controlar el propietario
+    previsto de un VG, pero agrega protección reforzada a nivel de dispositivo,
+    en caso de que otro host no utilice la función de ID de sistema de LVM.</p>
+<p class="Pp">Si un host desea tomar posesión forzosamente de un VG local que está
+    actualmente en uso por otro host, puede usar vgchange --persist start
+    --removekey remkey VG, donde "remkey" es la clave PR del host actualmente
+    iniciado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Uso de VG compartido</h2>
+<p class="Pp">Al utilizar un VG compartido, todos los hosts que utilizan el VG se
+    inician, y se mantiene una reserva WEAR (Write Exclusive - all registrants)
+    en los dispositivos.</p>
+<p class="Pp">PR debe iniciarse antes de que se inicie el bloqueo (vgchange
+    --persist start seguido de vgchange --lockstart, o un combinado
+    vgchange --persist start --lockstart).</p>
+<p class="Pp">Si un host desea impedir forzosamente que otro host escriba en los
+    dispositivos del VG compartido, puede usar vgchange --persist remove
+    --removekey remkey, donde "remkey" es la clave PR del otro host.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Configuraciones_locales'><a class='permalink' href='#Configuraciones_locales'>Configuraciones   locales</a></h2>
+<p class="Pp">Cada host que utiliza PR debe tener una clave PR que sea única entre
+    todos los hosts que utilizan el mismo VG. Hay dos enfoques para establecer un
+    valor de clave, que se configuran en /etc/lvm/lvmlocal.conf:</p>
+<p class="Pp">local/pr_key</p>
+<p class="Pp">El valor establecido en pr_key se utilizará directamente. Es una cadena
+    hexadecimal de hasta 16 caracteres de longitud. pr_key no se utilizará para
+    VGs compartidos de sanlock.</p>
+<p class="Pp">local/host_id</p>
+<p class="Pp">Para un VG compartido de sanlock, o si no se establece pr_key, se
+    creará una clave utilizando host_id. Este es un entero decimal entre 1 y
+    2000.</p>
+<p class="Pp">Para un VG local, o un VG compartido de dlm, una clave que utiliza
+    host_id tiene el formato:</p>
+<p class="Pp">0x100000000000XXXX donde XXXX son los dígitos hexadecimales del
+    valor de host_id.</p>
+<p class="Pp">Para un VG compartido de sanlock, la clave se basa en host_id y un
+    número de generación (tomado del lease de sanlock), y tiene el formato:</p>
+<p class="Pp">0x100000YYYYYYXXXX donde XXXX son los dígitos hexadecimales del
+    valor de host_id, e YYYYYY son los dígitos hexadecimales del número de
+    generación.</p>
+<p class="Pp">El número de generación de sanlock aumenta de valor cada vez que el
+    host inicia el VG, por lo que un host utilizará una nueva clave cada vez que
+    se inicie. En algunos casos, PR puede iniciarse con una clave que incluye el
+    número de generación incorrecto, en cuyo caso el comando lockstart
+    actualizará la clave con el valor correcto (la generación se determina
+    oficialmente durante el lockstart).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='vgcreate'><a class='permalink' href='#vgcreate'>vgcreate</a></h2>
+<p class="Pp">Las funciones PR se pueden habilitar al crear un nuevo VG:</p>
+<p class="Pp"><b>vgcreate --setpersist y</b> <i>VG </i> <i>PVs</i></p>
+<p class="Pp">Para VGs locales, se puede incluir <b>--persist start</b> para
+    iniciar PR también en el nuevo VG.</p>
+<p class="Pp">La creación de nuevos VGs compartidos con --setpersist funciona de
+    manera diferente. PR siempre se inicia para un nuevo VG compartido, incluso
+    sin --persist start. Primero, se adquiere un PR exclusivo (normalmente modo
+    WE) para los nuevos dispositivos del VG. Luego, se inicializan los
+    dispositivos y se escribe la nueva metadata del VG. El PR exclusivo se
+    elimina y se adquiere un PR compartido (normalmente modo WEAR) para el
+    uso compartido normal del VG. Finalmente, se inicia el espacio de bloqueo
+    del VG.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='vgextend'><a class='permalink' href='#vgextend'>vgextend</a></h2>
+<p class="Pp">Para VGs locales, vgextend inicia PR en los nuevos dispositivos antes de
+    agregarlos al VG (la configuración require o autostart debe estar habilitada).
+    Para VGs compartidos, el usuario debe usar lvmpersist para iniciar PR en los
+    nuevos dispositivos, desde todos los hosts, antes de ejecutar vgextend.
+    vgextend verifica que la reserva y las claves en los nuevos dispositivos
+    coincidan con los dispositivos existentes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='vgremove'><a class='permalink' href='#vgremove'>vgremove</a></h2>
+<p class="Pp">El comando vgremove detiene PR en los dispositivos del VG solo si las
+    configuraciones "require" o "autostart" se han establecido utilizando
+    vgchange --setpersist. Si PR se ha iniciado independientemente de cualquier
+    configuración de setpersist, entonces vgremove no detendrá PR
+    automáticamente en los dispositivos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='vgexport/vgimport'><a class='permalink' href='#vgexport/vgimport'>vgexport/vgimport</a></h2>
+<p class="Pp"><b>vgexport --persist stop</b> detiene PR después de exportar el VG,
+    y <b>vgimport --persist start</b> inicia PR antes de importar el VG. La
+    escritura de la metadata del VG para la exportación ocurre antes de detener
+    PR, y la escritura de la metadata del VG para la importación ocurre después
+    de iniciar PR.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='vgchange_--systemid'><a class='permalink' href='#vgchange_--systemid'>vgchange   --systemid</a></h2>
+<p class="Pp">PR se puede iniciar junto con la toma de posesión del ID de sistema
+    de un VG, o PR se puede detener junto con la renuncia a la posesión del ID de
+    sistema de un VG (ver <a href='/man/lvmsystemid.7.en'>lvmsystemid(7)</a> para más
+    información).</p>
+<p class="Pp"><b>vgchange --systemid</b> <i>local_system_id</i> <b>--persist
+    start</b> <i>VG</i></p>
+<p class="Pp">Este comando se utiliza para tomar posesión de un VG de propiedad
+    externa. PR se inicia y, si tiene éxito, el ID del sistema del VG se
+    establecerá al ID del sistema local. (Nota: el ID del sistema externo del VG
+    debe incluirse en extra_system_ids locales para acceder a un VG externo.)
+    Para eliminar forzosamente (preempt-abort) el PR en poder de otro host en el
+    VG, se puede incluir <b>--removekey</b><i>&#x00A0;remkey</i>, donde remkey es
+    la clave PR del titular actual de PR.</p>
+<p class="Pp"><b>vgchange --systemid</b> <i>foreign_system_id</i> <b>--persist
+    stop</b> <i>VG</i></p>
+<p class="Pp">Este comando se utiliza para renunciar a la posesión de un VG de
+    propiedad local. El ID del sistema del VG se actualiza al nuevo valor y
+    luego se detiene PR.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Persistir_a_través_de_pérdida_de_energía'><a class='permalink' href='#Persistir_a_través_de_pérdida_de_energía'>Persistir   a través de pérdida de energía</a></h2>
+<p class="Pp">Para habilitar el uso de "persistir a través de pérdida de energía",
+    en el que el estado PR se conserva en un dispositivo si se reinicia, active
+    la configuración <b>ptpl</b>:</p>
+<p class="Pp"><b>vgchange --setpersist ptpl</b> <i>VG</i></p>
+<p class="Pp">La configuración PTPL se aplica durante el registro de claves (parte
+    del inicio de PR), por lo que surtirá efecto para cada host en el próximo
+    inicio. Se aplica a todos los PV en el VG, por lo que cada dispositivo debe
+    soportar PTPL. La configuración PTPL no está habilitada por
+    "--setpersist y".</p>
+<p class="Pp">Cualquiera de las siguientes opciones borrará la configuración PTPL:</p>
+<p class="Pp"><b>vgchange --setpersist noptpl</b> <i>VG</i>
+  <br/>
+  <b>vgchange --setpersist n</b> <i>VG</i></p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<section class="Ss">
+<h2 class="Ss">Uso de VG local</h2>
+<pre>host1:
+$ lvmconfig local/host_id
+host_id=1
+$ vgcreate vg /dev/sda /dev/sdb
+  Physical volume &quot;/dev/sda&quot; successfully created.
+  Physical volume &quot;/dev/sdb&quot; successfully created.
+  Volume group &quot;vg&quot; successfully created
+$ vgchange --setpersist y vg
+  Volume group &quot;vg&quot; successfully changed.
+$ vgchange --persist start vg
+  lvmpersist: started vg with key 0x1000000000000001.
+$ vgchange --persist check vg
+  key for local host is registered: 0x1000000000000001
+  reservation WE for local host
+  PR is started.
+$ lvcreate -l1 -n lvol0 vg
+  Logical volume &quot;lvol0&quot; created.
+$ vgchange</pre>
+</section>
+</section>-an vg
+  0 volúmenes lógicos en el grupo de volúmenes "vg" ahora activos
+$ vgchange --persist stop vg
+  lvmpersist: vg detenido con clave 0x1000000000000001.
+$ vgchange -ay vg
+  la reserva persistente no está iniciada.
+  No se puede acceder al VG vg sin reserva persistente.
+$ lvcreate -l1 -n lvol1 vg
+  la reserva persistente no está iniciada.
+  No se puede acceder al VG vg sin reserva persistente.
+$ vgchange --persist start vg
+  lvmpersist: vg iniciado con clave 0x1000000000000001.
+$ vgchange -ay vg
+  1 volumen lógico en el grupo de volúmenes "vg" ahora activo
+$ lvcreate -l1 -n lvol1 vg
+  Volumen lógico "lvol1" creado.
+host2 toma por la fuerza el VG del host1:
+$ lvmconfig local/host_id
+host_id=2
+$ vgchange -ay vg
+  la reserva persistente no está iniciada.
+  No se puede acceder al VG vg sin reserva persistente.
+$ vgchange --persist start vg
+  la reserva persistente está iniciada por otro host
+$ vgchange --persist check vg
+  la clave para el host local no está registrada (host_id 2)
+  la clave para otro host está registrada: 0x1000000000000001
+  reserva WE para otro host
+  PR no está iniciado.
+$ dd if=/dev/zero of=/dev/sda
+dd: error al escribir '/dev/sda': Error de entrada/salida
+$ vgchange --persist start --removekey 0x1000000000000001 vg
+  lvmpersist: vg iniciado con clave 0x1000000000000002.
+$ vgchange -ay vg
+  2 volúmenes lógicos en el grupo de volúmenes "vg" ahora activos
+$ vgchange --persist check vg
+  la clave para el host local está registrada: 0x1000000000000002
+  reserva WE para el host local
+  PR está iniciado.
+host1 ya no puede escribir:
+$ dd if=/dev/zero of=/dev/vg/lvol0
+dd: error al escribir '/dev/vg/lvol0': Error de entrada/salida
+$ lvcreate -l1 -n lvol1 vg
+  la reserva persistente no está iniciada.
+  No se puede acceder al VG vg sin reserva persistente.
+$ vgchange --persist check vg
+  la clave para el host local no está registrada (host_id 1)
+  la clave para otro host está registrada: 0x1000000000000002
+  reserva WE para otro host
+  PR no está iniciado.</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss">Uso de VG compartido</h2>
+<pre>host1:
+$ lvmconfig local/host_id
+host_id=1
+$ vgcreate --shared vg /dev/sda /dev/sdb
+  Activando bloqueo global de sanlock
+  Volumen físico "/dev/sda" creado con éxito.
+  Volumen físico "/dev/sdb" creado con éxito.
+  Volumen lógico "lvmlock" creado.
+  Grupo de volúmenes "vg" creado con éxito
+  VG vg iniciando espacio de bloqueo de sanlock
+  Iniciando bloqueo. Esperando hasta que los bloqueos estén listos...
+$ vgchange --setpersist y vg
+  Grupo de volúmenes "vg" modificado con éxito.
+$ vgchange --persist start vg
+  lvmpersist: vg iniciado con clave 0x1000000000010001.
+$ vgchange --persist check vg
+  la clave para el host local está registrada: 0x1000000000010001
+  claves para todos los hosts registrados: 0x1000000000010001
+  reserva WEAR para hosts registrados
+  PR está iniciado.
+$ lvcreate -l1 -n lvol0 vg
+  Volumen lógico "lvol0" creado.
+host2:
+$ lvmconfig local/host_id
+host_id=2
+$ vgchange --persist start vg
+  lvmpersist: vg iniciado con clave 0x1000000000010002.
+$ vgchange --lockstart vg
+  VG vg iniciando espacio de bloqueo de sanlock
+  Iniciando bloqueo. Esperando sanlock...
+$ vgchange --persist check vg
+  la clave para el host local está registrada: 0x1000000000010002
+  claves para todos los hosts registrados: 0x1000000000010001 0x1000000000010002
+  reserva WEAR para hosts registrados
+  PR está iniciado.
+$ lvcreate -l1 -n lvol1 vg
+  Volumen lógico "lvol1" creado.
+$ lvchange -ay vg/lvol0
+  LV bloqueado por otro host: vg/lvol0 (host_id 1)
+  No se pudo bloquear el volumen lógico vg/lvol0.
+$ vgchange -an vg
+  0 volúmenes lógicos en el grupo de volúmenes "vg" ahora activos
+$ vgchange --lockstop vg
+$ vgchange --persist stop vg
+  lvmpersist: ee detenido con clave 0x1000000000010002.
+$ vgchange --persist check vg
+  la clave para el host local no está registrada (host_id 2)
+  claves para todos los hosts registrados: 0x1000000000010001
+  reserva WEAR para hosts registrados
+  PR no está iniciado.
+$ dd if=/dev/zero of=/dev/sda
+dd: error al escribir '/dev/sda': Error de entrada/salida</pre>
+</section>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">LVM TOOLS 2.03.37(2) (2025-11-21)</td>
+    <td class="foot-os">Red Hat, Inc</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/lvm2/">core/lvm2</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.03.37-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://sourceware.org/lvm2/">https://sourceware.org/lvm2/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/lvm2/">/listing/core/lvm2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#USAGE">USO</a></li>
+        
+            <li><a href="#EXAMPLES">EJEMPLOS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/lvmpersist.8.en.txt">txt</a>, 
+        
+            <a href="/man/lvmpersist.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

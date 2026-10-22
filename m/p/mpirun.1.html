@@ -1,0 +1,2320 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>mpirun(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">mpirun(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/openmpi/">openmpi</a></p>
+<p class="lic">Licencias: BSD-3-Clause AND LicenseRef-MPICH</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">MPIRUN(1)</td>
+    <td class="head-vol">Open MPI</td>
+    <td class="head-rtitle">MPIRUN(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<p class="Pp">mpirun, mpiexec — Ejecutar trabajos seriales y paralelos en Open
+    MPI.</p>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><b>mpirun</b> y <b>mpiexec</b> son sinónimos el uno del otro. De hecho, son enlaces simbólicos al mismo ejecutable. Usar cualquiera de los nombres producirá exactamente el mismo comportamiento.</div>
+</div>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Modelo de Datos Múltiples con Proceso Único (SPMD):</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mpirun [ opciones ] &lt;programa&gt; [ &lt;argumentos&gt; ]</pre>
+</div>
+</div>
+<p class="Pp">Modelo de Datos Múltiples con Instrucción Múltiple (MIMD):</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mpirun [ opciones_globales ]
+       [ opciones_locales1 ] &lt;programa1&gt; [ &lt;argumentos1&gt; ] :
+       [ opciones_locales2 ] &lt;programa2&gt; [ &lt;argumentos2&gt; ] :
+       ... :
+       [ opciones_localesN ] &lt;programaN&gt; [ &lt;argumentosN&gt; ]</pre>
+</div>
+</div>
+<p class="Pp">Tenga en cuenta que en ambos modelos, invocar <b>mpirun</b> a través de un nombre de ruta absoluta es equivalente a especificar la opción <b>--prefix</b> con un valor <b>&lt;dir&gt;</b> equivalente al directorio donde reside <b>mpirun</b>, menos su último subdirectorio. Por ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ /usr/local/bin/mpirun ...</pre>
+</div>
+</div>
+<p class="Pp">es equivalente a</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --prefix /usr/local</pre>
+</div>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESUMEN_RÁPIDO'><a class='permalink' href='#RESUMEN_RÁPIDO'>RESUMEN RÁPIDO</a></h1>
+<p class="Pp">Si simplemente está buscando cómo ejecutar una aplicación MPI, probablemente querrá usar una línea de comandos de la siguiente forma:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun [ -n X ] [ --hostfile &lt;nombre_archivo&gt; ]  &lt;programa&gt;</pre>
+</div>
+</div>
+<p class="Pp">Esto ejecutará <b>X</b> copias de <b>&lt;programa&gt;</b> en su entorno de ejecución actual (si se ejecuta bajo un gestor de recursos compatible, el <b>mpirun</b> de Open MPI generalmente usará automáticamente el gestor de procesos correspondiente, en lugar de <b>ssh</b> (por ejemplo), que requiere el uso de un archivo de hosts, o por defecto ejecutará todas las <b>X</b> copias en localhost), programando (por defecto) en modo round-robin por ranura de CPU. Consulte el resto de esta documentación para obtener más detalles.</p>
+<p class="Pp">Tenga en cuenta que <b>mpirun</b> une automáticamente los procesos a los recursos de hardware. Se utilizan tres patrones de unión en ausencia de directivas adicionales (ver <i>defaults de mapa/rango/unión</i> para más detalles):</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>Unir a núcleo</b>: cuando el número de procesos es &lt;= 2</li>
+  <li><b>Unir a paquete</b>: cuando el número de procesos es &gt; 2</li>
+  <li><b>Unir a ninguno</b>: cuando está sobreasignado</li>
+</ul>
+</div>
+<p class="Pp">Si su aplicación utiliza hilos, probablemente querrá asegurarse de que no esté unido en absoluto (especificando <b>--bind-to none</b>), o que esté unido a múltiples núcleos utilizando un nivel de unión apropiado o un número específico de elementos de procesamiento por proceso de aplicación.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO_DE_PRRTE_POR_PARTE_DE_OPEN_MPI'><a class='permalink' href='#USO_DE_PRRTE_POR_PARTE_DE_OPEN_MPI'>USO DE PRRTE POR PARTE DE OPEN MPI</a></h1>
+<p class="Pp">Open MPI utiliza el Entorno de Ejecución de Referencia PMIx (PRRTE) como motor principal para lanzar, monitorear y terminar procesos MPI.</p>
+<p class="Pp">Gran parte de la documentación a continuación se importa directamente de PRRTE. Como tal, frecuentemente se refiere a conceptos y opciones de línea de comandos de PRRTE. Excepto donde se indique, estos conceptos y argumentos de línea de comandos son aplicables también a Open MPI. Open MPI extiende las opciones de línea de comandos disponibles de PRRTE y también modifica ligeramente los comportamientos predeterminados de PRRTE en algunos casos. Estos se describirán específicamente en la documentación a continuación.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES_DE_LÍNEA_DE_COMANDOS'><a class='permalink' href='#OPCIONES_DE_LÍNEA_DE_COMANDOS'>OPCIONES DE LÍNEA DE COMANDOS</a></h1>
+<p class="Pp">El núcleo del procesamiento de <b>mpirun</b> de Open MPI se realiza a través de <i>PRRTE</i>. Específicamente: <b>mpirun</b> es efectivamente un envoltorio alrededor de <b>prterun</b>, pero las opciones de CLI de <b>mpirun</b> son ligeramente diferentes de los comandos de CLI de PRRTE.</p>
+<section class="Ss">
+<h2 class="Ss" id='Sin_contenido'><a class='permalink' href='#Sin_contenido'>Sin contenido</a></h2>
+<p class="Pp">No hay contenido significativo en este archivo porque Open MPI fue:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Compilado sin soporte PRRTE.</li>
+  <li>Compilado con un PRRTE demasiado antiguo para incluir documentación legible por máquina que pudiera ser incorporada a la documentación de Open MPI.</li>
+</ul>
+</div>
+<p class="Pp">Si compila Open MPI con una versión más reciente de PRRTE (y tiene la herramienta Sphinx disponible cuando ejecuta el comando <b>configure</b> de Open MPI), debería obtener documentación más significativa aquí.</p>
+<p class="Pp">Por lo tanto, no hay documentación para esta sección.</p>
+<p class="Pp">¡Lo sentimos!</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES_(CONTENIDO_ANTIGUO_/_CODIFICADO_EN_DURO_—_PARA_AUDITAR)'><a class='permalink' href='#OPCIONES_(CONTENIDO_ANTIGUO_/_CODIFICADO_EN_DURO_—_PARA_AUDITAR'>OPCIONES (CONTENIDO ANTIGUO / CODIFICADO EN DURO — PARA AUDITAR</a></h1>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Esto"><a class="permalink" href="#Esto">Este es contenido antiguo</a></dt>
+  <dd>
+    <p class="Pp">Esta es la sección antigua de contenido codificado manualmente. Probablemente debería ser leída/auditada y ver qué queremos mantener y qué queremos descartar.</p>
+    <p class="Pp">Siéntase libre de consultar <a href='https://docs.prrte.org/'>https://docs.prrte.org/</a> en lugar de replicar contenido aquí (por ejemplo, para la definición de una ranura y otras cosas).</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">mpirun enviará el nombre del directorio desde el que se invocó en el nodo local a cada uno de los nodos remotos, e intentará cambiar a ese directorio. Consulte la sección "Directorio de trabajo actual" a continuación para obtener más detalles.</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>&lt;programa&gt;</b>: El ejecutable del programa. Este se identifica como el primer argumento no reconocido para mpirun.</li>
+  <li><b>&lt;argumentos&gt;</b>: Pase estos argumentos de tiempo de ejecución a cada nuevo proceso. Siempre deben ser los últimos argumentos para mpirun. Si se usa un archivo de contexto de aplicación, <b>&lt;argumentos&gt;</b> se ignorará.</li>
+  <li><b>-h</b>, <b>--help</b>: Muestra la ayuda para este comando</li>
+  <li><b>-q</b>, <b>--quiet</b>: Suprime mensajes informativos de orterun durante la ejecución de la aplicación.</li>
+  <li><b>-v</b>, <b>--verbose</b>:` Sea verboso</li>
+  <li><b>-V</b>, <b>--version</b>: Imprime el número de versión. Si no se dan otros argumentos, esto también hará que orterun salga.</li>
+  <li><b>-N &lt;num&gt;</b>: Lanza num procesos por nodo en todos los nodos asignados (sinónimo de <b>--npernode</b>).</li>
+  <li><b>--display-map</b>: Muestra una tabla que indica la ubicación mapeada de cada proceso antes del lanzamiento.</li>
+  <li><b>--display-allocation</b>: Muestra la asignación de recursos detectada.</li>
+  <li><b>--output-proctable</b>: Muestra la tabla de procesos del depurador después del lanzamiento.</li>
+  <li><b>--dvm</b>: Crea una máquina virtual distribuida (DVM) persistente.</li>
+  <li><b>--max-vm-size &lt;tamaño&gt;</b>: Número de demonios a iniciar.</li>
+</ul>
+</div>
+<p class="Pp">Utilice una de las siguientes opciones para especificar en qué hosts (nodos) del clúster ejecutar. Tenga en cuenta que desde el inicio de la versión v1.8, mpirun lanzará un demonio en cada host de la asignación (modificada por las siguientes opciones) al principio de la ejecución, independientemente de si los procesos de aplicación eventualmente se mapearán para ejecutarse allí. Esto se hace para permitir la recopilación de información de topología de hardware de los nodos remotos, lo que nos permite mapear procesos contra la topología conocida. Sin embargo, es un cambio respecto al comportamiento en versiones anteriores, donde los demonios solo se lanzaban después de completar el mapeo, y por lo tanto, solo ocurrían en los nodos donde los procesos de aplicación realmente se ejecutarían.</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>-H</b>, <b>--host &lt;host1,host2,...,hostN&gt;</b>: lista de hosts en los que invocar procesos.</li>
+  <li><b>--hostfile &lt;archivo_hosts&gt;</b>: Proporciona un archivo de hosts a utilizar.</li>
+  <li><b>--default-hostfile &lt;archivo_hosts&gt;</b>: Proporciona un archivo de hosts predeterminado.</li>
+  <li><b>--machinefile &lt;archivo_máquina&gt;</b>: Sinónimo de <b>--hostfile</b>.</li>
+  <li><b>--cpu-set &lt;lista&gt;</b>: Restringe los procesos lanzados a las CPU lógicas especificadas en cada nodo (lista separada por comas). Tenga en cuenta que las opciones de unión seguirán aplicándose dentro del sobre especificado; por ejemplo, puede optar por unir cada proceso a una sola CPU dentro del conjunto de CPU especificado.</li>
+</ul>
+</div>
+<p class="Pp">Las siguientes opciones especifican el número de procesos a lanzar. Tenga en cuenta que ninguna de las opciones implica una política de unión particular; por ejemplo, solicitar N procesos por paquete no implica que los procesos se unirán al paquete.</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><b>-n</b>, <b>--n</b>, <b>-c</b>, <b>-np &lt;#&gt;</b>: Ejecuta este número de copias del prog</dd>
+</dl>
+</div>
+</section>
+</div>
+</section>
+
+            </article>
+        </main>
+    </body>
+</html>
+ram en los nodos dados. Esta opción indica que el
+      archivo especificado es un programa ejecutable y no un contexto de aplicación.
+      Si no se proporciona ningún valor para el número de copias a ejecutar (es
+      decir, si ni `-n` ni sus sinónimos se proporcionan en la línea de comandos),
+      Open MPI ejecutará automáticamente una copia del programa en cada ranura
+      de proceso (ver la **definición de "ranura" de PRRTE** para la descripción de una
+      "ranura de proceso"). Sin embargo, esta característica solo se puede usar
+      en el modelo SPMD y, de lo contrario, devolverá un error (sin comenzar la
+      ejecución de la aplicación).
+    <p class="Pp"><b>NOTA:</b></p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">La opción <b>-n</b> es la opción preferida para especificar
+  el número de copias del programa a ejecutar, pero las opciones alternativas
+  también se aceptan.</div>
+</div>
+<ul class="Bl-bullet">
+  <li><b>--map-by ppr:N:&lt;objeto&gt;</b>: Inicia N veces el número de objetos
+      del tipo especificado en cada nodo.</li>
+  <li><b>--npersocket &lt;#persocket&gt;</b>: En cada nodo, inicia este número
+      de procesos multiplicado por el número de sockets de procesador en el
+      nodo. La opción `-npersocket` también activa la opción
+      `--bind-to-socket`. (obsoleta en favor de `--map-by ppr:n:package`)</li>
+  <li><b>--npernode &lt;#pernode&gt;</b>: En cada nodo, inicia este número de
+      procesos. (obsoleta en favor de `--map-by ppr:n:node`).</li>
+  <li><b>--pernode</b>: En cada nodo, inicia un proceso; equivalente a
+      `--npernode 1`. (obsoleta en favor de `--map-by ppr:1:node`)</li>
+</ul>
+</div>
+<p class="Pp">Para mapear procesos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><b>--map-by &lt;objeto&gt;</b>: Mapea al objeto especificado, por defecto
+      `package`. Las opciones admitidas incluyen `slot`, `hwthread`, `core`,
+      `L1cache`, `L2cache`, `L3cache`, `package`, `numa`, `node`, `seq`,
+      `rankfile`, `pe-list=#` y `ppr`. Cualquier objeto puede incluir
+      modificadores añadiendo `:` y cualquier combinación de los siguientes:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>pe=n</b>: une `n` elementos de procesamiento a cada proceso.</li>
+  <li><b>span</b>: equilibra la carga de los procesos en la asignación.</li>
+  <li><b>oversubscribe</b>: permite más procesos en un nodo que elementos de
+      procesamiento.</li>
+  <li><b>nooversubscribe</b>: *no* permite más procesos en un nodo que elementos
+      de procesamiento (por defecto).</li>
+  <li><b>nolocal</b>: no coloca procesos en el mismo host que el proceso
+      `mpirun`.</li>
+  <li><b>hwtcpus</b>: utiliza hilos de hardware como ranuras de CPU para el
+      mapeo.</li>
+  <li><b>corecpus</b>: utiliza núcleos de procesador como ranuras de CPU para el
+      mapeo (por defecto).</li>
+  <li><b>file=nombre_archivo</b>: utilizado con `rankfile`; usa `nombre_archivo`
+      para especificar el archivo a utilizar.</li>
+  <li><b>ordered</b>: utilizado con `pe-list` para unir cada proceso a uno de
+      los elementos de procesamiento especificados.</li>
+</ul>
+</div>
+</div>
+</div>
+<p class="Pp"><b>NOTA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">`socket` también se acepta como alias de `package`.</div>
+</div>
+<ul class="Bl-bullet">
+  <li><b>--bycore</b>: Mapea procesos por núcleo (obsoleto en favor de
+      `--map-by core`).</li>
+  <li><b>--byslot</b>: Mapea y clasifica procesos en orden circular por ranura
+      (obsoleto en favor de `--map-by slot`).</li>
+  <li><b>--nolocal</b>: No ejecuta ninguna copia de la aplicación iniciada en el
+      mismo nodo en el que se está ejecutando orterun. Esta opción anulará la
+      inclusión de localhost con `--host` o cualquier otro mecanismo de
+      especificación de host. Alias de `--map-by :nolocal`.</li>
+  <li><b>--nooversubscribe</b>: No sobrecarga ningún nodo; error (sin iniciar
+      ningún proceso) si el número de procesos solicitado causaría sobrecarga.
+      Esta opción establece implícitamente "max_slots" igual al valor de
+      "slots" para cada nodo. (Habilitado por defecto). Alias de
+      `--map-by :nooversubscribe`.</li>
+  <li><b>--oversubscribe</b>: Se permite que los nodos se sobrecarguen, incluso
+      en un sistema administrado, y la sobrecarga de los elementos de
+      procesamiento. Alias de `--map-by :oversubscribe`.</li>
+  <li><b>--bynode</b>: Inicia procesos uno por nodo, ciclando por nodo en un
+      modo circular. Esto distribuye los procesos uniformemente entre los nodos y
+      asigna los rangos de `MPI_COMM_WORLD` en un modo circular, "por nodo".
+      (obsoleto en favor de `--map-by node`).</li>
+  <li><b>--cpu-list &lt;cpus&gt;</b>: Lista separada por comas de los IDs de
+      procesador a los que se unirán los procesos [por defecto=`NULL`]. Los IDs
+      de procesador se interpretan como IDs de núcleos lógicos de hwloc.
+    <p class="Pp"><b>NOTA:</b></p>
+  </li>
+</ul>
+<div class="Bd-indent">
+<div class="Bd-indent">Puede ejecutar el comando `lstopo(1)` de hwloc para ver
+  una lista de los núcleos disponibles y sus IDs lógicos.</div>
+</div>
+</div>
+<p class="Pp">Para ordenar los rangos de los procesos en `MPI_COMM_WORLD`:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><b>--rank-by &lt;modo&gt;</b>: Clasifica en orden circular según el modo
+      especificado, por defecto `slot`. Las opciones admitidas incluyen
+      `slot`, `node`, `fill` y `span`.</dd>
+</dl>
+</div>
+<p class="Pp">Para la unión de procesos:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--bind-to &lt;objeto&gt;</b>: Une los procesos al objeto especificado,
+      por defecto `core`. Las opciones admitidas incluyen `slot`, `hwthread`,
+      `core`, `l1cache`, `l2cache`, `l3cache`, `package`, `numa` y `none`.</li>
+  <li><b>--cpus-per-proc &lt;#perproc&gt;</b>: Une cada proceso al número
+      especificado de CPUs. (obsoleto en favor de `--map-by
+      &lt;obj&gt;:PE=n`)</li>
+  <li><b>--cpus-per-rank &lt;#perrank&gt;</b>: Alias de `--cpus-per-proc`.
+      (obsoleto en favor de `--map-by &lt;obj&gt;:PE=n`)</li>
+  <li><b>--bind-to-core</b> Une los procesos a los núcleos (obsoleto en favor de
+      `--bind-to core`).</li>
+  <li><b>--bind-to-socket</b>: Une los procesos a los sockets del procesador
+      (obsoleto en favor de `--bind-to package`).</li>
+  <li><b>--report-bindings</b>: Informa sobre cualquier unión para los procesos
+      iniciados.</li>
+</ul>
+</div>
+<p class="Pp">Para archivos de rango (rankfiles):</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><b>--rankfile &lt;rankfile&gt;</b>: Proporciona un archivo de rango.
+      (obsoleto en favor de `--map-by rankfile:file=ARCHIVO`)</dd>
+</dl>
+</div>
+<p class="Pp">Para gestionar la E/S estándar:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--output-filename &lt;nombre_archivo&gt;</b>: Redirige la salida estándar
+      (stdout), el error estándar (stderr) y el diagnóstico estándar (stddiag)
+      de todos los procesos a una versión única de proceso del nombre de archivo
+      especificado. Cualquier directorio en el nombre del archivo se creará
+      automáticamente. Cada archivo de salida consistirá en `nombre_archivo.id`,
+      donde el `id` será el rango del proceso en `MPI_COMM_WORLD`, rellenado con
+      ceros a la izquierda para un ordenamiento correcto en las listas. Un valor
+      de ruta relativa se convertirá en una ruta absoluta basándose en el directorio
+      actual donde se ejecute mpirun. Tenga en cuenta que esto no funcionará en
+      entornos donde el sistema de archivos en los nodos de cómputo difiere del
+      lugar donde se ejecuta `mpirun(1)`.</li>
+  <li><b>--stdin &lt;rango&gt;</b>: El rango de `MPI_COMM_WORLD` del proceso que
+      recibirá la entrada estándar (stdin). Por defecto, la entrada estándar se
+      reenvía al rango 0 de `MPI_COMM_WORLD`, pero esta opción se puede usar para
+      reenviar stdin a cualquier proceso. También es aceptable especificar `none`,
+      indicando que ningún proceso recibirá stdin.</li>
+  <li><b>--merge-stderr-to-stdout</b>: Fusiona stderr a stdout para cada
+      proceso.</li>
+  <li><b>--tag-output</b>: Etiqueta cada línea de salida a stdout, stderr y
+      stddiag con `[jobid, MCW_rank]<stdxxx>` indicando el ID del trabajo del
+      proceso y el rango de `MPI_COMM_WORLD` del proceso que generó la salida, y
+      el canal que la generó.</li>
+  <li><b>--timestamp-output</b>: Marca con una fecha y hora cada línea de salida
+      a stdout, stderr y stddiag.</li>
+  <li><b>--xml</b>: Proporciona toda la salida a stdout, stderr y stddiag en
+      formato XML.</li>
+  <li><b>--xml-file &lt;nombre_archivo&gt;</b> Proporciona toda la salida en
+      formato XML al archivo especificado.</li>
+  <li><b>--xterm &lt;rangos&gt;</b>: Muestra la salida de los procesos
+      identificados por sus rangos de `MPI_COMM_WORLD` en ventanas xterm
+      separadas. Los rangos se especifican como una lista de rangos separada por
+      comas, con un `-1` que indica todos. Se creará una ventana separada para
+      cada proceso especificado.
+    <p class="Pp"><b>NOTA:</b></p>
+  </li>
+</ul>
+<div class="Bd-indent">
+<div class="Bd-indent">xterm normalmente terminará la ventana al finalizar el
+  proceso que se ejecuta dentro de ella. Sin embargo, al añadir un `!` al final
+  de la lista de rangos especificados, se proporcionarán las opciones adecuadas
+  para garantizar que xterm mantenga la ventana abierta después de que el proceso
+  termine, permitiéndole así ver la salida del proceso. Cada ventana xterm
+  posteriormente deberá cerrarse manualmente. Nota: En algunos entornos, xterm
+  puede requerir que el ejecutable esté en la ruta del usuario, o que se especifique
+  en términos absolutos o relativos. Por lo tanto, puede ser necesario especificar
+  un ejecutable local como `./mi_app_mpi` en lugar de solo `mi_app_mpi`. Si xterm
+  no encuentra el ejecutable, `mpirun` se colgará, pero responderá correctamente
+  a un Ctrl-C. Si esto ocurre, compruebe que el ejecutable se especifica
+  correctamente y vuelva a intentarlo.</div>
+</div>
+</div>
+<p class="Pp">Para gestionar archivos y el entorno de ejecución:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--path &lt;ruta&gt;</b>: `&lt;ruta&gt;` que se utilizará al intentar
+      localizar los ejecutables solicitados. Esto se usa antes de usar la
+      configuración de la variable de entorno local `PATH`.</li>
+  <li><b>--prefix &lt;dir&gt;</b>: Directorio prefijo que se utilizará para
+      establecer `PATH` y `LD_LIBRARY_PATH` en el nodo remoto antes de invocar
+      Open MPI o el proceso objetivo. Ver la sección _Ejecución Remota_,
+      abajo.</li>
+  <li><b>--noprefix</b>: Deshabilita el comportamiento automático de `--prefix`.</li>
+  <li><b>--preload-binary</b>: Copia el/los ejecutable(s) especificado(s) a las
+      máquinas remotas antes de iniciar los procesos remotos. Los ejecutables se
+      copiarán al directorio de sesión de Open MPI y se eliminarán al completar
+      el trabajo.</li>
+  <li><b>--preload-files &lt;archivos&gt;</b>: Precarga la lista de archivos
+      separada por comas en el directorio de trabajo actual de las máquinas
+      remotas donde se iniciarán los procesos antes de iniciar dichos procesos.</li>
+  <li><b>--set-cwd-to-session-dir</b>: Establece el directorio de trabajo de los
+      procesos iniciados a su directorio de sesión.</li>
+  <li><b>--wd &lt;dir&gt;</b>: Sinónimo de `-wdir`.</li>
+  <li><b>--wdir &lt;dir&gt;</b>: Cambia al directorio `&lt;dir&gt;` antes de que
+      se ejecute el programa del usuario. Ver la sección _Directorio de Trabajo
+      Actual_ para notas sobre rutas relativas. Nota: Si la opción `--wdir`
+      aparece tanto en la línea de comandos como en un contexto de aplicación,
+      el contexto tendrá prioridad sobre la línea de comandos. Por lo tanto, si
+      la ruta al directorio de trabajo deseado es diferente en los nodos
+      backend, debe especificarse como una ruta absoluta que sea correcta para
+      el nodo backend.</li>
+  <li><b>-x &lt;env&gt;</b>: Exporta las variables de entorno especificadas a los
+      nodos remotos antes de ejecutar</li>
+</ul>
+</div>
+el programa. Solo se puede especificar una variable de entorno
+      por opción <b>-x</b>. Se pueden especificar variables de entorno existentes o
+      nombres de variables nuevos con valores correspondientes.
+      Por ejemplo:</li>
+</ul>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -x DISPLAY -x OFILE=/tmp/out ...</pre>
+</div>
+</div>
+<p class="Pp">El analizador para la opción <b>-x</b> no es muy sofisticado;
+    ni siquiera entiende valores entre comillas. Se recomienda a los usuarios
+    que establezcan variables en el entorno y luego usen <b>-x</b> para exportarlas
+    (no definirlas).</p>
+</div>
+<p class="Pp">Establecimiento de parámetros MCA:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--gmca &lt;clave&gt; &lt;valor&gt;</b>: Pasa parámetros MCA globales
+      que son aplicables a todos los contextos. <b>&lt;clave&gt;</b> es el nombre
+      del parámetro; <b>&lt;valor&gt;</b> es el valor del parámetro.</li>
+  <li><b>--mca &lt;clave&gt; &lt;valor&gt;</b>: Envía argumentos a varios módulos
+      MCA. Consulte la sección <i>Establecimiento de parámetros MCA</i> para
+      más detalles.
+    <p class="Pp"><b>NOTA:</b></p>
+  </li>
+</ul>
+<div class="Bd-indent">
+<div class="Bd-indent">Open MPI intentará discernir los parámetros MCA de PMIx y PRRTE
+      pasados a través de <b>--mca</b> y los manejará apropiadamente, pero es
+      posible que no siempre adivine correctamente. Es mejor usar
+      <b>--pmixmca</b> y <b>--prtemca</b> al pasar parámetros MCA a PMIx y PRRTE,
+      respectivamente.</div>
+</div>
+<ul class="Bl-bullet">
+  <li><b>--pmixmca &lt;clave&gt; &lt;valor&gt;</b>: Envía argumentos a módulos
+      MCA en el subsistema PMIx. Consulte la sección <i>Establecimiento de
+      parámetros MCA</i> para más detalles.</li>
+  <li><b>--prtemca &lt;clave&gt; &lt;valor&gt;</b>: Envía argumentos a módulos
+      MCA en el subsistema PMIx Reference Runtime Environment (PRRTE). Consulte la
+      sección <i>Establecimiento de parámetros MCA</i> para más detalles.</li>
+  <li><b>--tune &lt;archivo_tune&gt;</b>: Especifica un archivo de ajuste para
+      establecer argumentos para varios módulos MCA y variables de entorno.
+      Consulte el :ref:`Establecimiento de parámetros y variables de entorno
+      MCA desde archivo &lt;man1-mpirun-setting-mca-params-from-file&gt;`.
+      <b>--am &lt;arg&gt;</b> es un alias para <b>--tune &lt;arg&gt;</b>.</li>
+</ul>
+</div>
+<p class="Pp">Para depuración:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--get-stack-traces</b>: Cuando se combina con la opción
+      <b>--timeout</b>, <b>mpirun</b> obtendrá e imprimirá trazas de pila de todos
+      los procesos lanzados que aún estén activos cuando expire el tiempo de
+      espera. Tenga en cuenta que la obtención de trazas de pila puede llevar
+      un poco de tiempo y producir una gran cantidad de salida, especialmente
+      para trabajos con un gran número de procesos.</li>
+  <li><b>--timeout &lt;segundos&gt;</b>: El número máximo de segundos que se
+      ejecutará <b>mpirun</b>. Después de esta cantidad de segundos,
+      <b>mpirun</b> abortará el trabajo lanzado y saldrá con un estado de salida
+      distinto de cero. El uso de <b>--timeout</b> también puede ser útil cuando
+      se combina con la opción <b>--get-stack-traces</b>.</li>
+</ul>
+</div>
+<p class="Pp">También hay otras opciones:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--allow-run-as-root</b>: Permite que <b>mpirun</b> se ejecute cuando
+      es ejecutado por el usuario root (<b>mpirun</b> por defecto aborta cuando
+      se lanza como usuario root). Asegúrese de ver la sección
+      <i>Ejecución como root</i> para más detalles.</li>
+  <li><b>--app &lt;archivo_app&gt;</b>: Proporciona un archivo de aplicación,
+      ignorando todas las demás opciones de línea de comandos.</li>
+  <li><b>--continuous</b>: El trabajo se ejecutará hasta que se termine
+      explícitamente.</li>
+  <li><b>--disable-recovery</b>: Deshabilita la recuperación (restablece todas
+      las opciones de recuperación a desactivadas).</li>
+  <li><b>--do-not-launch</b>: Realiza todas las operaciones necesarias para
+      preparar el lanzamiento de la aplicación, pero no la lanza realmente.</li>
+  <li><b>--enable-recovery</b>: Habilita la recuperación de fallos de proceso
+      (por defecto: deshabilitado)</li>
+  <li><b>--leave-session-attached</b>: No desconecta los demonios de backend
+      utilizados por esta aplicación. Esto permite que se muestren los mensajes
+      de error de los demonios, así como del entorno subyacente (por ejemplo,
+      al no poder lanzar un demonio).</li>
+  <li><b>--max-restarts &lt;num&gt;</b>: Número máximo de veces que se reiniciará
+      un proceso fallido.</li>
+  <li><b>--personality &lt;lista&gt;</b>: Lista separada por comas del modelo
+      de programación, lenguajes y contenedores que se están utilizando (por
+      defecto=``ompi``).</li>
+  <li><b>--ppr &lt;lista&gt;</b>: Lista separada por comas del número de procesos
+      en un tipo de recurso dado (por defecto: ninguno). Alias de
+      <b>--map-by ppr:N:OBJ</b>.</li>
+  <li><b>--report-child-jobs-separately</b>: Devuelve el estado de salida del
+      trabajo principal solamente.</li>
+  <li><b>--report-events &lt;URI&gt;</b>: Informa de eventos a una herramienta que
+      escucha en la URI especificada.</li>
+  <li><b>--report-pid &lt;canal&gt;</b>: Imprime el PID de <b>mpirun</b>
+      durante el inicio. El canal debe ser un <b>-</b> para indicar que el PID se
+      enviará a stdout, un <b>+</b> para indicar que el PID se enviará a stderr,
+      o un nombre de archivo al que se escribirá el PID.</li>
+  <li><b>--report-uri &lt;canal&gt;</b>: Imprime la URI de <b>mpirun</b>
+      durante el inicio. El canal debe ser un <b>-</b> para indicar que la URI se
+      enviará a stdout, un <b>+</b> para indicar que la URI se enviará a stderr,
+      o un nombre de archivo al que se escribirá la URI.</li>
+  <li><b>--show-progress</b>: Muestra un breve informe periódico sobre el
+      progreso del lanzamiento.</li>
+  <li><b>--terminate</b>: Termina el DVM.</li>
+  <li><b>--use-hwthread-cpus</b>: Utiliza hilos de hardware como CPUs
+      independientes.
+    <p class="Pp">Tenga en cuenta que si no se proporciona un número de slots a
+        Open MPI (por ejemplo, a través de la palabra clave <b>slots</b> en un
+        archivo de hosts o desde un administrador de recursos como Slurm), el uso
+        de esta opción cambia el cálculo por defecto del número de slots en un
+        nodo. Consulte la <i>definición de "slot"</i> de PRRTE para más
+        detalles.</p>
+    <p class="Pp">También tenga en cuenta que el uso de esta opción cambia la
+        definición de Open MPI de un "elemento de procesador" de un núcleo de
+        procesador a un hilo de hardware. Consulte la <i>definición de
+        "elemento de procesador"</i> de PRRTE para más detalles.</p>
+  </li>
+</ul>
+</div>
+<p class="Pp">Las siguientes opciones son útiles para los desarrolladores; no
+    son generalmente útiles para la mayoría de los usuarios de Open MPI:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--debug-daemons</b>: Habilita la depuración de los demonios de tiempo
+      de ejecución utilizados por esta aplicación.</li>
+  <li><b>--debug-daemons-file</b>: Habilita la depuración de los demonios de
+      tiempo de ejecución utilizados por esta aplicación, almacenando la salida
+      en archivos.</li>
+  <li><b>--display-devel-map</b>: Muestra una tabla más detallada que muestra
+      la ubicación mapeada de cada proceso antes del lanzamiento.</li>
+  <li><b>--display-topo</b>: Muestra la topología como parte del mapa de
+      procesos justo antes del lanzamiento.</li>
+  <li><b>--launch-agent</b>: Nombre del ejecutable que se utilizará para iniciar
+      procesos en los nodos remotos. El valor por defecto es <b>prted</b>. Esta
+      opción se puede usar para probar nuevos conceptos de demonio, o para pasar
+      opciones a los demonios sin que mpirun las vea. Por ejemplo, especificar
+      un agente de lanzamiento de <b>prted --prtemca odls_base_verbose</b>
+      <b>5</b> permite al desarrollador solicitar salida de depuración de
+      <b>prted</b> sin el ruido de <b>mpirun</b>.</li>
+  <li><b>--report-state-on-timeout</b>: Cuando se empareja con la opción de
+      línea de comandos <b>--timeout</b>, informa el estado del subsistema de
+      tiempo de ejecución de cada proceso cuando expira el tiempo de espera.</li>
+</ul>
+</div>
+<p class="Pp">Puede haber otras opciones listadas con <b>mpirun --help</b>.</p>
+<section class="Ss">
+<h2 class="Ss" id='Variables_de_Entorno'><a class='permalink' href='#Variables_de_Entorno'>Variables de Entorno</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~2"><a class="permalink" href="#Este~2">Este es contenido antiguo y codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><b>MPIEXEC_TIMEOUT</b>: Sinónimo de la opción de línea de comandos
+      <b>--timeout</b>.</dd>
+</dl>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~3"><a class="permalink" href="#Este~3">Este es contenido antiguo y codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Una invocación de <b>mpirun</b> inicia una aplicación MPI ejecutándose
+    bajo Open MPI. Si la aplicación es de proceso único y datos múltiples (SPMD),
+    la aplicación puede especificarse en la línea de comandos de
+    <b>mpirun</b>.</p>
+<p class="Pp">Si la aplicación es de instrucciones múltiples y datos múltiples
+    (MIMD), compuesta por múltiples programas, el conjunto de programas y
+    argumentos se puede especificar de una de dos maneras: Argumentos de línea de
+    comandos extendidos y Contexto de aplicación.</p>
+<p class="Pp">Un contexto de aplicación describe el conjunto de programas MIMD
+    incluyendo todos los argumentos en un archivo separado. Este archivo esencialmente
+    contiene múltiples líneas de comandos de mpirun, menos el nombre del comando
+    en sí. La capacidad de especificar diferentes opciones para diferentes
+    instanciaciones de un programa es otra razón para usar un contexto de
+    aplicación.</p>
+<p class="Pp">Los argumentos de línea de comandos extendidos permiten la
+    descripción de la disposición de la aplicación en la línea de comandos usando
+    dos puntos (<b>:</b>) para separar la especificación de programas y
+    argumentos. Algunas opciones se establecen globalmente en todos los programas
+    especificados (por ejemplo, <b>--hostfile</b>), mientras que otras son
+    específicas para un solo programa (por ejemplo, <b>-n</b>).</p>
+<section class="Ss">
+<h2 class="Ss" id='Especificación_de_Nodos_Host'><a class='permalink' href='#Especificación_de_Nodos_Host'>Especificación de Nodos Host</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~4"><a class="permalink" href="#Este~4">Este es contenido antiguo y codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Los nodos host pueden identificarse en la línea de comandos de
+    <b>mpirun</b> con la opción <b>--host</b> o en un archivo de hosts.</p>
+<p class="Pp">Por ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa,aa,bb ./a.out</pre>
+</div>
+</div>
+<p class="Pp">Lanza dos procesos en el nodo <b>aa</b> y uno en <b>bb</b>.</p>
+<p class="Pp">O, considere el archivo de hosts:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ cat myhostfile
+aa slots=2
+bb slots=2
+cc slots=2</pre>
+</div>
+</div>
+<p class="Pp">Aquí, enumeramos tanto los nombres de host (<b>aa</b>, <b>bb</b> y
+    <b>cc</b>) como cuántos slots hay para cada uno.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanzará dos procesos en cada uno de los tres nodos.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile --host aa ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanzará dos procesos, ambos en el nodo <b>aa</b>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile --host dd ./a.out</pre>
+</div>
+</div>
+<p class="Pp">no encontrará hosts para ejecutarse y abortará con un error. Es
+    decir, el host especificado <b>dd</b> no está en el archivo de hosts
+    especificado.</p>
+<p class="Pp">Al ejecutarse bajo administradores de recursos (por ejemplo, Slurm,
+    Torque, etc.), Open MPI obtendrá los nombres de host</p>
+<section class="Ss">
+<h2 class="Ss" id='Especificar_el_N&uacute;mero_de_Procesos'><a class='permalink' href='#Especificar_el_N&uacute;mero_de_Procesos'>Especificar el Número de Procesos</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~5"><a class="permalink" href="#Este~5">Este contenido es antiguo y
+    está codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual/preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Como acabamos de ver, el número de procesos a ejecutar se puede
+    establecer usando el archivo de hosts. Existen otros mecanismos.</p>
+<p class="Pp">El número de procesos lanzados se puede especificar como un múltiplo
+    del número de nodos o paquetes de procesadores disponibles. Por ejemplo,</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa,bb --map-by ppr:2:package ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanza los procesos 0-3 en el nodo <b>aa</b> y el proceso 4-7 en
+    el nodo <b>bb</b> (asumiendo que <b>aa</b> y <b>bb</b> contienen 4 ranuras
+    cada uno).</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa,bb --map-by ppr:2:node ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanza los procesos 0-1 en el nodo <b>aa</b> y los procesos 2-3
+    en el nodo <b>bb</b>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa,bb --map-by ppr:1:node ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanza un proceso por nodo host.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>mpirun -H aa,bb --pernode ./a.out</pre>
+</div>
+</div>
+<p class="Pp">es lo mismo que <b>--map-by ppr:1:node</b> y <b>--npernode
+    1</b>.</p>
+<p class="Pp">Otra alternativa es especificar el número de procesos con la
+    opción <b>-n</b>. Consideremos ahora el archivo de hosts:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ cat myhostfile
+aa slots=4
+bb slots=4
+cc slots=4</pre>
+</div>
+</div>
+<p class="Pp">Ahora ejecutamos con <b>myhostfile</b>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile -n 6 ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanzará los procesos 0-3 en el nodo <b>aa</b> y los procesos 4-5
+    en el nodo <b>bb</b>. Las ranuras restantes en el archivo de hosts no se
+    utilizarán ya que la opción <b>-n</b> indicó que solo se debían lanzar 6
+    procesos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Mapeo_de_Procesos_a_Nodos:_Uso_de_Pol&iacute;ticas'><a class='permalink' href='#Mapeo_de_Procesos_a_Nodos:_Uso_de_Pol&iacute;ticas'>Mapeo de Procesos a Nodos: Uso de Políticas</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~6"><a class="permalink" href="#Este~6">Este contenido es antiguo y
+    está codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual/preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Los ejemplos anteriores ilustran el mapeo por defecto de procesos a
+    nodos. Este mapeo también se puede controlar con varias opciones de
+    <b>mpirun</b> que describen las políticas de mapeo.</p>
+<p class="Pp">Consideremos el mismo archivo de hosts de antes, nuevamente con <b>-n
+    6</b>. La siguiente tabla enumera algunas variaciones de <b>mpirun</b> y
+    muestra qué rangos de <b>MPI_COMM_WORLD</b> terminan en qué nodo:</p>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Comando</td>
+    <td style="border-right-style: solid;">Nodo <b>aa</b></td>
+    <td style="border-right-style: solid;">Nodo <b>bb</b></td>
+    <td style="border-right-style: solid;">Nodo <b>cc</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>mpirun</b></td>
+    <td style="border-right-style: solid;">0 1 2 3</td>
+    <td style="border-right-style: solid;">4 5</td>
+    <td style="border-right-style: solid;"></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>mpirun --map-by node</b></td>
+    <td style="border-right-style: solid;">0 3</td>
+    <td style="border-right-style: solid;">1 4</td>
+    <td style="border-right-style: solid;">2 5</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>mpirun --nolocal</b></td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">0 1 2 3</td>
+    <td style="border-right-style: solid;">4 5</td>
+  </tr>
+</table>
+<p class="Pp">La opción <b>--map-by node</b> equilibrará la carga de los
+    procesos en los nodos disponibles, numerando cada proceso en modo round-robin.</p>
+<p class="Pp">La opción <b>--nolocal</b> evita que se mapeen procesos en el host
+    local (en este caso, el nodo <b>aa</b>). Si bien <b>mpirun</b> típicamente
+    consume pocos recursos del sistema, <b>--nolocal</b> puede ser útil para
+    lanzar trabajos muy grandes donde mpirun puede necesitar usar cantidades
+    notables de memoria y/o tiempo de procesamiento.</p>
+<p class="Pp">Así como <b>-n</b> puede especificar menos procesos que las
+    ranuras disponibles, también puede sobresubscribir las ranuras. Por ejemplo,
+    con el mismo archivo de hosts:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile -n 14 ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanzará los procesos 0-3 en el nodo <b>aa</b>, 4-7 en <b>bb</b>,
+    y 8-11 en <b>cc</b>. Luego agregará los dos procesos restantes a los nodos que
+    elija.</p>
+<p class="Pp">También se pueden especificar límites para la sobresuscripción.
+    Por ejemplo, con el mismo archivo de hosts:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile -n 14 --nooversubscribe ./a.out</pre>
+</div>
+</div>
+<p class="Pp">producirá un error ya que <b>--nooversubscribe</b> evita la
+    sobresuscripción.</p>
+<p class="Pp">Los límites a la sobresuscripción también se pueden especificar en
+    el propio archivo de hosts:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ cat myhostfile
+aa slots=4 max_slots=4
+bb         max_slots=4
+cc slots=4</pre>
+</div>
+</div>
+<p class="Pp">El campo <b>max_slots</b> especifica dicho límite. Cuando lo hace, el
+    valor de slots se establece por defecto en el límite. Ahora:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --hostfile myhostfile -n 14 ./a.out</pre>
+</div>
+</div>
+<p class="Pp">hace que los primeros 12 procesos se lancen como antes, pero los
+    dos procesos restantes se forzarán en el nodo <b>cc</b>. Los otros dos nodos
+    están protegidos por el archivo de hosts contra la sobresuscripción por este
+    trabajo.</p>
+<p class="Pp">El uso de la opción <b>--nooversubscribe</b> puede ser útil ya que
+    Open MPI actualmente no obtiene valores de <b>max_slots</b> del gestor de
+    recursos.</p>
+<p class="Pp">Por supuesto, <b>-n</b> también se puede usar con la opción <b>-H</b>
+    o <b>-host</b>. Por ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa,bb -n 8 ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanza 8 procesos. Dado que solo se especifican dos hosts, después de
+    que los dos primeros procesos se mapean, uno en <b>aa</b> y otro en <b>bb</b>,
+    los procesos restantes sobrescriben los hosts especificados.</p>
+<p class="Pp">Y aquí hay un ejemplo MIMD:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -H aa -n 1 hostname : -H bb,cc -n 2 uptime</pre>
+</div>
+</div>
+<p class="Pp">lanzará el proceso 0 ejecutando hostname en el nodo <b>aa</b> y los
+    procesos 1 y 2 ejecutando cada uno uptime en los nodos <b>bb</b> y <b>cc</b>,
+    respectivamente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Mapeo,_Ranking,_y_Enlace:_¡Ay,_Dios!'><a class='permalink' href='#Mapeo,_Ranking,_y_Enlace:_¡Ay,_Dios!'>Mapeo, Ranking y Enlace: ¡Ay, Dios!</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~7"><a class="permalink" href="#Este~7">Este contenido es antiguo y
+    está codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual/preciso? ¿Debería ser
+        actualizado y conservado, o eliminado?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Open MPI emplea un procedimiento de tres fases para la asignación de
+    ubicaciones y rangos de procesos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd><b>Mapeo</b>: Asigna una ubicación por defecto a cada proceso</dd>
+  <dt>2.</dt>
+  <dd><b>Ranking</b>: Asigna un valor de rango de <b>MPI_COMM_WORLD</b> a cada
+      proceso</dd>
+  <dt>3.</dt>
+  <dd><b>Enlace</b>: Restringe cada proceso a ejecutarse en procesadores
+      específicos</dd>
+</dl>
+</div>
+<p class="Pp">La fase de mapeo se utiliza para asignar una ubicación por defecto a
+    cada proceso basándose en el mapeador empleado. El mapeo por ranura, por
+    nodo y secuencialmente resulta en la asignación de los procesos al nivel
+    de nodo. En contraste, el mapeo por objeto permite al mapeador asignar el
+    proceso a un objeto real en cada nodo.</p>
+<p class="Pp">Tenga en cuenta que la ubicación asignada al proceso es independiente
+    de dónde será enlazado; la asignación se utiliza únicamente como entrada para
+    el algoritmo de enlace.</p>
+<p class="Pp">El mapeo de procesos a nodos se puede definir no solo con políticas
+    generales, sino también, si es necesario, utilizando mapeos arbitrarios que
+    no se pueden describir con una política simple. Se puede usar el
+    "mapeador secuencial", que lee el archivo de hosts línea por línea,
+    asignando procesos a nodos en el orden que especifique el archivo de hosts.
+    Use la opción <b>--map-by seq</b>. Por ejemplo, usando el mismo archivo de
+    hosts que antes:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -hostfile myhostfile --map-by seq ./a.out</pre>
+</div>
+</div>
+<p class="Pp">lanzará tres procesos, uno en cada uno de los nodos <b>aa</b>,
+    <b>bb</b> y <b>cc</b>, respectivamente. Los recuentos de ranuras no importan;
+    se lanza un proceso por línea en el nodo que se liste en esa línea.</p>
+<p class="Pp">Otra forma de especificar mapeos arbitrarios es con un archivo de
+    rangos (rankfile), que también le da control detallado sobre el enlace de
+    procesos. Los archivos de rangos se discuten *más abajo*.</p>
+<p class="Pp">La segunda fase se centra en el ranking del proceso dentro de
+    <b>MPI_COMM_WORLD</b> del trabajo. Open MPI separa esto del procedimiento
+    de mapeo para permitir una mayor flexibilidad en la ubicación relativa de los
+    procesos MPI. Esto se ilustra mejor considerando los siguientes casos donde
+    utilizamos la opción <b>--np 8 --map-by ppr:2:package --host aa:4,bb:4</b>:</p>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Opción</td>
+    <td style="border-right-style: solid;">Nodo <b>aa</b></td>
+    <td style="border-right-style: solid;">Nodo <b>bb</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--rank-by fill</b> (es decir,
+      empaquetado denso) Predeterminado</td>
+    <td style="border-right-style: solid;">0 1 | 2 3</td>
+    <td style="border-right-style: solid;">4 5 | 6 7</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--rank-by span</b> (es decir,
+      empaquetado disperso o balanceado)</td>
+    <td style="border-right-style: solid;">0 4 | 1 5</td>
+    <td style="border-right-style: solid;">2 6 | 3 7</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--rank-by node</b></td>
+    <td style="border-right-style: solid;">0 2 | 4 6</td>
+    <td style="border-right-style: solid;">1 3 | 5 7</td>
+  </tr>
+</table>
+<p class="Pp">El ranking por <b>fill</b> asigna rangos de MCW en una progresión
+    simple a través de cada nodo. El ranking por <b>span</b> y por <b>slot</b>
+    proporcionan th</p>
+</section>
+e
+    resultado idéntico — una progresión round-robin de los paquetes en todos
+    los nodos antes de regresar al primer paquete en el primer nodo. El
+    clasificado por <b>nodo</b> asigna rangos MCW iterando primero a través
+    de los nodos y luego por paquete.</p>
+<p class="Pp">La fase de enlace en realidad enlaza cada proceso a un conjunto dado
+    de procesadores. Esto puede mejorar el rendimiento si el sistema operativo
+    está colocando los procesos de manera subóptima. Por ejemplo, podría
+    sobresuscritir algunos paquetes de procesadores multinúcleo, dejando otros
+    paquetes inactivos; esto puede hacer que los procesos compitan innecesariamente
+    por recursos comunes. O bien, podría distribuir los procesos demasiado;
+    esto puede ser subóptimo si el rendimiento de la aplicación es sensible a
+    los costos de comunicación entre procesos. El enlace también puede evitar
+    que el sistema operativo migre procesos excesivamente, independientemente de
+    lo óptimamente que se hayan colocado esos procesos en primer lugar.</p>
+<p class="Pp">Los procesadores que se utilizarán para el enlace se pueden identificar
+    en términos de agrupaciones topológicas; por ejemplo, el enlace a una
+    <b>l3cache</b> enlaza cada proceso a todos los procesadores dentro del
+    ámbito de una única caché L3 dentro de su ubicación asignada. Por lo tanto,
+    si un proceso es asignado por el mapeador a un cierto paquete, entonces una
+    directiva <b>--bind-to l3cache</b> hará que el proceso se enlace a los
+    procesadores que comparten una única caché L3 dentro de ese paquete.</p>
+<p class="Pp">Alternativamente, los procesos pueden mapearse y enlazarse a núcleos
+    especificados utilizando la opción <b>--map-by pe-list=</b>. Por ejemplo,
+    <b>--map-by pe-list=0,2,5</b> mapeará tres procesos, los tres se enlazarán
+    a los núcleos lógicos <b>0,2,5</b>. Si tiene la intención de enlazar cada
+    uno de los tres procesos a núcleos diferentes, entonces el calificador
+    <b>:ordered</b> se puede usar como <b>--map-by pe-list=0,2,5:ordered</b>.
+    En este ejemplo, el primer proceso en un nodo se enlazará a la CPU 0, el
+    segundo proceso en el nodo se enlazará a la CPU 2 y el tercer proceso en el
+    nodo se enlazará a la CPU 5.</p>
+<p class="Pp">Finalmente, se puede usar <b>--report-bindings</b> para informar
+    los enlaces.</p>
+<p class="Pp">Como ejemplo, considere un nodo con dos paquetes de procesadores, cada
+    uno compuesto por cuatro núcleos, y cada uno de esos núcleos contiene un
+    hilo de hardware. La opción <b>--report-bindings</b> muestra el enlace de
+    cada proceso de manera descriptiva. A continuación se presentan algunos
+    ejemplos.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --map-by core --bind-to core
+[...] Rank 0 bound to package[0][core:0]
+[...] Rank 1 bound to package[0][core:1]
+[...] Rank 2 bound to package[0][core:2]
+[...] Rank 3 bound to package[0][core:3]</pre>
+</div>
+</div>
+<p class="Pp">En el caso anterior, los procesos se enlazan a núcleos sucesivos.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --map-by package --bind-to package
+[...] Rank 0 bound to package[0][core:0-3]
+[...] Rank 1 bound to package[0][core:0-3]
+[...] Rank 2 bound to package[1][core:4-7]
+[...] Rank 3 bound to package[1][core:4-7]</pre>
+</div>
+</div>
+<p class="Pp">En el caso anterior, los procesos se enlazan a todos los núcleos en
+    paquetes sucesivos. Los procesos ciclan a través de los paquetes del
+    procesador de forma round-robin tantas veces como sea necesario. Por
+    defecto, los procesos se clasifican de forma de <b>fill</b>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --map-by package --bind-to package --rank-by span
+[...] Rank 0 bound to package[0][core:0-3]
+[...] Rank 1 bound to package[1][core:4-7]
+[...] Rank 2 bound to package[0][core:0-3]
+[...] Rank 3 bound to package[1][core:4-7]</pre>
+</div>
+</div>
+<p class="Pp">El caso anterior demuestra la diferencia en la clasificación cuando
+    se utiliza el calificador <b>span</b> en lugar del predeterminado.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --map-by slot:PE=2 --bind-to core
+[...] Rank 0 bound to package[0][core:0-1]
+[...] Rank 1 bound to package[0][core:2-3]
+[...] Rank 2 bound to package[0][core:4-5]
+[...] Rank 3 bound to package[0][core:6-7]</pre>
+</div>
+</div>
+<p class="Pp">En el caso anterior, la salida nos muestra que se han enlazado 2 núcleos
+    por proceso. Específicamente, el mapeo por <b>slot</b> con el calificador
+    <b>PE=2</b> indicó que cada ranura (es decir, proceso) debía consumir dos
+    elementos de procesador. Por defecto, Open MPI define
+    &#x201C;elemento de procesador&#x201D; como &#x201C;núcleo&#x201D;, y por lo
+    tanto, <b>--bind-to core</b> hizo que cada proceso se enlazara a ambos
+    núcleos a los que se mapeó.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --map-by slot:PE=2 --use-hwthread-cpus
+[...]] Rank 0 bound to package[0][hwt:0-1]
+[...]] Rank 1 bound to package[0][hwt:2-3]
+[...]] Rank 2 bound to package[0][hwt:4-5]
+[...]] Rank 3 bound to package[0][hwt:6-7]</pre>
+</div>
+</div>
+<p class="Pp">En el caso anterior, reemplazamos <b>--bind-to core</b> con
+    <b>--use-hwthread-cpus</b>. <b>--use-hwthread-cpus</b> se convierte en
+    <b>--bind-to hwthread</b> e indica a la salida de
+    <b>--report-bindings</b> que muestre los hilos de hardware a los que está
+    enlazado un proceso. En este caso, los procesos se enlazan a 2 hilos de
+    hardware por proceso.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --np 4 --report-bindings --bind-to none
+[...] Rank 0 is not bound (or bound to all available processors)
+[...] Rank 1 is not bound (or bound to all available processors)
+[...] Rank 2 is not bound (or bound to all available processors)
+[...] Rank 3 is not bound (or bound to all available processors)</pre>
+</div>
+</div>
+<p class="Pp">En el caso anterior, el enlace se desactiva y se informa como tal.</p>
+<p class="Pp">El soporte de Open MPI para el enlace de procesos depende del sistema
+    operativo subyacente. Por lo tanto, es posible que ciertas opciones de
+    enlace de procesos no estén disponibles en todos los sistemas.</p>
+<p class="Pp">El enlace de procesos también se puede configurar con parámetros MCA.
+    Su uso es menos conveniente que el de las opciones de <b>mpirun</b>. Por
+    otro lado, los parámetros MCA se pueden configurar no solo en la línea de
+    comandos de mpirun, sino alternativamente en un archivo
+    <b>mca-params.conf</b> del sistema o del usuario o como variables de
+    entorno, como se describe en la sección <i>Setting MCA</i>
+    <i>Parameters</i>. Estos son parámetros MCA para el tiempo de ejecución de
+    PRRTE, por lo que el argumento de línea de comandos <b>--prtemca</b> (sí,
+    <b>prte</b> con una sola <b>r</b>, no dos <b>r</b>) debe usarse para pasar el
+    par clave/valor del parámetro MCA. Alternativamente, el par clave/valor del
+    parámetro MCA puede ser específico en la línea de comandos anteponiendo
+    <b>PRTE_MCA_</b> a la clave (nuevamente, eso no es un error tipográfico:
+    <b>PRTE</b> no <b>PRRTE</b>). Algunos ejemplos incluyen:</p>
+<table class="tbl" style="border-top-style: solid;">
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Opción</td>
+    <td style="border-right-style: solid;">Clave del parámetro MCA de PRRTE</td>
+    <td style="border-right-style: solid;">Valor</td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--map-by core</b></td>
+    <td style="border-right-style: solid;"><b>rmaps_default_mapping_policy</b></td>
+    <td style="border-right-style: solid;"><b>core</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--map-by package</b></td>
+    <td style="border-right-style: solid;"><b>rmaps_default_mapping_policy</b></td>
+    <td style="border-right-style: solid;"><b>package</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--rank-by fill</b></td>
+    <td style="border-right-style: solid;"><b>rmaps_default_ranking_policy</b></td>
+    <td style="border-right-style: solid;"><b>fill</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--bind-to core</b></td>
+    <td style="border-right-style: solid;"><b>hwloc_default_binding_policy</b></td>
+    <td style="border-right-style: solid;"><b>core</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--bind-to package</b></td>
+    <td style="border-right-style: solid;"><b>hwloc_default_binding_policy</b></td>
+    <td style="border-right-style: solid;"><b>package</b></td>
+  </tr>
+  <tr style="border-left-style: solid; border-bottom-style: solid;">
+    <td style="border-right-style: solid;"><b>--bind-to none</b></td>
+    <td style="border-right-style: solid;"><b>hwloc_default_binding_policy</b></td>
+    <td style="border-right-style: solid;"><b>none</b></td>
+  </tr>
+</table>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Defaults_for_Mapping,_Ranking,_and_Binding'><a class='permalink' href='#Defaults_for_Mapping,_Ranking,_and_Binding'>Valores predeterminados para mapeo, clasificación y enlace</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="This~8"><a class="permalink" href="#This~8">Este es contenido antiguo y codificado
+    en código duro</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual/preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Si el usuario no especifica cada una de las opciones
+    <b>--map-by</b>, <b>--rank-by</b> y <b>--bind-to</b>, los valores
+    predeterminados son los siguientes:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si no se especifican opciones, entonces</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si el número de procesos es menor o igual a 2, entonces:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--map-by</b> es <b>core</b></li>
+  <li><b>--bind-to</b> es <b>core</b></li>
+  <li><b>--rank-by</b> es <b>span</b></li>
+  <li>Resultado: <b>--map-by core --bind-to core --rank-by span</b></li>
+</ul>
+</div>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>De lo contrario:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--map-by</b> es <b>package</b></li>
+  <li><b>--bind-to</b> es <b>package</b></li>
+  <li><b>--rank-by</b> es <b>fill</b></li>
+  <li>Resultado: <b>--map-by package --bind-to package --rank-by fill</b></li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si solo se especifica <b>--map-by OBJ</b> (donde <b>OBJ</b> es algo como
+      <b>core</b>), entonces:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se especifica <b>OBJ</b> para <b>--map-by</b></li>
+  <li><b>--bind-to</b> utiliza el mismo <b>OBJ</b> que <b>--map-by</b></li>
+  <li><b>--rank-by</b> tiene como valor predeterminado <b>fill</b></li>
+  <li>Resultado: <b>--map-by OBJ --bind-to OBJ --rank-by fill</b></li>
+</ul>
+</div>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si solo se especifica <b>--bind-to OBJ</b> (donde <b>OBJ</b> es algo como
+      <b>core</b>), entonces:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--map-by</b> es <b>core</b> o <b>package</b> dependiendo del número
+      de procesos</li>
+  <li>Se especifica <b>OBJ</b> para <b>--bind-to</b></li>
+  <li><b>--rank-by</b> tiene como valor predeterminado <b>fill</b></li>
+  <li>Resultado: <b>--map-by OBJ --bind-to OBJ --rank-by fill</b></li>
+</ul>
+</div>
+</div>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si <b>--map-by OBJ1 --bind-to OBJ2</b>, entonces:</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--ma{
+  "title": "mpirun(1) - Open MPI Command Line Tool",
+  "sections": [
+    {
+      "heading": "SYNOPSIS",
+      "content": [
+        {
+          "type": "paragraph",
+          "text": "mpirun [launch options] <program> [program options]",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "mpirun [launch options] : <appfile> [appfile options]",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "DESCRIPTION",
+      "content": [
+        {
+          "type": "paragraph",
+          "text": "The \"mpirun\" command is the primary interface for launching MPI applications within the Open MPI environment. It manages the distribution of processes across available resources and handles communication and synchronization among them. \"mpirun\" can launch a single executable or multiple executables defined in an application context file.",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "LAUNCH OPTIONS",
+      "content": [
+        {
+          "type": "paragraph",
+          "text": "The following are common launch options available with mpirun. Note that the exact set of available options may vary depending on the Open MPI version and configuration.",
+          "level": 0
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "text": "--np <N>, -n <N>\n    Specify the number of MPI processes to launch.",
+              "level": 1
+            },
+            {
+              "text": "--hostfile <filename>\n    Specify a file containing a list of hosts to use for launching processes.",
+              "level": 1
+            },
+            {
+              "text": "--host <host1,host2,...>\n    Specify a comma-separated list of hosts to use for launching processes.",
+              "level": 1
+            },
+            {
+              "text": "--map-by <obj>\n    Specify the object (e.g., core, package, node) by which to map processes.",
+              "level": 1
+            },
+            {
+              "text": "--bind-to <obj>\n    Specify the object (e.g., core, package, node) to which processes should be bound.",
+              "level": 1
+            },
+            {
+              "text": "--rank-by <obj>\n    Specify the object (e.g., core, package, node) by which to rank processes.",
+              "level": 1
+            },
+            {
+              "text": "--mca <param> <value>\n    Pass parameters to the Open MPI runtime environment.",
+              "level": 1
+            },
+            {
+              "text": "--app <filename>\n    Specify an application context file containing process and launch information.",
+              "level": 1
+            },
+            {
+              "text": "--report-bindings\n    Report the bindings of all processes.",
+              "level": 1
+            },
+            {
+              "text": "--tag-output\n    Tag the output of each process with its rank.",
+              "level": 1
+            },
+            {
+              "text": "--display-map\n    Display the process mapping.",
+              "level": 1
+            },
+            {
+              "text": "--xml\n    Output basic XML telemetry information.",
+              "level": 1
+            },
+            {
+              "text": "--prefix <dir>\n    Use an Open MPI installation located at <dir>.",
+              "level": 1
+            },
+            {
+              "text": "--enable-progress-thread\n    Enable a progress thread for asynchronous operations.",
+              "level": 1
+            },
+            {
+              "text": "--disable-progress-thread\n    Disable the progress thread.",
+              "level": 1
+            },
+            {
+              "text": "--timeout <seconds>\n    Specify a timeout in seconds for the mpirun command.",
+              "level": 1
+            },
+            {
+              "text": "--help, -h\n    Print a help message.",
+              "level": 1
+            },
+            {
+              "text": "--version\n    Print version information.",
+              "level": 1
+            }
+          ],
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "Process Mapping, Binding, and Ranking",
+      "content": [
+        {
+          "type": "paragraph",
+          "text": "Open MPI provides detailed control over how processes are mapped to hardware resources, how they are bound to specific processors, and how ranks are assigned. The behavior of these options can be influenced by the number of processes and the hierarchy of the underlying hardware.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "Default behavior when only --map-by OBJ is specified:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "<b>--map-by</b> specified <b>OBJ</b>",
+                      "level": 1
+                    },
+                    {
+                      "text": "<b>--bind-to</b> defaults to <b>OBJ</b>",
+                      "level": 1
+                    },
+                    {
+                      "text": "<b>--rank-by</b> defaults to <b>fill</b>",
+                      "level": 1
+                    },
+                    {
+                      "text": "Result: <b>--map-by OBJ --bind-to OBJ --rank-by fill</b>",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Consider 2 identical hosts (hostA and hostB) with 2 packages ([]) each with 8 cores (/../) and 2 hardware threads per core (.).",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "Default of --map-by core --bind-to core --rank-by span when the number of processes is less than or equal to 2.",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ mpirun --np 2 --host hostA:4,hostB:2 ./a.out\nR0  hostA  [BB/../../../../../../..][../../../../../../../..]\nR1  hostA  [../BB/../../../../../..][../../../../../../../..]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Default of --map-by package --bind-to package --rank-by fill when the number of processes is greater than 2.",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ mpirun --np 4 --host hostA:4,hostB:2 ./a.out\nR0  hostA  [BB/BB/BB/BB/BB/BB/BB/BB][../../../../../../../..]\nR1  hostA  [BB/BB/BB/BB/BB/BB/BB/BB][../../../../../../../..]\nR2  hostA  [../../../../../../../..][BB/BB/BB/BB/BB/BB/BB/BB]\nR3  hostA  [../../../../../../../..][BB/BB/BB/BB/BB/BB/BB/BB]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "If only --map-by OBJ is specified, then it implies --bind-to OBJ --rank-by fill. The example below results in --map-by hwthread --bind-to hwthread --rank-by fill",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ mpirun --np 4 --map-by hwthread --host hostA:4,hostB:2 ./a.out\nR0  hostA  [B./../../../../../../..][../../../../../../../..]\nR1  hostA  [.B/../../../../../../..][../../../../../../../..]\nR0  hostA  [../B./../../../../../..][../../../../../../../..]\nR1  hostA  [../.B/../../../../../..][../../../../../../../..]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "If only --bind-to OBJ is specified, then --map-by is determined by the number of processes and --rank-by fill. The example below results in --map-by package --bind-to core --rank-by fill",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ mpirun --np 4 --bind-to core --host hostA:4,hostB:2 ./a.out\nR0  hostA  [BB/../../../../../../..][../../../../../../../..]\nR1  hostA  [../BB/../../../../../..][../../../../../../../..]\nR2  hostA  [../../../../../../../..][BB/../../../../../../..]\nR3  hostA  [../../../../../../../..][../BB/../../../../../..]"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The mapping pattern might be better seen if we change the default --rank-by from fill to span. First, the processes are mapped by package iterating between the two marking a core at a time. Next, the processes are ranked in a spanning manner that load balances them across the object they were mapped against. Finally, the processes are bound to the core that they were mapped againast.",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ mpirun --np 4 --bind-to core --rank-by span --host hostA:4,hostB:2 ./a.out\nR0  hostA  [BB/../../../../../../..][../../../../../../../..]\nR1  hostA  [../../../../../../../..][BB/../../../../../../..]\nR2  hostA  [../BB/../../../../../..][../../../../../../../..]\nR3  hostA  [../../../../../../../..][../BB/../../../../../..]"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "heading": "Rankfiles",
+      "content": [
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "This is old, hard-coded content\n        Is this content still current / accurate? Should it be updated and retained, or removed?",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Rankfiles are text files that specify detailed information about how individual processes should be mapped to nodes, and to which processor(s) they should be bound. Each line of a rankfile specifies the location of one process (for MPI jobs, the process’ \"rank\" refers to its rank in MPI_COMM_WORLD). The general form of each line in the rankfile is:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "rank <N>=<hostname> slot=<slot list>"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "For example:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ cat myrankfile\nrank 0=aa slot=1:0-2\nrank 1=bb slot=0:0,1\nrank 2=cc slot=2-3\nshell$ mpirun -H aa,bb,cc,dd --map-by rankfile:file=myrankfile ./a.out"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Means that:",
+          "level": 0
+        },
+        {
+          "type": "list",
+          "items": [
+            {
+              "text": "Rank 0 runs on node aa, bound to logical package 1, cores 0-2.",
+              "level": 1
+            },
+            {
+              "text": "Rank 1 runs on node bb, bound to logical package 0, cores 0 and 1.",
+              "level": 1
+            },
+            {
+              "text": "Rank 2 runs on node cc, bound to logical cores 2 and 3.",
+              "level": 1
+            }
+          ],
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "Note that only logicical processor locations are supported. By default, the values specifed are assumed to be cores. If you intend to specify specific hardware threads then you must add the :hwtcpus qualifier to the --map-by command line option (e.g., --map-by rankfile:file=myrankfile:hwtcpus).",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "If the binding specification overlaps between any two ranks then an error occurs. If you intend to allow processes to share the same logical processing unit then you must pass the --bind-to :overload-allowed command line option to tell the runtime to ignore this check.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "The hostnames listed above are \"absolute,\" meaning that actual resolveable hostnames are specified. However, hostnames can also be specified as \"relative,\" meaning that they are specified in relation to an externally-specified list of hostnames (e.g., by mpirun's --host argument, a hostfile, or a job scheduler).",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "The \"relative\" specification is of the form +n<X>, where X is an integer specifying the Xth hostname in the set of all available hostnames, indexed from 0. For example:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "code",
+                  "text": "shell$ cat myrankfile\nrank 0=+n0 slot=1:0-2\nrank 1=+n1 slot=0:0,1\nrank 2=+n2 slot=2-3\nshell$ mpirun -H aa,bb,cc,dd --map-by rankfile:file=myrankfile ./a.out"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "All package/core slot locations are specified as logical indexes.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "NOTE:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "paragraph",
+                  "text": "The Open MPI v1.6 series used physical indexes. Starting in Open MPI v5.0 only logicial indexes are supported and the rmaps_rank_file_physical MCA parameter is no longer recognized."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "You can use tools such as Hwloc's lstopo(1) to find the logical indexes of package and cores.",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "Application Context or Executable Program?",
+      "content": [
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "This is old, hard-coded content\n        Is this content still current / accurate? Should it be updated and retained, or removed?",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "To distinguish the two different forms, mpirun looks on the command line for --app option. If it is specified, then the file named on the command line is assumed to be an application context. If it is not specified, then the file is assumed to be an executable program.",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "Locating Files",
+      "content": [
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "This is old, hard-coded content\n        Is this content still current / accurate? Should it be updated and retained, or removed?",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "If no relative or absolute path is specified for a file, Open MPI will first look for files by searching the directories specified by the --path option. If there is no --path option set or if the file is not found at the --path location, then Open MPI will search the user's PATH environment variable as defined on the source node(s).",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "If a relative directory is specified, it must be relative to the initial working directory determined by the specific starter used. For example when using the ssh starter, the initial directory is $HOME by default. Other starters may set the initial directory to the current working directory from the invocation of mpirun.",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "Current Working Directory",
+      "content": [
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "This is old, hard-coded content\n        Is this content still current / accurate? Should it be updated and retained, or removed?",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "The --wdir mpirun option (and its synonym, --wd) allows the user to change to an arbitrary directory before the program is invoked. It can also be used in application context files to specify working directories on specific nodes and/or for specific applications.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "If the --wdir option appears both in a context file and on the command line, the context file directory will override the command line value.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "If the -wdir option is specified, Open MPI will attempt to change to the specified directory on all of the remote nodes. If this fails, mpirun will abort.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "If the -wdir option is not specified, Open MPI will send the directory name where mpirun was invoked to each of the remote nodes. The remote nodes will try to change to that directory. If they are unable (e.g., if the directory does not exist on that node), then Open MPI will use the default directory determined by the starter.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "All directory changing occurs before the user's program is invoked; it does not wait until MPI_INIT(3) is called.",
+          "level": 0
+        }
+      ]
+    },
+    {
+      "heading": "Standard I/O",
+      "content": [
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "list",
+                  "items": [
+                    {
+                      "text": "This is old, hard-coded content\n        Is this content still current / accurate? Should it be updated and retained, or removed?",
+                      "level": 1
+                    }
+                  ],
+                  "level": 0
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Open MPI directs UNIX standard input to /dev/null on all processes except the MPI_COMM_WORLD rank 0 process. The MPI_COMM_WORLD rank 0 process inherits standard input from mpirun.",
+          "level": 0
+        },
+        {
+          "type": "paragraph",
+          "text": "NOTE:",
+          "level": 0
+        },
+        {
+          "type": "div",
+          "classes": ["Bd-indent"],
+          "content": [
+            {
+              "type": "div",
+              "classes": ["Bd-indent"],
+              "content": [
+                {
+                  "type": "paragraph",
+                  "text": "The node that invoked mpirun need not be the same as the node where the MPI_COMM_WORLD rank 0 process resides. Open MPI handles the redirection of mpirun's standard input to the rank 0 process."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "type": "paragraph",
+          "text": "Open MPI directs UNIX standard output and error from remote nodes to the node that invoked mpirun and prints it on the standard ou",
+          "level": 0
+        }
+      ]
+    }
+  ]
+}
+<section class="Ss">
+<h2 class="Ss" id="I/O_Redirection"><a class="permalink" href="#I/O_Redirection">Redirección de Entrada/Salida</a></h2>
+<p class="Pp">La entrada/salida estándar de los procesos de aplicación de MPI se
+    maneja de la misma manera que la entrada/salida estándar de <b>mpirun</b>.
+    Los procesos locales heredan la entrada/salida estándar de <b>mpirun</b>
+    y se transfieren directamente a ella.</p>
+<p class="Pp">Por lo tanto, es posible redirigir la E/S estándar para aplicaciones
+    Open MPI utilizando el procedimiento de redirección de shell típico en
+    <b>mpirun</b>. Por ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -n 2 mi_app &lt; mi_entrada &gt; mi_salida</pre>
+</div>
+</div>
+<p class="Pp">Tenga en cuenta que en este ejemplo, solo el proceso de rango 0 de
+    <b>MPI_COMM_WORLD</b> recibirá el flujo de <b>mi_entrada</b> en stdin. El
+    stdin en todos los demás nodos estará enlazado a <b>/dev/null</b>. Sin
+    embargo, la salida estándar de todos los nodos se recopilará en el archivo
+    <b>mi_salida</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Propagación_de_Señales"><a class="permalink" href="#Propagación_de_Señales">Propagación de Señales</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~14"><a class="permalink" href="#Esto~14">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Cuando <b>mpirun</b> recibe SIGTERM y SIGINT, intentará finalizar
+    todo el trabajo enviando a todos los procesos del trabajo una señal SIGTERM,
+    esperando unos segundos y luego enviando a todos los procesos del trabajo una
+    señal SIGKILL.</p>
+<p class="Pp">Las señales SIGUSR1 y SIGUSR2 recibidas por <b>mpirun</b> se
+    propagan a todos los procesos del trabajo.</p>
+<p class="Pp">Una señal SIGTSTOP a <b>mpirun</b> provocará que se envíe una señal
+    SIGSTOP a todos los programas iniciados por <b>mpirun</b>, y de manera
+    similar, una señal SIGCONT a <b>mpirun</b> provocará que se envíe una señal
+    SIGCONT.</p>
+<p class="Pp">Actualmente, <b>mpirun</b> no propaga otras señales.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Terminación_de_Procesos_/_Manejo_de_Señales"><a class="permalink" href="#Terminación_de_Procesos_/_Manejo_de_Señales">Terminación de Procesos / Manejo de Señales</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~15"><a class="permalink" href="#Esto~15">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Durante la ejecución de una aplicación MPI, si algún proceso muere
+    anormalmente (ya sea saliendo antes de invocar <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>, o
+    muriendo como resultado de una señal), <b>mpirun</b> imprimirá un mensaje
+    de error y finalizará el resto de la aplicación MPI.</p>
+<p class="Pp">Los manejadores de señales del usuario probablemente deberían evitar
+    intentar limpiar el estado de MPI (Open MPI actualmente no es seguro para
+    señales asíncronas; consulte <a href='/man/MPI_INIT_THREAD.3.en'>MPI_INIT_THREAD(3)</a> para
+    obtener detalles sobre MPI_THREAD_MULTIPLE y la seguridad de los hilos). Por
+    ejemplo, si ocurre un fallo de segmentación en <a href='/man/MPI_SEND.3.en'>MPI_SEND(3)</a>
+    (quizás porque se pasó un búfer incorrecto) y se invoca un manejador de
+    señales del usuario, si este manejador intenta invocar <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>,
+    podrían ocurrir cosas malas ya que Open MPI ya estaba "dentro" de MPI cuando
+    ocurrió el error. Dado que <b>mpirun</b> notará que el proceso murió debido
+    a una señal, probablemente no sea necesario (y sea más seguro) que el usuario
+    solo limpie el estado no relacionado con MPI.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Entorno_de_Procesos"><a class="permalink" href="#Entorno_de_Procesos">Entorno de Procesos</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~16"><a class="permalink" href="#Esto~16">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Los procesos en la aplicación MPI heredan su entorno del demonio
+    PRRTE en el nodo en el que se ejecutan. El entorno se hereda típicamente del
+    shell del usuario. En nodos remotos, el entorno exacto está determinado por
+    el módulo de lanzamiento de MCA utilizado. El módulo de lanzamiento rsh,
+    por ejemplo, utiliza rsh/ssh para lanzar el demonio PRRTE en nodos remotos y
+    típicamente ejecuta uno o más de los archivos de configuración del shell del
+    usuario antes de lanzar el demonio PRRTE. Al ejecutar aplicaciones enlazadas
+    dinámicamente que requieren que la variable de entorno <b>LD_LIBRARY_PATH</b>
+    esté configurada, se debe tener cuidado para asegurar que esté configurada
+    correctamente al iniciar Open MPI.</p>
+<p class="Pp">Consulte la sección <i>Ejecución Remota</i> para más detalles.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Ejecución_Remota"><a class="permalink" href="#Ejecución_Remota">Ejecución Remota</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~17"><a class="permalink" href="#Esto~17">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Open MPI requiere que la variable de entorno <b>PATH</b> esté
+    configurada para encontrar ejecutables en nodos remotos (esto generalmente solo
+    es necesario en entornos basados en rsh o ssh; los entornos por lotes/planificados
+    típicamente copian el entorno actual a la ejecución de trabajos remotos, por lo
+    que si el entorno actual tiene <b>PATH</b> y/o <b>LD_LIBRARY_PATH</b> configurado
+    correctamente, los nodos remotos también lo tendrán configurado
+    correctamente). Si Open MPI se compiló con soporte para bibliotecas
+    compartidas, también puede ser necesario que la variable de entorno
+    <b>LD_LIBRARY_PATH</b> esté configurada en nodos remotos (especialmente para
+    encontrar las bibliotecas compartidas necesarias para ejecutar aplicaciones MPI
+    del usuario).</p>
+<p class="Pp">Sin embargo, no siempre es deseable o posible editar archivos de
+    inicio de shell para configurar <b>PATH</b> y/o <b>LD_LIBRARY_PATH</b>. La
+    opción <b>--prefix</b> se proporciona para algunas configuraciones simples
+    donde esto no es posible.</p>
+<p class="Pp">La opción <b>--prefix</b> toma un único argumento: el directorio base
+    en el nodo remoto donde está instalado Open MPI. Open MPI utilizará este
+    directorio para configurar el <b>PATH</b> y <b>LD_LIBRARY_PATH</b> remotos
+    antes de ejecutar cualquier aplicación de Open MPI o del usuario. Esto permite
+    ejecutar trabajos de Open MPI sin haber configurado previamente <b>PATH</b> y
+    <b>LD_LIBRARY_PATH</b> en los nodos remotos.</p>
+<p class="Pp">Open MPI agrega el nombre base del <b>$bindir</b> del nodo actual
+    (el directorio donde se instalaron los ejecutables de Open MPI) al prefijo y
+    lo utiliza para configurar el <b>PATH</b> en el nodo remoto. De manera similar,
+    Open MPI agrega el nombre base del <b>$libdir</b> del nodo actual (el
+    directorio donde se instalaron las bibliotecas de Open MPI) al prefijo y lo
+    utiliza para configurar el <b>LD_LIBRARY_PATH</b> en el nodo remoto. Por
+    ejemplo:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li>Bindir local: <b>/ruta/local/nodo/bin</b></li>
+    <li>Libdir local: <b>/ruta/local/nodo/lib64</b></li>
+</ul>
+</div>
+<p class="Pp">Si se utiliza la siguiente línea de comandos:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --prefix /ruta/remota/nodo</pre>
+</div>
+</div>
+<p class="Pp">Open MPI agregará <b>/ruta/remota/nodo/bin</b> al <b>PATH</b> y
+    <b>/ruta/remota/nodo/lib64</b> a <b>LD_LIBRARY_PATH</b> en el nodo remoto
+    antes de intentar ejecutar cualquier cosa.</p>
+<p class="Pp">La opción <b>--prefix</b> no es suficiente si las rutas de instalación
+    en el nodo remoto son diferentes a las del nodo local (por ejemplo, si se usa
+    <b>/lib</b> en el nodo local, pero se usa <b>/lib64</b> en el nodo remoto), o si
+    las rutas de instalación son algo distinto de un subdirectorio dentro de un
+    prefijo común.</p>
+<p class="Pp">Tenga en cuenta que ejecutar <b>mpirun</b> a través de una ruta
+    absoluta es equivalente a especificar <b>--prefix</b> sin el último
+    subdirectorio en la ruta absoluta de <b>mpirun</b>. Por ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ /usr/local/bin/mpirun ...</pre>
+</div>
+</div>
+<p class="Pp">es equivalente a</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --prefix /usr/local</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Variables_de_Entorno_Exportadas"><a class="permalink" href="#Variables_de_Entorno_Exportadas">Variables de Entorno Exportadas</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~18"><a class="permalink" href="#Esto~18">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Todas las variables de entorno que tengan el nombre en la forma
+    <b>OMPI_*</b> se exportarán automáticamente a los nuevos procesos en los
+    nodos locales y remotos. Los parámetros ambientales también se pueden
+    configurar/reenviar a los nuevos procesos utilizando el parámetro MCA
+    <b>mca_base_env_list</b>. La opción <b>-x</b> de mpirun ha sido deprecada,
+    pero la sintaxis del parámetro MCA sigue el ejemplo anterior. Si bien la
+    sintaxis de la opción <b>-x</b> y el parámetro MCA permiten la definición de
+    nuevas variables, tenga en cuenta que el analizador para estas opciones
+    actualmente no es muy sofisticado; ni siquiera entiende valores entre
+    comillas. Se recomienda a los usuarios que configuren variables en el entorno
+    y utilicen la opción para exportarlas; no para definirlas.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Configuración_de_Parámetros_MCA"><a class="permalink" href="#Configuración_de_Parámetros_MCA">Configuración de Parámetros MCA</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt id="Esto~19"><a class="permalink" href="#Esto~19">Esto es contenido antiguo y
+      codificado</a></dt>
+    <dd>
+        <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería
+            actualizarse y conservarse, o eliminarse?</p>
+    </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">El interruptor <b>--mca</b> permite pasar parámetros a varios
+    módulos MCA (Modular Component Architecture). Los módulos MCA tienen un
+    impacto directo en los programas MPI porque permiten configurar parámetros
+    ajustables en tiempo de ejecución (como qué controlador de dispositivo de
+    comunicación BTL utilizar, qué parámetros pasar a ese BTL, etc.).</p>
+<p class="Pp">El interruptor <b>--mca</b> toma dos argumentos: <b>&lt;clave&gt;</b>
+    y <b>&lt;valor&gt;</b>. El argumento <b>&lt;clave&gt;</b> generalmente especifica
+    qué módulo MCA recibirá el valor. Por ejemplo, la <b>&lt;clave&gt;</b>
+    <b>btl</b> se utiliza para seleccionar qué BTL se utilizará para transportar
+    mensajes MPI. El argumento <b>&lt;valor&gt;</b> es el valor que se pasa. Por
+    ejemplo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --mca btl tcp,self -n 1 mi_app_mpi</pre>
+</div>
+</div>
+<p class="Pp">Esto le dice a Open MPI que use los BTL <b>tcp</b> y <b>self</b>, y que
+    ejecute una única copia de <b>mi_app_mpi</b> en un nodo asignado.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun --mca btl self -n 1 mi_app_mpi</pre>
+</div>
+</div>
+<p class="Pp">Le dice a Open MPI que use el BTL <b>self</b>, y que ejecute una única
+    copia de <b>mi_app_mpi</b> en un nodo asignado.</p>
+<p class="Pp">El interruptor <b>--mca</b> se puede usar varias veces para especificar
+    diferentes argumentos de &lt;clave&gt; y/o <b>&lt;valor&gt;</b>. Si la misma
+    <b>&lt;clave&gt;</b> se especifica más de una vez, los <b>&lt;valor&gt;</b> se
+    concatenan con una <b>coma (</b>,``) separándolos.</p>
+<p class="Pp">Tenga en cuenta que el interruptor <b>--mca</b> es simplemente un
+    atajo para configurar variables de entorno. Lo mismo ef</p>
+</section>
+fect puede lograrse estableciendo
+    las variables de entorno correspondientes antes de ejecutar <b>mpirun</b>. La forma
+    de las variables de entorno que establece Open MPI es:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>OMPI_MCA_&lt;clave&gt;=&lt;valor&gt;</pre>
+</div>
+</div>
+<p class="Pp">Por lo tanto, el modificador <b>--mca</b> anula cualquier variable de entorno previamente establecida. La configuración <b>--mca</b> anula de forma similar los parámetros MCA establecidos en el archivo <b>$OPAL_PREFIX/etc/openmpi-mca-params.conf</b> o <b>$HOME/.openmpi/mca-params.conf</b>.</p>
+<p class="Pp">Las claves <b>&lt;clave&gt;</b> desconocidas todavía se establecen como variables de entorno; no son verificadas (por mpirun) para determinar su corrección. Los argumentos <b>&lt;valor&gt;</b> ilegales o incorrectos pueden o no ser reportados; depende del módulo MCA específico.</p>
+<p class="Pp">Para encontrar los tipos de componentes disponibles bajo la arquitectura MCA, o para encontrar los parámetros disponibles para un componente específico, use el comando ompi_info. Consulte la página del manual <a href='/man/ompi_info.1.en'>ompi_info(1)</a> para obtener información detallada sobre este comando.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Establecer_parámetros_MCA_y_variables_de_entorno_desde_archivo'><a class='permalink' href='#Establecer_parámetros_MCA_y_variables_de_entorno_desde_archivo'>Establecer   parámetros MCA y variables de entorno desde archivo</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~20"><a class="permalink" href='#Este~20'>Este es contenido antiguo, codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">La opción de línea de comandos <b>--tune</b> y su sinónimo <b>--mca</b>
+    <b>mca_base_envar_file_prefix</b> permiten a un usuario establecer parámetros MCA y
+    variables de entorno con la sintaxis descrita a continuación. Esta opción requiere un único archivo o una lista de archivos separados por &#x201C;,&#x201D; a continuación.</p>
+<p class="Pp">Una línea válida en el archivo puede contener cero o más <b>-x</b> o
+    <b>--mca</b>. Se admiten los siguientes patrones:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>--mca var valor</b></li>
+  <li><b>--mca var &quot;valor&quot;</b></li>
+  <li><b>-x var=valor</b></li>
+  <li><b>-x var</b></li>
+</ul>
+</div>
+<p class="Pp">Si algún argumento se duplica en el archivo, se usará el último valor leído.</p>
+<p class="Pp">Los parámetros MCA y el entorno especificados en la línea de comandos tienen mayor precedencia que las variables especificadas en el archivo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejecutar_como_root'><a class='permalink' href='#Ejecutar_como_root'>Ejecutar   como root</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~21"><a class="permalink" href='#Este~21'>Este es contenido antiguo, codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp"><b>ADVERTENCIA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">El equipo de Open MPI <b>desaconseja firmemente</b> ejecutar
+    <b>mpirun</b> como usuario root. Las aplicaciones MPI deben ejecutarse como
+    usuarios normales (no root).</div>
+</div>
+<p class="Pp"><b>mpirun</b> se negará a ejecutarse como root por defecto.</p>
+<p class="Pp">Para anular este comportamiento predeterminado, puede agregar la
+    opción <b>--allow-run-as-root</b> a la línea de comandos de mpirun, o puede establecer los parámetros ambientales
+    <b>OMPI_ALLOW_RUN_AS_ROOT=1</b> y
+    <b>OMPI_ALLOW_RUN_AS_ROOT_CONFIRM=1</b>. Tenga en cuenta que se necesitan dos
+    variables de entorno para lograr el mismo comportamiento que
+    <b>--allow-run-as-root</b>, con el fin de enfatizar el fuerte consejo del equipo de Open MPI contra la ejecución como usuario root.</p>
+<p class="Pp">Después de extensas discusiones con comunidades que usan contenedores
+    (donde la ejecución como usuario root es el comportamiento predeterminado), hubo un deseo persistente de poder habilitar la ejecución de <b>mpirun</b> como root a través de un control ambiental (en lugar del parámetro de línea de comandos existente <b>--allow-run-as-root</b>). Se llegó al compromiso de usar dos variables de entorno: permite la ejecución como root a través de un control ambiental, pero transmite la fuerte recomendación del equipo de Open MPI en contra de este comportamiento.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estado_de_salida'><a class='permalink' href='#Estado_de_salida'>Estado   de salida</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~22"><a class="permalink" href='#Este~22'>Este es contenido antiguo, codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">No existe una definición estándar de lo que <b>mpirun</b> debe
+    devolver como estado de salida. Después de considerable discusión, nos decidimos por el siguiente método para asignar el estado de salida de <b>mpirun</b> (nota: en la siguiente descripción, el trabajo &#x201C;primario&#x201D; es la aplicación inicial iniciada por mpirun; todos los trabajos que son generados por ese trabajo se designan como trabajos &#x201C;secundarios&#x201D;):</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Si todos los procesos del trabajo primario terminan normalmente con estado de salida 0,
+      <b>mpirun</b> devuelve 0.</li>
+  <li>Si uno o más procesos del trabajo primario terminan normalmente con un estado de salida
+      distinto de cero, <b>mpirun</b> devuelve el estado de salida del proceso con el rango <b>MPI_COMM_WORLD</b> más bajo que tenga un estado distinto de cero.</li>
+  <li>Si todos los procesos del trabajo primario terminan normalmente con estado de salida 0,
+      y uno o más procesos de un trabajo secundario terminan normalmente con un estado de salida
+      distinto de cero, <b>mpirun</b>:</li>
+</ul>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Devuelve el estado de salida del proceso con el rango
+      <b>MPI_COMM_WORLD</b> más bajo en el trabajo con el identificador de trabajo más bajo que tenga un estado distinto de cero, y</dd>
+  <dt>2.</dt>
+  <dd>Emite un mensaje que resume el estado de salida del trabajo primario y todos los trabajos secundarios.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Si se establece la opción de línea de comandos <b>--report-child-jobs-separately</b>,
+      devolveremos *solo* el estado de salida del trabajo primario. Cualquier estado de salida distinto de cero en trabajos secundarios se informará únicamente en una declaración de resumen.</dd>
+</dl>
+</div>
+<p class="Pp">Por defecto, el trabajo abortará cuando cualquier proceso termine con un estado distinto de cero. El parámetro MCA <b>--prtemca
+    state_base_error_non_zero_exit</b> puede establecerse en &#x201C;false&#x201D; (o
+    &#x201C;0&#x201D;) para que Open MPI no aborte un trabajo si uno o más procesos devuelven un estado distinto de cero. En esa situación, Open MPI registra y nota que los procesos salieron con un estado de terminación distinto de cero para informar el estado de salida apropiado de <b>mpirun</b> (según los puntos anteriores).</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~23"><a class="permalink" href='#Este~23'>Este es contenido antiguo, codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Asegúrese también de ver los ejemplos en las secciones anteriores.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>shell$ mpirun -n 4 --mca btl tcp,sm,self prog1</pre>
+</div>
+</div>
+<p class="Pp">Ejecute 4 copias de <b>prog1</b> utilizando los BTLs
+    <b>tcp</b>, <b>sm</b> (memoria compartida) y <b>self</b> (bucles de proceso) para el transporte de mensajes MPI.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR   DE RETORNO</a></h1>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Este~24"><a class="permalink" href='#Este~24'>Este es contenido antiguo, codificado</a></dt>
+  <dd>
+    <p class="Pp">¿Sigue siendo este contenido actual / preciso? ¿Debería actualizarse
+        y conservarse, o eliminarse?</p>
+  </dd>
+</dl>
+</div>
+</div>
+<p class="Pp"><b>mpirun</b> devuelve 0 si todos los procesos iniciados por mpirun terminan después de llamar
+    a <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>. Se devuelve un valor distinto de cero si ocurrió un error interno en mpirun, o si uno o más procesos terminaron antes de llamar
+    a <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>. Si ocurrió un error interno en mpirun, se devuelve el código de error correspondiente. En el caso de que uno o más procesos terminen antes de llamar
+    a <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>, se devolverá el valor de retorno del rango
+    <b>MPI_COMM_WORLD</b> del proceso que mpirun detectó primero que murió antes de llamar
+    a <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>. Tenga en cuenta que, en general, este será el primer proceso que murió, pero no está garantizado que sea así.</p>
+<p class="Pp">Si se utiliza la opción de línea de comandos <b>--timeout</b> y el
+    tiempo de espera expira antes de que el trabajo se complete (lo que obliga a mpirun a matar el trabajo), mpirun devolverá un estado de salida equivalente al valor de ETIMEDOUT
+    (que normalmente es 110 en sistemas Linux y OS X).</p>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><a href='/man/MPI_INIT.3.en'>MPI_INIT(3)</a>, <a href='/man/MPI_INIT_THREAD.3.en'>MPI_INIT_THREAD(3)</a>,
+  <a href='/man/MPI_FINALIZE.3.en'>MPI_FINALIZE(3)</a>, <a href='/man/ompi_info.1.en'>ompi_info(1)</a></div>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">2003-2025, La Comunidad Open MPI</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">30 de octubre de 2025</td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/openmpi/">extra/openmpi</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.0.9-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.open-mpi.org">https://www.open-mpi.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD-3-Clause AND LicenseRef-MPICH</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/openmpi/">/listing/extra/openmpi/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#RESUMEN_RÁPIDO">RESUMEN RÁPIDO</a></li>
+        
+            <li><a href="#USO_DE_PRRTE_POR_OPEN_MPI">USO DE PRRTE POR OPEN MPI</a></li>
+        
+            <li><a href="#OPCIONES_DE_LÍNEA_DE_COMANDOS">OPCIONES DE LÍNEA DE COMANDOS</a></li>
+        
+            <li><a href="#OPCIONES_(CONTENIDO_ANTIGUO_/_CODIFICADO_EN_DURO_—_A_AUDITAR">OPCIONES (CONTENIDO ANTIGUO / CODIFICADO EN DURO — A AUDITAR</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/mpirun.1.es.txt">txt</a>, 
+        
+            <a href="/man/mpirun.1.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

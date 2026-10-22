@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pcre2demo(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pcre2demo(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/pcre2/">pcre2</a></p>
+<p class="lic">Licencias: BSD-2-Clause, BSD-3-Clause WITH PCRE2-exception</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PCRE2DEMO(3)</td>
+    <td class="head-vol">Manual de funciones de biblioteca</td>
+    <td class="head-rtitle">PCRE2DEMO(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">PCRE2DEMO - Un programa de demostración en C para PCRE2</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CODIGO_FUENTE'><a class='permalink' href='#CODIGO_FUENTE'>CODIGO FUENTE</a></h1>
+<div class="Bd-indent">
+<pre><span class="Li">/*************************************************</span>
+<span class="Li">*           PROGRAMA DE DEMOSTRACIÓN PCRE2         *</span>
+<span class="Li">*************************************************/</span>
+<span class="Li">/* Este es un programa de demostración para ilustrar una forma sencilla de</span>
+<span class="Li">utilizar la biblioteca de expresiones regulares PCRE2 desde un programa C. Vea la</span>
+<span class="Li">documentación de pcre2sample para una breve discusión (&quot;man pcre2sample&quot; si tiene</span>
+<span class="Li">las páginas del manual de PCRE2 instaladas). PCRE2 es una API revisada para la biblioteca, y es</span>
+<span class="Li">incompatible con la API original de PCRE.</span>
+<span class="Li">En realidad, hay tres bibliotecas, cada una compatible con un ancho de unidad de código diferente. Este programa de demostración utiliza la biblioteca de 8 bits. El valor predeterminado es</span>
+<span class="Li">procesar cada unidad de código como un carácter separado, pero si el patrón comienza con</span>
+<span class="Li">&quot;(*UTF)&quot;, tanto él como el sujeto se tratan como cadenas UTF-8, donde</span>
+<span class="Li">los caracteres pueden ocupar varias unidades de código.</span>
+<span class="Li">En entornos similares a Unix, si PCRE2 está instalado en las bibliotecas estándar del sistema, deberías poder compilar este programa usando este comando:</span>
+<span class="Li">cc -Wall pcre2demo.c -lpcre2-8 -o pcre2demo</span>
+<span class="Li">Si PCRE2 no está instalado en una ubicación estándar, es probable que esté instalado</span>
+<span class="Li">con soporte para el mecanismo pkg-config. Si tienes pkg-config, puedes</span>
+<span class="Li">compilar este programa usando este comando:</span>
+<span class="Li">cc -Wall pcre2demo.c `pkg-config --cflags --libs libpcre2-8` -o pcre2demo</span>
+<span class="Li">Si no tienes pkg-config, es posible que tengas que usar algo como esto:</span>
+<span class="Li">cc -Wall pcre2demo.c -I/usr/local/include -L/usr/local/lib \</span>
+<span class="Li">  -R/usr/local/lib -lpcre2-8 -o pcre2demo</span>
+<span class="Li">Reemplace &quot;/usr/local/include&quot; y &quot;/usr/local/lib&quot; con donde se encuentran los archivos de inclusión y</span>
+<span class="Li">biblioteca de PCRE2 en su sistema. Solo algunos sistemas operativos (Solaris es uno) usan la opción -R.</span>
+<span class="Li">Construcción en Windows:</span>
+<span class="Li">Si desea vincular estáticamente este programa contra un archivo .a que no sea DLL, debe</span>
+<span class="Li">definir PCRE2_STATIC antes de incluir pcre2.h, por lo que en este entorno, descomente</span>
+<span class="Li">la siguiente línea. */</span>
+<span class="Li">/* #define PCRE2_STATIC */</span>
+<span class="Li">/* La macro PCRE2_CODE_UNIT_WIDTH debe definirse antes de incluir pcre2.h.</span>
+<span class="Li">Para un programa que utiliza solo un ancho de unidad de código, configurarlo en 8, 16 o 32</span>
+<span class="Li">permite usar nombres de funciones genéricos como pcre2_compile(). Tenga en cuenta</span>
+<span class="Li">que solo cambiar 8 por 16 (por ejemplo) no es suficiente para convertir este</span>
+<span class="Li">programa para procesar caracteres de 16 bits. Incluso en un entorno completamente de 16 bits, donde</span>
+<span class="Li">las funciones de manejo de cadenas como strcmp() y printf() funcionan con caracteres de 16 bits,</span>
+<span class="Li">el código para manejar la tabla de subcadenas con nombre aún necesitará</span>
+<span class="Li">ser modificado. */</span>
+<span class="Li">#define PCRE2_CODE_UNIT_WIDTH 8</span>
+<span class="Li">#include &lt;stdio.h&gt;</span>
+<span class="Li">#include &lt;string.h&gt;</span>
+<span class="Li">#include &lt;pcre2.h&gt;</span>
+<span class="Li">/**************************************************************************</span>
+<span class="Li">* Aquí está el programa. La API incluye el concepto de &quot;contextos&quot; para     *</span>
+<span class="Li">* configurar requisitos de interfaz inusuales para compilar y hacer coincidir,   *</span>
+<span class="Li">* como gestores de memoria personalizados y definiciones de nueva línea no estándar.    *</span>
+<span class="Li">* Este programa no hace nada de esto, por lo que no utiliza contextos,   *</span>
+<span class="Li">* pasando siempre NULL donde se podría dar un contexto.                     *</span>
+<span class="Li">**************************************************************************/</span>
+<span class="Li">int main(int argc, char **argv)</span>
+<span class="Li">{</span>
+<span class="Li">pcre2_code *re;</span>
+<span class="Li">PCRE2_SPTR pattern;     /* PCRE2_SPTR es un puntero a unidades de código sin signo de */</span>
+<span class="Li">PCRE2_SPTR subject;     /* el ancho apropiado (en este caso, 8 bits). */</span>
+<span class="Li">PCRE2_SPTR name_table;</span>
+<span class="Li">int errornumber;</span>
+<span class="Li">int find_all, caseless_match;</span>
+<span class="Li">int i;</span>
+<span class="Li">int rc;</span>
+<span class="Li">uint32_t namecount;</span>
+<span class="Li">uint32_t name_entry_size;</span>
+<span class="Li">PCRE2_SIZE erroroffset;</span>
+<span class="Li">PCRE2_SIZE *ovector;</span>
+<span class="Li">PCRE2_SIZE ovector_last[2];</span>
+<span class="Li">PCRE2_SIZE subject_length;</span>
+<span class="Li">pcre2_match_data *match_data;</span>
+<span class="Li">/**************************************************************************</span>
+<span class="Li">* Primero, clasifica la línea de comandos. Opciones:                              *</span>
+<span class="Li">* - &quot;-g&quot; para solicitar coincidencias repetidas para encontrar todas las ocurrencias,            *</span>
+<span class="Li">*   como la opción /g de Perl. Establecemos la variable find_all a un valor distinto de cero     *</span>
+<span class="Li">*   si la opción -g está presente.                                    *</span>
+<span class="Li">* - &quot;-i&quot; para solicitar coincidencias sin distinción entre mayúsculas y minúsculas, como la opción /i de Perl.  Establecemos la *</span>
+<span class="Li">*   variable caseless_match a PCRE2_CASELESS si la opción -i está         *</span>
+<span class="Li">*   presente.                                                              *</span>
+<span class="Li">**************************************************************************/</span>
+<span class="Li">find_all = 0;</span>
+<span class="Li">caseless_match = 0;</span>
+<span class="Li">for (i = 1; i &lt; argc; i++)</span>
+<span class="Li">  {</span>
+<span class="Li">  if (strcmp(argv[i], &quot;-g&quot;) == 0) find_all = 1;</span>
+<span class="Li">  else if (strcmp(argv[i], &quot;-i&quot;) == 0) caseless_match = PCRE2_CASELESS;</span>
+<span class="Li">  else if (argv[i][0] == '-')</span>
+<span class="Li">    {</span>
+<span class="Li">    printf(&quot;Opción no reconocida %s\n&quot;, argv[i]);</span>
+<span class="Li">    return 1;</span>
+<span class="Li">    }</span>
+<span class="Li">  else break;</span>
+<span class="Li">  }</span>
+<span class="Li">/* Después de las opciones, requerimos exactamente dos argumentos, que son el patrón,</span>
+<span class="Li">y la cadena sujeto. */</span>
+<span class="Li">if (argc - i != 2)</span>
+<span class="Li">  {</span>
+<span class="Li">  printf(&quot;Se requieren exactamente dos argumentos: una expresión regular y una cadena sujeto\n&quot;);</span>
+<span class="Li">  return 1;</span>
+<span class="Li">  }</span>
+<span class="Li">/* El patrón y el sujeto son argumentos char, por lo que se pueden convertir directamente</span>
+<span class="Li">a PCRE2_SPTR porque estamos trabajando con unidades de código de 8 bits. La longitud del sujeto</span>
+<span class="Li">se convierte a PCRE2_SIZE por completitud, aunque PCRE2_SIZE se define de hecho como size_t. */</span>
+<span class="Li">pattern = (PCRE2_SPTR)argv[i];</span>
+<span class="Li">subject = (PCRE2_SPTR)argv[i+1];</span>
+<span class="Li">subject_length = (PCRE2_SIZE)strlen((char *)subject);</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Ahora vamos a compilar el patrón de expresión regular, y manejar       *</span>
+<span class="Li">* cualquier error que se detecte.                                          *</span>
+<span class="Li">*************************************************************************/</span>
+<span class="Li">re = pcre2_compile(</span>
+<span class="Li">  pattern,               /* el patrón */</span>
+<span class="Li">  PCRE2_ZERO_TERMINATED, /* indica que el patrón termina en cero */</span>
+<span class="Li">  caseless_match,        /* posiblemente habilitar sin distinción de mayúsculas/minúsculas */</span>
+<span class="Li">  &amp;errornumber,          /* para el número de error */</span>
+<span class="Li">  &amp;erroroffset,          /* para el desplazamiento del error */</span>
+<span class="Li">  NULL);                 /* usar contexto de compilación predeterminado */</span>
+<span class="Li">/* La compilación falló: imprime el mensaje de error y sal. */</span>
+<span class="Li">if (re == NULL)</span>
+<span class="Li">  {</span>
+<span class="Li">  PCRE2_UCHAR buffer[256];</span>
+<span class="Li">  pcre2_get_error_message(errornumber, buffer, sizeof(buffer));</span>
+<span class="Li">  printf(&quot;La compilación de PCRE2 falló en el desplazamiento %d: %s\n&quot;, (int)erroroffset,</span>
+<span class="Li">    buffer);</span>
+<span class="Li">  return 1;</span>
+<span class="Li">  }</span>
+<span class="Li">/*************************************************************************</span>
+<span class="Li">* Si la compilación tuvo éxito, llamamos a PCRE2 nuevamente, para hacer una   *</span>
+<span class="Li">* coincidencia del patrón contra la cadena sujeto. Esto hace solo UNA coincidencia. Si *</span>
+<span class="Li">* se necesitan más coincidencias, se harán a continuación. Antes de ejecutar la coincidencia, debemos configurar un bloque match_data para ho</span>
+</div></section>
+</body>
+</html>
+/*************************************************************************
+* pcre2_match_data_create_from_pattern() asegura que el bloque sea
+* exactamente del tamaño correcto para el número de paréntesis de captura en el
+* patrón. Si necesita conocer el tamaño real de un bloque match_data como
+* un número de bytes, puede encontrarlo así:
+*
+* PCRE2_SIZE match_data_size = pcre2_get_match_data_size(match_data);
+*************************************************************************/
+match_data = pcre2_match_data_create_from_pattern(re, NULL);
+/* Ahora ejecuta la coincidencia. */
+rc = pcre2_match(
+  re,                   /* el patrón compilado */
+  subject,              /* la cadena de asunto */
+  subject_length,       /* la longitud del asunto */
+  0,                    /* comenzar en el desplazamiento 0 en el asunto */
+  0,                    /* opciones predeterminadas */
+  match_data,           /* bloque para almacenar el resultado */
+  NULL);                /* usar contexto de coincidencia predeterminado */
+/* La coincidencia falló: maneja los casos de error */
+if (rc < 0)
+  {
+  switch(rc)
+    {
+    case PCRE2_ERROR_NOMATCH: printf("No match\n"); break;
+    /*
+    Maneja otros casos especiales si lo deseas
+    */
+    default: printf("Matching error %d\n", rc); break;
+    }
+  pcre2_match_data_free(match_data);   /* Libera la memoria utilizada para la coincidencia */
+  pcre2_code_free(re);                 /*   datos y el patrón compilado. */
+  return 1;
+  }
+/* Coincidencia exitosa. Obtiene un puntero al vector de salida, donde los desplazamientos de cadena
+* se almacenan. */
+ovector = pcre2_get_ovector_pointer(match_data);
+printf("Match succeeded at offset %d\n", (int)ovector[0]);
+/*************************************************************************
+* Hemos encontrado la primera coincidencia dentro de la cadena de asunto. Si el vector
+* de salida no era lo suficientemente grande, indícalo. Luego muestra las subcadenas que
+* fueron capturadas.
+*************************************************************************/
+/* El vector de salida no era lo suficientemente grande. Esto no debería suceder, porque usamos
+* pcre2_match_data_create_from_pattern() anteriormente. */
+if (rc == 0)
+  printf("ovector was not big enough for all the captured substrings\n");
+/* Desde la versión 10.38, PCRE2 ha bloqueado el uso de \K en aserciones lookaround
+* Esto es el comportamiento recomendado. Sin embargo, la opción
+* PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK permite a las aplicaciones volver a habilitar el comportamiento anterior
+* antiguo. Si está configurado, es posible ejecutar patrones como /(?=.\K)/ que
+* usan \K en una aserción para establecer el inicio de una coincidencia después de su final. En este
+* programa de demostración, mostramos cómo detectar este caso, aunque no puede ocurrir
+* porque la opción nunca se establece. */
+if (ovector[0] > ovector[1])
+  {
+  printf("\\K was used in an assertion to set the match start after its end.\n"
+    "From end to start the match was: %.*s\n", (int)(ovector[0] - ovector[1]),
+      (char *)(subject + ovector[1]));
+  printf("Run abandoned\n");
+  pcre2_match_data_free(match_data);
+  pcre2_code_free(re);
+  return 1;
+  }
+/* Muestra las subcadenas almacenadas en el vector de salida por número. Obviamente, en una aplicación real
+* podrías querer hacer otras cosas además de imprimirlas. */
+for (i = 0; i < rc; i++)
+  {
+  PCRE2_SPTR substring_start = subject + ovector[2*i];
+  PCRE2_SIZE substring_length = ovector[2*i+1] - ovector[2*i];
+  printf("%2d: %.*s\n", i, (int)substring_length, (char *)substring_start);
+  }
+/**************************************************************************
+* Eso concluye la parte básica de este programa de demostración. Hemos
+* compilado un patrón y realizado una única coincidencia. El código que sigue
+* muestra primero cómo acceder a subcadenas con nombre y luego cómo codificar para
+* coincidencias repetidas en el mismo asunto.
+**************************************************************************/
+/* Comprueba si hay subcadenas con nombre y, si es así, muéstralas por nombre. Primero
+* tenemos que extraer el recuento de paréntesis con nombre del patrón. */
+(void)pcre2_pattern_info(
+  re,                   /* el patrón compilado */
+  PCRE2_INFO_NAMECOUNT, /* obtener el número de subcadenas con nombre */
+  &namecount);          /* dónde poner la respuesta */
+if (namecount == 0)
+  printf("No named substrings\n");
+else
+  {
+  PCRE2_SPTR tabptr;
+  printf("Named substrings\n");
+  /* Antes de poder acceder a las subcadenas, debemos extraer la tabla para
+  * traducir nombres a números, y el tamaño de cada entrada en la tabla. */
+  (void)pcre2_pattern_info(
+    re,                       /* el patrón compilado */
+    PCRE2_INFO_NAMETABLE,     /* dirección de la tabla */
+    &name_table);             /* dónde poner la respuesta */
+  (void)pcre2_pattern_info(
+    re,                       /* el patrón compilado */
+    PCRE2_INFO_NAMEENTRYSIZE, /* tamaño de cada entrada en la tabla */
+    &name_entry_size);        /* dónde poner la respuesta */
+  /* Ahora podemos escanear la tabla y, para cada entrada, imprimir el número, el nombre,
+  * y la subcadena misma. En la biblioteca de 8 bits, el número se almacena en dos
+  * bytes, primero el más significativo. */
+  tabptr = name_table;
+  for (i = 0; i < namecount; i++)
+    {
+    int n = (tabptr[0] << 8) | tabptr[1];
+    printf("(%d) %*s: %.*s\n", n, name_entry_size - 3, tabptr + 2,
+      (int)(ovector[2*n+1] - ovector[2*n]), subject + ovector[2*n]);
+    tabptr += name_entry_size;
+    }
+  }
+/*************************************************************************
+* Si se dio la opción "-g" en la línea de comandos, queremos continuar
+* buscando coincidencias adicionales en la cadena de asunto, de manera similar
+* a la opción /g en Perl. Esto resulta ser más complicado de lo que parece
+* debido a la posibilidad de coincidir con una cadena vacía.
+*
+* Para ayudar con esta tarea, PCRE2 proporciona la utilidad pcre2_next_match().
+*************************************************************************/
+if (!find_all)     /* Comprobar si hay -g */
+  {
+  pcre2_match_data_free(match_data);  /* Libera la memoria que se utilizó */
+  pcre2_code_free(re);                /*   para los datos de coincidencia y el patrón. */
+  return 0;                           /* Sale del programa. */
+  }
+/* Bucle para la segunda y subsiguientes coincidencias */
+ovector_last[0] = ovector[0];
+ovector_last[1] = ovector[1];
+for (;;)
+  {
+  PCRE2_SIZE start_offset;
+  uint32_t options;
+  /* Después de cada coincidencia exitosa, usamos pcre2_next_match() para obtener la coincidencia
+  * parámetros para intentos de coincidencia posteriores. */
+  if (!pcre2_next_match(match_data, &start_offset, &options))
+    break;
+  /* Ejecuta la siguiente operación de coincidencia */
+  rc = pcre2_match(
+    re,                   /* el patrón compilado */
+    subject,              /* la cadena de asunto */
+    subject_length,       /* la longitud del asunto */
+    start_offset,         /* desplazamiento de inicio en el asunto */
+    options,              /* opciones */
+    match_data,           /* bloque para almacenar el resultado */
+    NULL);                /* usar contexto de coincidencia predeterminado */
+  /* Si este intento de coincidencia falla, sal del bucle para coincidencias posteriores. */
+  if (rc == PCRE2_ERROR_NOMATCH)
+    break;
+  /* Otros errores de coincidencia no son recuperables. */
+  if (rc < 0)
+    {
+    printf("Matching error %d\n", rc);
+    pcre2_match_data_free(match_data);
+    pcre2_code_free(re);
+    return 1;
+    }
+  /* Este programa de demostración depende de pcre2_next_match() para asegurar que el
+  * bucle para la segunda y subsiguientes coincidencias no se ejecute indefinidamente. Sin embargo,
+  * sería una práctica robusta para una aplicación de producción verificar esto. El siguiente
+  * bloque de código muestra cómo hacerlo. Este caso de error no es alcanzable a menos que
+  * haya un error en PCRE2.
+  * Debido a que este programa no establece la opción PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK,
+  * la lógica es simple. Verificamos que ovector[1] ha avanzado, o que tenemos
+  * una coincidencia vacía tocando el final de una coincidencia no vacía anterior. Ver la
+  * documentación de la API para obtener orientación si y */
+<html>
+    <head>
+        <meta charset="UTF-8" />
+        <title>pcre2demo(3) - Arch Linux</title>
+        <link rel="stylesheet" href="/style.css" type="text/css" />
+        <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+        <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    </head>
+    <body>
+        
+        <main class="container">
+            <article>
+                <section class="man-page">
+                    <h1 id="NAME">NAME</h1>
+                    <p class="man-name">
+                        <a href="#NAME">pcre2demo</a>(3) -
+                        <a href="#NAME">PCRE2 10.47</a>
+                    </p>
+                    <p class="man-synopsis">
+                        <a href="#SOURCE_CODE">SOURCE CODE</a>
+                    </p>
+                    <h2 id="SOURCE_CODE">SOURCE CODE</h2>
+                    <pre class="man-code">
+our application uses</span>
+<span class="Li">  PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK and searches for multiple matches. */</span>
+<span class="Li">  if (!(ovector[1] &gt; ovector_last[1] ||</span>
+<span class="Li">        (ovector[1] == ovector[0] &amp;&amp; ovector_last[1] &gt; ovector_last[0] &amp;&amp;</span>
+<span class="Li">         ovector[1] == ovector_last[1])))</span>
+<span class="Li">    {</span>
+<span class="Li">    printf(&quot;\\K was used in an assertion to yield non-advancing matches.\n&quot;);</span>
+<span class="Li">    printf(&quot;Run abandoned\n&quot;);</span>
+<span class="Li">    pcre2_match_data_free(match_data);</span>
+<span class="Li">    pcre2_code_free(re);</span>
+<span class="Li">    return 1;</span>
+<span class="Li">    }</span>
+<span class="Li">  ovector_last[0] = ovector[0];</span>
+<span class="Li">  ovector_last[1] = ovector[1];</span>
+<span class="Li">  /* Match succeeded. */</span>
+<span class="Li">  printf(&quot;\nMatch succeeded again at offset %d\n&quot;, (int)ovector[0]);</span>
+<span class="Li">  /* The match succeeded, but the output vector wasn't big enough. This</span>
+<span class="Li">  should not happen. */</span>
+<span class="Li">  if (rc == 0)</span>
+<span class="Li">    printf(&quot;ovector was not big enough for all the captured substrings\n&quot;);</span>
+<span class="Li">  /* We guard against patterns such as /(?=.\K)/ that use \K in an assertion to</span>
+<span class="Li">  set the start of a match later than its end. As explained above, this case</span>
+<span class="Li">  should not occur because this demonstration program does not set the</span>
+<span class="Li">  PCRE2_EXTRA_ALLOW_LOOKAROUND_BSK option, however, we do include code showing</span>
+<span class="Li">  how to detect it. */</span>
+<span class="Li">  if (ovector[0] &gt; ovector[1])</span>
+<span class="Li">    {</span>
+<span class="Li">    printf(&quot;\\K was used in an assertion to set the match start after its end.\n&quot;</span>
+<span class="Li">      &quot;From end to start the match was: %.*s\n&quot;, (int)(ovector[0] - ovector[1]),</span>
+<span class="Li">        (char *)(subject + ovector[1]));</span>
+<span class="Li">    printf(&quot;Run abandoned\n&quot;);</span>
+<span class="Li">    pcre2_match_data_free(match_data);</span>
+<span class="Li">    pcre2_code_free(re);</span>
+<span class="Li">    return 1;</span>
+<span class="Li">    }</span>
+<span class="Li">  /* As before, show substrings stored in the output vector by number, and then</span>
+<span class="Li">  also any named substrings. */</span>
+<span class="Li">  for (i = 0; i &lt; rc; i++)</span>
+<span class="Li">    {</span>
+<span class="Li">    PCRE2_SPTR substring_start = subject + ovector[2*i];</span>
+<span class="Li">    size_t substring_length = ovector[2*i+1] - ovector[2*i];</span>
+<span class="Li">    printf(&quot;%2d: %.*s\n&quot;, i, (int)substring_length, (char *)substring_start);</span>
+<span class="Li">    }</span>
+<span class="Li">  if (namecount == 0)</span>
+<span class="Li">    printf(&quot;No named substrings\n&quot;);</span>
+<span class="Li">  else</span>
+<span class="Li">    {</span>
+<span class="Li">    PCRE2_SPTR tabptr = name_table;</span>
+<span class="Li">    printf(&quot;Named substrings\n&quot;);</span>
+<span class="Li">    for (i = 0; i &lt; namecount; i++)</span>
+<span class="Li">      {</span>
+<span class="Li">      int n = (tabptr[0] &lt;&lt; 8) | tabptr[1];</span>
+<span class="Li">      printf(&quot;(%d) %*s: %.*s\n&quot;, n, name_entry_size - 3, tabptr + 2,</span>
+<span class="Li">        (int)(ovector[2*n+1] - ovector[2*n]), subject + ovector[2*n]);</span>
+<span class="Li">      tabptr += name_entry_size;</span>
+<span class="Li">      }</span>
+<span class="Li">    }</span>
+<span class="Li">  }      /* End of loop to find second and subsequent matches */</span>
+<span class="Li">printf(&quot;\n&quot;);</span>
+<span class="Li">pcre2_match_data_free(match_data);</span>
+<span class="Li">pcre2_code_free(re);</span>
+<span class="Li">return 0;</span>
+<span class="Li">}</span>
+<span class="Li">/* End of pcre2demo.c */</span></pre>
+</section>
+</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">24 March 2025</td>
+    <td class="foot-os">PCRE2 10.47</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/pcre2/">core/pcre2</a></dd>
+        <dt>Version:</dt>
+        <dd>10.47-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/PCRE2Project/pcre2">https://github.com/PCRE2Project/pcre2</a></dd>
+        <dt>Licenses:</dt>
+        <dd>BSD-2-Clause, BSD-3-Clause WITH PCRE2-exception</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/pcre2/">/listing/core/pcre2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SOURCE_CODE">SOURCE CODE</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/pcre2demo.3.en.txt">txt</a>, 
+        
+            <a href="/man/pcre2demo.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

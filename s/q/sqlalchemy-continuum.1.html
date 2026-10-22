@@ -1,0 +1,3872 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>sqlalchemy-continuum(1) — Páginas de manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">sqlalchemy-continuum(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/any/python-sqlalchemy-continuum/">python-sqlalchemy-continuum</a></p>
+<p class="lic">Licencias: BSD</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SQLALCHEMY-CONTINUUM(1)</td>
+    <td class="head-vol">SQLAlchemy-Continuum</td>
+    <td class="head-rtitle">SQLALCHEMY-CONTINUUM(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">sqlalchemy-continuum - Documentación de SQLAlchemy-Continuum</p>
+<p class="Pp">SQLAlchemy-Continuum es una extensión de versionado para SQLAlchemy.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='INTRODUCCIÓN'><a class='permalink' href='#INTRODUCCIÓN'>INTRODUCCIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='¿Por_qué?'><a class='permalink' href='#¿Por_qué?'>¿Por qué?</a></h2>
+
+
+<p class="Pp">Como entusiasta de Python/SQLAlchemy, quería crear una herramienta de versionado de bases de datos para Python con todas las características de Envers y con una API tan intuitiva como papertrail. También quería hacerlo _rápido_ manteniendo las cosas lo más cerca posible de la base de datos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Características'><a class='permalink' href='#Características'>Características</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>No almacena actualizaciones que no cambian nada</li>
+  <li>Soporta migraciones de Alembic</li>
+  <li>Puede revertir los datos de los objetos, así como todas las relaciones de los objetos en una transacción dada, incluso si el objeto fue eliminado</li>
+  <li>Las transacciones se pueden consultar posteriormente utilizando la sintaxis de consulta de SQLAlchemy</li>
+  <li>Consulta de registros modificados en una transacción dada</li>
+  <li>Consulta de versiones de una entidad que modificó una propiedad dada</li>
+  <li>Consulta de transacciones en las que cambiaron las entidades de una clase dada</li>
+  <li>Los modelos de historial dan acceso a las relaciones de los objetos padre en cualquier momento dado</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Instalación'><a class='permalink' href='#Instalación'>Instalación</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>pip install SQLAlchemy-Continuum</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Conceptos_básicos'><a class='permalink' href='#Conceptos_básicos'>Conceptos básicos</a></h2>
+<p class="Pp">Para que tus modelos sean versionados, necesitas dos cosas:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Llama a make_versioned() antes de que se definan tus modelos.</dd>
+  <dt>2.</dt>
+  <dd>Agrega \_\_versioned\_\_ a todos los modelos a los que quieras añadir versionado</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>import sqlalchemy as sa
+from sqlalchemy_continuum import make_versioned
+make_versioned(user_cls=None)
+class Article(Base):
+    __versioned__ = {}
+    __tablename__ = 'article'
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    name = sa.Column(sa.Unicode(255))
+    content = sa.Column(sa.UnicodeText)
+# después de haber definido todos tus modelos, llama a configure_mappers():
+sa.orm.configure_mappers()</pre>
+</div>
+</div>
+<p class="Pp">Después de esta configuración, SQLAlchemy-Continuum hace lo siguiente:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Crea el modelo ArticleHistory que actúa como historial de versiones para el modelo Article</dd>
+  <dt>2.</dt>
+  <dd>Crea los modelos TransactionLog y TransactionChanges para el seguimiento del historial transaccional</dd>
+  <dt>3.</dt>
+  <dd>Agrega un par de listeners para que cada inserción, actualización y eliminación de objetos Article se registre</dd>
+</dl>
+</div>
+<p class="Pp">Cuando los modelos se han configurado, ya sea llamando a configure_mappers() o accediendo a alguno de ellos por primera vez, las siguientes cosas estarán disponibles:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import version_class, parent_class
+version_class(Article)  # clase ArticleHistory
+parent_class(version_class(Article))  # clase Article</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Versiones_y_transacciones'><a class='permalink' href='#Versiones_y_transacciones'>Versiones y transacciones</a></h2>
+<p class="Pp">Al final de cada transacción, SQLAlchemy-Continuum recopila todos los cambios y crea objetos de versión para cada entidad versionada modificada. Continuum también crea una entidad TransactionLog y N entidades TransactionChanges por transacción (donde N es el número de clases afectadas por transacción). Las entidades TransactionLog y TransactionChanges se crean para el seguimiento de transacciones.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article(name=u'Some article')
+session.add(article)
+session.commit()
+article.versions[0].name == u'Some article'
+article.name = u'Some updated article'
+session.commit()
+article.versions[1].name == u'Some updated article'</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OBJETOS_DE_VERSIÓN'><a class='permalink' href='#OBJETOS_DE_VERSIÓN'>OBJETOS DE VERSIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Tipos_de_operación'><a class='permalink' href='#Tipos_de_operación'>Tipos de operación</a></h2>
+<p class="Pp">Al modificar entidades y confirmar los resultados en la base de datos, Continuum guarda las operaciones utilizadas (INSERT, UPDATE o DELETE) en las entidades de versión. Los tipos de operación se almacenan por defecto en un pequeño campo entero llamado 'operation_type'. La clase llamada 'Operation' contiene constantes convenientes para estos valores, como se muestra a continuación:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import Operation
+article = Article(name=u'Some article')
+session.add(article)
+session.commit()
+article.versions[0].operation_type == Operation.INSERT
+article.name = u'Some updated article'
+session.commit()
+article.versions[1].operation_type == Operation.UPDATE
+session.delete(article)
+session.commit()
+article.versions[2].operation_type == Operation.DELETE</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Recorrido_de_versiones'><a class='permalink' href='#Recorrido_de_versiones'>Recorrido de versiones</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>first_version = article.versions[0]
+first_version.index
+# 0
+second_version = first_version.next
+assert second_version == article.versions[1]
+second_version.previous == first_version
+# True
+second_version.index
+# 1</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Conjunto_de_cambios'><a class='permalink' href='#Conjunto_de_cambios'>Conjunto de cambios</a></h2>
+<p class="Pp">Continuum proporciona una forma fácil de obtener el conjunto de cambios de un objeto de versión dado. Cada versión contiene una propiedad changeset que contiene un diccionario de los campos cambiados en esa versión.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article(name=u'New article', content=u'Some content')
+session.add(article)
+session.commit(article)
+version = article.versions[0]
+version.changeset
+# {
+#   'id': [None, 1],
+#   'name': [None, u'New article'],
+#   'content': [None, u'Some content']
+# }
+article.name = u'Updated article'
+session.commit()
+version = article.versions[1]
+version.changeset
+# {
+#   'name': [u'New article', u'Updated article'],
+# }
+session.delete(article)
+version = article.versions[2]
+version.changeset
+# {
+#   'id': [1, None]
+#   'name': [u'Updated article', None],
+#   'content': [u'Some content', None]
+# }</pre>
+</div>
+</div>
+<p class="Pp">SQLAlchemy-Continuum también proporciona una función de utilidad llamada changeset. Con esta función, puedes verificar fácilmente el conjunto de cambios de un objeto dado en la transacción actual.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import changeset
+article = Article(name=u'Some article')
+changeset(article)
+# {'name': [None, u'Some article']}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Relaciones_de_versión'><a class='permalink' href='#Relaciones_de_versión'>Relaciones de versión</a></h2>
+<p class="Pp">Cada objeto de versión refleja todas las relaciones de los objetos padre. Puedes pensar en las relaciones de los objetos de versión como 'relaciones del objeto padre en un punto dado en el tiempo'.</p>
+<p class="Pp">Digamos que tienes dos modelos: Article y Category. Cada Article tiene una Category. En el siguiente ejemplo, primero agregamos objetos de artículo y categoría a la base de datos.</p>
+<p class="Pp">Continuum guarda nuevos registros de ArticleVersion y CategoryVersion en segundo plano. Después de eso, actualizamos la entidad de artículo creada para usar otra categoría. Continuum crea nuevos objetos de versión en consecuencia.</p>
+<p class="Pp">Por último, comprobamos las relaciones de categoría de diferentes versiones de artículo.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>category = Category(name=u'Some category')
+article = Article(
+    name=u'Some article',
+    category=category
+)
+session.add(article)
+session.commit()
+article.category = Category(name=u'Some other category')
+session.commit()
+article.versions[0].category.name  # u'Some category'
+article.versions[1].category.name  # u'Some other category'</pre>
+</div>
+</div>
+<p class="Pp">La lógica de cómo SQLAlchemy-Continuum construye estas relaciones se encuentra dentro de la clase RelationshipBuilder.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Relaciones_con_clases_no_versionadas'><a class='permalink' href='#Relaciones_con_clases_no_versionadas'>Relaciones con clases no versionadas</a></h2>
+<p class="Pp">Tomemos el ejemplo anterior de Artículos y Categorías. Ahora consideremos que solo el modelo Artículo está versionado:</p>
+<div class="Bd-indent">
+<div class=
+"Bd-indent">
+<pre>clase Artículo(Base):
+    __tablename__ = 'articulo'
+    __versioned__ = {}
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255), nullable=False)
+clase Categoría(Base):
+    __tablename__ = 'etiqueta'
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255))
+    article_id = sa.Column(sa.Integer, sa.ForeignKey(Artículo.id))
+    articulo = sa.orm.relationship(
+        Artículo,
+        backref=sa.orm.backref('categorías')
+    )</pre>
+</div>
+</div>
+<p class="Pp">Aquí las versiones de Artículo seguirán reflejando las relaciones del
+    modelo Artículo pero simplemente devolverán objetos Categoría en lugar de
+    objetos CategoríaVersion:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>categoría = Categoría(nombre=u'Alguna categoría')
+articulo = Artículo(
+    nombre=u'Algún artículo',
+    categoría=categoría
+)
+session.add(articulo)
+session.commit()
+articulo.categoría = Categoría(nombre=u'Alguna otra categoría')
+session.commit()
+version = articulo.versiones[0]
+version.categoría.nombre                   # u'Alguna otra categoría'
+isinstance(version.categoría, Categoría)  # True</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Relaciones_dinámicas'><a class='permalink' href='#Relaciones_dinámicas'>Relaciones dinámicas</a></h2>
+<p class="Pp">Si la clase padre tiene una relación dinámica, se reflejará como una
+    propiedad que devuelve una consulta en la clase de versión asociada.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clase Artículo(Base):
+    __tablename__ = 'articulo'
+    __versioned__ = {}
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255), nullable=False)
+clase Etiqueta(Base):
+    __tablename__ = 'etiqueta'
+    __versioned__ = {}
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255))
+    article_id = sa.Column(sa.Integer, sa.ForeignKey(Artículo.id))
+    articulo = sa.orm.relationship(
+        Artículo,
+        backref=sa.orm.backref(
+            'etiquetas',
+            lazy='dynamic'
+        )
+    )
+articulo = Artículo()
+articulo.nombre = u'Algún artículo'
+articulo.contenido = u'Algún contenido'
+session.add(articulo)
+session.commit()
+consulta_etiqueta = articulo.versiones[0].etiquetas
+consulta_etiqueta.all()  # devuelve todas las etiquetas para la versión dada
+consulta_etiqueta.count()  # devuelve el recuento de etiquetas para la versión dada</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REVERSIÓN_DE_CAMBIOS'><a class='permalink' href='#REVERSIÓN_DE_CAMBIOS'>REVERSIÓN DE CAMBIOS</a></h1>
+<p class="Pp">Uno de los principales beneficios de SQLAlchemy-Continuum es su
+    capacidad para revertir cambios.</p>
+<section class="Ss">
+<h2 class="Ss" id='Revertir_actualización'><a class='permalink' href='#Revertir_actualización'>Revertir actualización</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>articulo = Artículo(nombre=u'Nuevo artículo', contenido=u'Algún contenido')
+session.add(articulo)
+session.commit(articulo)
+version = articulo.versiones[0]
+articulo.nombre = u'Artículo actualizado'
+session.commit()
+version.revertir()
+session.commit()
+articulo.nombre
+# u'Nuevo artículo'</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Revertir_eliminación'><a class='permalink' href='#Revertir_eliminación'>Revertir eliminación</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>articulo = Artículo(nombre=u'Nuevo artículo', contenido=u'Algún contenido')
+session.add(articulo)
+session.commit(articulo)
+version = articulo.versiones[0]
+session.delete(articulo)
+session.commit()
+version.revertir()
+session.commit()
+# ¡el artículo vive de nuevo!
+session.query(Artículo).first()</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Revertir_relaciones'><a class='permalink' href='#Revertir_relaciones'>Revertir relaciones</a></h2>
+<p class="Pp">A veces, puedes tener casos en los que deseas revertir un objeto,
+    así como algunas de sus relaciones, a un estado determinado. Considere la
+    siguiente definición de modelo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clase Artículo(Base):
+    __tablename__ = 'articulo'
+    __versioned__ = {}
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255))
+clase Etiqueta(Base):
+    __tablename__ = 'etiqueta'
+    __versioned__ = {}
+    id = sa.Column(sa.Integer, autoincrement=True, primary_key=True)
+    nombre = sa.Column(sa.Unicode(255))
+    article_id = sa.Column(sa.Integer, sa.ForeignKey(Artículo.id))
+    articulo = sa.orm.relationship(Artículo, backref='etiquetas')</pre>
+</div>
+</div>
+<p class="Pp">Ahora, supongamos que un usuario primero agrega un artículo con un
+    par de etiquetas:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>articulo = Artículo(
+    nombre=u'Algún artículo',
+    etiquetas=[Etiqueta(u'Bueno'), Etiqueta(u'Interesante')]
+)
+session.add(articulo)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">Luego, supongamos que otro usuario elimina una de las etiquetas:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>etiqueta = session.query(Etiqueta).filter_by(nombre=u'Interesante')
+session.delete(etiqueta)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">Ahora el primer usuario quiere devolver el artículo a su estado
+    original. Esto se puede lograr de la siguiente manera (tenga en cuenta cómo
+    utilizamos el parámetro `relations`):</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>articulo = session.get(Artículo, 1)
+articulo.versiones[0].revertir(relations=['etiquetas'])
+session.commit()</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONSULTAS'><a class='permalink' href='#CONSULTAS'>CONSULTAS</a></h1>
+<p class="Pp">Puede consultar modelos de historial como cualquier otro modelo
+    declarativo de SQLAlchemy.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import version_class
+ArtículoVersion = version_class(Artículo)
+session.query(ArtículoVersion).filter_by(nombre=u'algún nombre').all()</pre>
+</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id='¿Cuántas_transacciones_se_han_ejecutado?'><a class='permalink' href='#¿Cuántas_transacciones_se_han_ejecutado?'>¿Cuántas transacciones se han ejecutado?</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import transaction_class
+Transacción = transaction_class(Artículo)
+Transacción.query.count()</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Consultar_entidades_de_una_clase_en_una_revisión_dada'><a class='permalink' href='#Consultar_entidades_de_una_clase_en_una_revisión_dada'>Consultar entidades de una clase en una revisión dada</a></h2>
+<p class="Pp">En el siguiente ejemplo, encontramos todos los artículos que se vieron
+    afectados por la transacción 33.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>session.query(ArtículoVersion).filter_by(transaction_id=33)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Consultar_transacciones_en_las_que_cambiaron_entidades_de_una_clase_dada'><a class='permalink' href='#Consultar_transacciones,_en_las_que_cambiaron_entidades_de_una_clase_dada'>Consultar transacciones, en las que cambiaron entidades de una clase dada</a></h2>
+<p class="Pp">En este ejemplo, encontramos todas las transacciones que afectaron a
+    cualquier instancia del modelo 'Artículo'. Esta consulta necesita el
+    plugin `TransactionChangesPlugin`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>CambiosTransacción = Artículo.__versioned__['cambios_transaccion']
+entradas = (
+    session.query(Transacción)
+    .innerjoin(Transacción.cambios)
+    .filter(
+        CambiosTransacción.entity_name.in_(['Artículo'])
+    )
+)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Consultar_versiones_de_entidad_que_modificaron_una_propiedad_dada'><a class='permalink' href='#Consultar_versiones_de_entidad_que_modificaron_una_propiedad_dada'>Consultar versiones de entidad que modificaron una propiedad dada</a></h2>
+<p class="Pp">En el siguiente ejemplo, queremos encontrar todas las versiones de la
+    clase Artículo que cambiaron el atributo 'nombre'. Este ejemplo asume que
+    está utilizando `PropertyModTrackerPlugin`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>ArtículoVersion = version_class(Artículo)
+session.query(HistorialArtículo).filter(ArtículoVersion.nombre_mod).all()</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TRANSACCIONES'><a class='permalink' href='#TRANSACCIONES'>TRANSACCIONES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Transacción'><a class='permalink' href='#Transacción'>Transacción</a></h2>
+<p class="Pp">Por cada transacción confirmada, SQLAlchemy-Continuum crea un nuevo
+    registro de Transacción.</p>
+<p class="Pp">La Transacción se puede consultar como cualquier otro modelo
+    declarativo de SQLAlchemy.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import transaction_class
+Transacción = transaction_class(Artículo)
+# encontrar todas las transacciones
+session.query(Transacción).all()</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='UnidadDeTrabajo'><a class='permalink' href='#UnidadDeTrabajo'>Unidad de Trabajo</a></h2>
+<p class="Pp">Por cada conexión a la base de datos, SQLAlchemy-Continuum crea un
+    objeto interno `UnitOfWork`. Normalmente, estos objetos se crean en la fase
+    `before_flush` del flujo de trabajo de la sesión. Sin embargo, también puede
+    forzar la creación de una unidad de trabajo antes de esta fase.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>uow = versioning_manager.unit_of_work(session)</pre>
+</div>
+</div>
+<p class="Pp">Los objetos de transacción se crean normalmente durante la fase
+    `before_flush`. Si necesita acceder al objeto de transacción antes de que
+    comience la fase `flush`, puede hacerlo llamando al método
+    `create_transaction` de la clase `UnitOfWork`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>transacción = uow.create_transaction(session)</pre>
+</div>
+</div>
+<p class="Pp">Los objetos de versión se crean normalmente durante la fase
+    `after_flush`, pero también puede forzar la creación de estos en cualquier
+    momento llamando al método `make_versions`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>uow.make_versions(session)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Internos_del_flujo_de_trabajo'><a class='permalink' href='#Internos_del_flujo_de_trabajo'>Internos del flujo de trabajo</a></h2>
+<p class="Pp">Considere el siguiente fragmento de código donde creamos un nuevo
+    artículo.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>articulo = Artículo()
+articulo.nombre = u'Algún artículo'
+articulo.contenido = u'Algún contenido'
+session.add(articulo)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">Esto ejecutaría las siguientes consultas SQL (en PostgreSQL)</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="INSERT"><a class="permalink" href="#INSERT"><b>INSERT INTO article
+    (name, content) VALUES (?, ?)</b></a></dt>
+  <dd>params: ('Algún artículo', 'Algún contenido')</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>2.</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="INSERT~2"><a class="permalink" href="#INSERT~2"><b>INSERT INTO
+    transaction (issued_at) VALUES (?)</b></a></dt>
+  <dd>params: (datetime.utcnow())</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>3.</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="INSERT~3"><a class="permalink" href="#INSERT~3"><b>INSERT INTO
+    article_version (id, name, content, transaction_id) VALUES (?, ?, ?,
+    ?)</b></a></dt>
+  <dd>params: (&lt;id del artículo de la consulta 1&gt;, 'Algún artículo', 'Algún contenido',
+      &lt;id de la transacción de la consulta 2&gt;)</dd>
+</dl>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSIONADO_NATIVO'><a class='permalink' href='#VERSIONADO_NATIVO'>VERSIONADO NATIVO</a></h1>
+<p class="Pp">Desde la versión 1.1, SQLAlchemy-Continuum admite el versionado
+    nativo para el dialecto de PostgreSQL. El versionado nativo crea disparadores
+    SQL para todos los modelos versionados. Estos disparadores rastrean los
+    cambios realizados en los modelos versionados. En comparación con el
+    versionado basado en objetos, el versionado nativo tiene</p>
+<div class="Bd-indent">>
+<ul class="Bl-bullet">
+  <li>Mucho más rápido que la versión basada en objetos normal</li>
+  <li>Mínima huella de memoria cuando se usa junto con las opciones de configuración
+      <i>create_tables=False</i> y <i>create_models=False</i>.</li>
+  <li>Migraciones de base de datos más engorrosas, ya que los disparadores también deben actualizarse.</li>
+</ul>
+</div>
+<section class="Ss">
+<h2 class="Ss" id='Usage'><a class='permalink' href='#Usage'>Uso</a></h2>
+<p class="Pp">Para habilitar la versión nativa, debes establecer la opción de
+    configuración <i>native_versioning</i> como <i>True</i>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(options={'native_versioning': True})</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Schema_migrations'><a class='permalink' href='#Schema_migrations'>Migraciones de esquema</a></h2>
+<p class="Pp">Al realizar migraciones de esquema (por ejemplo, agregar nuevas
+    columnas a las tablas de versiones), debes recordar llamar a sync_trigger para
+    mantener el disparador de versión actualizado.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum.dialects.postgresql import sync_trigger
+sync_trigger(conn, 'article_version')</pre>
+</div>
+</div>
+<p class="Pp">Si no utilizas <i>PropertyModTrackerPlugin</i>, entonces tienes que
+    deshabilitarlo:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>sync_trigger(conn, 'article_version', use_property_mod_tracking=False)</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PLUGINS'><a class='permalink' href='#PLUGINS'>PLUGINS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Using_plugins'><a class='permalink' href='#Using_plugins'>Uso de plugins</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum.plugins import PropertyModTrackerPlugin
+versioning_manager.plugins.append(PropertyModTrackerPlugin())
+versioning_manager.plugins  # &lt;PluginCollection [...]&gt;
+# También puedes eliminar un plugin
+del versioning_manager.plugins[0]</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Activity'><a class='permalink' href='#Activity'>Actividad</a></h2>
+<p class="Pp">El ActivityPlugin es el plugin más potente para rastrear cambios
+    en entidades individuales. Si utilizas ActivityPlugin, probablemente no
+    necesitarás usar los plugins TransactionChanges ni TransactionMeta.</p>
+<p class="Pp">Puedes inicializar el ActivityPlugin agregándolo al gestor de
+    versiones.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+
+<div class="Bd-indent">
+<div class="Bd-indent">
+<table class="tbl" style="border-style: solid;">
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">Columna</td>
+    <td style="border-right-style: solid;">Tipo</td>
+    <td>Descripción</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>La clave primaria de la actividad</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">verb</td>
+    <td style="border-right-style: solid;">Unicode</td>
+    <td>El verbo define la acción de la actividad</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">data</td>
+    <td style="border-right-style: solid;">JSON</td>
+    <td>Datos adicionales para la actividad en formato JSON</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">transaction_id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>La transacción con la que se asoció esta actividad</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">object_id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>La clave primaria del objeto. El objeto puede ser cualquier entidad que
+        tenga un entero como clave primaria.</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">object_type</td>
+    <td style="border-right-style: solid;">Unicode</td>
+    <td>El tipo del objeto (nombre de la clase como cadena)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">object_tx_id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>El último transaction_id asociado con el objeto. Esto se usa para
+        recuperar eficientemente la versión del objeto asociada con esta
+        actividad.</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">target_id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>La clave primaria del objetivo. El objetivo puede ser cualquier entidad
+        que tenga un entero como clave primaria.</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">target_type</td>
+    <td style="border-right-style: solid;">Unicode</td>
+    <td>El tipo del objetivo (nombre de la clase como cadena)</td>
+  </tr>
+  <tr>
+    <td style="border-right-style: solid;">target_tx_id</td>
+    <td style="border-right-style: solid;">BigInteger</td>
+    <td>El último transaction_id asociado con el objetivo.</td>
+  </tr>
+</table>
+</div>
+</div>
+
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Limitations'><a class='permalink' href='#Limitations'>Limitaciones</a></h2>
+<p class="Pp">Actualmente, todos los cambios en los modelos padre deben ser
+    confirmados (flushed) o validados (committed) antes de crear actividades. Esto
+    se debe a que todavía no existen procesadores de dependencia para las
+    relaciones genéricas. Por lo tanto, cuando crees actividades y les asignes
+    objetos / objetivos, recuerda confirmar la sesión antes de crear una
+    actividad:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article(name=u'Un artículo')
+session.add(article)
+session.flush()  # &lt;- ¡IMPORTANTE!
+first_activity = Activity(verb=u'create', object=article)
+session.add(first_activity)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">Los objetivos y objetos de una actividad dada deben tener una
+    columna de clave primaria entera llamada id.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Create_activities'><a class='permalink' href='#Create_activities'>Crear actividades</a></h2>
+<p class="Pp">Una vez que tus modelos han sido configurados, puedes obtener el
+    modelo de Actividad de la clase ActivityPlugin con la propiedad activity_cls:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>Activity = activity_plugin.activity_cls</pre>
+</div>
+</div>
+<p class="Pp">Ahora, supongamos que tenemos un modelo llamado Article y otro
+    llamado Category. Cada Artículo tiene una Categoría. Las actividades deben
+    crearse junto con los cambios que realices en estos modelos.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article(name=u'Un artículo')
+session.add(article)
+session.flush()
+first_activity = Activity(verb=u'create', object=article)
+session.add(first_activity)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">La transacción actual se asigna automáticamente al objeto de
+    actividad:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>first_activity.transaction  # Objeto Transaction</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Update_activities'><a class='permalink' href='#Update_activities'>Actualizar actividades</a></h2>
+<p class="Pp">La propiedad object del objeto Activity contiene el objeto actual
+    y object_version contiene la versión del objeto en el momento en que se creó
+    la actividad.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article.name = u'¡Un artículo actualizado!'
+session.flush()
+second_activity = Activity(verb=u'update', object=article)
+session.add(second_activity)
+session.commit()
+second_activity.object.name  # u'¡Un artículo actualizado!'
+first_activity.object.name  # u'¡Un artículo actualizado!'
+first_activity.object_version.name  # u'Un artículo'</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Delete_activities'><a class='permalink' href='#Delete_activities'>Eliminar actividades</a></h2>
+<p class="Pp">Las propiedades de versión son especialmente útiles para las
+    actividades de eliminación. Una vez que la actividad se recupera de la base
+    de datos, el objeto ya no está disponible (ya que ha sido eliminado), por lo
+    tanto, la única forma en que podríamos mostrar alguna información sobre el
+    objeto que el usuario eliminó es accediendo a la propiedad
+    object_version.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>session.delete(article)
+session.flush()
+third_activity = Activity(verb=u'delete', object=article)
+session.add(third_activity)
+session.commit()
+third_activity.object_version.name  # u'¡Un artículo actualizado!'</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Local_version_histories_using_targets'><a class='permalink' href='#Local_version_histories_using_targets'>Historiales de versiones locales usando objetivos</a></h2>
+<p class="Pp">La propiedad target del modelo Activity ofrece una forma de
+    rastrear los cambios de un objeto relacionado dado. En el siguiente ejemplo,
+    creamos una nueva actividad al agregar una categoría para un artículo y luego
+    marcamos el artículo como el objetivo de esta actividad.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>session.add(Category(name=u'Primera categoría', article=article))
+session.flush()
+activity = Activity(
+    verb=u'create',
+    object=category,
+    target=article
+)
+session.add(activity)
+session.commit()</pre>
+</div>
+</div>
+<p class="Pp">Ahora, si quisiéramos encontrar todos los cambios que afectaron a
+    un artículo dado, podríamos hacerlo buscando en todas las actividades donde el
+    objeto o el objetivo sea el artículo dado.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>import sqlalchemy as sa
+activities = session.query(Activity).filter(
+    sa.or_(
+        Activity.object == article,
+        Activity.target == article
+    )
+)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Flask'><a class='permalink' href='#Flask'>Flask</a></h2>
+<p class="Pp">FlaskPlugin ofrece una forma de integrar el framework Flask con
+    SQLAlchemy-Continuum. Flask-Plugin agrega dos columnas al modelo Transaction,
+    a saber, <i>user_id</i> y <i>remote_addr</i>.</p>
+<p class="Pp">Estas columnas se rellenan automáticamente cuando se crea el objeto
+    transaction. La columna <i>remote_addr</i> se rellena con el valor de la
+    dirección remota que realizó la solicitud actual. La columna <i>user_id</i>
+    se rellena con el id del objeto current_user.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum.plugins import FlaskPlugin
+from sqlalchemy_continuum import make_versioned
+make_versioned(plugins=[FlaskPlugin()])</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='PropertyModTracker'><a class='permalink' href='#PropertyModTracker'>PropertyModTracker</a></h2>
+<p class="Pp">El PropertyModTrackerPlugin ofrece una forma de rastrear
+    eficientemente modificaciones de propiedades individuales. Con
+    PropertyModTrackerPlugin puedes realizar consultas eficientes como:</p>
+<p class="Pp">="Pp">Busca todas las versiones del modelo X donde el usuario actualizó la propiedad A o
+    la propiedad B.</p>
+<p class="Pp">Busca todas las versiones del modelo X donde el usuario no actualizó la propiedad
+    A.</p>
+<p class="Pp">PropertyModTrackerPlugin agrega una columna de seguimiento de modificaciones separada para cada columna versionada. Por ejemplo, si tienes un modelo versionado llamado Article con columnas <i>name</i> y <i>content</i>, este plugin agregaría dos columnas booleanas adicionales <i>name_mod</i> y <i>content_mod</i> para el modelo de versión. Cuando el usuario confirma transacciones, el plugin actualiza automáticamente estas columnas booleanas.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='TransactionChanges'><a class='permalink' href='#TransactionChanges'>TransactionChanges</a></h2>
+<p class="Pp">TransactionChanges proporciona una forma eficiente de rastrear qué
+    modelos declarativos se modificaron en una transacción determinada. Esto puede ser útil
+    cuando se necesitan consultar transacciones posteriormente para problemas como:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Busca todas las transacciones que afectaron el modelo <i>User</i>.</dd>
+  <dt>2.</dt>
+  <dd>Busca todas las transacciones que no afectaron los modelos <i>Entity</i> y
+      <i>Event</i>.</dd>
+</dl>
+</div>
+<p class="Pp">El plugin funciona de dos maneras. Durante la fase de instrumentación de la clase, este
+    plugin crea un modelo de transacción especial llamado <i>TransactionChanges</i>.
+    Este modelo está asociado a una tabla llamada <i>transaction_changes</i>, que
+    tiene solo dos campos: transaction_id y entity_name. Si, por ejemplo, una
+    transacción consistió en guardar 5 nuevas entidades de User y 1 entidad de Article,
+    se insertarían dos nuevas filas en la tabla transaction_changes.</p>
+<table class="tbl" style="border-style: solid;">
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">transaction_id</td>
+    <td>entity_name</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">233678</td>
+    <td>User</td>
+  </tr>
+  <tr>
+    <td style="border-right-style: solid;">233678</td>
+    <td>Article</td>
+  </tr>
+</table>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='TransactionMeta'><a class='permalink' href='#TransactionMeta'>TransactionMeta</a></h2>
+<p class="Pp">TransactionMetaPlugin ofrece una forma de guardar datos clave-valor para
+    transacciones. Puedes usar el plugin de la misma manera que otros plugins:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>meta_plugin = TransactionMetaPlugin()
+versioning_manager.plugins.append(meta_plugin)</pre>
+</div>
+</div>
+<p class="Pp">TransactionMetaPlugin crea un modelo simple llamado
+    TransactionMeta. Esta clase tiene tres columnas: transaction_id, key y
+    value. TransactionMeta plugin también crea un proxy de asociación entre
+    TransactionMeta y las clases Transaction para un fácil acceso basado en diccionario de pares clave-valor.</p>
+<p class="Pp">Puedes fácilmente 'etiquetar' transacciones con ciertos pares clave-valor
+    dando estas claves y valores a la propiedad meta de la clase Transaction.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import versioning_manager
+article = Article()
+session.add(article)
+uow = versioning_manager.unit_of_work(session)
+tx = uow.create_transaction(session)
+tx.meta = {u'some_key': u'some value'}
+session.commit()
+TransactionMeta = meta_plugin.model_class
+Transaction = versioning_manager.transaction_cls
+# encuentra todas las transacciones con etiquetas 'article'
+query = (
+    session.query(Transaction)
+    .join(Transaction.meta_relation)
+    .filter(
+        db.and_(
+            TransactionMeta.key == 'some_key',
+            TransactionMeta.value == 'some value'
+        )
+    )
+)</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURACIÓN'><a class='permalink' href='#CONFIGURACIÓN'>CONFIGURACIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Global_and_class_level_configuration'><a class='permalink' href='#Global_and_class_level_configuration'>Configuración global y a nivel de clase</a></h2>
+<p class="Pp">Todos los parámetros de configuración de Continuum se pueden establecer a nivel global
+    (nivel de gestor) y a nivel de clase. Establecer una opción a nivel de gestor
+    afecta a todas las clases dentro del ámbito del listener de instrumentación de clase del gestor (por defecto, todos los modelos declarativos de SQLAlchemy).</p>
+<p class="Pp">En el siguiente ejemplo, establecemos la opción de configuración
+    'transaction_column_name' en False a nivel de gestor.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(options={'transaction_column_name': 'my_tx_id'})</pre>
+</div>
+</div>
+<p class="Pp">Como su nombre indica, la configuración a nivel de clase solo se aplica a
+    la clase dada. La configuración a nivel de clase se puede pasar al atributo de clase __versioned__.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>class User(Base):
+    __versioned__ = {
+        'transaction_column_name': 'tx_id'
+    }</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Versioning_strategies'><a class='permalink' href='#Versioning_strategies'>Estrategias de versionado</a></h2>
+<p class="Pp">Similar a Hibernate Envers, SQLAlchemy-Continuum ofrece dos estrategias de versionado distintas: 'validity' y 'subquery'. La estrategia predeterminada es 'validity'.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Validity'><a class='permalink' href='#Validity'>Validity</a></h2>
+<p class="Pp">La estrategia 'validity' guarda dos columnas en cada tabla de historial,
+    específicamente 'transaction_id' y 'end_transaction_id'. Los nombres de estas columnas
+    se pueden configurar con las opciones de configuración <i>transaction_column_name</i>
+    y <i>end_transaction_column_name</i>.</p>
+<p class="Pp">Al igual que con la estrategia 'subquery', por cada entidad insertada, actualizada y eliminada, Continuum crea una nueva versión en la tabla de historial. Sin embargo, también actualiza el end_transaction_id de la versión anterior para apuntar a la versión actual. Esto crea una pequeña sobrecarga durante la manipulación de datos.</p>
+<p class="Pp">Con la estrategia 'validity', la traversa de versiones es muy rápida. Al acceder a una versión anterior, Continuum intenta encontrar el registro de versión donde las claves primarias coinciden y el end_transaction_id es el mismo que el transaction_id del registro de versión dado. Al acceder a la siguiente versión, Continuum intenta encontrar el registro de versión donde las claves primarias coinciden y el transaction_id es el mismo que el end_transaction_id del registro de versión dado.</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Pros:"><a class="permalink" href="#Pros:"><b>Pros:</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La traversa de versiones es mucho más rápida ya que no se necesitan subconsultas correlacionadas</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="Cons:"><a class="permalink" href="#Cons:"><b>Contras:</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Las actualizaciones, inserciones y eliminaciones son un poco más lentas</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Subquery'><a class='permalink' href='#Subquery'>Subquery</a></h2>
+<p class="Pp">La estrategia 'subquery' utiliza una columna en cada tabla de historial,
+    específicamente 'transaction_id'. El nombre de esta columna se puede configurar con la opción de configuración <i>transaction_column_name</i>.</p>
+<p class="Pp">Después de cada entidad insertada, actualizada y eliminada, Continuum crea una nueva versión en la tabla de historial y establece la columna 'transaction_id' para que apunte a la transacción actual.</p>
+<p class="Pp">Con la estrategia 'subquery', la traversa de versiones es lenta. Al acceder a versiones anteriores y siguientes de un objeto de versión dado, se necesitan subconsultas correlacionadas.</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Pros:~2"><a class="permalink" href="#Pros:~2"><b>Pros:</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Las actualizaciones, inserciones y eliminaciones son un poco más rápidas que en la estrategia 'validity'</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="Cons:~2"><a class="permalink" href="#Cons:~2"><b>Contras:</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La traversa de versiones es mucho más lenta</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Column_exclusion_and_inclusion'><a class='permalink' href='#Column_exclusion_and_inclusion'>Exclusión e inclusión de columnas</a></h2>
+<p class="Pp">Con la opción de configuración <i>exclude</i>, puedes definir qué atributos de entidad quieres versionar. Por defecto, Continuum versiona todos los atributos de la entidad.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>class User(Base):
+    __versioned__ = {
+        'exclude': ['picture']
+    }
+    id = sa.Column(sa.Integer, primary_key=True)
+    name = sa.Column(sa.Unicode(255))
+    picture = sa.Column(sa.LargeBinary)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Basic_configuration_options'><a class='permalink' href='#Basic_configuration_options'>Opciones básicas de configuración</a></h2>
+<p class="Pp">Aquí tienes una lista completa de las opciones de configuración:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="base_classes"><a class="permalink" href="#base_classes"><b>base_classes
+    (default: None)</b></a></dt>
+  <dd>Una tupla que define las clases base del historial.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="table_name"><a class="permalink" href="#table_name"><b>table_name
+    (default: '%s_version')</b></a></dt>
+  <dd>El nombre de la tabla de historial.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="transaction_column_name"><a class="permalink" href="#transaction_column_name"><b>transaction_column_name
+    (default: 'transaction_id')</b></a></dt>
+  <dd>El nombre de la columna de transacción (utilizada por las tablas de historial).</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="end_transaction_column_name"><a class="permalink" href="#end_transaction_column_name"><b>end_transaction_column_name
+    (default: 'end_transaction_id')</b></a></dt>
+  <dd>El nombre de la columna de transacción final en la tabla de historial al usar la
+      estrategia de versionado de validez.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="operation_type_column_name"><a class="permalink" href="#operation_type_column_name"><b>operation_type_column_name
+    (default: 'operation_type')</b></a></dt>
+  <dd>El nombre de la columna de tipo de operación (utilizada por las tablas de historial).</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="strategy"><a class="permalink" href="#strategy"><b>strategy (default:
+    'validity')</b></a></dt>
+  <dd>La estrategia de versionado a utilizar. Puede ser 'validity' o 'subquery'</dd>
+</dl>
+</div>
+</div>
+<p class="Pp">Ejemplo</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>class Article(Base):
+    __versioned__ = {
+        'transaction_column_name': 'tx_id'
+    }
+    __tablename__ = 'user'
+    id = sa.Column(sa.Integer, primary_key=True, autoincrement=True)
+    name = sa.Column(sa.Unicode(255))
+    content = sa.Column(sa.UnicodeText)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Customizing_transaction_user_class'><a class='permalink' href='#Customizing_transaction_user_class'>Personalización de la clase de usuario de la transacción</a></h2>
+<p class="Pp">Por defecto, Continuum intenta crear una relación entre la clase 'User'
+    y la clase Transaction. Si tienes una clase de usuario con un nombre diferente, puedes simplemente pasar su nombre a make_versi</p>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURATION'><a class='permalink' href='#CONFIGURATION'>CONFIGURACIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Make_versioned'><a class='permalink' href='#Make_versioned'>make_versioned</a></h2>
+<p class="Pp">En la mayoría de los casos, todo lo que necesita hacer es llamar a la
+    función <code>make_versioned</code>. Esto se debe hacer *antes* de que la
+    base de datos se configure, es decir, antes de que se llame a
+    <code>SQLAlchemy.configure()</code>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(user_cls='my_app.models.MyUser')</pre>
+</div>
+</div>
+<p class="Pp">Si desea que las transacciones contengan referencias a usuarios,
+    puede especificar la clase de usuario que su aplicación utiliza. De forma
+    predeterminada, SQLAlchemy-Continuum buscará una clase de usuario llamada
+    'User' en el módulo raíz de su aplicación.</p>
+<p class="Pp">La clase de usuario se almacena en el objeto
+    <code>VersioningManager</code> y se puede acceder a ella más tarde a través
+    de <code>versioning_manager.user_cls</code>. El campo de usuario en la tabla
+    de versiones se llamará por defecto 'user' (siempre que la clase de usuario
+    no sea None).</p>
+<p class="Pp">Si no desea que las transacciones contengan ninguna referencia de
+    usuario, también puede deshabilitar esta función.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(user_cls=None)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Customizing_versioned_mappers'><a class='permalink' href='#Customizing_versioned_mappers'>Personalización   de los mappers versionados</a></h2>
+<p class="Pp">Por defecto, SQLAlchemy-Continuum versiona todos los mappers.
+    Puede anular este comportamiento pasando la clase/objeto mapper deseado a la
+    función <code>make_versioned</code>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(mapper=my_mapper)</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Customizing_versioned_sessions'><a class='permalink' href='#Customizing_versioned_sessions'>Personalización   de las sesiones versionadas</a></h2>
+<p class="Pp">Por defecto, SQLAlchemy-Continuum versiona todas las sesiones.
+    Puede anular este comportamiento pasando la clase/objeto de sesión deseado a
+    la función <code>make_versioned</code>.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>make_versioned(session=my_session)</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONTINUUM_SCHEMA'><a class='permalink' href='#CONTINUUM_SCHEMA'>ESQUEMA   DE CONTINUUM</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Version_tables'><a class='permalink' href='#Version_tables'>Tablas   de versiones</a></h2>
+<p class="Pp">Por defecto, SQLAlchemy-Continuum crea una tabla de versión para
+    cada tabla de entidad versionada. Las tablas de versión se sufijan con
+    '_version'. Así, por ejemplo, si tiene dos tablas versionadas 'article' y
+    'category', SQLAlchemy-Continuum crearía dos tablas de versión
+    'article_version' y 'category_version'.</p>
+<p class="Pp">Por defecto, las tablas de versión contienen estas columnas:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>id de la entidad original (puede haber más de una columna en el caso de
+      claves primarias compuestas)</li>
+  <li>transaction_id - un entero que coincide con el número de id en la tabla
+      transaction_log.</li>
+  <li>end_transaction_id - un entero que coincide con el transaction_id del
+      siguiente registro de versión. Si este es el registro de versión actual,
+      este campo es nulo.</li>
+  <li>operation_type - un entero pequeño que define el tipo de la operación</li>
+  <li>campos versionados de la entidad original</li>
+</ul>
+</div>
+<p class="Pp">Si está utilizando <i>PropertyModTracker</i>, Continuum también crea
+    un campo booleano por cada campo versionado. Por defecto, estos campos
+    booleanos se sufijan con '_mod'.</p>
+<p class="Pp">La clave primaria de cada tabla de versión es la combinación de la
+    clave primaria de la tabla padre + el transaction_id. Esto significa que puede
+    haber como máximo una entrada en la tabla de versiones para una instancia de
+    entidad dada en una transacción dada.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Transaction_tables'><a class='permalink' href='#Transaction_tables'>Tablas   de transacciones</a></h2>
+<p class="Pp">Por defecto, Continuum crea una tabla de transacciones llamada
+    <i>transaction</i>. Muchos plugins de continuum también crean tablas
+    adicionales para el almacenamiento eficiente de transacciones. Si desea
+    consultar transacciones de manera eficiente después, debería considerar
+    utilizar algunos de estos plugins.</p>
+<p class="Pp">La tabla de transacciones solo contiene dos campos por defecto: id y
+    issued_at.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Using_vacuum'><a class='permalink' href='#Using_vacuum'>Uso   de vacuum</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.vacuum(session,"><a class="permalink" href="#sqlalchemy_continuum.vacuum(session,"><b>sqlalchemy_continuum.vacuum(session,
+    model, yield_per=1000)</b></a></dt>
+  <dd>Al realizar cambios estructurales en las tablas de versiones (por ejemplo,
+      eliminar columnas), a veces hay situaciones en las que algunas filas de
+      versiones antiguas se vuelven inútiles.
+    <p class="Pp">Vacuum elimina todas las filas de versión inútiles que no tuvieron
+        cambios en comparación con la versión anterior.</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import vacuum
+vacuum(session, User)  # aspira la versión de usuario</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters"><a class="permalink" href="#Parameters"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>session</b> -- Objeto de sesión de SQLAlchemy</li>
+  <li><b>model</b> -- Clase modelo declarativa de SQLAlchemy</li>
+  <li><b>yield_per</b> -- cuántas filas procesar a la vez</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Schema_tools'><a class='permalink' href='#Schema_tools'>Herramientas   de esquema</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.schema.update_end_tx_column(table,"><a class="permalink" href="#sqlalchemy_continuum.schema.update_end_tx_column(table,"><b>sqlalchemy_continuum.schema.update_end_tx_column(table,
+    end_tx_column_name='end_transaction_id', tx_column_name='transaction_id',
+    conn=None)</b></a></dt>
+  <dd>Calcula las columnas de transacción final y actualiza la tabla de versiones
+      con los valores calculados. Esta función se puede utilizar para migrar
+      entre la estrategia de versionado de subconsultas y la estrategia de
+      versionado de validez.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~2"><a class="permalink" href="#Parameters~2"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>table</b> -- Objeto tabla de SQLAlchemy</li>
+  <li><b>end_tx_column_name</b> -- Nombre de la columna de transacción final</li>
+  <li><b>tx_column_name</b> -- Nombre de la columna de transacción</li>
+  <li><b>conn</b> --
+    <p class="Pp">Objeto Connection, Engine, Session u Operations de Alembic de
+        SQLAlchemy. Básicamente, debería ser un objeto que pueda ejecutar las
+        consultas necesarias para actualizar los valores de la columna de
+        transacción final.</p>
+    <p class="Pp">Si no se proporciona ningún objeto, esta función intenta usar
+        <code>alembic.op</code> para ejecutar las consultas.</p>
+      </li>
+</ul>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.schema.update_property_mod_flags(table,"><a class="permalink" href="#sqlalchemy_continuum.schema.update_property_mod_flags(table,"><b>sqlalchemy_continuum.schema.update_property_mod_flags(table,
+    tracked_columns, mod_suffix='_mod', end_tx_column_name='end_transaction_id',
+    tx_column_name='transaction_id', conn=None)</b></a></dt>
+  <dd>Actualiza las banderas de modificación de propiedades para una tabla dada y
+      columnas dadas. Esta función se puede utilizar para migrar un esquema
+      existente para usar banderas de modificación de propiedades (proporcionadas
+      por el plugin PropertyModTracker).</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~3"><a class="permalink" href="#Parameters~3"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>table</b> -- Objeto tabla de SQLAlchemy</li>
+  <li><b>mod_suffix</b> -- Sufijo de las columnas de seguimiento de modificaciones</li>
+  <li><b>end_tx_column_name</b> -- Nombre de la columna de transacción final</li>
+  <li><b>tx_column_name</b> -- Nombre de la columna de transacción</li>
+  <li><b>conn</b> --
+    <p class="Pp">Objeto Connection, Engine, Session u Operations de Alembic de
+        SQLAlchemy. Básicamente, debería ser un objeto que pueda ejecutar las
+        consultas necesarias para actualizar las banderas de modificación de
+        propiedades.</p>
+    <p class="Pp">Si no se proporciona ningún objeto, esta función intenta usar
+        <code>alembic.op</code> para ejecutar las consultas.</p>
+      </li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ALEMBIC_MIGRATIONS'><a class='permalink' href='#ALEMBIC_MIGRATIONS'>MIGRACIONES   DE ALEMBIC</a></h1>
+<p class="Pp">Cada vez que realice cambios en la estructura de la base de datos,
+    también debe cambiar las tablas de historial asociadas. Cuando realice cambios
+    en sus modelos, SQLAlchemy-Continuum modifica automáticamente las definiciones
+    de modelos de historial, por lo tanto, puede usar
+    <code>alembic revision --autogenerate</code> al igual que antes. Solo necesita
+    asegurarse de que la función <code>make_versioned</code> se llame antes de
+    que alembic recopile todos sus modelos y que <code>configure_mappers</code>
+    se llame después.</p>
+<p class="Pp">Preste mucha atención al eliminar o mover datos de tablas padre y
+    al reflejar estos cambios en las tablas de historial.</p>
+<section class="Ss">
+<h2 class="Ss" id='Troubleshooting'><a class='permalink' href='#Troubleshooting'>Solución   de problemas</a></h2>
+<p class="Pp">Si alembic no detectó ningún cambio o genera una migración
+    invertida (intenta eliminar tablas <i>*_version</i> de la base de datos en
+    lugar de crearlas), asegúrese de que el comando de alembic llamó a
+    <code>configure_mappers</code>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='UTILITIES'><a class='permalink' href='#UTILITIES'>UTILIDADES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='changeset'><a class='permalink' href='#changeset'>changeset</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.changeset(obj)"><a class="permalink" href="#sqlalchemy_continuum.utils.changeset(obj)"><b>sqlalchemy_continuum.utils.changeset(obj)</b></a></dt>
+  <dd>Devuelve un changeset humanizado para el objeto declarativo de SQLAlchemy
+      dado. Con esta función, puede verificar fácilmente el changeset del objeto
+      dado en la transacción actual.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import changeset
+article = Article(name=u'Un artículo')
+changeset(article)
+# {'name': [u'Un artículo', None]}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~4"><a class="permalink" href="#Parameters~4"><b>Parámetros</b></a></dt>
+  <dd><b>obj</b> -- Objeto modelo declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='count_versions'><a class='permalink' href='#count_versions'>count_versions</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.count_versions(obj)"><a class="permalink" href="#sqlalchemy_continuum.utils.count_versions(obj)"><b>sqlalchemy_continuum.utils.count_versions(obj)</b></a></dt>
+  <dd>Devuelve el número de versiones que tiene el objeto dado. Esta función
+      funciona incluso cuando el obj tiene deshabilitados los ajustes de
+      versión <i>create_models</i> y <i>create_tables</i>.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article(name=u'Un artículo')
+count_versions(article)  # 0
+session.add(article)
+session.commit()
+count_versions(article)  # 1</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~5"><a class="permalink" href="#Parameters~5"><b>Parámetros</b></a></dt>
+  <dd><b>obj</b> -- Objeto modelo declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='get_versioning_manager'><a class='permalink' href='#get_versioning_manager'>get_versioning_manager</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.get_versioning_manager(obj_or_class)"><a class="permalink" href="#sqlalchemy_continuum.utils.get_versioning_manager(obj_or_class)"><b>sqlalchemy_continuum.utils.get_versioning_manager(obj_or_class)</b></a></dt>
+  <dd>Devuelve el VersioningManager de SQLAlchemy-Continuum asociado para la
+      clase o el objeto modelo declarativo de SQLAlchemy dado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~6"><a class="permalink" href="#Parameters~6"><b>Parámetros</b></a></dt>
+  <dd><b>obj_or_class</b> -- Objeto o clase modelo declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='is_modified'><a class='permalink' href='#is_modified'>is_modified</a></h2>
+<section class="Sh">
+<h1 class="Sh" id="API_DOCUMENTATION"><a class="permalink" href="#API_DOCUMENTATION">DOCUMENTACIÓN DE LA API</a></h1>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.make_versioned(mapper=_class"><a class="permalink" href="#sqlalchemy_continuum.make_versioned(mapper=_class"><b>sqlalchemy_continuum.make_versioned(mapper=&lt;class
+    'sqlalchemy.orm.mapper.Mapper'&gt;, session=&lt;class
+    'sqlalchemy.orm.session.Session'&gt;,
+    manager=&lt;sqlalchemy_continuum.manager.VersioningManager object&gt;,
+    plugins=None, options=None, user_cls='User')</b></a></dt>
+  <dd>Esta es la función de API pública de SQLAlchemy-Continuum para hacer que ciertos
+      mapeadores y sesiones sean versionados. Por defecto, esto se aplica a todos los mapeadores y
+      todas las sesiones.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~16"><a class="permalink" href="#Parameters~16"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>mapper</b> -- Mapeador de SQLAlchemy al que aplicar el versionado.</li>
+  <li><b>session</b> -- Sesión de SQLAlchemy a la que aplicar el versionado. Por
+      defecto, es sa.orm.session.Session, lo que significa que se aplica a todas las subclases de Session.</li>
+  <li><b>manager</b> -- Gestor de versionado de SQLAlchemy-Continuum.</li>
+  <li><b>plugins</b> -- Plugins que se pasarán al gestor de versionado.</li>
+  <li><b>options</b> -- Un diccionario de opciones de VersioningManager.</li>
+  <li><b>user_cls</b> -- Clase de usuario con la que la clase Transaction debería tener
+      una relación. Puede ser una clase o el nombre de una clase para evaluación perezosa.</li>
+</ul>
+</div>
+</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id="Versioning_Manager"><a class="permalink" href="#Versioning_Manager">Gestor de Versionado</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="class"><a class="permalink" href="#class"><b>class
+    sqlalchemy_continuum.VersioningManager(unit_of_work_cls=&lt;class
+    'sqlalchemy_continuum.unit_of_work.UnitOfWork'&gt;, transaction_cls=None,
+    user_cls=None, options=None, plugins=None, builder=None)</b></a></dt>
+  <dd>VersioningManager delega las operaciones de configuración de versionado a las clases constructora
+      y el versionado real a la clase UnitOfWork. El gestor contiene opciones de configuración que actúan como valores predeterminados para todas las clases versionadas.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~17"><a class="permalink" href="#Parameters~17"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>unit_of_work_cls</b> -- La clase UnitOfWork a utilizar para inicializar
+      objetos UnitOfWork para el versionado.</li>
+  <li><b>transaction_cls</b> -- Clase Transaction a utilizar para el versionado. Si
+      es None, se utilizará la clase Transaction predeterminada generada por TransactionFactory.</li>
+  <li><b>user_cls</b> -- Clase de usuario con la que la clase Transaction debería tener
+      una relación. Puede ser una clase o el nombre de una clase para evaluación perezosa.</li>
+  <li><b>options</b> -- Opciones de versionado.</li>
+  <li><b>plugins</b> -- Plugins de versionado que escuchan los eventos invocados por el
+      gestor.</li>
+  <li><b>builder</b> -- Objeto constructor que maneja la construcción de tablas y modelos de versionado.</li>
+</ul>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="after_flush(session,"><a class="permalink" href="#after_flush(session,"><b>after_flush(session,
+    flush_context)</b></a></dt>
+  <dd>Oyente after_flush para sesiones de SQLAlchemy. Si este gestor tiene
+      el versionado habilitado, este oyente recibe la UnitOfWork asociada a las
+      conexiones de la sesión e invoca el método process_after_flush de ese
+      objeto.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~18"><a class="permalink" href="#Parameters~18"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>session</b> -- Sesión de SQLAlchemy.</li>
+  <li><b>flush_context</b> -- Contexto de la operación flush.</li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="UTILS"><a class="permalink" href="#UTILS">UTILIDADES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='is_modified'><a class="permalink" href="#is_modified">is_modified</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.is_modified(obj)"><a class="permalink" href="#sqlalchemy_continuum.utils.is_modified(obj)"><b>sqlalchemy_continuum.utils.is_modified(obj)</b></a></dt>
+  <dd>Devuelve si las propiedades versionadas del objeto dado han sido
+      modificadas o no.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>article = Article()
+is_modified(article)  # False
+article.name = 'Something'
+is_modified(article)  # True</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~7"><a class="permalink" href="#Parameters~7"><b>Parámetros</b></a></dt>
+  <dd><b>obj</b> -- Objeto modelo declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>is_modified_or_deleted()</i></div>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>is_session_modified()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='is_modified_or_deleted'><a class="permalink" href="#is_modified_or_deleted">is_modified_or_deleted</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.is_modified_or_deleted(obj)"><a class="permalink" href="#sqlalchemy_continuum.utils.is_modified_or_deleted(obj)"><b>sqlalchemy_continuum.utils.is_modified_or_deleted(obj)</b></a></dt>
+  <dd>Devuelve si algunas de las propiedades versionadas del objeto declarativo de SQLAlchemy dado han sido modificadas o si el objeto ha sido
+      eliminado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~8"><a class="permalink" href="#Parameters~8"><b>Parámetros</b></a></dt>
+  <dd><b>obj</b> -- Objeto modelo declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='is_session_modified'><a class="permalink" href="#is_session_modified">is_session_modified</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.is_session_modified(session)"><a class="permalink" href="#sqlalchemy_continuum.utils.is_session_modified(session)"><b>sqlalchemy_continuum.utils.is_session_modified(session)</b></a></dt>
+  <dd>Devuelve si alguno de los objetos versionados en la sesión dada ha sido
+      modificado o eliminado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~9"><a class="permalink" href="#Parameters~9"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>is_versioned()</i></div>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>versioned_objects()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='is_versioned'><a class="permalink" href="#is_versioned">is_versioned</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.is_versioned(obj_or_class)"><a class="permalink" href="#sqlalchemy_continuum.utils.is_versioned(obj_or_class)"><b>sqlalchemy_continuum.utils.is_versioned(obj_or_class)</b></a></dt>
+  <dd>Devuelve si el objeto dado está versionado o no.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>is_versioned(Article)  # True
+article = Article()
+is_versioned(article)  # True</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~10"><a class="permalink" href="#Parameters~10"><b>Parámetros</b></a></dt>
+  <dd><b>obj_or_class</b> -- Objeto modelo declarativo de SQLAlchemy o clase de
+      modelo declarativa de SQLAlchemy.</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>versioned_objects()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='parent_class'><a class="permalink" href="#parent_class">parent_class</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.parent_class(version_cls)"><a class="permalink" href="#sqlalchemy_continuum.utils.parent_class(version_cls)"><b>sqlalchemy_continuum.utils.parent_class(version_cls)</b></a></dt>
+  <dd>Devuelve la clase padre para la clase de modelo de versión dada.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>parent_class(ArticleVersion)  # Clase Article</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~11"><a class="permalink" href="#Parameters~11"><b>Parámetros</b></a></dt>
+  <dd><b>model</b> -- Clase de modelo de versión declarativa de SQLAlchemy</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>version_class()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='transaction_class'><a class="permalink" href="#transaction_class">transaction_class</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.transaction_class(cls)"><a class="permalink" href="#sqlalchemy_continuum.utils.transaction_class(cls)"><b>sqlalchemy_continuum.utils.transaction_class(cls)</b></a></dt>
+  <dd>Devuelve la clase de transacción asociada para la clase declarativa de SQLAlchemy versionada o clase de versión dada.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>from sqlalchemy_continuum import transaction_class
+transaction_class(Article)  # Clase Transaction</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~12"><a class="permalink" href="#Parameters~12"><b>Parámetros</b></a></dt>
+  <dd><b>cls</b> -- Clase declarativa versionada de SQLAlchemy o clase de modelo de versión</dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='version_class'><a class="permalink" href="#version_class">version_class</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.version_class(model)"><a class="permalink" href="#sqlalchemy_continuum.utils.version_class(model)"><b>sqlalchemy_continuum.utils.version_class(model)</b></a></dt>
+  <dd>Devuelve la clase de versión para la clase modelo declarativa de SQLAlchemy dada.</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>version_class(Article)  # Clase ArticleVersion</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~13"><a class="permalink" href="#Parameters~13"><b>Parámetros</b></a></dt>
+  <dd><b>model</b> -- Clase modelo declarativa de SQLAlchemy</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>parent_class()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='versioned_objects'><a class="permalink" href="#versioned_objects">versioned_objects</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.versioned_objects(session)"><a class="permalink" href="#sqlalchemy_continuum.utils.versioned_objects(session)"><b>sqlalchemy_continuum.utils.versioned_objects(session)</b></a></dt>
+  <dd>Devuelve todos los objetos versionados en la sesión dada.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~14"><a class="permalink" href="#Parameters~14"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+<p class="Pp"><b>VER TAMBIÉN:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent"><i>is_versioned()</i></div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='version_table'><a class="permalink" href="#version_table">version_table</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="sqlalchemy_continuum.utils.version_table(table)"><a class="permalink" href="#sqlalchemy_continuum.utils.version_table(table)"><b>sqlalchemy_continuum.utils.version_table(table)</b></a></dt>
+  <dd>Devuelve la tabla de versión asociada para el objeto Table de SQLAlchemy dado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~15"><a class="permalink" href="#Parameters~15"><b>Parámetros</b></a></dt>
+  <dd><b>table</b> -- Objeto Table de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</section>
+</section>
+><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="append_association_operation(conn,"><a class="permalink" href="#append_association_operation(conn,"><b>append_association_operation(conn,
+    table_name, params, op)</b></a></dt>
+  <dd>Añade la operación de asociación de historial a la lista pending_statements.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="apply_class_configuration_listeners(mapper)"><a class="permalink" href="#apply_class_configuration_listeners(mapper)"><b>apply_class_configuration_listeners(mapper)</b></a></dt>
+  <dd>Aplica los listeners de configuración de clase para el mapper dado.
+    <p class="Pp">Los listeners funcionan en dos fases:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Class"><a class="permalink" href="#Class"><b>Fase de instrumentación de
+    clase</b></a></dt>
+  <dd>Los primeros listeners escuchan el evento de instrumentación de clase y
+      gestionan la recolección de modelos versionados y los añaden a la
+      lista pending_classes.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>2.</dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="After"><a class="permalink" href="#After"><b>Fase posterior a la configuración
+    de clase</b></a></dt>
+  <dd>El segundo listener escucha el evento posterior a la configuración de
+      clase y gestiona la generación real del modelo de historial basada en
+      la lista recopilada durante la fase de instrumentación de clase.</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~19"><a class="permalink" href="#Parameters~19"><b>Parámetros</b></a></dt>
+  <dd><b>mapper</b> -- Mapper de SQLAlchemy al que aplicar los listeners de
+      configuración de clase</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="before_flush(session,"><a class="permalink" href="#before_flush(session,"><b>before_flush(session,
+    flush_context, instances)</b></a></dt>
+  <dd>Listener de pre-flush para sesiones de SQLAlchemy. Si este gestor tiene
+      la versionización habilitada, este listener invoca el proceso antes de
+      la ejecución del objeto UnitOfWork asociado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~20"><a class="permalink" href="#Parameters~20"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="clear(session)"><a class="permalink" href="#clear(session)"><b>clear(session)</b></a></dt>
+  <dd>Listener simple de SQLAlchemy que se invoca después de un commit de
+      transacción exitoso o cuando ocurre un rollback de transacción. El
+      propósito de este listener es restablecer este UnitOfWork a su estado
+      de inicialización.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~21"><a class="permalink" href="#Parameters~21"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="create_transaction_model()"><a class="permalink" href="#create_transaction_model()"><b>create_transaction_model()</b></a></dt>
+  <dd>Crea la clase Transaction solo si aún no existe en el registro de
+      modelos declarativos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="is_excluded_property(model,"><a class="permalink" href="#is_excluded_property(model,"><b>is_excluded_property(model,
+    key)</b></a></dt>
+  <dd>Devuelve si la propiedad dada del modelo dado está excluida del modelo
+      de historial asociado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~22"><a class="permalink" href="#Parameters~22"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>model</b> -- Objeto de modelo declarativo de SQLAlchemy.</li>
+  <li><b>key</b> -- Clave de la propiedad del modelo</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="option(model,"><a class="permalink" href="#option(model,"><b>option(model,
+    name)</b></a></dt>
+  <dd>Devuelve el valor de la opción para el modelo dado. Si la opción no se
+      encuentra en el modelo dado, recurre a los valores predeterminados de este
+      objeto gestor. Si la opción tampoco se encuentra en este objeto gestor,
+      este método lanza un KeyError.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~23"><a class="permalink" href="#Parameters~23"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>model</b> -- Objeto declarativo de SQLAlchemy</li>
+  <li><b>name</b> -- Nombre de la opción de versionización</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="remove_class_configuration_listeners(mapper)"><a class="permalink" href="#remove_class_configuration_listeners(mapper)"><b>remove_class_configuration_listeners(mapper)</b></a></dt>
+  <dd>Elimina los listeners de configuración de clase de versionización del
+      mapper especificado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~24"><a class="permalink" href="#Parameters~24"><b>Parámetros</b></a></dt>
+  <dd><b>mapper</b> -- mapper del que eliminar los listeners de configuración
+      de clase</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="remove_operations_tracking(mapper)"><a class="permalink" href="#remove_operations_tracking(mapper)"><b>remove_operations_tracking(mapper)</b></a></dt>
+  <dd>Elimina los listeners del mapper especificado que rastrean las inserciones,
+      actualizaciones y eliminaciones de SQL.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~25"><a class="permalink" href="#Parameters~25"><b>Parámetros</b></a></dt>
+  <dd><b>mapper</b> -- mapper del que eliminar los listeners de rastreo de
+      operaciones SQL</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="remove_session_tracking(session)"><a class="permalink" href="#remove_session_tracking(session)"><b>remove_session_tracking(session)</b></a></dt>
+  <dd>Elimina los listeners que rastrean las operaciones (flushing, commit y
+      rollback) de la sesión dada. Este método debe usarse junto con
+      <i>remove_operations_tracking</i>.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~26"><a class="permalink" href="#Parameters~26"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Sesión de SQLAlchemy de la que eliminar el rastreo de
+      operaciones</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="reset()"><a class="permalink" href="#reset()"><b>reset()</b></a></dt>
+  <dd>Restablece el estado interno de este gestor.
+    <p class="Pp">Este método debe usarse en casos de prueba que crean modelos
+        sobre la marcha. De lo contrario, history_class_map y algunas otras
+        variables podrían contaminarse con clases de modelo que ya no se usan.</p>
+  </dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_cloned_connections(c,"><a class="permalink" href="#track_cloned_connections(c,"><b>track_cloned_connections(c,
+    opt)</b></a></dt>
+  <dd>Rastrea las conexiones clonadas de las tablas de asociación.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_deletes(uow,"><a class="permalink" href="#track_deletes(uow,"><b>track_deletes(uow,
+    target)</b></a></dt>
+  <dd>Rastrea las operaciones de eliminación de objetos. Cada vez que se elimina
+      un objeto, se añade al diccionario de operaciones internas de este
+      UnitOfWork.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_inserts(uow,"><a class="permalink" href="#track_inserts(uow,"><b>track_inserts(uow,
+    target)</b></a></dt>
+  <dd>Rastrea las operaciones de inserción de objetos. Cada vez que se inserta
+      un objeto, se añade al diccionario de operaciones internas de este
+      UnitOfWork.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_operations(mapper)"><a class="permalink" href="#track_operations(mapper)"><b>track_operations(mapper)</b></a></dt>
+  <dd>Adjunta listeners para el mapper especificado que rastrean las inserciones,
+      actualizaciones y eliminaciones de SQL.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~27"><a class="permalink" href="#Parameters~27"><b>Parámetros</b></a></dt>
+  <dd><b>mapper</b> -- mapper del que rastrear las operaciones SQL</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_session(session)"><a class="permalink" href="#track_session(session)"><b>track_session(session)</b></a></dt>
+  <dd>Adjunta listeners que rastrean las operaciones (flushing, commit y
+      rollback) de la sesión dada. Este método debe usarse junto con
+      <i>track_operations</i>.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~28"><a class="permalink" href="#Parameters~28"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Sesión de SQLAlchemy de la que rastrear las operaciones</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="track_updates(uow,"><a class="permalink" href="#track_updates(uow,"><b>track_updates(uow,
+    target)</b></a></dt>
+  <dd>Rastrea las operaciones de actualización de objetos. Cada vez que se
+      actualiza un objeto, se añade al diccionario de operaciones internas de
+      este UnitOfWork.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="unit_of_work(session)"><a class="permalink" href="#unit_of_work(session)"><b>unit_of_work(session)</b></a></dt>
+  <dd>Devuelve el objeto SQLAlchemy-Continuum UnitOfWork asociado para el objeto
+      de sesión de SQLAlchemy dado.
+    <p class="Pp">Si no existe ningún objeto UnitOfWork para el objeto dado,
+        este método intenta crear uno.</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~29"><a class="permalink" href="#Parameters~29"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Constructores'><a class='permalink' href='#Constructores'>Constructores</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="class~2"><a class="permalink" href="#class~2"><b>class
+    sqlalchemy_continuum.table_builder.TableBuilder(versioning_manager,
+    parent_table, model=None)</b></a></dt>
+  <dd>TableBuilder se encarga de construir tablas de versiones basadas en la
+      estructura de la tabla padre y las opciones de configuración de
+      versionización.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="property"><a class="permalink" href="#property"><b>property
+    table_name</b></a></dt>
+  <dd>Devuelve el nombre de la tabla de versiones para la tabla padre actual.</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="class~3"><a class="permalink" href="#class~3"><b>class
+    sqlalchemy_continuum.model_builder.ModelBuilder(versioning_manager,
+    model)</b></a></dt>
+  <dd>VersionedModelBuilder se encarga de construir modelos de Versión basados
+      en los atributos de la tabla padre y la configuración de versionización.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="base_classes()"><a class="permalink" href="#base_classes()"><b>base_classes()</b></a></dt>
+  <dd>Devuelve todas las clases base para el modelo de historial.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="build_model(table)"><a class="permalink" href="#build_model(table)"><b>build_model(table)</b></a></dt>
+  <dd>Construye la clase del modelo de historial.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="build_parent_relationship()"><a class="permalink" href="#build_parent_relationship()"><b>build_parent_relationship()</b></a></dt>
+  <dd>Construye una relación entre la clase de versión que se está construyendo
+      actualmente y la clase padre (el modelo cuyo historial representa la
+      clase de versión que se está construyendo actualmente).</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="build_transaction_relationship(tx_class)"><a class="permalink" href="#build_transaction_relationship(<section class="Ss">
+<h2 class="Ss" id='RelationshipBuilder'><a class='permalink' href='#RelationshipBuilder'>RelationshipBuilder</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="build_transaction_relationship(tx_class)"><a class="permalink" href="#build_transaction_relationship(tx_class)"><b>build_transaction_relationship(tx_class)</b></a></dt>
+  <dd>Construye una relación entre la clase de versión actualmente construida y
+      la clase de Transacción.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~30"><a class="permalink" href="#Parameters~30"><b>Parámetros</b></a></dt>
+  <dd><b>tx_class</b> -- Clase de Transacción</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="inheritance_args(cls,"><a class="permalink" href="#inheritance_args(cls,"><b>inheritance_args(cls,
+    version_table, table)</b></a></dt>
+  <dd>Devuelve los argumentos de herencia del mapper para el modelo de historial construido actualmente.</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="class~4"><a class="permalink" href="#class~4"><b>class
+    sqlalchemy_continuum.relationship_builder.RelationshipBuilder(versioning_manager,
+    model, property_)</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="association_subquery(obj)"><a class="permalink" href="#association_subquery(obj)"><b>association_subquery(obj)</b></a></dt>
+  <dd>Devuelve una cláusula EXISTS que verifica si una asociación existe para el
+      objeto declarativo de SQLAlchemy dado. Esta consulta se utiliza en el
+      método many_to_many_criteria.
+    <p class="Pp">Consulta de ejemplo:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="EXISTS"><a class="permalink" href="#EXISTS"><b>EXISTS (</b></a></dt>
+  <dd>SELECT 1 FROM article_tag_version WHERE article_id = 3 AND tag_id =
+      tags_version.id AND operation_type != 2 AND EXISTS (</dd>
+</dl>
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT 1 FROM article_tag_version as article_tag_version2
+  WHERE article_tag_version2.tag_id = article_tag_version.tag_id AND
+  article_tag_version2.tx_id &lt;=5 AND article_tag_version2.article_id = 3
+  GROUP BY article_tag_version2.tag_id HAVING
+<div class="Bd-indent">
+<div class="Bd-indent">MAX(article_tag_version2.tx_id) =
+  article_tag_version.tx_id</div>
+</div>
+</div>
+</div>
+<p class="Pp">)</p>
+</div>
+<p class="Pp">)</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~31"><a class="permalink" href="#Parameters~31"><b>Parámetros</b></a></dt>
+  <dd><b>obj</b> -- Objeto declarativo de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="build_association_version_tables()"><a class="permalink" href="#build_association_version_tables()"><b>build_association_version_tables()</b></a></dt>
+  <dd>Construye la tabla de versión de asociación muchos a muchos para la
+      propiedad dada. Las tablas de versión de asociación se utilizan para
+      rastrear el historial de cambios de las asociaciones muchos a muchos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="many_to_many_criteria(obj)"><a class="permalink" href="#many_to_many_criteria(obj)"><b>many_to_many_criteria(obj)</b></a></dt>
+  <dd>Devuelve la consulta de muchos a muchos.
+    <p class="Pp">Busca elementos remotos a través de asociaciones y para cada
+        elemento devuelve la última versión con una transacción menor o igual a
+        la transacción de <i>obj</i>. Esto debe cumplirse tanto para la
+        asociación como para los elementos de relación remotos.</p>
+  </dd>
+</dl>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejemplo'><a class='permalink' href='#Ejemplo'>Ejemplo</a></h2>
+<p class="Pp">Selecciona todas las etiquetas de un artículo con id 3 y
+    transacción 5</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+</div>
+</div>
+<p class="Pp">SELECT tags_version.* FROM tags_version WHERE EXISTS (</p>
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT 1 FROM article_tag_version WHERE article_id = 3
+  AND tag_id = tags_version.id AND operation_type != 2 AND EXISTS (
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT 1 FROM article_tag_version as article_tag_version2
+  WHERE article_tag_version2.tag_id = article_tag_version.tag_id AND
+  article_tag_version2.tx_id &lt;= 5 GROUP BY article_tag_version2.tag_id HAVING
+<div class="Bd-indent">
+<div class="Bd-indent">MAX(article_tag_version2.tx_id) =
+  article_tag_version.tx_id</div>
+</div>
+</div>
+</div>
+<p class="Pp">)</p>
+</div>
+</div>
+<p class="Pp">)</p>
+<p class="Pp">AND EXISTS (</p>
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT 1 FROM tags_version as tags_version_2 WHERE
+  tags_version_2.id = tags_version.id AND tags_version_2.tx_id &lt;= 5 GROUP BY
+  tags_version_2.id HAVING MAX(tags_version_2.tx_id) = tags_version.tx_id</div>
+</div>
+<p class="Pp">)</p>
+<p class="Pp">AND operation_type != 2
+  <br/>
+  <br/>
+</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="many_to_one_criteria(obj)"><a class="permalink" href="#many_to_one_criteria(obj)"><b>many_to_one_criteria(obj)</b></a></dt>
+  <dd>Devuelve la consulta de muchos a uno.
+    <p class="Pp">Devuelve el elemento del lado 'uno' con el ID de transacción
+        más alto, siempre que sea menor o igual al ID de transacción de <i>obj</i>.</p>
+  </dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejemplo_2'><a class='permalink' href='#Ejemplo_2'>Ejemplo</a></h2>
+<p class="Pp">Busca el Artículo de una Etiqueta con article_id = 4 y
+    transaction_id = 5</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+</div>
+</div>
+<p class="Pp">SELECT * FROM articles_version WHERE id = 4 AND transaction_id =
+  (</p>
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT max(transaction_id) FROM articles_version WHERE
+  transaction_id &lt;= 5 AND id = 4</div>
+</div>
+<p class="Pp">)</p>
+<p class="Pp">AND operation_type != 2
+  <br/>
+  <br/>
+</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="one_to_many_criteria(obj)"><a class="permalink" href="#one_to_many_criteria(obj)"><b>one_to_many_criteria(obj)</b></a></dt>
+  <dd>Devuelve la consulta de uno a muchos.
+    <p class="Pp">Para cada elemento del lado 'muchos', devuelve su última
+        versión siempre que la transacción de esa versión sea menor o igual a la
+        transacción de <i>obj</i>.</p>
+  </dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejemplo_3'><a class='permalink' href='#Ejemplo_3'>Ejemplo</a></h2>
+<p class="Pp">Usando la relación Artículo-Etiquetas, donde buscamos etiquetas de
+    article_version con id = 3 y transaction = 5, el sql producido es</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+</div>
+</div>
+<p class="Pp">SELECT tags_version.* FROM tags_version WHERE
+    tags_version.article_id = 3 AND tags_version.operation_type != 2 AND EXISTS
+    (</p>
+<div class="Bd-indent">
+<div class="Bd-indent">SELECT 1 FROM tags_version as tags_version_last WHERE
+  tags_version_last.transaction_id &lt;= 5 AND tags_version_last.id =
+  tags_version.id GROUP BY tags_version_last.id HAVING
+<div class="Bd-indent">
+<div class="Bd-indent">MAX(tags_version_last.transaction_id) =
+  tags_version.transaction_id</div>
+</div>
+</div>
+</div>
+<p class="Pp">)</p>
+<p class="Pp">
+  <br/>
+  <br/>
+</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="process_query(query)"><a class="permalink" href="#process_query(query)"><b>process_query(query)</b></a></dt>
+  <dd>Procesa el objeto de Consulta SQLAlchemy dado según el objeto
+      RelationshipProperty asociado.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~32"><a class="permalink" href="#Parameters~32"><b>Parámetros</b></a></dt>
+  <dd><b>query</b> -- Objeto de Consulta SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="property~2"><a class="permalink" href="#property~2"><b>property
+    reflected_relationship</b></a></dt>
+  <dd>Construye una relación reflejada de uno a muchos, uno a uno y muchos a
+      uno entre dos clases de versión.</dd>
+</dl>
+</div>
+<br/>
+<br/>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='UnitOfWork_2'><a class='permalink' href='#UnitOfWork_2'>UnitOfWork</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="class~5"><a class="permalink" href="#class~5"><b>class
+    sqlalchemy_continuum.unit_of_work.UnitOfWork(manager)</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="assign_attributes(parent_obj,"><a class="permalink" href="#assign_attributes(parent_obj,"><b>assign_attributes(parent_obj,
+    version_obj)</b></a></dt>
+  <dd>Asigna los valores de los atributos del objeto padre al objeto de versión.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~33"><a class="permalink" href="#Parameters~33"><b>Parámetros</b></a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li><b>parent_obj</b> -- Objeto padre del cual obtener los valores de los
+      atributos</li>
+  <li><b>version_obj</b> -- Objeto de versión al que asignar los valores de los
+      atributos</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="create_association_versions(session)"><a class="permalink" href="#create_association_versions(session)"><b>create_association_versions(session)</b></a></dt>
+  <dd>Crea registros de versión de tabla de asociación para la sesión dada.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~34"><a class="permalink" href="#Parameters~34"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="create_transaction(session)"><a class="permalink" href="#create_transaction(session)"><b>create_transaction(session)</b></a></dt>
+  <dd>Crea un objeto de transacción para la sesión de SQLAlchemy dada.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~35"><a class="permalink" href="#Parameters~35"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="create_version_objects(session)"><a class="permalink" href="#create_version_objects(session)"><b>create_version_objects(session)</b></a></dt>
+  <dd>Crea objetos de versión para la sesión dada basándose en las operaciones
+      recopiladas por los rastreadores de inserción, actualización y eliminación.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~36"><a class="permalink" href="#Parameters~36"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="get_or_create_version_object(target)"><a class="permalink" href="#get_or_create_version_object(target)"><b>get_or_create_version_object(target)</b></a></dt>
+  <dd>Devuelve el objeto de versión para el objeto padre dado. Si no existe
+      ningún objeto de versión para el objeto padre dado, se crea uno.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~37"><a class="permalink" href="#Parameters~37"><b>Parámetros</b></a></dt>
+  <dd><b>target</b> -- Objeto padre para el cual crear el objeto de versión</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="property~3"><a class="permalink" href="#property~3"><b>property
+    has_changes</b></a></dt>
+  <dd>Devuelve si esta unidad de trabajo tiene o no cambios.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="is_modified(session)"><a class="permalink" href="#is_modified(session)"><b>is_modified(session)</b></a></dt>
+  <dd>Devuelve si la sesión dada ha sido modificada o no. La sesión ha sido
+      modificada si alguna propiedad versionada de cualquier objeto de versión en
+      la sesión dada ha sido modificada o si alguno de los complementos indica que
+      la sesión ha sido modificada.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~38"><a class="permalink" href="#Parameters~38"><b>Parámetros</b></a></dt>
+  <dd><b>session</b> -- Objeto de sesión de SQLAlchemy</dd>
+</dl>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="make_versions(session)"><a class="permalink" href="#make_versions(session)"><b>make_versions(session)</b></a></dt>
+  <dd>Crea la transacción, los registros de cambios de la transacción, los
+      objetos de versión.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="Parameters~39"><a class="permalink" href=
+[
+  {
+    "section": "UnitOfWork class",
+    "content": [
+      {
+        "type": "definition_list",
+        "items": [
+          {
+            "term": "Parameters",
+            "definition": "SQLAlchemy session object"
+          }
+        ]
+      },
+      {
+        "type": "method",
+        "name": "process_after_flush(session)",
+        "description": "After flush processor for given session.\nCreates version objects for all modified versioned parent\nobjects that were affected during the flush phase.",
+        "parameters": [
+          {
+            "name": "session",
+            "type": "SQLAlchemy session object"
+          }
+        ]
+      },
+      {
+        "type": "method",
+        "name": "process_before_flush(session)",
+        "description": "Before flush processor for given session.\nThis method creates a version session which is later on used\nfor the creation of version objects. It also creates Transaction object\nfor the current transaction and invokes before_flush template method on\nall plugins.\nIf the given session had no relevant modifications regarding\nversioned objects this method does nothing.",
+        "parameters": [
+          {
+            "name": "session",
+            "type": "SQLAlchemy session object"
+          }
+        ]
+      },
+      {
+        "type": "method",
+        "name": "process_operation(operation)",
+        "description": "Process given operation object. The operation processing has x\nstages:",
+        "steps": [
+          "Get or create a version object for given parent object",
+          "Assign the operation type for this object",
+          "Invoke listeners",
+          "Update version validity in case validity strategy is used",
+          "Mark operation as processed"
+        ],
+        "parameters": [
+          {
+            "name": "operation",
+            "type": "Operation object"
+          }
+        ]
+      },
+      {
+        "type": "method",
+        "name": "reset(session=None)",
+        "description": "Reset the internal state of this UnitOfWork object. Normally this is\ncalled after transaction has been committed or rolled back."
+      },
+      {
+        "type": "method",
+        "name": "update_version_validity(parent, version_obj)",
+        "description": "Updates previous version object end_transaction_id based on given parent\nobject and newly created version object.\nThis method is only used when using 'validity' versioning\nstrategy.",
+        "parameters": [
+          {
+            "name": "parent",
+            "type": "SQLAlchemy declarative parent object"
+          },
+          {
+            "name": "version_obj",
+            "type": "SQLAlchemy declarative version object"
+          }
+        ],
+        "see_also": [
+          "version_validity_subquery()"
+        ]
+      },
+      {
+        "type": "method",
+        "name": "version_validity_subquery(parent, version_obj, alias=None)",
+        "description": "Return the subquery needed by update_version_validity().\nThis method is only used when using 'validity' versioning\nstrategy.",
+        "parameters": [
+          {
+            "name": "parent",
+            "type": "SQLAlchemy declarative parent object"
+          },
+          {
+            "name": "version_obj",
+            "type": "SQLAlchemy declarative version object"
+          }
+        ],
+        "see_also": [
+          "update_version_validity()"
+        ]
+      }
+    ]
+  },
+  {
+    "section": "History class",
+    "content": [
+      {
+        "type": "class",
+        "name": "sqlalchemy_continuum.version.VersionClassBase"
+      },
+      {
+        "type": "property",
+        "name": "changeset",
+        "description": "Return a dictionary of changed fields in this version with keys as field\nnames and values as lists with first value as the old field value and\nsecond list value as the new value."
+      },
+      {
+        "type": "property",
+        "name": "index",
+        "description": "Return the index of this version in the version history."
+      },
+      {
+        "type": "property",
+        "name": "next",
+        "description": "Returns the next version relative to this version in the version history.\nIf current version is the last version this method returns None."
+      },
+      {
+        "type": "property",
+        "name": "previous",
+        "description": "Returns the previous version relative to this version in the version\nhistory. If current version is the first version this method returns\nNone."
+      }
+    ]
+  },
+  {
+    "section": "Changelog",
+    "content": [
+      "Here you can see the full list of changes between each\nSQLAlchemy-Continuum release."
+    ]
+  },
+  {
+    "section": "Unreleased changes",
+    "content": [
+      "None currently"
+    ]
+  },
+  {
+    "section": "1.5.2 (2025-10-10)",
+    "content": [
+      "Add Python 3.14 support"
+    ]
+  },
+  {
+    "section": "1.5.1 (2025-10-01)",
+    "content": [
+      "Fix utc_now() to return a naive datetime (#373, thanks to dawhalen)"
+    ]
+  },
+  {
+    "section": "1.5.0 (2025-08-30)",
+    "content": [
+      "Migrate to ruff for code linting and formatting, replacing flake8 with a faster Rust-based\ntool. (#364)",
+      "Add Python 3.13 support. (#364)",
+      "Drop Python 3.8 support. (#364)",
+      "Add comprehensive pre-commit hooks configuration with ruff, pyupgrade, and\ncode quality checks",
+      "Add pyupgrade integration to automatically modernize Python 3.9+ syntax",
+      "Enhance tox configuration with matrix testing for multiple Python\n(3.9-3.13) and SQLAlchemy versions (1.4, 2.x)",
+      "Add dedicated ruff testing environment in tox for consistent code quality\nchecks",
+      "Modernize codebase with Python 3.9+ idioms and formatting\nimprovements",
+      "Migrate to modern Python packaging with pyproject.toml",
+      "Remove SQLAlchemy-i18n support",
+      "Fix SQLAlchemy 2.0 deprecation warnings: replace Query.get() with\nSession.get() for improved compatibility",
+      "Fix datetime.utcnow() deprecation warnings with cross-version\ncompatibility function supporting Python 3.9-3.13+",
+      "Eliminate cartesian product warnings in many-to-many relationship queries\nwith non-versioned classes",
+      "Improve code quality by modernizing mixed string formatting patterns to\nf-strings",
+      "MAJOR: Remove SQLAlchemy-Utils dependency by porting required\nfunctions to internal _compat module (#352)",
+      {
+        "type": "nested_list",
+        "items": [
+          "Port core functions: ImproperlyConfigured, get_declarative_base,\nnaturally_equivalent",
+          "Port column utilities: get_columns, get_primary_keys, identity,\nget_column_key",
+          "Port advanced functionality: has_changes, JSONType, generic_relationship\nwith full SQLAlchemy 2.x compatibility",
+          "Maintain full backward compatibility while eliminating external\ndependency",
+          "Reduce installation footprint and potential version conflicts"
+        ]
+      }
+    ]
+  },
+  {
+    "section": "1.4.2 (2024-03-26)",
+    "content": [
+      "Remove SQLAlchemy pin and require latest SQLAlchemy-Utils"
+    ]
+  },
+  {
+    "section": "1.4.1 (2024-03-14)",
+    "content": [
+      "Pin SQLAlchemy due to SQLAlchemy-Utils breakage",
+      "Fix docs (#335, thanks to gnu-lorien)",
+      "Remove use of deprecated _app_ctx_stack and\n_request_ctx_stack (#307, thanks to rubencho)"
+    ]
+  },
+  {
+    "section": "1.4.0 (2023-07-12)",
+    "content": [
+      "Add support for SQLAlchemy 2.0",
+      "Remove compatibility code for SQLAlchemy < 1.4 and Python 2",
+      "Fix deadlock issues in MySQL on concurrent inserts (#172, thanks to\nmfulgo)",
+      "Allow overriding of DATABASE_URL for docker compose",
+      "Switch to before_execute for association tracking",
+      "Use ORM instead of deadlock-prone validity update query",
+      "create_trigger and sync_trigger now take a session, not a connection",
+      "Removed Operation.iteritems"
+    ]
+  },
+  {
+    "section": "1.3.15 (2023-06-07)",
+    "content": [
+      "Fix docs (#329, thanks to kelvinscuesta)",
+      "Declare six as a dependency (#327, thanks to zupo)"
+    ]
+  },
+  {
+    "section": "1.3.14 (2023-01-04)",
+    "content": [
+      "Undo unneeded change to Flask-Login that breaks alternative IDs (#325,\nthanks to anthraxx)"
+    ]
+  },
+  {
+    "section": "1.3.13 (2022-09-07)",
+    "content": [
+      "Fixes for Flask 2.2 and Flask-Login 0.6.2 (#288, thanks to AbdealiJK)"
+    ]
+  }
+]
+<section class="Ss">
+<h2 class="Ss" id='1.3.13_(2022-05-10)'><a class='permalink' href='#1.3.13_(2022-05-10)'>1.3.13   (2022-05-10)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se permitió que `changed_entities` funcionara sin el plugin `TransactionChanges` (#268,
+      gracias a TomGoBravo)</li>
+  <li>Se corrigió el plugin `Activity` para claves primarias no compuestas que no se llaman `id` (#210,
+      gracias a dryobates)</li>
+  <li>Se permitió que `sync_trigger` pasara argumentos a `create_trigger` (#273,
+      gracias a nanvel)</li>
+  <li>Se corrigieron tablas de asociación en Oracle (#291, gracias a AbdealiJK)</li>
+  <li>Se corrigieron algunas advertencias de deprecación en SA 1.4 (#269, #277, #279, #300, #302,
+      gracias a TomGoBravo, edhaz y indiVar0508)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.12_(2022-01-18)'><a class='permalink' href='#1.3.12_(2022-01-18)'>1.3.12   (2022-01-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Soporte para SA 1.4</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.11_(2020-05-24)'><a class='permalink' href='#1.3.11_(2020-05-24)'>1.3.11   (2020-05-24)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se hizo que `ModelBuilder` creara alias de columna en modelos de versión (#246,
+      cortesía de killthekitten)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.10_(2020-05-10)'><a class='permalink' href='#1.3.10_(2020-05-10)'>1.3.10   (2020-05-10)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregaron relaciones explícitas de "pseudo-backref" para versión/padre
+      (#240, cortesía de lgedgar)</li>
+  <li>Se corrigió error m2m cuando se realiza un cambio no relacionado en un modelo (#242, cortesía
+      de Andrew-Dickinson)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.9_(2019-03-19)'><a class='permalink' href='#1.3.9_(2019-03-19)'>1.3.9   (2019-03-19)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó soporte para SA 1.3</li>
+  <li>Se revirtió la creación de triggers de la versión 1.3.7</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.8_(2019-02-27)'><a class='permalink' href='#1.3.8_(2019-02-27)'>1.3.8   (2019-02-27)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió la reversión para ignorar elementos que no son columnas (#197, cortesía de mauler)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.7_(2019-01-13)'><a class='permalink' href='#1.3.7_(2019-01-13)'>1.3.7   (2019-01-13)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió la creación de triggers durante migraciones de alembic (#209, cortesía de
+      lyndsysimon)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.6_(2018-07-30)'><a class='permalink' href='#1.3.6_(2018-07-30)'>1.3.6   (2018-07-30)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigieron `ResourceClosedErrors` de conexiones que se filtraban al usar una transacción externa (#196, cortesía de vault)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.5_(2018-06-03)'><a class='permalink' href='#1.3.5_(2018-06-03)'>1.3.5   (2018-06-03)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se rastrearon conexiones clonadas (#167, cortesía de netcriptus)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.4_(2018-03-07)'><a class='permalink' href='#1.3.4_(2018-03-07)'>1.3.4   (2018-03-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se excluyeron propiedades muchos-a-muchos de la versionización si se agregaron en
+      el parámetro `exclude` (#169, cortesía de fuhrysteve)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.3_(2017-11-05)'><a class='permalink' href='#1.3.3_(2017-11-05)'>1.3.3   (2017-11-05)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió `changeset` al actualizar un objeto en la misma transacción en la que se insertó (#141, cortesía de oinopion)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.2_(2017-10-12)'><a class='permalink' href='#1.3.2_(2017-10-12)'>1.3.2   (2017-10-12)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió el manejo de múltiples esquemas (#132, cortesía de vault)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.1_(2017-06-28)'><a class='permalink' href='#1.3.1_(2017-06-28)'>1.3.1   (2017-06-28)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió la recuperación de subclases para `closest_matching_table` (#163, cortesía de
+      debonzi)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.3.0_(2017-01-30)'><a class='permalink' href='#1.3.0_(2017-01-30)'>1.3.0   (2017-01-30)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se eliminó el soporte para py2.6</li>
+  <li>Se corrigieron fugas de memoria con instancias de `UnitOfWork` (#131, cortesía de
+    quantus)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.2.4_(2016-01-10)'><a class='permalink' href='#1.2.4_(2016-01-10)'>1.2.4   (2016-01-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se agregaron nombres de secuencia explícitos para Oracle (#118, cortesía de
+    apfeiffer1)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.2.3_(2016-01-10)'><a class='permalink' href='#1.2.3_(2016-01-10)'>1.2.3   (2016-01-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se agregó la opción de configuración `use_module_name` (#119, cortesía de kyheo)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.2.2_(2015-12-08)'><a class='permalink' href='#1.2.2_(2015-12-08)'>1.2.2   (2015-12-08)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigieron algunos cambios de relación que no se contaban como modificaciones (#116,
+      cortesía de tvuotila)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.2.1_(2015-09-27)'><a class='permalink' href='#1.2.1_(2015-09-27)'>1.2.1   (2015-09-27)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se corrigió el manejo de herencia de tablas unidas profundas (#105, cortesía de
+      piotr-dobrogost)</li>
+  <li>Se corrigió la suposición ingenua de que el modelo de Usuario relacionado siempre tendría una columna `id`
+      (#107, cortesía de avilaton)</li>
+  <li>Se corrigió la reversión de relaciones uno-a-muchos (#102, cortesía de sdorazio)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.2.0_(2015-07-31)'><a class='permalink' href='#1.2.0_(2015-07-31)'>1.2.0   (2015-07-31)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se eliminó el atributo `generated_changes` de las clases de versión. Este atributo
+      se puede acceder a través de `transaction.changes`</li>
+  <li>Se eliminó la verificación de `is_modified` de las operaciones de inserción</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.5_(2014-12-28)'><a class='permalink' href='#1.1.5_(2014-12-28)'>1.1.5   (2014-12-28)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó inspección inteligente de tipo de clave primaria para la clase de usuario (#86, cortesía de
+      mattupstate)</li>
+  <li>Se agregó soporte para reflexión de relaciones de versión autorreferenciales (#88,
+      cortesía de dtheodor)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.4_(2014-12-06)'><a class='permalink' href='#1.1.4_(2014-12-06)'>1.1.4   (2014-12-06)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se corrigió el manejo de relaciones de versión uno-a-muchos (#82, cortesía de
+      dtheodor)</li>
+  <li>Se corrigió el manejo de relaciones de versión muchos-a-muchos (#83, cortesía de
+      dtheodor)</li>
+  <li>Se corrigió la inclusión y exclusión de columnas con alias</li>
+  <li>Se eliminó la exclusión automática de columnas de fecha y hora autoasignadas y columnas `tsvector`
+      (es mejor explícito que implícito)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.3_(2014-10-23)'><a class='permalink' href='#1.1.3_(2014-10-23)'>1.1.3   (2014-10-23)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se permitió que `FlaskPlugin` aceptara la anulación de `current_user_id_factory` y
+      `remote_addr_factory`</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.2_(2014-10-07)'><a class='permalink' href='#1.1.2_(2014-10-07)'>1.1.2   (2014-10-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió el quoting de identificadores en la sincronización de triggers</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.1_(2014-10-07)'><a class='permalink' href='#1.1.1_(2014-10-07)'>1.1.1   (2014-10-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se corrigió la sincronización de triggers de versionización nativa</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.1.0_(2014-10-02)'><a class='permalink' href='#1.1.0_(2014-10-02)'>1.1.0   (2014-10-02)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó Python 3.4 al conjunto de pruebas</li>
+  <li>Se agregó versionización opcional basada en triggers nativos para el dialecto de PostgreSQL</li>
+  <li>Se agregó la opción `create_models`</li>
+  <li>Se agregó la función de utilidad `count_versions`</li>
+  <li>Se corrigió el manejo del nombre de columna de transacción personalizado con modelos que usan herencia de tablas unidas</li>
+  <li>Se corrigió el soporte de la estrategia de subconsultas para modelos que usan herencia de tablas unidas
+    </li>
+  <li>Se corrigió el manejo de puntos de guardado (savepoints)</li>
+  <li>Se corrigió la construcción del modelo de versión cuando no se encontraban modelos versionados
+      (anteriormente lanzaba `AttributeError`)</li>
+  <li>Se reemplazaron los métodos de plantilla de plugin `before_create_tx_object` y
+      `after_create_tx_object` por `transaction_args` para manejar mejor la versionización nativa</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.0.3_(2014-07-16)'><a class='permalink' href='#1.0.3_(2014-07-16)'>1.0.3   (2014-07-16)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó `__repr__` para la clase `Operations`</li>
+  <li>Se corrigió un problema donde la asignación de atributos de un objeto no modificado en un listener `before flush` definido por el usuario generaba `TypeError` en `UnitOfWork`</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.0.2_(2014-07-11)'><a class='permalink' href='#1.0.2_(2014-07-11)'>1.0.2   (2014-07-11)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se permitió una anulación más fácil de la creación de columnas de `PropertyModTracker`</li>
+  <li>Se reescribieron los esquemas de manejo de herencia de tablas unidas (ahora funciona con SA
+      0.9.6)</li>
+  <li>Se actualizó la dependencia de SQLAlchemy-Utils a 0.26.5</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.0.1_(2014-06-18)'><a class='permalink' href='#1.0.1_(2014-06-18)'>1.0.1   (2014-06-18)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se corrigió un problema donde la eliminación de un objeto con columnas diferidas lanzaba `ObjectDeletedError`.</li>
+  <li>Se hizo que las relaciones de solo lectura (`viewonly`) con tablas de asociación no registraran la tabla de asociación en el registro del administrador de versionización.</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.0_(2014-06-16)'><a class='permalink' href='#1.0_(2014-06-16)'>1.0   (2014-06-16)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó `__repr__` para la clase `Transaction`, problema #59</li>
+  <li>Se hizo configurable el `transaction_cls` de `VersioningManager`.</li>
+  <li>Se eliminaron las relaciones genéricas de la clase `Transaction` a las clases versionadas.</li>
+  <li>Se eliminaron las relaciones genéricas de la clase `Transaction changes` a las clases versionadas.</li>
+  <li>Se eliminó `relation_naming_function` (ya no es necesario)</li>
+  <li>Se movió `get_bind` a SQLAlchemy-Utils</li>
+  <li>Se eliminó el paquete `inflection` de las dependencias (ya no es necesario)</li>
+  <li>Se actualizó la dependencia de SQLAlchemy-Utils a 0.26.2</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.0b5_(2014-05-07)'><a class='permalink' href='#1.0b5_(2014-05-07)'>1.0b5   (2014-05-07)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se agregó el argumento `order_by` del mapper para ignorar la reflexión de la clase de versión si se usa un argumento que no sea una cadena</li>
+  <li>Se agregó soporte para personalizar la clase `User` con la que la clase `Transaction` debería tener una relación</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="1.1.0-(2014-07-26)"><a class="permalink" href="#1.1.0-(2014-07-26)">1.1.0 (2014-07-26)</a></h2>
+<div class="Bd-indent">
+<ul>
+  <li>Added support for SQLAlchemy-Migrate (issue #53)</li>
+  <li>Changed get_versioning_manager to throw ClassNotVersioned exception if
+      first argument is not a versioned class</li>
+  <li>Fixed relationship reflection from versioned classes to non versioned
+      classes (issue #52)</li>
+  <li>SQLAlchemy-Utils dependency updated to 0.25.4</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">1.0-b4 (2014-04-20)</h2>
+<div class="Bd-indent">
+<ul>
+  <li>Fixed many-to-many unit of work inspection when using engine bind instead
+      of collection bind</li>
+  <li>Fixed various issues if primary key aliases were used in declarative
+      models</li>
+  <li>Fixed an issue where association versioning would not work with custom
+      transaction column name</li>
+  <li>SQLAlchemy-Utils dependency updated to 0.25.3</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">1.0-b3 (2014-04-19)</h2>
+<div class="Bd-indent">
+<ul>
+  <li>Added support for concrete inheritance</li>
+  <li>Added order_by mapper arg reflection to version classes</li>
+  <li>Added support for column_prefix mapper arg</li>
+  <li>Made model builder copy inheritance mapper args to version classes from
+      parent classes</li>
+  <li>Fixed end transaction id setting for join table inheritance classes. Now
+      end transaction id is set explicitly to all tables in inheritance
+      hierarchy.</li>
+  <li>Fixed single table inheritance handling</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">1.0-b2 (2014-04-09)</h2>
+<div class="Bd-indent">
+<ul>
+  <li>Added some schema tools to help migrating between different plugins and
+      versioning strategies</li>
+  <li>Added remove_versioning utility function, see issue #45</li>
+  <li>Added order_by transaction_id default to versions relationship</li>
+  <li>Fixed PropertyModTrackerPlugin association table handling.</li>
+  <li>Fixed get_bind schematics (Flask-SQLAlchemy integration wasn't
+    working)</li>
+  <li>Fixed a bug where committing a session without objects would result in
+      KeyError</li>
+  <li>SQLAlchemy dependency updated to 0.9.4</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">1.0-b1 (2014-03-14)</h2>
+<div class="Bd-indent">
+<ul>
+  <li>Added new plugin architecture</li>
+  <li>Added ActivityPlugin</li>
+  <li>Naming conventions change: History -&gt; Version (to be consistent
+      throughout Continuum)</li>
+  <li>Naming convention change: TransactionLog -&gt; Transaction</li>
+  <li>Rewritten reflected relationship model for version classes. Only dynamic
+      relationships are now reflected as dynamic relationships. Other
+      relationships return either lists or scalars.</li>
+  <li>One-To-One relationship support for reflected version class
+    relationships</li>
+  <li>Removed tx_context context manager. Transaction objects can now be created
+      manually and user has direct access to the parameters of this object.</li>
+  <li>Removed tx_meta context manager. Transaction meta objects can now be
+      created explicitly.</li>
+  <li>Fixed association reverting when the relationship uses uselist=False</li>
+  <li>Fixed one-to-many directed relationship reverting when the relationship
+      uses uselist=False</li>
+  <li>Fixed many-to-many relationship handling when multiple links were created
+      during the same transaction</li>
+  <li>Added indexes to operation_type, transaction_id and end_transaction_id
+      columns of version classes</li>
+  <li>Deprecated extensions</li>
+  <li>SQLAlchemy-Utils dependency updated to 0.25.0</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.10.3_(2014-02-27)'><a class='permalink' href='#0.10.3_(2014-02-27)'>0.10.3   (2014-02-27)</a></h2>
+<div class="Bd-indent">
+<ul>
+  <li>Fixed version next / previous handling</li>
+  <li>SQLAlchemy dependency updated to 0.9.3</li>
+  <li>Fixed column onupdate to history table reflection (issue #47)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.10.2_(2014-02-10)'><a class='permalink' href='#0.10.2_(2014-02-10)'>0.10.2   (2014-02-10)</a></h2>
+<div class="Bd-indent">
+<ul>
+  <li>Fixed MySQL support (issue #36)</li>
+  <li>Added SQLite and MySQL to testing matrix</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.10.1_(2013-10-18)'><a class='permalink' href='#0.10.1_(2013-10-18)'>0.10.1   (2013-10-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Added vacuum function</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.10.0_(2013-10-09)'><a class='permalink' href='#0.10.0_(2013-10-09)'>0.10.0   (2013-10-09)</a></h2>
+<div class="Bd-indent">
+<ul>
+  <li>Validity versioning strategy</li>
+  <li>Changeset supports custom transaction column names</li>
+  <li>Reify -&gt; Revert</li>
+  <li>Fixed revert to support class level column exclusion</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.9.0_(2013-09-12)'><a class='permalink' href='#0.9.0_(2013-09-12)'>0.9.0   (2013-09-12)</a></h2>
+<div class="Bd-indent">
+<ul>
+  <li>Ability to track property modifications</li>
+  <li>New configuration options: track_property_modifications and
+      modified_flag_suffix</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.7_(2013-09-04)'><a class='permalink' href='#0.8.7_(2013-09-04)'>0.8.7   (2013-09-04)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Only autoincremented columns marked as autoincrement=False for history
+      tables. This enables alembic migrations to generate without annoying
+      explicit autoincrement=False args.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.6_(2013-08-21)'><a class='permalink' href='#0.8.6_(2013-08-21)'>0.8.6   (2013-08-21)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Custom database schema support added</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.5_(2013-08-01)'><a class='permalink' href='#0.8.5_(2013-08-01)'>0.8.5   (2013-08-01)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>TSVectorType columns not versioned by default (in order to avoid massive
+      version histories)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.4_(2013-07-31)'><a class='permalink' href='#0.8.4_(2013-07-31)'>0.8.4   (2013-07-31)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Full MySQL and SQLite support added</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.3_(2013-07-29)'><a class='permalink' href='#0.8.3_(2013-07-29)'>0.8.3   (2013-07-29)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Fixed UnitOfWork changed entities handling (now checks only for versioned
+      attributes not all object attributes)</li>
+  <li>Fixed UnitOfWork TransactionMeta object creation (now checks if actual
+      modifications were made)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.2_(2013-07-26)'><a class='permalink' href='#0.8.2_(2013-07-26)'>0.8.2   (2013-07-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed MySQL history table primary key generation (autoincrement=False now
+      forced for transaction_id column)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.1_(2013-07-25)'><a class='permalink' href='#0.8.1_(2013-07-25)'>0.8.1   (2013-07-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Added support for SQLAlchemy-i18n</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.8.0_(2013-07-25)'><a class='permalink' href='#0.8.0_(2013-07-25)'>0.8.0   (2013-07-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Added database independent transaction meta parameter handling (formerly
+      supported postgres only)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.13_(2013-07-24)'><a class='permalink' href='#0.7.13_(2013-07-24)'>0.7.13   (2013-07-24)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Smarter is_modified handling for UnitOfWork (now understands excluded
+      properties)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.12_(2013-07-23)'><a class='permalink' href='#0.7.12_(2013-07-23)'>0.7.12   (2013-07-23)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Fixed FlaskVersioningManager schematics when working outside of request
+      context (again)</li>
+  <li>Added possibility to use custom UnitOfWork class</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.11_(2013-07-23)'><a class='permalink' href='#0.7.11_(2013-07-23)'>0.7.11   (2013-07-23)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed FlaskVersioningManager schematics when working outside of request
+      context</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.10_(2013-07-23)'><a class='permalink' href='#0.7.10_(2013-07-23)'>0.7.10   (2013-07-23)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Fixed is_auto_assigned_date_column (again)</li>
+  <li>Moved some core utility functions to SQLAlchemy-Utils</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.9_(2013-07-23)'><a class='permalink' href='#0.7.9_(2013-07-23)'>0.7.9   (2013-07-23)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Fixed is_auto_assigned_date_column</li>
+  <li>Inflection added to requirements</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.8_(2013-07-03)'><a class='permalink' href='#0.7.8_(2013-07-03)'>0.7.8   (2013-07-03)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Removed Versioned base class (adding __versioned__ attribute and calling
+      make_versioned() is sufficient for making declarative class
+    versioned)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.7_(2013-07-03)'><a class='permalink' href='#0.7.7_(2013-07-03)'>0.7.7   (2013-07-03)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>DateTime columns with defaults excluded by default from history
+    classes</li>
+  <li>Column inclusion added as option</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.6_(2013-07-03)'><a class='permalink' href='#0.7.6_(2013-07-03)'>0.7.6   (2013-07-03)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Smarter changeset handling</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.5_(2013-07-03)'><a class='permalink' href='#0.7.5_(2013-07-03)'>0.7.5   (2013-07-03)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Improved reify() speed</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.4_(2013-07-03)'><a class='permalink' href='#0.7.4_(2013-07-03)'>0.7.4   (2013-07-03)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed changeset when parent contains more columns than version class.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.3_(2013-06-27)'><a class='permalink' href='#0.7.3_(2013-06-27)'>0.7.3   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Transaction log and transaction changes records only created if actual net
+      changes were made during transaction.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.2_(2013-06-27)'><a class='permalink' href='#0.7.2_(2013-06-27)'>0.7.2   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Removed last references for old revision versioning</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.1_(2013-06-27)'><a class='permalink' href='#0.7.1_(2013-06-27)'>0.7.1   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Reverted changes for versioned relationships. They are now handled by
+      ORM specific solutions.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.0_(2013-06-27)'><a class='permalink' href='#0.7.0_(2013-06-27)'>0.7.0   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fix for versioned relationships. Now transaction_id parameter is correctly
+      passed and versioned relationships are properly handled.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.0_(2013-06-20)'><a class='permalink' href='#0.6.0_(2013-06-20)'>0.6.0   (2013-06-20)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Support for mapping properties is now handled by Continuum class which is
+      inherited from SQLAlchemy’s mapper.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.5.2_(2013-06-14)'><a class='permalink' href='#0.5.2_(2013-06-14)'>0.5.2   (2013-06-14)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed Flask-SQLAlchemy integration. Was broken in 0.5.1.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.5.1_(2013-06-13)'><a class='permalink' href='#0.5.1_(2013-06-13)'>0.5.1   (2013-06-13)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>PropertyModTrackerPlugin, Column and Activity plugins can now be enabled
+      globally.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.5.0_(2013-05-27)'><a class='permalink' href='#0.5.0_(2013-05-27)'>0.5.0   (2013-05-27)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>New plugin architecture</li>
+  <li>Fixed Column and Activity plugins.</li>
+  <li>Added PropertyModTracker plugin.</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.4.1_(2013-05-13)'><a class='permalink' href='#0.4.1_(2013-05-13)'>0.4.1   (2013-05-13)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Better Flask-SQLAlchemy integration.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.4.0_(2013-05-10)'><a class='permalink' href='#0.4.0_(2013-05-10)'>0.4.0   (2013-05-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Add Flask-SQLAlchemy integration.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.3_(2013-04-29)'><a class='permalink' href='#0.3.3_(2013-04-29)'>0.3.3   (2013-04-29)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed transaction object parameter handling.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.2_(2013-04-26)'><a class='permalink' href='#0.3.2_(2013-04-26)'>0.3.2   (2013-04-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed SQLAlchemy-Utils dependency.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.1_(2013-04-26)'><a class='permalink' href='#0.3.1_(2013-04-26)'>0.3.1   (2013-04-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Fixed issue with custom transaction column name.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.0_(2013-04-25)'><a class='permalink' href='#0.3.0_(2013-04-25)'>0.3.0   (2013-04-25)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Removed all context managers. User is now responsible for creating
+      Transaction and TransactionMeta objects.</li>
+  <li>Added support for custom transaction column name.</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.2.1_(2013-04-25)'><a class='permalink' href='#0.2.1_(2013-04-25)'>0.2.1   (2013-04-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Added schematics for Flask-SQLAlchemy integration.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.2.0_(2013-04-16)'><a class='permalink' href='#0.2.0_(2013-04-16)'>0.2.0   (2013-04-16)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Added schematics for Flask integration.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.0_(2013-04-15)'><a class='permalink' href='#0.1.0_(2013-04-15)'>0.1.0   (2013-04-15)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Initial release.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.1_(2013-06-27)'><a class='permalink' href='#0.7.1_(2013-06-27)'>0.7.1   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Añadida función de utilidad is_versioned</li>
+  <li>Corregidos los listeners de operaciones anteriores</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.7.0_(2013-06-27)'><a class='permalink' href='#0.7.0_(2013-06-27)'>0.7.0   (2013-06-27)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Las tablas de versiones ya no tienen columna de revisión</li>
+  <li>Las tablas padre ya no necesitan columna de revisión</li>
+  <li>La clave primaria de las tablas de versiones es ahora (claves primarias de la tabla padre + transaction_id)</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.8_(2013-06-26)'><a class='permalink' href='#0.6.8_(2013-06-26)'>0.6.8   (2013-06-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Las clases heredadas de tablas de unión versionadas ahora soportan múltiples commits consecutivos por transacción</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.7_(2013-06-26)'><a class='permalink' href='#0.6.7_(2013-06-26)'>0.6.7   (2013-06-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Corregido el versionado de asociaciones al usar executemany</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.6_(2013-06-26)'><a class='permalink' href='#0.6.6_(2013-06-26)'>0.6.6   (2013-06-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Mejorados los esquemas de entidades cambiadas del registro de transacciones</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.5_(2013-06-26)'><a class='permalink' href='#0.6.5_(2013-06-26)'>0.6.5   (2013-06-26)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadida la posibilidad de añadir valores perezosos en meta de contexto de transacción</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.4_(2013-06-25)'><a class='permalink' href='#0.6.4_(2013-06-25)'>0.6.4   (2013-06-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Ya no se generan tablas de versiones cuando el atributo versioning de un modelo se establece en False</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.3_(2013-06-25)'><a class='permalink' href='#0.6.3_(2013-06-25)'>0.6.3   (2013-06-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La columna de revisión no es anulable en las clases de versión</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.2_(2013-06-25)'><a class='permalink' href='#0.6.2_(2013-06-25)'>0.6.2   (2013-06-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Corregida la creación de relaciones para clases no versionadas</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.1_(2013-06-25)'><a class='permalink' href='#0.6.1_(2013-06-25)'>0.6.1   (2013-06-25)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Las claves primarias de la tabla padre siguen siendo no anulables en la tabla de versión generada</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.6.0_(2013-06-25)'><a class='permalink' href='#0.6.0_(2013-06-25)'>0.6.0   (2013-06-25)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Añadido versionado independiente de la base de datos (ya no se necesitan triggers específicos de PostgreSQL)</li>
+  <li>Corregidas las relaciones de objetos de versión (nunca funcionaron correctamente en versiones anteriores)</li>
+  <li>Nueva opción de configuración `versioning` permite activar y desactivar el versionado por clase hija.</li>
+  <li>Añadida exclusión de columnas</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.5.1_(2013-06-20)'><a class='permalink' href='#0.5.1_(2013-06-20)'>0.5.1   (2013-06-20)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadidas capacidades mejoradas de gestión de contexto para transacciones a través de VersioningManager.tx_context</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.5.0_(2013-06-20)'><a class='permalink' href='#0.5.0_(2013-06-20)'>0.5.0   (2013-06-20)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Eliminada la clase base Versioned, los objetos versionados solo necesitan tener __versioned__ definido.</li>
+  <li>El versionado de sesión ahora forma parte de la función make_versioned</li>
+  <li>Añadido parámetro meta en TransactionLog</li>
+  <li>Modelo TransactionChanges para rastrear entidades cambiadas en una transacción dada</li>
+  <li>Añadida extensión Flask</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.4.2_(2013-06-18)'><a class='permalink' href='#0.4.2_(2013-06-18)'>0.4.2   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Sincronización de triggers de Alembic corregida para eliminar y añadir columnas</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.4.1_(2013-06-18)'><a class='permalink' href='#0.4.1_(2013-06-18)'>0.4.1   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Sincronización de triggers de Alembic corregida</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.4.0_(2013-06-18)'><a class='permalink' href='#0.4.0_(2013-06-18)'>0.4.0   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Añadido soporte para múltiples actualizaciones de la misma fila dentro de una única transacción</li>
+  <li>Las tablas de historial ahora tienen su propia columna de revisión</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.12_(2013-06-18)'><a class='permalink' href='#0.3.12_(2013-06-18)'>0.3.12   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se eliminaron las restricciones NOT NULL de todas las columnas reflejadas</li>
+  <li>Corregido `reify` cuando el padre tiene restricciones NOT NULL</li>
+  <li>Añadido soporte para `reify` de borrado</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.11_(2013-06-18)'><a class='permalink' href='#0.3.11_(2013-06-18)'>0.3.11   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadido soporte para herencia de tabla única (single table inheritance)</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.10_(2013-06-18)'><a class='permalink' href='#0.3.10_(2013-06-18)'>0.3.10   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La columna `operation_type` generada no es anulable por defecto</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.9_(2013-06-18)'><a class='permalink' href='#0.3.9_(2013-06-18)'>0.3.9   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadida sincronización de trigger `drop_table`</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.8_(2013-06-18)'><a class='permalink' href='#0.3.8_(2013-06-18)'>0.3.8   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La autoincrementación se elimina automáticamente de las claves primarias reflejadas</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.7_(2013-06-18)'><a class='permalink' href='#0.3.7_(2013-06-18)'>0.3.7   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadido entrecomillado de identificadores para todos los nombres de columna</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.6_(2013-06-18)'><a class='permalink' href='#0.3.6_(2013-06-18)'>0.3.6   (2013-06-18)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Entrecomillado de identificadores para `create_trigger_sql`</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.5_(2013-06-12)'><a class='permalink' href='#0.3.5_(2013-06-12)'>0.3.5   (2013-06-12)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadida clase proxy de operaciones de Alembic</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.4_(2013-06-12)'><a class='permalink' href='#0.3.4_(2013-06-12)'>0.3.4   (2013-06-12)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Ahora `VersioningManager` se añade al diccionario `__versioned__` de cada clase versionada</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.3_(2013-06-12)'><a class='permalink' href='#0.3.3_(2013-06-12)'>0.3.3   (2013-06-12)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>La creación de `TransactionLog` ahora comprueba si ya existe.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.2_(2013-06-12)'><a class='permalink' href='#0.3.2_(2013-06-12)'>0.3.2   (2013-06-12)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se añadió la columna `operation_type` a las tablas de versión.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.1_(2013-06-12)'><a class='permalink' href='#0.3.1_(2013-06-12)'>0.3.1   (2013-06-12)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>El mixin `Versioned` ya no contiene listas de objetos pendientes</li>
+  <li>Se añadió `VersioningManager` para una sintaxis de versionado más personalizable</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.3.0_(2013-06-10)'><a class='permalink' href='#0.3.0_(2013-06-10)'>0.3.0   (2013-06-10)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Conjuntos de cambios de modelos (Model changesets)</li>
+  <li>Corregidos los accesores `previous` y `next`</li>
+  <li>Las actualizaciones solo generan versiones si ocurren cambios reales</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.2.1_(2013-06-10)'><a class='permalink' href='#0.2.1_(2013-06-10)'>0.2.1   (2013-06-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se añadió una comprobación de sanidad en `all_affected_entities`</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.2.0_(2013-06-10)'><a class='permalink' href='#0.2.0_(2013-06-10)'>0.2.0   (2013-06-10)</a></h2>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Se añadieron relaciones backref a `TransactionLog`</li>
+  <li>Se añadió la propiedad `all_affected_entities` a `TransactionLog`</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.9_(2013-06-10)'><a class='permalink' href='#0.1.9_(2013-06-10)'>0.1.9   (2013-06-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se renombró el atributo interno `__pending__` a `__pending_versioned__` para evitar colisiones de nombres de variables.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.8_(2013-06-10)'><a class='permalink' href='#0.1.8_(2013-06-10)'>0.1.8   (2013-06-10)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Mejor comprobación del nombre de la tabla del modelo en escenarios donde el modelo no tiene `__tablename__` definido.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.7_(2013-06-07)'><a class='permalink' href='#0.1.7_(2013-06-07)'>0.1.7   (2013-06-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se añadió `make_versioned` para una declaración más robusta de mapeadores versionados</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.6_(2013-06-07)'><a class='permalink' href='#0.1.6_(2013-06-07)'>0.1.6   (2013-06-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se añadió `PostgreSQLAdapter` class</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.5_(2013-06-07)'><a class='permalink' href='#0.1.5_(2013-06-07)'>0.1.5   (2013-06-07)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Los procedimientos de trigger ahora son específicos de la tabla para permitir un control más granular.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.4_(2013-06-06)'><a class='permalink' href='#0.1.4_(2013-06-06)'>0.1.4   (2013-06-06)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Añadida inspección del orden de las columnas.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss"
+>
+<section class="Sh">
+<h2 class="Ss" id='0.1.3_(2013-06-06)'><a class='permalink' href='#0.1.3_(2013-06-06)'>0.1.3   (2013-06-06)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Se eliminó la dependencia de clave externa de la tabla de versiones y la tabla de transacciones</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.2_(2013-06-06)'><a class='permalink' href='#0.1.2_(2013-06-06)'>0.1.2   (2013-06-06)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Empaquetado corregido</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.1_(2013-06-06)'><a class='permalink' href='#0.1.1_(2013-06-06)'>0.1.1   (2013-06-06)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Soporte inicial para herencia de tablas de unión</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='0.1.0_(2013-06-05)'><a class='permalink' href='#0.1.0_(2013-06-05)'>0.1.0   (2013-06-05)</a></h2>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Lanzamiento inicial</dd>
+</dl>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCIA</a></h1>
+<p class="Pp">Copyright (c) 2012, Konsta Vesterinen</p>
+<p class="Pp">Todos los derechos reservados.</p>
+<p class="Pp">Se permite la redistribución y el uso en forma de código fuente y binario, con o sin modificaciones, siempre que se cumplan las siguientes condiciones:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Las redistribuciones de código fuente deben conservar el aviso de copyright anterior, esta lista de condiciones y el siguiente descargo de responsabilidad.</li>
+  <li>Las redistribuciones en forma binaria deben reproducir el aviso de copyright anterior, esta lista de condiciones y el siguiente descargo de responsabilidad en la documentación y/o en otros materiales proporcionados con la distribución.</li>
+  <li>Ni el nombre del titular de los derechos de autor ni los nombres de sus colaboradores pueden utilizarse para respaldar o promocionar productos derivados de este software sin un permiso previo y específico por escrito.</li>
+</ul>
+</div>
+<p class="Pp">ESTE SOFTWARE SE PROPORCIONA POR EL TITULAR DE LOS DERECHOS DE AUTOR Y LOS COLABORADORES "TAL CUAL" Y CUALQUIER GARANTÍA EXPRESA O IMPLÍCITA, INCLUIDAS, ENTRE OTRAS, LAS GARANTÍAS IMPLÍCITAS DE COMERCIABILIDAD Y ADECUACIÓN A UN PROPÓSITO PARTICULAR QUEDAN EXENTAS. EN NINGÚN CASO EL TITULAR DE LOS DERECHOS DE AUTOR SERÁ RESPONSABLE DE NINGÚN DAÑO DIRECTO, INDIRECTO, INCIDENTAL, ESPECIAL, EJEMPLAR O CONSECUENTE (INCLUIDOS, ENTRE OTROS, LA ADQUISICIÓN DE BIENES O SERVICIOS SUSTITUTIVOS; LA PÉRDIDA DE USO, DATOS O BENEFICIOS; O LA INTERRUPCIÓN DEL NEGOCIO) CUALQUIERA QUE SEA SU CAUSA Y SEGÚN CUALQUIER TEORÍA DE RESPONSABILIDAD, YA SEA POR CONTRATO, RESPONSABILIDAD ESTRICTA O AGRAVIO (INCLUIDA LA NEGLIGENCIA O DE OTRO MODO) QUE SURJA DE CUALQUIER MANERA DEL USO DE ESTE SOFTWARE, INCLUSO SI SE HA ADVERTIDO DE LA POSIBILIDAD DE DICHOS DAÑOS.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<p class="Pp">Konsta Vesterinen</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">2013, Konsta Vesterinen</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">1 de enero de 1970</td>
+    <td class="foot-os">1.5.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/any/python-sqlalchemy-continuum/">extra/python-sqlalchemy-continuum/</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.5.2-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/kvesteri/sqlalchemy-continuum">https://github.com/kvesteri/sqlalchemy-continuum</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/python-sqlalchemy-continuum/">/listing/extra/python-sqlalchemy-continuum/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#INTRODUCTION">INTRODUCCIÓN</a></li>
+        
+            <li><a href="#VERSION_OBJECTS">OBJETOS DE VERSIÓN</a></li>
+        
+            <li><a href="#REVERTING_CHANGES">REVERTIR CAMBIOS</a></li>
+        
+            <li><a href="#QUERIES">CONSULTAS</a></li>
+        
+            <li><a href="#TRANSACTIONS">TRANSACCIONES</a></li>
+        
+            <li><a href="#NATIVE_VERSIONING">VERSIONAMIENTO NATIVO</a></li>
+        
+            <li><a href="#PLUGINS">PLUGINS</a></li>
+        
+            <li><a href="#CONFIGURATION">CONFIGURACIÓN</a></li>
+        
+            <li><a href="#CONTINUUM_SCHEMA">ESQUEMA DE CONTINUUM</a></li>
+        
+            <li><a href="#ALEMBIC_MIGRATIONS">MIGRACIONES DE ALEMBIC</a></li>
+        
+            <li><a href="#UTILITIES">UTILIDADES</a></li>
+        
+            <li><a href="#API_DOCUMENTATION">DOCUMENTACIÓN DE LA API</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/sqlalchemy-continuum.1.en.txt">txt</a>, 
+        
+            <a href="/man/sqlalchemy-continuum.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

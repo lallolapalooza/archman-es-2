@@ -1,0 +1,433 @@
+
+
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>gitpacking(7) — Pages manuelles d'Arch
+</title>Arch Linux
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">gitpacking(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/git/">git</a></p>
+
+        oncepts
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">avancés liés </td>au
+    <td class="head-vol">packing dans </td>Git
+    <td class="head-rtitle">SYNOP</td>SIS
+g</tr>itpa</table>cking
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>DESCRIPTI</a></h1>ON
+<p class="Pp">Ce document vise à d</p>écrire certains conc</section>epts avancés liés au
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>packin</a></h1>g
+<p class="Pp">dans</p> Git</section>.
+De
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>nombreux </a></h1>concepts
+<p class="Pp">sont actuellement décrits de manière dispersée entre les pages
+    manuelles de </p>diverses
+<p class="Pp">commandes Git, notamment
+git-pack-objects(1),
+git-repack(1), et d'autres, ainsi que
+gitformat-pack(5), et
+    des parties de <a href='/man/git-pack-objects.1.en'>l'arborescence
+Documentation/t</a>echnical.
+    <a href='/man/git-repack.1.en'>Il existe </a>de nombreux aspects du <a href='/man/gitformat-pack.5.en'>packing dans Git qui </a>ne sont pas couverts dans <b>ce documen</b>t et qui s</p>e trouvent
+<p class="Pp">plutôt dans les domaines mentionnés ci-dessus. Avec le temps,
+    ces élément</p>s dispersés pourraient se regrouper dans ce document.
+BITMAPS DE PSEUDO-FUSIO</section>N
+Note
+Les bitmaps de pseudo-fusion sont considérées comme une fonctionnalité
+<section class="Sh">
+<h1 class="Sh" id='PSEUDO-MERGE_BITMAPS'><a class='permalink' href='#PSEUDO-MERGE_BITMAPS'>expérimentale, </a></h1>donc
+<div class="Bd-indent">
+<br/>
+<b>l</b>a
+<p class="Pp">configuration et bon nombre des idées sont suscept</p>ibles de changer.
+Contexte
+Les bitmaps de joignabil</div>ité sont les plus efficaces lorsque nous avons des
+<section class="Ss">
+<h2 class="Ss" id='Background'><a class='permalink' href='#Background'>bitmap</a></h2>s
+<p class="Pp">stockés sur disque pour un ou plusieurs des points de départ d'une traversée. Pour
+    cette raison, Git préfère stocker des bitmaps pour les commits aux extrémités des refs,
+    car les traversées ont tendance à commencer par ces points.
+Mais si vous avez un grand nombre de refs, il n'est pas faisable
+    </p>de
+<p class="Pp">stocker une bitmap pour
+chaque extrémité de ref. Cela prend de la place, et simplement
+    faire <i>un OU </i>(OR) de toutes ces bitmaps ensemble est coûteux.
+Une façon de gérer cela est de créer des bitmaps </p>qui
+<p class="Pp">représentent
+des groupes de refs. Lorsqu'une traversée demande l'ensemble du groupe,
+    <i>nous pouvons
+    alors utiliser cette bitmap unique au lieu de considérer chaque ref indiv</i>iduellement.
+    Comme ces bitmaps représentent l'ensemble des objets qui seraient joignab</p>les
+    dans une fusion hypothétique de tous les commits, nous les appelons bitmaps de ps</section>eudo-fusion.
+Aperçu
+Un « bitmap de pseudo-fusion » désigne une paire de
+    bitmaps, comme
+<section class="Ss">
+<h2 class="Ss" id='Overview'><a class='permalink' href='#Overview'>suit :
+</a></h2>Bitmap
+<p class="Pp">de commits
+Une bitmap dont les bits définis décrivent l'ensemble des commits
+  </p>inclus
+<p class="Pp">dans la bitmap </p>de
+<div class="Bd-indent">« fusion » de la pseudo-fusion (comme
+  ci-dessous).
+Bitmap de fusion
+Une bitmap dont les bits définis décrivent la fermeture </div>de
+<p class="Pp">joignabilit</p>é
+<div class="Bd-indent">sur l'ensemble des commits dans la bitmap de « commits » de la pseudo-fusion
+  (comme ci-dessus). Une bitmap identique serait générée pour une fusion octopus
+  avec le même ensemble de parents que celui décrit dans la bitmap de commits.
+Les bitmaps de pseudo-fusion peuvent accélérer les traversées </div>de
+<p class="Pp">bitmaps lorsque tous
+    les commits d'une pseudo-fusion donnée sont listés sur l'un ou l'autre côté de la traversée,
+    soit directement (en les demandant explicitement dans les sections
+HAVES
+    ou
+WANTS), soit indirectement (en les <b>rencontrant </b>lors <b>d'une traversée de com</b>plétion).
+Cas d'utilis</p>ation
+Par exemple, supp</section>osons qu'il existe une
+<section class="Ss">
+<h2 class="Ss" id='Use-cases'><a class='permalink' href='#Use-cases'>bitmap </a></h2>de
+<p class="Pp">pseudo-fusion avec un
+    grand nombre de commits, tous listés dans la section
+WANTS
+    de certaines requêtes de traversée de bitmap. Lorsque <b>les </b>bitmaps de pseudo-fusion sont activées, le
+    mécanisme de bitmap peut rapidement déterminer qu'il existe une pseudo-fusion qui
+    satisfait un sous-ensemble des objets voulus de l'un ou l'autre côté de la requête.
+    Ensuite, nous pouvons décompresser la bitmap compressée EWAH et
+faire un OU (OR) avec le bitmap résultante. Par <b>contraste,</b> sans bitmaps de pseudo-fusion, nous devrions
+    répéter la décompression et l'opération de
+OU (OR) sur un nombre potentiellement grand
+    de <b>bitmaps </b>individuelles, ce qui peut prendre proportionnellement plus de temps.
+Un autre avantage des pseudo-fusions </p>apparaît
+<p class="Pp">lorsqu'il y a une certaine
+    combinaison de (a) un grand nombre de références, avec (b) une mauvaise couverture de bitmaps,
+    et (c) des arbres imbriqués profonds, rendant la traversée de complétion relativement
+    coûteuse. Par exemple, supposons qu'il y ait un nombre suffisant de tags
+    pour qu'il ne soit pas faisable de créer une bitmap pour chacun des tags individuellement. Sans
+    bitmaps de pseudo-fusion, calculer le résultat de, disons,
+git
+rev-list
+--use-bitmap-index <b>--c</b>ount
+    <b>--object</b>s <b>--tags </b>nécessiterait <b>probableme</b>nt <b>une </b>grande
+    <b>quantité de traversée de complétion. Mais
+    lorsqu'une grande quantité de ces tags sont stock</b>és ensemble dans une bitmap de pseudo-fusion, le
+    mécanisme de bitmap peut tirer parti du fa</p>it que nous ne nous soucions que
+    de l'union des objets joignables depuis tous ces tags, et</section> répondre à la
+    requête beaucoup plus rapidement.
+Configuration
+Les extrémités de références
+<section class="Ss">
+<h2 class="Ss" id='Configuration'><a class='permalink' href='#Configuration'>sont </a></h2>regroupées
+<p class="Pp">dans différents groupes de pseudo-fusion
+    selon deux critères. Un nom de référence correspond à un ou plusieurs des
+    motifs de pseudo-fusion définis, et éventuellement à un ou plusieurs groupes de capture
+    dans ce motif qui partitionnent davantage le groupe.
+Au sein d'un groupe, les commits </p>peuvent
+<p class="Pp">être considérés comme « stables » ou
+    « instables » en fonction de leur ancienneté. Ceux-ci sont ajustés en définissant
+    les valeurs de configuration <b>bitmapPseudoMerge.</b><i>&lt;name&gt;</i><b>.stableThreshold </b>et
+    <b>bitmapPseudoMerge.
+&lt;name&gt;
+.</b><i>threshold,</i><b>respectivement.</b>
+Tous les commits stables sont </p>regroupés
+<p class="Pp">en pseudo-fusions de taille égale
+    (
+bitmapPseudoMerge.
+&lt;name&gt;
+.stableSize)<b>. Si la
+    configuration</b><i>s</i><b>tableSize </b>est définie à,
+    <b>disons, 100,</b> alors les 100 premiers
+    commits (ordonnés par date de commit) qui sont plus anciens que la valeur
+stableThreshold formeront un groupe, les
+    <b>100 commits suivants </b>formeront
+    un autre groupe, et ainsi de suite.
+Parmi les commits instables, le mécanisme </p>de
+<p class="Pp">pseudo-fusion tentera de
+    combiner les commits plus anciens en grands groupes par opposition aux commits plus récents qui
+    apparaîtront dans des groupes plus petits. Cela repose sur l'heuristique selon laquelle
+    les références dont le commit d'extrémité est plus ancien sont moins susceptibles d'être modifiées pour pointer
+    vers un commit différent qu'une référence dont le commit d'extrémité est plus </p>récent.
+<p class="Pp">La taille des groupes est déterminée par une fonction de décroissance en loi de puissance,
+    et le paramètre de décroissance correspond
+    <b></b>a<b>pprox</b>imativement <b></b>a <b></b>u<b>« k » </b>dans
+f(
+n)
+=
+    <b></b>C<b>*n^(
+</b>-k/100), où
+f(
+n) décrit la <b>taille </b>du
+nième groupe de pseudo-fusion.
+    Le taux d'échantillonnage contrôle quel pourcentage de commits éligibles sont considérés
+    comme candidats. Le paramètre seuil indique l'âge minimum (afin d'éviter
+    d'inclure des commits trop récents dans un groupe de pseudo-fusion, ce qui le rendrait moins
+    susceptible d'être valide). Le paramètre « maxMerges » définit une limite supérieure
+    sur le nombre de commits de pseudo-fusion qu'un </p>groupe
+<p class="Pp">individuel peut contenir.
+Les paramètres liés à « stable » contrôlent les
+    groupes de pseudo-fusion « stables », composés d'un nombre fixe de
+    commits qui sont plus anciens que la valeur de « seuil stable » configurée
+    et peuvent être regroupés par morceaux de « stableSize » </p>dans
+<p class="Pp">l'ordre d'ancienneté.
+La configuration exacte pour les </p>pseudo-fusions
+<div class="Bd-indent">
+<br/>
+<b></b>e
+<p class="Pp">st la suivante :
+Note
+Les options <b>de configuration dans
+</b>bitmapPseudoMerge.* sont
+    considérées comme EXPÉRIMENTALES et peuvent être modifiées ou supprimées complètement
+    à l'avenir. Pour plus d'informations sur la fonctionnalité de bitmap de pseudo-fusion,
+    voir la section « Bitmaps de
+  <a href='/man/gitpacking.7.en'>pseu</a>do-f</p>usi</div>on »
+<p class="Pp">de
+gitpacking(7).
+bitmapPseudoMerge</p>.
+<div class="Bd-indent">&lt;name&gt;.pattern
+Expression régulière utilisée pour faire correspondre les noms de références. Les commits
+  pointés par des références correspondant à ce motif (et remplissant <b>les critères</b><i>ci-dessous,</i><b>comme
+</b>bitmapPseudoMerge. <b>&lt;name&gt;
+.sampleRate</b><i>&lt;nom&gt;</i><b>et
+</b>bitmapPseudoMerge.
+&lt;name&gt;
+.threshold) seront
+  considérés pour inclusion dans une
+<p class="Pp">bitmap de pseudo-fusion.
+Les commits sont regroupés en groupes de pseudo-fusion en fonction du fait que
+    une ou plusieurs références pointant vers un commit donné correspondent ou non au motif, qui </p>est
+<p class="Pp">une expression régulière étendue.
+Au sein d'un groupe de pseudo-fusion, les commits peuvent être davantage regroupés en
+    sous-groupes en fonction des groupes de capture dans le motif. Ces sous-groupes
+    sont formés à partir des expressions régulières en concaténant les groupes de capture
+    de <i>l'expres</i>sion ré</p>gulière,
+<p class="Pp">avec un
+tiret - entre chaque. <b>Par exemple,</b> si le motif est
+refs/tags/, alors tous les tags
+    (s'ils remplissent les critères ci-dessous) seront considérés comme candidats pour
+    le même groupe de pseudo-fusion. Cependant, si le
+    <b>motif est </b>plutôt<b></b>r<b>efs/remotes/([
+0-9])
++/tags/, alors le</b>s tags de différents
+    remotes seron</p>t regroupés en groupes de pseudo-fusion</div> séparés, en fonction du
+    numéro du
+<p class="Pp">remote.
+bitmapPseudoMerge.&lt;name&gt;</p>.
+<div class="Bd-indent">decay
+Détermine le taux auquel les groupes consécutifs de bitmaps de pseudo-fusion
+  diminuent en taille. Doit être non négatif. Ce paramètre peut être
+  considéré comme <b>k </b>dans la función
+f( <b>n</b>)<b></b>= <b></b>C <b></b>*
+  <b>n^</b>-k, <b>donde
+</b>f(
+n) <b>f</b>(<b>es </b>el tamaño del grupo `n`.
+Establecer
+<p class="Pp">la tasa de decaimiento igual <b>a
+</b>0 hará que todos los grupos sean del mismo tamaño. Establecer la tasa de decaimiento <b>igual </b>a
+1 hará que
+    <b>e</b>l <b>grup</b>o <b></b>n <b>sea
+</b>`1/n del tamaño del grupo
+    inicial. Valores más altos de la tasa de decaimiento hacen que los grupos consecutivos se reduzcan a un ritmo
+    creciente. <b>1</b></p>.
+<p class="Pp">El valor predeterminado es
+1.
+Si todos los grupos son del mismo tamaño, es posible que los grupos
+  </p>  que contienen commits más recientes puedan usarse con menos frecuencia que los grupos anteriores, </div>ya que es más probable que las referencias que apuntan a commits más recientes se actualicen con más
+<p class="Pp">frecuencia que una referencia que </p>apunta
+<div class="Bd-indent">a un commit antiguo.
+bitmapPseudoMerge.&lt;name&gt;.sampleRate
+Determina la proporción de commits sin mapa de bits (entre las puntas de las referencias) que se seleccionan <b>p</b>ara <b>su </b>inclusión en un mapa de bits
+  <b>d</b></div>e
+<p class="Pp">pseudo-fusión inestable. Debe </p>estar
+<div class="Bd-indent">entre
+0 y
+1 (ambos incluidos). El valor predeterminado es
+1.
+bitmapPseudoMerge.&lt;name&gt;.threshold
+Determina la antigüedad mínima de los commits sin mapa de bits
+  (entre las puntas <b>de</b> l</div>as
+<p class="Pp">referencias, como arriba) que son </p>candidatos
+<div class="Bd-indent">para su inclusión en un mapa de bits de pseudo-fusión inestable. El valor predeterminado es
+<p class="Pp">1.week.ago.
+bitmapPseudoMerge.&lt;name&gt;.maxMerges
+Determina el número máximo de commits de pseudo-fusión
+  entre los que se pueden distribuir los commits.
+Para los grupos de pseudo-fusión cuyo patrón no contiene ningún grupo de captura,
+    esta configuración se aplica a </p>todos
+<p class="Pp">los commits que coinciden con la <b>expresión </b>regular. Para los patrones que tienen uno o más grupos de captura, esta <b>configuración
+</b>    se aplica a cada grupo de captura distinto.
+Por ejemplo, si su
+    <b>grupo de </b>captura<b>e</b>s<b></b>r<b>efs/tags/,</b> entonces esta
+    configuración distribuirá todas las etiquetas en un máximo </p>de
+<p class="Pp">maxMerges
+    com</p>mits de pseudo-fus</div>ión. Sin embargo,
+<p class="Pp">si su grupo de captura es, </p>digamos,
+<div class="Bd-indent">refs/remotes/([
+0-9]
++)
+/tags/, entonces esta configuración
+    se aplicará al conjunto de etiquetas de cada remoto individualmente.
+Debe ser no negativo. El valor predeterminado es 64.
+bitmapPseudoMerge.&lt;name&gt;.stableThreshold
+Determina la antigüedad mínima <b>de los </b>commits
+<p class="Pp">(entre las puntas de las referencias, como arriba, sin embargo, los commits estables todavía se consider</p>an candidatos incluso cuando han sido cubiertos por un mapa de bits) que son candidatos para un mapa de b</div>its de pseudo-fusión estable. El valor predeterminado es
+1.month.ago.
+Establecer este umbral en un valor
+<p class="Pp">más pequeño (por ejemplo, 1.week.</p>ago)
+<div class="Bd-indent">hará
+    que se generen más grupos estables (lo que impone un costo de generación único), pero <b>e</b>s</div>o</section>s
+<section class="Ss">
+<h2 class="Ss" id='Examples'><a class='permalink' href='#Examples'>grupo</a></h2>s
+<p class="Pp">probablemente se volverán obsoletos con el tiempo. Usar un valor más grande conlleva la penalización opuesta (menos grupos estables que son más útiles).
+bitmapPseudoMerge.&lt;name&gt;.stableSize <b>Determina </b>el tamaño (en número de commits) de un mapa de bits </p>de
+<div class="Bd-indent">
+<pre>pseudo-fusión estable. El valor predeterminado es
+512</pre>.
+Ejemplos
+Suponga que tiene un repositorio con un gra</div>n número de
+    referencias y desea una configuración
+<p class="Pp">básica de mapas de bits de pseudo-fusión que mejore la cobertura del mapa de bits del
+espacio de nombres refs/. Puede
+    comenzar </p>con
+<p class="Pp">una configuración como la siguiente:
+[bitmapPseudoMerge "all"]
+        pattern = "refs/"
+        threshold = now
+        stableThreshold = never
+        </p>sampleRate
+<div class="Bd-indent">
+<pre>= 100
+        maxMe</pre>rges = 64
+Esto crea</div>rá mapas de bits de
+<p class="Pp">pseudo-fusión para todas las referencias,
+    independientemente de su antigüedad, y las agrupará en 64 commits de pseudo-fusión.
+Si quisiera separar las
+    <b>etiquetas de las </b>ramas al <b>generar
+</b>    commits de pseudo-fusión, en su lugar definiría el patrón con un grupo de captura, así:
+[bitmapPseudoMerge </p>"all"]
+<div class="Bd-indent">
+<pre>pattern = "refs/(heads/tags)/"
+Suponga en cambio que está trabaj</pre>ando en un repositorio de red de bifurcaciones,
+    con cada bif</div>urcación especificada por algún ID numérico, y cuyas referencias
+<p class="Pp">residen en
+refs/virtual/NNN/ (donde
+NNN es</p> el ID numérico correspondiente
+    a algu</section>na bifurcación) en la red. En este caso, </section>en su lugar podría escribir
+    algo como:
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>[bitmapPseudoMer</a></h1>ge
+<p class="Pp"><a href='/man/git-pack-objects.1.en'>"all"</a>] <a href='/man/git-repack.1.en'>pat</a></p>ter</section>n =
+<section class="Sh">
+<h1 class="Sh" id='GIT'><a class='permalink' href='#GIT'></a></h1>"
+<p class="Pp">refs/virtual/([0-9] <a href='/man/git.1.en'>+)/</a>(he</p>ads</section>|ta</div>gs)
+<table class="foot">
+  <tr>
+    <td class="foot-date">/</td>"
+    <td class="foot-os">threshold </td>= </tr>now
+</table> </section>       stableThreshold </article>= never
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>sampleRate = </p>100
+    <dl>
+        <dt>maxMerges </dt>=
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/git/">64
+Lo cual </a></dd>generaría
+        <dt>identif</dt>icadores
+        <dd>de </dd>grupos de
+        <dt>pseudo-fusión </dt>como
+        <dd><a href="https://git-scm.com/">"1234-heads" y </a></dd>"5678-tags"
+        <dt>(para las </dt>ramas en la
+        <dd>bifurcación
+ </dd>   "1234"
+        <dt>y las </dt>etiquetas
+        <dd><a href="/listing/extra/git/">en el</a></dd> remo</dl>to "5</section>678",
+
+<details>
+    <summary>respectivamente).
+</summary>VÉASE
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">TAMBIÉN
+</a></li>git-pack-objects(1)
+        
+            <li><a href="#SYNOPSIS">git-repack(1)</a></li>
+GIT
+Parte de la
+        
+            <li><a href="#DESCRIPTION">suite git(1)</a></li>
+2025-11-17
+Git 2.52.
+        
+            <li><a href="#PSEUDO-MERGE_BITMAPS">0
+Información del </a></li>paquete:
+Nombre del paquete:
+        
+            <li><a href="#SEE_ALSO">extra/git
+</a></li>Versión:
+2.52.0-2
+        
+            <li><a href="#GIT">Upstre</a></li>am:
+ht</ul>tps://</nav>git-sc</details>m.com/
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Licencias:
+GPL-2.0-only
+Manuales:
+        
+            <a href="/man/gitpacking.7.en.txt">/lis</a>ting/extra/git/
+Índice
+NOMBRE 
+        
+            <a href="/man/gitpacking.7.en.raw">SINOPSIS
+DE</a>SCRIPCIÓN
+M</p>APAS DE BI</nav>TS DE PSEUD</aside>O-FUSIÓN
+VÉ</main>ASE TAMBIÉN
+        <footer>
+            de páginas
+            <p>de manual.
+El sitio web está disponible bajo <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">los términos de la
+licencia
+      </a>         GPL-3.0, excepto por el c</p>ontenido de las páginas de manual,</footer> que tienen su propia licencia
+    </body>           especificada en el paqu</html>ete correspondiente de Arch Linux.

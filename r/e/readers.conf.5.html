@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>readers.conf(5) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">readers.conf(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/inn/">inn</a></p>
+<p class="lic">Licencias: custom:INN</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">READERS.CONF(5)</td>
+    <td class="head-vol">Documentación de InterNetNews</td>
+    <td class="head-rtitle">READERS.CONF(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">readers.conf - Control de acceso y configuración para nnrpd</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EN_RESUMEN'><a class='permalink' href='#EN_RESUMEN'>EN RESUMEN</a></h1>
+<p class="Pp">El archivo <i>readers.conf</i> define quién tiene permitido conectarse
+    como lector de noticias y qué pueden hacer después de conectarse. Ten en cuenta
+    que en <i>readers.conf</i>, la autenticación y la autorización se configuran
+    en bloques diferentes. Primero, un usuario es autenticado y se le asigna una
+    identidad (en un bloque <span class="Li">&quot;auth&quot;</span>). Luego, esta
+    identidad es autorizada para acceder a ciertos grupos de noticias con ciertos
+    derechos (en un bloque <span class="Li">&quot;access&quot;</span>).</p>
+<p class="Pp">En cuanto a la autenticación, tu bloque <span class="Li">&quot;auth&quot;</span>
+    para usuarios con contraseña podría verse así:</p>
+<pre>auth &quot;foreignokay&quot; {
+    auth: &quot;ckpasswd -f &lt;ruta de la base de datos en inn.conf&gt;/newsusers&quot;
+    default: &quot;&lt;unauthenticated&gt;&quot;
+}</pre>
+<p class="Pp">Consulta la documentación de la opción <b>-f</b> en la página del
+    manual de <a href='/man/ckpasswd.8.en'>ckpasswd(8)</a> para saber cómo
+    generar contraseñas y utilizar este archivo
+    <i>newsusers</i>.</p>
+<p class="Pp">De esta manera, con el bloque de autenticación
+    <span class="Li">&quot;foreignokay&quot;</span>, un usuario autenticado
+    exitosamente como usuario <span class="Li">&quot;miusuario&quot;</span>
+    recibirá la identidad <span class="Li">&quot;miusuario&quot;</span>. Si la
+    autenticación falla, se le asignará la identidad predeterminada
+    <span class="Li">&quot;&lt;unauthenticated&gt;&quot;</span> que luego será
+    comprobada en los bloques <span class="Li">&quot;access&quot;</span>.</p>
+<p class="Pp">Los bloques de autenticación se comprueban desde el último al primero
+    en el archivo <i>readers.conf</i> (de abajo hacia arriba). Tan pronto como
+    uno coincida, se asigna la identidad correspondiente al usuario.</p>
+<p class="Pp">En cuanto a la autorización, hagamos algo en un bloque
+    <span class="Li">&quot;access&quot;</span> para las personas autenticadas
+    exitosamente con contraseñas:</p>
+<pre>access &quot;authenticatedpeople&quot; {
+    users: &quot;*&quot;
+    newsgroups: &quot;*,!junk,!control,!control.*&quot;
+}</pre>
+<p class="Pp">Y luego algo como uno de los dos siguientes, dependiendo de si los
+    usuarios no autenticados obtienen algún acceso:</p>
+<pre>access &quot;restrictive&quot; {
+    users: &quot;&lt;unauthenticated&gt;&quot;
+    newsgroups: &quot;!*&quot;
+}
+access &quot;readonly&quot; {
+    users: &quot;&lt;unauthenticated&gt;&quot;
+    read: &quot;local.*&quot;
+    post: &quot;!*&quot;
+}</pre>
+<p class="Pp">Ten en cuenta que el bloque
+    <span class="Li">&quot;authenticatedpeople&quot;</span> debe aparecer en
+    <i>readers.conf</i> antes que los bloques
+    <span class="Li">&quot;restrictive&quot;</span> o
+    <span class="Li">&quot;readonly&quot;</span> porque los bloques de acceso se
+    comprueban desde el último al primero en el archivo <i>readers.conf</i> (de
+    abajo hacia arriba). Tan pronto como uno coincida con la identidad previamente
+    asignada por un bloque de autenticación, se elige. El bloque de acceso
+    <span class="Li">&quot;authenticatedpeople&quot;</span> coincide con cualquier
+    usuario al que no se le haya asignado
+    <span class="Li">&quot;&lt;unauthenticated&gt;&quot;</span> como identidad.</p>
+<p class="Pp">Más ejemplos y características se detallan a continuación en esta
+    página del manual (notablemente sin ningún archivo de contraseñas, con PAM,
+    con hooks de Perl o Python).</p>
+<p class="Pp">No necesitas recargar nada después de modificar
+    <i>readers.conf</i>; cada vez que un cliente de noticias se conecta al
+    servidor, se genera un nuevo proceso <b>nnrpd</b> que lee su configuración
+    desde el disco. No obstante, después de cualquier cambio, puedes ejecutar
+    <span class="Li">&quot;inncheck&quot;</span> para realizar comprobaciones básicas
+    de sintaxis contra el archivo <i>readers.conf</i> modificado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><i>readers.conf</i> en <i>pathetc</i> especifica el control de
+    acceso para <a href='/man/nnrpd.8.en'>nnrpd(8)</a>. Controla quién tiene
+    permiso para conectarse como lector de noticias y qué pueden hacer después de
+    conectarse. <b>nnrpd</b> lee este archivo cada vez que un cliente de noticias
+    se conecta al servidor, incluso cuando se ejecuta en modo demonio con
+    <b>-D</b>, lo que significa que cualquier cambio en este archivo entra en
+    vigor inmediatamente en todas las conexiones subsiguientes. (La ubicación de
+    <i>readers.conf</i> en <i>pathetc</i> es solo la predeterminada; el mismo
+    formato se aplica a cualquier archivo especificado con
+    <span class="Li">&quot;nnrpd -c&quot;</span>.)</p>
+<p class="Pp">Hay dos tipos de entradas en <i>readers.conf</i>: pares
+    parámetro/valor y grupos de configuración. Las líneas en blanco y todo lo que
+    siga a un signo de almohadilla (<span class="Li">&quot;#&quot;</span>) se
+    ignoran, a menos que el carácter <span class="Li">&quot;#&quot;</span> sea
+    escapado con <span class="Li">&quot;\&quot;</span>. El número máximo de
+    caracteres en cada línea es 8.191.</p>
+<p class="Pp">Los pares parámetro/valor consisten en una palabra clave seguida
+    inmediatamente por dos puntos, al menos un espacio en blanco, y un valor. La
+    distinción entre mayúsculas y minúsculas en el parámetro es importante
+    (el parámetro generalmente debe estar en minúsculas), y un parámetro puede
+    contener cualquier carácter excepto dos puntos,
+    <span class="Li">&quot;#&quot;</span> y espacios en blanco. Un ejemplo:</p>
+<pre>hosts: *.example.com</pre>
+<p class="Pp">Los valores que contienen espacios en blanco deben entrecomillarse con
+    comillas dobles, como en:</p>
+<pre>hosts: &quot;*.example.com, *.example.net&quot;</pre>
+<p class="Pp">Si el parámetro no contiene espacios en blanco, como:</p>
+<pre>hosts: *.example.com,*.example.net</pre>
+<p class="Pp">no es necesario entrecomillarlo, aunque puede que desees hacerlo de
+    todos modos por claridad.</p>
+<p class="Pp">No hay forma de continuar una línea en la siguiente línea, y por lo
+    tanto, no hay forma de tener un solo parámetro con un valor de más de unos
+    8.180 caracteres.</p>
+<p class="Pp">Muchos parámetros aceptan un valor booleano. Para todos estos
+    parámetros, el valor puede especificarse como
+    <span class="Li">&quot;true&quot;</span>,
+    <span class="Li">&quot;yes&quot;</span> o
+    <span class="Li">&quot;on&quot;</span> para activarlo y puede ser cualquiera de
+    <span class="Li">&quot;false&quot;</span>,
+    <span class="Li">&quot;no&quot;</span> o
+    <span class="Li">&quot;off&quot;</span> para desactivarlo. La distinción entre
+    mayúsculas y minúsculas en estos valores no es importante.</p>
+<p class="Pp">Hay dos tipos básicos de grupos de configuración: auth y
+    access. El grupo auth proporciona mecanismos para establecer la identidad del
+    usuario, quién es. El grupo access determina, dada la identidad del usuario,
+    qué se le permite hacer. Escribir un archivo
+    <i>readers.conf</i> para tu configuración es un proceso de dos pasos:
+    primero asignar una identidad a cada conexión entrante usando grupos auth, y
+    luego dar a cada identidad los privilegios apropiados con grupos access.
+    Recomendamos *no* mezclar grupos auth y access en el archivo de
+    configuración; a menudo es más sensato (en ausencia del parámetro
+    <i>key</i>) poner todos los grupos auth primero, y todos los grupos access
+    debajo.</p>
+<p class="Pp">Una identidad de usuario, tal como la establece un grupo auth,
+    se parece a una dirección de correo electrónico si se especifica un dominio
+    (como &quot;&lt;nombredeusuario&gt;@&lt;dominio&gt;&quot;) o, de lo
+    contrario, solo &quot;&lt;nombredeusuario&gt;&quot;.</p>
+<p class="Pp">Si <i>nnrpdauthsender</i> está configurado en <i>inn.conf</i>,
+    la identidad del usuario también se inserta en el campo de cabecera Sender de
+    las publicaciones realizadas por ese usuario. Consulta la documentación de esa
+    opción en <a href='/man/inn.conf.5.en'>inn.conf(5)</a> para más detalles.</p>
+<p class="Pp">Una definición de grupo auth se ve así:</p>
+<pre>auth &lt;nombre&gt; {
+    hosts: &lt;comodín-de-host&gt;
+    auth: &lt;programa-de-autenticación&gt;
+    res: &lt;programa-de-resumen&gt;
+    default: &lt;usuario-predeterminado&gt;
+    default-domain: &lt;dominio-predeterminado&gt;
+    # ...posiblemente otras configuraciones
+}</pre>
+<p class="Pp">El &lt;nombre&gt; se usa como etiqueta para el grupo y es solo para
+    fines de documentación. (Si tu configuración de syslog registra la
+    instalación <span class="Li">&quot;news.debug&quot;</span>, el &lt;nombre&gt;
+    aparecerá en la salida de depuración de <b>nnrpd</b>. Examinar esa salida
+    puede ser muy útil para entender por qué tu configuración no hace lo que
+    esperas.)</p>
+<p class="Pp">Un grupo auth determinado solo se aplica a los hosts cuyo nombre o
+    dirección IP coincide con la expresión comodín dada en el parámetro
+    <i>hosts</i> (se permiten expresiones comodín separadas por comas, pero
+    <span class="Li">&quot;@&quot;</span> no es compatible). En lugar de expresiones
+    comodín, también puedes usar notación CIDR para hacer coincidir cualquier
+    dirección IP en un bloque de red; por ejemplo, &quot;10.10.10.0/24&quot;
+    coincidirá con cualquier dirección IP entre 10.10.10.0 y 10.10.10.255
+    inclusive.</p>
+<p class="Pp">Si se compila contra las bibliotecas TLS/SSL o SASL, un grupo auth
+    con el parámetro <i>require_encryption</i> establecido en true solo se
+    aplica si la conexión entrante está utilizando una capa de cifrado, ya sea
+    desde el principio si se pasó el flag <b>-S</b> a <b>nnrpd</b>, o después de
+    un uso exitoso de STARTTLS, o después de una autenticación exitosa utilizando
+    un mecanismo SASL que negocia una capa de cifrado.</p>
+<p class="Pp">Para cualquier conexión desde un host que coincida con esa expresión
+    comodín o bloque de red, cada &lt;programa-de-resumen&gt; (puede haber varias
+    líneas <i>res</i> en un bloque; se ejecutan en secuencia hasta que una tenga
+    éxito), si existe, se ejecuta para determinar la identidad del usuario solo a
+    partir de la información de la conexión.</p>
+</div>
+</section>
+
+                
+            </article>
+            
+        </main>
+    </body>
+</html>
+on. Si todos los resolutores fallan, o si el parámetro <i>res</i> no está
+    presente, al usuario se le asigna una identidad de
+    "&lt;defuser&gt;@&lt;defdomain&gt;"; en otras palabras, se utilizan los valores de
+    los parámetros <i>default</i> y <i>default-domain</i>. Si &lt;res-program&gt;
+    solo devuelve un nombre de usuario, se utiliza &lt;defdomain&gt; como dominio.</p>
+<p class="Pp">Si el usuario se autentica más tarde a través de los comandos AUTHINFO
+    USER/PASS, el nombre de usuario y la contraseña proporcionados se pasan a cada
+    &lt;auth-program&gt; (puede haber múltiples líneas <i>auth</i>, <i>perl_auth</i>
+    o <i>python_auth</i> en un bloque; se ejecutan en secuencia hasta que una tenga
+    éxito). Si una tiene éxito y devuelve una identidad diferente a la asignada en
+    el momento de la conexión, se compara nuevamente con los grupos de acceso
+    disponibles y las acciones para las que el usuario está autorizado pueden
+    cambiar. El &lt;auth-program&gt; más común a utilizar es
+    <b>ckpasswd</b>, que soporta varias formas de verificar contraseñas, incluyendo
+    el uso de PAM. Consulte la página del manual de <a href='/man/ckpasswd.8.en'>ckpasswd(8)</a> para obtener más
+    detalles.</p>
+<p class="Pp">Al comparar grupos de autenticación, se utiliza el último grupo de
+    autenticación en el archivo que coincide con una determinada combinación de
+    conexión y nombre de usuario/contraseña.</p>
+<p class="Pp">Una definición de grupo de acceso suele tener este aspecto:</p>
+<pre>access &lt;name&gt; {
+    users: &lt;identity-wildmat&gt;
+    newsgroups: &lt;group-wildmat&gt;
+    # ...posiblemente otras configuraciones
+}</pre>
+<p class="Pp">De nuevo, &lt;name&gt; es solo para fines de documentación. Esto dice que
+    todos los usuarios cuya identidad coincide con &lt;identity-wildmat&gt; pueden
+    leer y publicar en todos los grupos de noticias que coinciden con
+    &lt;group-wildmat&gt; (como antes, se permiten expresiones wildmat separadas por
+    comas, pero <span class="Li">&quot;@&quot;</span> no es compatible). Alternativamente,
+    puede usar el formato:</p>
+<pre>access &lt;name&gt; {
+    users: &lt;identity-wildmat&gt;
+    read: &lt;read-wildmat&gt;
+    post: &lt;post-wildmat&gt;
+}</pre>
+<p class="Pp">y los usuarios que coincidan podrán leer cualquier grupo que coincida
+    con &lt;read-wildmat&gt; y publicar en cualquier grupo que coincida con
+    &lt;post-wildmat&gt;. También puede configurar varias otras cosas en el grupo de
+    acceso, así como anular varios parámetros de <a href='/man/inn.conf.5.en'>inn.conf(5)</a> para un grupo de
+    usuarios en particular.</p>
+<p class="Pp">Al igual que con los grupos de autenticación, al comparar grupos de
+    acceso, se utiliza el último que coincide en el archivo para determinar los
+    permisos del usuario. Hay una excepción a esta regla: si el grupo de
+    autenticación que coincidió con el cliente contiene un parámetro
+    <i>perl_access</i> o <i>python_access</i>, entonces el script dado como
+    argumento se utiliza para generar dinámicamente un grupo de acceso. Este nuevo
+    grupo de acceso se utilizará para determinar los derechos de acceso del
+    cliente; los grupos de acceso en el archivo se ignoran.</p>
+<p class="Pp">Hay un caso especial adicional a tener en cuenta. Al formar reglas de
+    autenticación y autorización particularmente complejas, a veces es útil que
+    las identidades proporcionadas por un grupo de autenticación determinado solo
+    se apliquen a grupos de acceso particulares; en otras palabras, en lugar de
+    verificar la identidad contra el parámetro <i>users</i> de cada grupo de
+    acceso, se verifica contra el parámetro <i>users</i> de solo algunos grupos
+    de acceso específicos. Esto se hace con el parámetro <i>key</i>. Por ejemplo:</p>
+<pre>auth example {
+    key: special
+    hosts: *.example.com
+    default: &lt;SPECIAL&gt;
+}
+access example {
+    key: special
+    users: &lt;SPECIAL&gt;
+    newsgroups: *
+    addcanlockuser: none
+}</pre>
+<p class="Pp">En este caso, los dos parámetros <i>key</i> vinculan este grupo de
+    autenticación con este grupo de acceso. Para cualquier conexión entrante que
+    coincida con "*.example.com" (suponiendo que no haya ningún grupo de
+    autenticación posterior que también coincida con tales hosts), ningún grupo de
+    acceso que no tenga <span class="Li">&quot;key: special&quot;</span> será
+    considerado. De manera similar, el grupo de acceso anterior solo se verificará
+    si el usuario fue autenticado con un grupo de autenticación que contiene
+    <span class="Li">&quot;key: special&quot;</span>. Este mecanismo normalmente no
+    es útil; casi siempre hay una mejor manera de lograr el mismo resultado.</p>
+<p class="Pp">También observe en el ejemplo que no hay un parámetro
+    <i>default-domain</i>, lo que significa que no se agrega ningún dominio al
+    nombre de usuario predeterminado y la identidad para tales conexiones es solo
+    "&lt;SPECIAL&gt;". Tenga en cuenta que algunos complementos adicionales para
+    INN pueden preferir que las identidades autenticadas siempre devuelvan una
+    dirección de correo electrónico completa (incluido un dominio), por lo que es
+    posible que desee configurar su sistema de esa manera si está utilizando
+    complementos. Como varias personas diferentes pueden tener asignada la misma
+    identidad "&lt;SPECIAL&gt;", no se deben generar hashes de Cancel-Lock específicos
+    del usuario.</p>
+<p class="Pp">Los archivos de configuración se pueden incluir en otros archivos de
+    configuración a través de la sintaxis:</p>
+<pre>include &lt;filename&gt;</pre>
+<p class="Pp">Se incluye el archivo llamado &lt;filename&gt;. Esta sintaxis solo
+    está permitida en el nivel superior.</p>
+<p class="Pp">A continuación, se presenta la lista completa de parámetros permitidos
+    para los grupos de autenticación y acceso, y después de eso hay algunos
+    ejemplos que pueden hacer que esto sea algo más claro.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTH_GROUP_PARAMETERS'><a class='permalink' href='#AUTH_GROUP_PARAMETERS'>PARÁMETROS DE GRUPO DE AUTENTICACIÓN</a></h1>
+<p class="Pp">Un grupo de autenticación sin al menos uno de los parámetros <i>res</i>,
+    <i>auth</i>, <i>perl_auth</i>, <i>python_auth</i> o <i>default</i> no tiene
+    sentido (y en la práctica simplemente se ignorará).</p>
+<dl class="Bl-tag">
+  <dt id="auth"><a class="permalink" href="#auth"><i>auth</i></a></dt>
+  <dd>Una línea de comandos simple para un autenticador de usuario (los metacaracteres
+      del shell no son compatibles). Si no se proporciona una ruta completa, el
+      programa ejecutado debe estar ubicado en el directorio
+      <i>pathbin</i>/auth/passwd. Un autenticador es un programa utilizado para
+      manejar un nombre de usuario y una contraseña proporcionados por el usuario,
+      a través de un mecanismo como AUTHINFO USER/PASS. Al igual que con <i>res</i>,
+      un grupo de autenticación puede tener múltiples parámetros <i>auth</i>; se
+      intentarán en orden y se utilizarán los resultados del primero exitoso.
+      Consulte también <i>perl_auth</i>.
+    <p class="Pp">El autenticador más común a utilizar es <a href='/man/ckpasswd.8.en'>ckpasswd(8)</a>;
+        consulte su página del manual para obtener más información.</p>
+  </dd>
+  <dt id="default"><a class="permalink" href="#default"><i>default</i></a></dt>
+  <dd>El nombre de usuario predeterminado para las conexiones que coinciden con este
+      grupo de autenticación. Este es el nombre de usuario asignado al usuario en
+      el momento de la conexión si todos los resolutores fallan o si no hay
+      parámetros <i>res</i>. Tenga en cuenta que puede ser un nombre de usuario
+      simple, en cuyo caso <i>default-domain</i> (si está presente) se agrega
+      después de un <span class="Li">&quot;@&quot;</span>, o una cadena de identidad
+      completa que contiene un <span class="Li">&quot;@&quot;</span>, en cuyo caso se
+      usará textualmente.</dd>
+  <dt id="default-domain"><a class="permalink" href="#default-domain"><i>default-domain</i></a></dt>
+  <dd>La cadena de dominio predeterminada para este grupo de autenticación. Si un
+      resolutor de usuarios o un autenticador no proporciona un dominio, o si se
+      utiliza el nombre de usuario predeterminado y no contiene un
+      <span class="Li">&quot;@&quot;</span>, este dominio se utiliza para formar la
+      identidad del usuario. (Tenga en cuenta que para muchas configuraciones, no
+      es realmente necesario que las identidades de los usuarios estén calificadas
+      con un nombre de dominio, en cuyo caso no es necesario usar este parámetro).</dd>
+  <dt id="hosts"><a class="permalink" href="#hosts"><i>hosts</i></a></dt>
+  <dd>Una lista separada por comas de hosts remotos, patrones wildmat que coinciden
+      con nombres de host o direcciones IP, o bloques de red IP especificados en
+      notación CIDR. Si un usuario se conecta desde un host que no coincide con
+      este parámetro, este grupo de autenticación no coincidirá con la conexión y
+      se ignorará.
+    <p class="Pp">Tenga en cuenta que si tiene una gran cantidad de patrones que no
+        pueden fusionarse en patrones más amplios (como una gran cantidad de
+        sistemas individuales dispersos por la red que deberían tener acceso), el
+        parámetro <i>hosts</i> puede exceder la longitud máxima de línea de 8192
+        caracteres. En ese caso, deberá dividir ese grupo de autenticación en
+        múltiples grupos de autenticación, cada uno con una parte de los hosts
+        listados en su parámetro <i>hosts</i>, y cada uno asignando la misma
+        identidad de usuario.</p>
+    <p class="Pp">Todos los hosts coinciden si este parámetro no se proporciona.</p>
+  </dd>
+  <dt id="key"><a class="permalink" href="#key"><i>key</i></a></dt>
+  <dd>Si este parámetro está presente, los privilegios de cualquier conexión que
+      coincida con este grupo de autenticación solo se determinarán por el subconjunto
+      de grupos de acceso que contengan un parámetro de clave coincidente.</dd>
+  <dt id="localaddress"><a class="permalink" href="#localaddress"><i>localaddress</i></a></dt>
+  <dd>Una lista separada por comas de hosts locales o patrones de direcciones con la
+      misma sintaxis que el parámetro <i>hosts</i>. Si se especifica este
+      parámetro, su grupo de autenticación solo coincidirá con las conexiones
+      realizadas a una interfaz local coincidente. (Obviamente, esto solo es
+      útil para servidores con múltiples interfaces).
+    <p class="Pp">Todas las direcciones locales coinciden si este parámetro no se
+        proporciona.</p>
+  </dd>
+  <dt id="perl_access"><a class="permalink" href="#perl_access"><i>perl_access</i></a></dt>
+  <dd>Una ruta a un script de Perl para generar dinámicamente un grupo de acceso. Si
+      un grupo de autenticación coincide con éxito y contiene un parámetro
+      <i>perl_access</i>, entonces el script de Perl del argumento se utilizará
+      para crear un grupo de acceso. Este grupo determinará los derechos de acceso
+      del cliente, anulando cualquier grupo de acceso en <i>readers.conf</i>.
+      Si y solo si un grupo de autenticación exitoso contiene el parámetro
+      <i>perl_access</i>, los grupos de acceso de <i>readers.conf</i> se ignoran y
+      los derechos del cliente se determinan dinámicamente. Este parámetro solo es
+      válido si INN está compilado con soporte de Perl (se pasó
+      <b>--with-perl</b> a <span class="Li">&quot;configure&quot;</span>). Se puede
+      encontrar más información en el archivo <i>doc/hook-perl</i>.</dd>
+  <dt id="perl_auth"><a class="permalink" href="#perl_auth"><i>perl_auth</i></a></dt>
+  <dd>Una ruta a un script de Perl para la autenticación. El parámetro
+      <i>perl_auth</i> funciona exactamente como <i>auth</i>, excepto que llama
+      al script nombrado utilizando el hook de Perl en lugar de un programa
+      externo. Se permite el uso múltiple/mixto de los parámetros <i>auth</i>,
+      <i>perl_auth</i> y <i>python_auth</i> dentro de cualquier grupo de
+      autenticación; cada línea se intenta en el orden en que aparece.
+      <i>perl_auth</i> tiene más potencia que <i>auth</i> ya que proporciona al
+      programa de autenticación información adicional sobre el cliente y la
+      capacidad de devolver una cadena de error y un nombre de usuario. Este
+      parámetro solo es válido si INN está compilado con soporte de Perl
+      (se pasó <b>--with-perl</b> a <span class="Li">&quot;configure&quot;</span>).
+      Se puede encontrar más información en <i>doc/hook-perl</i>.</dd>
+  <dt id="python_access"><a class="permalink" href="#python_access"><i>python_access</i></a></dt>
+  <dd>Un script de Python para generar dinámicamente un grupo de acceso. Si un grupo de
+      autenticación coincide con éxito y contiene un parámetro
+      <i>python_access</i>, entonces el script del argumento (sin su extensión
+      <span class="Li">&quot;.py&quot;</span>) ubicado en el directorio
+      <i>pathfilter</i> se utilizará para crear un grupo de acceso. Este grupo
+      determinará los derechos de acceso del cliente, anulando cualquier grupo de
+      acceso en <i>readers.conf</i>.
+    <p class="Pp">Si y solo si un grupo de autenticación exitoso contiene el
+        parámetro <i>python_access</i>, los grupos de acceso de <i>readers.conf</i>
+        se ignoran y los derechos del cliente se determinan dinámicamente.</p>
+    <p class="Pp">Este parámetro solo es válido si INN se compila con soporte de Python
+        (se pasa <b>--with-python</b> a
+        <span class="Li">&quot;configure&quot;</span>). Puede encontrar más información en el archivo <i>doc/hook-python</i>.</p>
+  </dd>
+  <dt id="python_auth"><a class="permalink" href="#python_auth"><i>python_auth</i></a></dt>
+  <dd>Un script de Python para la autenticación. El parámetro <i>python_auth</i> funciona
+      exactamente como <i>auth</i>, excepto que llama al script nombrado (sin su
+      extensión <span class="Li">&quot;.py&quot;</span>) ubicado en el
+      directorio <i>pathfilter</i> utilizando el hook de Python en lugar de un programa externo. Se permite el uso múltiple/mixto de los parámetros <i>auth</i>, <i>perl_auth</i> y
+      <i>python_auth</i> dentro de cualquier grupo de autenticación; cada
+      línea se intenta en el orden en que aparece. <i>python_auth</i> tiene más potencia
+      que <i>auth</i> ya que proporciona al programa de autenticación
+      información adicional sobre el cliente y la capacidad de devolver una cadena de error y un nombre de usuario.
+    <p class="Pp">Este parámetro solo es válido si INN se compila con soporte de Python
+        (se pasa <b>--with-python</b> a
+        <span class="Li">&quot;configure&quot;</span>). Puede encontrar más información en <i>doc/hook-python</i>.</p>
+  </dd>
+  <dt id="python_dynamic"><a class="permalink" href="#python_dynamic"><i>python_dynamic</i></a></dt>
+  <dd>Un script de Python para aplicar control de acceso dinámicamente por grupo de noticias.
+      Si un grupo de autenticación coincide con éxito y contiene un
+      parámetro <i>python_dynamic</i>, entonces el script argumento (sin su
+      extensión <span class="Li">&quot;.py&quot;</span>) ubicado en el
+      directorio <i>pathfilter</i> se utilizará para determinar los derechos del cliente
+      cada vez que el usuario intente ver un grupo de noticias, o leer o publicar un
+      artículo. Los derechos de acceso determinados por <i>python_dynamic</i> anulan los
+      valores de los parámetros del grupo de acceso, como
+      <i>newsgroups</i>, <i>read</i> y
+      <i>post</i>.
+    <p class="Pp">Este parámetro solo es válido si INN se compila con soporte de Python
+        (se pasa <b>--with-python</b> a
+        <span class="Li">&quot;configure&quot;</span>). Puede encontrar más información en el archivo <i>doc/hook-python</i>.</p>
+  </dd>
+  <dt id="require_encryption"><a class="permalink" href="#require_encryption"><i>require_encryption</i></a></dt>
+  <dd>Si se establece en verdadero, una conexión entrante solo coincide con este grupo de autenticación si
+      está cifrada, ya sea desde el principio si se pasó el indicador
+      <b>-S</b> a <b>nnrpd</b>, o después de un uso exitoso de STARTTLS, o después de una
+      autenticación exitosa utilizando un mecanismo SASL que negocia una capa cifrada. Este parámetro solo es válido si INN se compila con
+      soporte TLS/SSL o SASL (por defecto si las bibliotecas SSL y criptográficas de OpenSSL
+      o la biblioteca Cyrus SASL se encuentran en tiempo de configuración, de lo contrario, consulte las
+      banderas <b>--with-openssl</b> y <b>--with-sasl</b> pasadas a
+      <span class="Li">&quot;configure&quot;</span>).</dd>
+  <dt id="res"><a class="permalink" href="#res"><i>res</i></a></dt>
+  <dd>Una línea de comandos simple para un resolvedor de usuarios (los metacaracteres de shell no son
+      soportados). Si no se proporciona una ruta completa, el programa ejecutado debe estar en
+      el directorio <i>pathbin</i>/auth/resolv. Un resolvedor es un programa de autenticación que intenta
+      descubrir la identidad del usuario que se conecta utilizando nada más que la información de conexión (es decir, el usuario
+      no ha proporcionado un nombre de usuario y contraseña). Un ejemplo de resolvedor sería un
+      programa que asigna una identidad a partir de una devolución de llamada ident o del
+      nombre de host del usuario.
+    <p class="Pp">Un grupo de autenticación puede tener múltiples parámetros <i>res</i>, y
+        se intentarán en el orden en que están listados. Se utilizarán los resultados del primero
+        que tenga éxito.</p>
+    <p class="Pp">Alternativamente, se puede usar un bloque res en lugar de un
+        parámetro <i>res</i>. Los parámetros reconocidos en dichos bloques res son:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="log"><a class="permalink" href="#log"><i>log</i></a></dt>
+  <dd>Una cadena para registrar en <i>pathlog</i>/news.notice (con
+      <span class="Li">&quot;res also-log:&quot;</span> delante) antes de que se intente el resolvedor. Un grupo res puede tener múltiples parámetros <i>log</i>, y
+      se registrarán en el orden en que están listados.</dd>
+  <dt id="program"><a class="permalink" href="#program"><i>program</i></a></dt>
+  <dd>Este parámetro es obligatorio en un bloque res. Su significado es el mismo que el
+      parámetro <i>res</i> utilizado directamente en un bloque auth.
+        <pre>auth &lt;auth-name&gt; {
+    res: &lt;res-program&gt;
+}
+</pre>
+    <p class="Pp">es por lo tanto equivalente a:</p>
+        <pre>auth &lt;auth-name&gt; {
+    res &lt;res-name&gt; {
+        program: &lt;res-program&gt;
+    }
+}
+</pre>
+  </dd>
+</dl>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ACCESS_GROUP_PARAMETERS'><a class='permalink' href='#ACCESS_GROUP_PARAMETERS'>PARÁMETROS DE GRUPO DE ACCESO</a></h1>
+<dl class="Bl-tag">
+  <dt id="access"><a class="permalink" href="#access"><i>access</i></a></dt>
+  <dd>Un conjunto de letras que especifican los permisos otorgados al cliente. Las
+      letras se eligen del siguiente conjunto:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="A"><a class="permalink" href="#A">A</a></dt>
+  <dd>El cliente puede publicar artículos con encabezados Approved (en otras palabras,
+      puede aprobar artículos para grupos de noticias moderados). Por defecto, esto no está permitido.</dd>
+  <dt id="I"><a class="permalink" href="#I">I</a></dt>
+  <dd>El cliente puede inyectar artículos con IHAVE. Tenga en cuenta que para inyectar
+      artículos con el comando IHAVE, el usuario también debe tener permiso POST
+      (la opción <span class="Li">&quot;P&quot;</span>). Los artículos inyectados con
+      IHAVE se tratan como si hubieran sido inyectados con POST, es decir,
+      dichos artículos no deben haber sido inyectados previamente (no deben
+      contener campos de encabezado como Injection-Info).</dd>
+  <dt id="L"><a class="permalink" href="#L">L</a></dt>
+  <dd>El cliente puede publicar en grupos de noticias que están configurados para
+      desactivar la publicación local (campos de estado <span class="Li">&quot;j&quot;</span>,
+      <span class="Li">&quot;n&quot;</span> y
+      <span class="Li">&quot;x&quot;</span> en el archivo <a href='/man/active.5.en'>active(5)</a>).</dd>
+  <dt id="N"><a class="permalink" href="#N">N</a></dt>
+  <dd>El cliente puede usar el comando NEWNEWS, anulando la configuración global.
+    </dd>
+  <dt id="P"><a class="permalink" href="#P">P</a></dt>
+  <dd>El cliente puede publicar artículos.</dd>
+  <dt id="R"><a class="permalink" href="#R">R</a></dt>
+  <dd>El cliente puede leer artículos.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Tenga en cuenta que si se proporciona este parámetro, se ignora <i>allownewnews</i> en
+    <i>inn.conf</i> para las conexiones que coinciden con este grupo de acceso y
+    la capacidad del cliente para usar NEWNEWS está completamente determinada por la
+    presencia de <span class="Li">&quot;N&quot;</span> en la cadena de acceso. Si
+    desea admitir NEWNEWS, asegúrese de incluir
+    <span class="Li">&quot;N&quot;</span> en la cadena de acceso cuando utilice este
+    parámetro.</p>
+<p class="Pp">Tenga en cuenta que si se proporciona este parámetro y
+    <span class="Li">&quot;R&quot;</span> no está presente en la cadena de acceso,
+    el cliente no puede leer independientemente de los parámetros <i>newsgroups</i> o <i>read</i>.
+    De manera similar, si se proporciona este parámetro y
+    <span class="Li">&quot;P&quot;</span> no está presente, el cliente no puede publicar.
+    Este uso de <i>access</i> está obsoleto y es confuso; se recomienda encarecidamente que si se utiliza el parámetro
+    <i>access</i>,
+    <span class="Li">&quot;R&quot;</span> y
+    <span class="Li">&quot;P&quot;</span> siempre se incluyan en la cadena de acceso
+    y que <i>newsgroups</i>, <i>read</i> y <i>post</i> se utilicen para
+    controlar el acceso. (Para otorgar acceso de lectura pero no de publicación, se puede tener solo un parámetro <i>read</i> y ningún parámetro <i>post</i>.)</p>
+</div>
+<dl class="Bl-tag">
+  <dt id="addcanlockuser"><a class="permalink" href="#addcanlockuser"><i>addcanlockuser</i></a></dt>
+  <dd>Si se establece en <span class="Li">&quot;none&quot;</span>, las publicaciones realizadas por estos
+      usuarios no tendrán un hash específico del usuario en el campo de encabezado Cancel-Lock (solo se generará el hash del administrador). No habrá ningún campo de encabezado Cancel-Key
+      en las solicitudes de cancelación o sustitución. Este es un valor de cadena y el valor por defecto es
+      <span class="Li">&quot;username&quot;</span>, es decir, se utiliza un hash específico del usuario basado en la identidad asignada a la conexión.
+    <p class="Pp">Otro valor posible para este parámetro es
+        <span class="Li">&quot;ip&quot;</span>, en cuyo caso se utiliza un hash específico del usuario basado en la IP de la conexión (que debe ser una IP estática para identificar realmente a los usuarios).</p>
+    <p class="Pp">Consulte <a href='/man/inn-secrets.conf.5.en'>inn-secrets.conf(5)</a> para obtener más información sobre
+        Cancel-Lock. La razón principal de este parámetro es desactivar este
+        mecanismo de autenticación cuando la misma identidad o IP puede ser asignada por
+        un grupo de acceso a diferentes personas. De lo contrario, cualquiera de estas personas
+        podría enviar una retirada autenticada de un artículo enviado originalmente por otra persona con la misma identidad o IP.</p>
+  </dd>
+  <dt id="domain"><a class="permalink" href="#domain"><i>domain</i></a></dt>
+  <dd>Cuando se establece, el valor de este parámetro se utiliza para la parte del dominio (el lado derecho después de <span class="Li">&quot;@&quot;</span>) de
+      los Message-IDs autogenerados, así como para el nombre del servidor indicado en
+      los campos de encabezado Injection-Info.
+    <p class="Pp">Por defecto, el valor de este parámetro se hereda del
+        parámetro epónimo en <i>inn.conf</i>. Sin embargo, si <i>domain</i> no se establece explícitamente en <i>readers.conf</i>, el comportamiento específico descrito
+        anteriormente no se activará a menos que <i>virtualhost</i> se establezca en verdadero.</p>
+    <p class="Pp">También puede desear establecer el parámetro <i>fromhost</i>
+        (heredado de <i>inn.conf</i>) para la dirección de quejas en el campo de encabezado
+        Injection-Info, si su valor por defecto debe cambiarse, y el parámetro <i>complaints</i>
+        no está ya establecido o <i>newsmaster</i> no contiene ya un
+        <span class="Li">&quot;@&quot;</span>.</p>
+  </dd>
+  <dt id="groupexactcount"><a class="permalink" href="#groupexactcount"><i>groupexactcount</i></a></dt>
+  <dd>Este parámetro controla el umbral por debajo del cual <b>nnrpd</b> informará
+      el número exacto de artículos existentes en los grupos de noticias en lugar de una estimación. El número exacto se actualiza generalmente una vez al día durante el
+      proceso de expiración por <b>expirover</b> (ejecutado por <b>news.daily</b>), y se actualiza cuando llegan nuevos artículos, pero no necesariamente cuando los artículos se cancelan o sobrescriben en métodos de almacenamiento de autoexpiración como CNFS.
+    <p class="Pp">Cuando el recuento estimado de artículos es estrictamente menor que
+        <i>groupexactcount</i>, <b>nnrpd</b> volverá a contar el número de
+        artículos existentes y reportará el valor exacto. Si <i>groupexactcount</i>
+        se establece en <span class="Li">0</span>, <b>nnrpd</b> volverá a contar siempre.
+        Si se establece en <span class="Li">1</span>, nunca volverá a contar.</p>
+    <p class="Pp">Aunque los recuentos exactos de artículos no son requeridos, pueden ser
+        útiles para distinguir grupos de noticias vacíos informando un recuento exacto de
+        <span class="Li">0</span> en lugar de una estimación de
+        <span class="Li">1</span> (cuando sucede, el cliente de noticias puede mostrar que hay 1 artículo presente en el grupo de noticias, luego intenta recuperar el artículo y, finalmente, no muestra nada al usuario).</p>
+    <p class="Pp">No se recomienda establecer un valor alto para este par</p><section class="Sh">
+<h1 class="Sh" id="PARAMETERS"><a class="permalink" href="#PARAMETERS">PARAMETERS</a></h1>
+<dl class="Bl-tag">
+<dt id="addauth"><a class="permalink" href="#addauth"><i>addauth</i></a></dt>
+<dd>If this parameter is present, a client matching this block will be disconnected
+with a <span class="Li">&quot;Permission denied&quot;</span> message containing
+the contents (a &quot;reason&quot; string) of this parameter. Some newsreaders
+will then display the reason to the user.</dd>
+<dt id="addcanlockuser"><a class="permalink" href="#addcanlockuser"><i>addcanlockuser</i></a></dt>
+<dd>This parameter is only used if the client is capable of re-acquiring
+authentication information (as opposed to closing the connection and having the
+user reconnect, as is standard behaviour). If the parameter is set to
+<span class="Li">&quot;yes&quot;</span>, the user may authenticate using the
+AUTHINFO GENURL command. If it is set to <span class="Li">&quot;none&quot;</span>,
+the client may not authenticate using that command. The default is
+<span class="Li">&quot;yes&quot;</span>.</dd>
+<dt id="adddate"><a class="permalink" href="#adddate"><i>adddate</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add a Date header field to
+posted articles, containing the current time. This is a boolean value, and the
+default is false. It is useful for servers that may not have their system clock
+set correctly, or for those who want to ensure that posted articles have a Date
+header field, but don't want to rely on the client to provide it.</dd>
+<dt id="addinjectiondate"><a class="permalink" href="#addinjectiondate"><i>addinjectiondate</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add an Injection-Date header
+field to posted articles, containing the current time. This is a boolean value,
+and the default is false. It is useful for servers that may not have their
+system clock set correctly, or for those who want to ensure that posted
+articles have an Injection-Date header field, but don't want to rely on the
+client to provide it.</dd>
+<dt id="addinjectionpostingaccount"><a class="permalink" href="#addinjectionpostingaccount"><i>addinjectionpostingaccount</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add an Injection-Posting-Account
+header field to posted articles, containing the value of this parameter. This
+is a string value, and the default is no value. It is useful for tracking where
+articles originated from, especially in large server networks.</dd>
+<dt id="addinjectionpostinghost"><a class="permalink" href="#addinjectionpostinghost"><i>addinjectionpostinghost</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add an Injection-Posting-Host
+header field to posted articles, containing the value of this parameter. This
+is a string value, and the default is no value. It is useful for tracking where
+articles originated from, especially in large server networks.</dd>
+<dt id="addnewsgroups"><a class="permalink" href="#addnewsgroups"><i>addnewsgroups</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add a Newsgroups header field
+to posted articles, containing the value of this parameter. This is a string
+value, and the default is no value. It is useful for ensuring that articles are
+posted to the correct newsgroups, especially when the client does not provide
+this information.</dd>
+<dt id="addorganization"><a class="permalink" href="#addorganization"><i>addorganization</i></a></dt>
+<dd>If this parameter is present, <b>nnrpd</b> will add an Organization header
+field to posted articles, containing the value of this parameter. This is a
+string value, and the default is no value. It is useful for ensuring that
+articles have an Organization header field, especially when the client does not
+provide this information.</dd>
+<dt id="allownewsgroups"><a class="permalink" href="#allownewsgroups"><i>allownewsgroups</i></a></dt>
+<dd>If this parameter is present and set to true, all newsgroups are allowed to
+be read and posted to. This is a boolean value, and the default is false. This
+parameter is useful for servers that are intended to be open to all users,
+without any restrictions on newsgroup access.</dd>
+<dt id="authenticate"><a class="permalink" href="#authenticate"><i>authenticate</i></a></dt>
+<dd>If this parameter is present, the client must authenticate before being
+allowed to read or post articles. This is a boolean value, and the default is
+false. It is useful for servers that require user authentication for access.</dd>
+<dt id="auth"><a class="permalink" href="#auth"><i>auth</i></a></dt>
+<dd>If this parameter is present, it specifies a program to run to authenticate the
+user. The program should return the username on standard output if authentication
+is successful, and exit with a non-zero status code otherwise. The program is
+passed the username and password (if provided by the client) as arguments.
+<p class="Pp">This parameter is mutually exclusive with
+    <span class="Li">perl_auth</span> and <span class="Li">python_auth</span>.</p>
+</dd>
+<dt id="backoff_auth"><a class="permalink" href="#backoff_auth"><i>backoff_auth</i></a></dt>
+<dd>Sets the backoff factor for authentication. This is a floating-point number,
+and the default is <span class="Li">1.0</span>. A higher value means that
+users will be locked out for longer after failed authentication attempts.</dd>
+<dt id="backoff_db"><a class="permalink" href="#backoff_db"><i>backoff_db</i></a></dt>
+<dd>Sets the path to the backoff database file. This file stores information about
+users who have failed authentication attempts, and is used to implement
+rate-limiting for login attempts. The default is
+<span class="Li">&quot;/var/lib/inn/backoff&quot;</span>.</dd>
+<dt id="backoff_k"><a class="permalink" href="#backoff_k"><i>backoff_k</i></a></dt>
+<dd>Sets the backoff factor for database lookups. This is a floating-point number,
+and the default is <span class="Li">1.0</span>. A higher value means that
+database lookups will take longer.</dd>
+<dt id="backoff_postfast"><a class="permalink" href="#backoff_postfast"><i>backoff_postfast</i></a></dt>
+<dd>Sets the backoff factor for posting too quickly. This is a floating-point
+number, and the default is <span class="Li">1.0</span>. A higher value means
+that users will be locked out for longer if they post too many articles in a
+short period.</dd>
+<dt id="backoff_postslow"><a class="permalink" href="#backoff_postslow"><i>backoff_postslow</i></a></dt>
+<dd>Sets the backoff factor for posting too slowly. This is a floating-point
+number, and the default is <span class="Li">1.0</span>. A higher value means
+that users will be locked out for longer if they post too few articles in a
+short period.</dd>
+<dt id="backoff_trigger"><a class="permalink" href="#backoff_trigger"><i>backoff_trigger</i></a></dt>
+<dd>Sets the number of failed authentication attempts before a user is locked
+out. This is an integer value, and the default is <span class="Li">10</span>.
+A lower value means that users will be locked out sooner after failed
+authentication attempts.</dd>
+<dt id="caching"><a class="permalink" href="#caching"><i>caching</i></a></dt>
+<dd>If this parameter is present and set to true, <b>nnrpd</b> will cache article
+headers to speed up retrieval. This is a boolean value, and the default is
+false. It is useful for servers with a high volume of read requests.</dd>
+<dt id="clienttimeout"><a class="permalink" href="#clienttimeout"><i>clienttimeout</i></a></dt>
+<dd>If this parameter is present, it specifies the maximum number of seconds a
+client is allowed to be idle before being disconnected. This is an integer
+value, and the default is <span class="Li">300</span>.</dd>
+<dt id="cmdaction"><a class="permalink" href="#cmdaction"><i>cmdaction</i></a></dt>
+<dd>If this parameter is present, it specifies a command to be run when a client
+connects. The command is passed the client's hostname and IP address as
+arguments. This is a string value, and the default is no value. It is useful for
+logging client connections or performing other actions based on client
+information.</dd>
+<dt id="complaints"><a class="permalink" href="#complaints"><i>complaints</i></a></dt>
+<dd>If this parameter is present, it specifies the email address to which
+complaints about posted articles should be sent. This is a string value, and
+the default is no value. It is useful for servers that receive a high volume
+of spam or abusive content.</dd>
+<dt id="controllee"><a class="permalink" href="#controllee"><i>controllee</i></a></dt>
+<dd>If this parameter is present, it specifies the control socket path for
+controlling nnrpd. This is a string value, and the default is
+<span class="Li">&quot;/var/run/nnrpd.ctl&quot;</span>.</dd>
+<dt id="domain"><a class="permalink" href="#domain"><i>domain</i></a></dt>
+<dd>If this parameter is present, it specifies the domain name to be used for
+posted articles. This is a string value, and the default is no value. It is
+useful for servers that are part of a larger network or organization.</dd>
+<dt id="fromhost"><a class="permalink" href="#fromhost"><i>fromhost</i></a></dt>
+<dd>If this parameter is present, it specifies the hostname to be used in the
+From header field of posted articles. This is a string value, and the default
+is no value. It is useful for ensuring that posted articles have a consistent
+From header field.</dd>
+<dt id="host"><a class="permalink" href="#host"><i>host</i></a></dt>
+<dd>If this parameter is present, it specifies the hostname of the server. This
+is a string value, and the default is no value. It is useful for servers that
+are part of a larger network or organization.</dd>
+<dt id="hosts"><a class="permalink" href="#hosts"><i>hosts</i></a></dt>
+<dd>If this parameter is present, it specifies a list of hostnames or IP addresses
+that are allowed to connect to the server. This is a comma-separated list of
+wildmat patterns, and the default is no value (meaning all hosts are allowed).
+It is useful for restricting access to the server to specific hosts.</dd>
+<dt id="idlelimit"><a class="permalink" href="#idlelimit"><i>idlelimit</i></a></dt>
+<dd>If this parameter is present, it specifies the maximum number of seconds a
+client is allowed to be idle before being disconnected. This is an integer
+value, and the default is <span class="Li">300</span>. This is equivalent to
+<span class="Li">clienttimeout</span>.</dd>
+<dt id="injectiontime"><a class="permalink" href="#injectiontime"><i>injectiontime</i></a></dt>
+<dd>If this parameter is present, it specifies the time that an article was
+injected into the system. This is a string value, and the default is no
+value. It is useful for tracking when articles were posted.</dd>
+<dt id="key"><a class="permalink" href="#key"><i>key</i></a></dt>
+<dd>If this parameter is present, this auth group is only considered when finding
+privileges for users matching auth groups with this same <span class="Li">key</span>
+parameter.</dd>
+<dt id="localaddress"><a class="permalink" href="#localaddress"><i>localaddress</i></a></dt>
+<dd>If this parameter is present, it specifies the local IP address that the
+server should bind to. This is a string value, and the default is no value
+(meaning the server will bind to all available IP addresses). It is useful for
+servers that have multiple IP addresses and need to bind to a specific one.</dd>
+<dt id="localmaxartsize"><a class="permalink" href="#localmaxartsize"><i>localmaxartsize</i></a></dt>
+<dd>If this parameter is present, it specifies the maximum size of an article
+that can be posted to the server. This is an integer value, and the default is
+no value (meaning there is no limit). It is useful for preventing the server
+from being overloaded with large articles.</dd>
+<dt id="localtime"><a class="permalink" href="#localtime"><i>localtime</i></a></dt>
+<dd>If a Date or an Injection-Date header field is not included in a posted
+article, <b>nnrpd</b> normally adds these header fields in UTC. If this is
+set to true, the Date header field will be formatted in local time
+instead. (The Injection-Date header field is added according to the
+behaviour of the <i>addinjectiondate</i> parameter in <i>inn.conf</i>, and
+will remain in UTC, though.) This is a boolean value and the default is false.
+<p class="Pp">This parameter permits handling a relatively unusual corner
+case. It is mostly a tool for people who <i>want</i> to disclose their
+local time zone (it can be useful information in certain types of
+discussions), but whose clients don't for some reason, and who can
+arrange for the server to be in the same time zone as the client.</p>
+</dd>
+<dt id="max_rate"><a class="permalink" href="#max_rate"><i>max_rate</i></a></dt>
+<dd>If this parameter is present (and non-zero), it is used for <b>nnrpd</b>'s
+rate-limiting code. The client will only be able to download at this speed
+(in bytes/second). Note that if an encryption layer is being used,
+limiting is applied to the pre-encryption datastream.</dd>
+<dt id="moderatormailer"><a class="permalink" href="#moderatormailer"><i>moderatormailer</i></a></dt>
+<dd>If this parameter is present, it specifies the email address of the moderator
+for moderated newsgroups. This is a string value, and the default is no
+value. It is useful for servers that host moderated newsgroups.</dd>
+<dt id="newsgroups"><a class="permalink" href="#newsgroups"><i>newsgroups</i></a></dt>
+<dd>Users that match this access group are allowed to read and post to all
+newsgroups matching this comma-separated list of wildmat patterns. The
+empty string is equivalent to <span class="Li">&quot;newsgroups:
+*&quot;</span>; if this parameter is missing, the connection will be
+rejected (unless <i>read</i> and/or <i>post</i> are used instead).</dd>
+<dt id="newsmaster"><a class="permalink" href="#newsmaster"><i>newsmaster</i></a></dt>
+<dd>Used as the contact address in the help message returned by
+<a href="/man/nnrpd.8.en">nnrpd(8)</a>, if the virtualhost: parameter is set to true.</dd>
+<dt id="nnrpdauthsender"><a class="permalink" href="#nnrpdauthsender"><i>nnrpdauthsender</i></a></dt>
+<dd>If this parameter is present, it specifies the email address to be used as the
+sender of authentication-related emails. This is a string value, and the
+default is no value. It is useful for servers that require user authentication
+and need to send emails to users for verification or password reset.</dd>
+<dt id="nnrpdcheckart"><a class="permalink" href="#nnrpdcheckart"><i>nnrpdcheckart</i></a></dt>
+<dd>If this parameter is present and set to true, <b>nnrpd</b> will check articles
+for validity before accepting them. This is a boolean value, and the default is
+false. It is useful for servers that want to ensure the integrity of posted
+articles.</dd>
+<dt id="nnrpdoverstats"><a class="permalink" href="#nnrpdoverstats"><i>nnrpdoverstats</i></a></dt>
+<dd>If this parameter is present and set to true, <b>nnrpd</b> will collect
+overview statistics. This is a boolean value, and the default is false. It is
+useful for servers that want to track usage patterns and performance metrics.</dd>
+<dt id="nnrpdposthost"><a class="permalink" href="#nnrpdposthost"><i>nnrpdposthost</i></a></dt>
+<dd>If this parameter is present, it specifies the hostname to be used when posting
+articles. This is a string value, and the default is no value. It is useful for
+servers that need to post articles to other servers.</dd>
+<dt id="nnrpdpostport"><a class="permalink" href="#nnrpdpostport"><i>nnrpdpostport</i></a></dt>
+<dd>If this parameter is present, it specifies the port number to be used when
+posting articles. This is an integer value, and the default is no value. It is
+useful for servers that need to post articles to other servers using a specific
+port.</dd>
+<dt id="organization"><a class="permalink" href="#organization"><i>organization</i></a></dt>
+<dd>If this parameter is present, it specifies the organization name to be used in
+the Organization header field of posted articles. This is a string value, and
+the default is no value. It is useful for ensuring that posted articles have a
+consistent Organization header field.</dd>
+<dt id="pathhost"><a class="permalink" href="#pathhost"><i>pathhost</i></a></dt>
+<dd>If this parameter is present, it specifies the hostname to be used in the Path
+header field of posted articles. This is a string value, and the default is no
+value. It is useful for ensuring that posted articles have a consistent Path
+header field.</dd>
+<dt id="perl_access"><a class="permalink" href="#perl_access"><i>perl_access</i></a></dt>
+<dd>If this parameter is present, it specifies a Perl script to be run to
+determine access privileges. The script should return a string representing an
+access group on standard output if access is granted, and exit with a non-zero
+status code otherwise. This parameter is mutually exclusive with
+<span class="Li">python_access</span>.</dd>
+<dt id="perl_auth"><a class="permalink" href="#perl_auth"><i>perl_auth</i></a></dt>
+<dd>If this parameter is present, it specifies a Perl script to be run to
+authenticate the user. The script should return a username on standard output
+if authentication is successful, and exit with a non-zero status code
+otherwise. This parameter is mutually exclusive with <span class="Li">auth</span>
+and <span class="Li">python_auth</span>.</dd>
+<dt id="perlfilter"><a class="permalink" href="#perlfilter"><i>perlfilter</i></a></dt>
+<dd>If set to false, posts made by these users do not pass through the Perl
+filter even if it is otherwise enabled. This is a boolean value and the
+default is true.
+<p class="Pp">This parameter is used to disable the Perl filter for specific users
+or groups of users. This can be useful if the Perl filter is causing problems
+or if certain users are exempt from filtering.</p>
+</dd>
+<dt id="post"><a class="permalink" href="#post"><i>post</i></a></dt>
+<dd>Like the <i>newsgroups</i> parameter, but the client is only given
+permission to post to the matching newsgroups. This parameter is often
+used with <i>read</i> to define the patterns for reading and posting
+separately (usually to give the user permission to read more newsgroups
+than they're permitted to post to). It cannot be used in the same access
+group with a <i>newsgroups</i> parameter.</dd>
+<dt id="postinghost"><a class="permalink" href="#postinghost"><i>postinghost</i></a></dt>
+<dd>If this parameter is present, it specifies the hostname to be used in the
+Path header field of posted articles. This is a string value, and the default
+is no value. It is useful for ensuring that posted articles have a consistent
+Path header field.</dd>
+<dt id="postport"><a class="permalink" href="#postport"><i>postport</i></a></dt>
+<dd>If this parameter is present, it specifies the port number to be used when
+posting articles. This is an integer value, and the default is no value. It is
+useful for servers that need to post articles to other servers using a specific
+port.</dd>
+<dt id="python_access"><a class="permalink" href="#python_access"><i>python_access</i></a></dt>
+<dd>If this parameter is present, it specifies a Python script to be run to
+determine access privileges. The script should return a string representing an
+access group on standard output if access is granted, and exit with a non-zero
+status code otherwise. This parameter is mutually exclusive with
+<span class="Li">perl_access</span>.</dd>
+<dt id="python_auth"><a class="permalink" href="#python_auth"><i>python_auth</i></a></dt>
+<dd>If this parameter is present, it specifies a Python script to be run to
+authenticate the user. The script should return a username on standard output
+if authentication is successful, and exit with a non-zero status code
+otherwise. This parameter is mutually exclusive with <span class="Li">auth</span>
+and <span class="Li">perl_auth</span>.</dd>
+<dt id="pythonfilter"><a class="permalink" href="#pythonfilter"><i>pythonfilter</i></a></dt>
+<dd>If set to false, posts made by these users do not pass through the Python
+filter even if it is otherwise enabled. This is a boolean value and the
+default is true.
+<p class="Pp">This parameter currently has no effect as Python filtering is
+not implemented yet in <b>nnrpd</b>. If you want to do Python filtering,
+you have to use the one implemented in <b>innd</b>.</p>
+</dd>
+<dt id="read"><a class="permalink" href="#read"><i>read</i></a></dt>
+<dd>Like the <i>newsgroups</i> parameter, but the client is only given
+permission to read the matching newsgroups. This parameter is often used
+with <i>post</i> to specify some read-only groups; it cannot be used in
+the same access group with a <i>newsgroups</i> parameter. (If <i>read</i>
+is used and <i>post</i> is missing, the client will have only read-only
+access.)</dd>
+<dt id="readertrack"><a class="permalink" href="#readertrack"><i>readertrack</i></a></dt>
+<dd>If this parameter is present and set to true, <b>nnrpd</b> will track reader
+activity. This is a boolean value, and the default is false. It is useful for
+servers that want to monitor reader behavior.</dd>
+<dt id="reject_with"><a class="permalink" href="#reject_with"><i>reject_with</i></a></dt>
+<dd>If this parameter is present, a client matching this block will be
+disconnected with a <span class="Li">&quot;Permission denied&quot;</span>
+message containing the contents (a &quot;reason&quot; string) of this
+parameter. Some newsreaders will then display the reason to the user.</dd>
+<dt id="require_encryption"><a class="permalink" href="#require_encryption"><i>require_encryption</i></a></dt>
+<dd>If this parameter is present and set to true, the client must use an
+encrypted connection. This is a boolean value, and the default is false. It is
+useful for servers that handle sensitive information and require secure
+connections.</dd>
+<dt id="res"><a class="permalink" href="#res"><i>res</i></a></dt>
+<dd>If this parameter is present, it specifies a program to run to resolve the
+user's identity. The program should return the username on standard output if
+the user is found, and exit with a non-zero status code otherwise. The program
+is passed the username as an argument. This parameter is useful for integrating
+with external authentication systems.</dd>
+<dt id="res_cache_time"><a class="permalink" href="#res_cache_time"><i>res_cache_time</i></a></dt>
+<dd>If this parameter is present, it specifies the time in seconds to cache the
+results of the <span class="Li">res</span> program. This is an integer value,
+and the default is <span class="Li">300</span>. Caching the results of the
+<span class="Li">res</span> program can improve performance by reducing the
+number of times the program needs to be run.</dd>
+<dt id="res_defer_time"><a class="permalink" href="#res_defer_time"><i>res_defer_time</i></a></dt>
+<dd>If this parameter is present, it specifies the time in seconds to defer
+running the <span class="Li">res</span> program. This is an integer value,
+and the default is <span class="Li">10</span>. Deferring the execution of the
+<span class="Li">res</span> program can be useful in situations where the
+program is slow or may block the server.</dd>
+<dt id="res_max_depth"><a class="permalink" href="#res_max_depth"><i>res_max_depth</i></a></dt>
+<dd>If this parameter is present, it specifies the maximum depth of recursion for
+the <span class="Li">res</span> program. This is an integer value, and the
+default is <span class="Li">10</span>. Limiting the recursion depth can help
+prevent stack overflows or infinite loops.</dd>
+<dt id="res_timeout"><a class="permalink" href="#res_timeout"><i>res_timeout</i></a></dt>
+<dd>If this parameter is present, it specifies the timeout in seconds for the
+<span class="Li">res</span> program. This is an integer value, and the default is
+<span class="Li">5</span>. This parameter prevents the <span class="Li">res</span>
+program from running indefinitely and slowing down responses to news clients
+(recounting existing articles takes time, especially on newsgroups with a lot
+of articles).</p>
+<p class="Pp">This is an integer value, and the default is
+<span class="Li">5</span>.</p>
+</dd>
+<dt id="key~2"><a class="permalink" href="#key~2"><i>key</i></a></dt>
+<dd>If this parameter is present, this access group is only considered when
+finding privileges for users matching auth groups with this same
+<i>key</i> parameter.</dd>
+<dt id="localtime"><a class="permalink" href="#localtime"><i>localtime</i></a></dt>
+<dd>If a Date or an Injection-Date header field is not included in a posted
+article, <b>nnrpd</b> normally adds these header fields in UTC. If this is
+set to true, the Date header field will be formatted in local time
+instead. (The Injection-Date header field is added according to the
+behaviour of the <i>addinjectiondate</i> parameter in <i>inn.conf</i>, and
+will remain in UTC, though.) This is a boolean value and the default is false.
+<p class="Pp">This parameter permits handling a relatively unusual corner
+case. It is mostly a tool for people who <i>want</i> to disclose their
+local time zone (it can be useful information in certain types of
+discussions), but whose clients don't for some reason, and who can
+arrange for the server to be in the same time zone as the client.</p>
+</dd>
+<dt id="max_rate"><a class="permalink" href="#max_rate"><i>max_rate</i></a></dt>
+<dd>If this parameter is present (and non-zero), it is used for <b>nnrpd</b>'s
+rate-limiting code. The client will only be able to download at this speed
+(in bytes/second). Note that if an encryption layer is being used,
+limiting is applied to the pre-encryption datastream.</dd>
+<dt id="newsgroups"><a class="permalink" href="#newsgroups"><i>newsgroups</i></a></dt>
+<dd>Users that match this access group are allowed to read and post to all
+newsgroups matching this comma-separated list of wildmat patterns. The
+empty string is equivalent to <span class="Li">&quot;newsgroups:
+*&quot;</span>; if this parameter is missing, the connection will be
+rejected (unless <i>read</i> and/or <i>post</i> are used instead).</dd>
+<dt id="newsmaster"><a class="permalink" href="#newsmaster"><i>newsmaster</i></a></dt>
+<dd>Used as the contact address in the help message returned by
+<a href="/man/nnrpd.8.en">nnrpd(8)</a>, if the virtualhost: parameter is set to true.</dd>
+<dt id="perlfilter"><a class="permalink" href="#perlfilter"><i>perlfilter</i></a></dt>
+<dd>If set to false, posts made by these users do not pass through the Perl
+filter even if it is otherwise enabled. This is a boolean value and the
+default is true.</dd>
+<dt id="post"><a class="permalink" href="#post"><i>post</i></a></dt>
+<dd>Like the <i>newsgroups</i> parameter, but the client is only given
+permission to post to the matching newsgroups. This parameter is often
+used with <i>read</i> to define the patterns for reading and posting
+separately (usually to give the user permission to read more newsgroups
+than they're permitted to post to). It cannot be used in the same access
+group with a <i>newsgroups</i> parameter.</dd>
+<dt id="pythonfilter"><a class="permalink" href="#pythonfilter"><i>pythonfilter</i></a></dt>
+<dd>If set to false, posts made by these users do not pass through the Python
+filter even if it is otherwise enabled. This is a boolean value and the
+default is true.
+<p class="Pp">This parameter currently has no effect as Python filtering is
+not implemented yet in <b>nnrpd</b>. If you want to do Python filtering,
+you have to use the one implemented in <b>innd</b>.</p>
+</dd>
+<dt id="read"><a class="permalink" href="#read"><i>read</i></a></dt>
+<dd>Like the <i>newsgroups</i> parameter, but the client is only given
+permission to read the matching newsgroups. This parameter is often used
+with <i>post</i> to specify some read-only groups; it cannot be used in
+the same access group with a <i>newsgroups</i> parameter. (If <i>read</i>
+is used and <i>post</i> is missing, the client will have only read-only
+access.)</dd>
+<dt id="reject_with"><a class="permalink" href="#reject_with"><i>reject_with</i></a></dt>
+<dd>If this parameter is present, a client matching this block will be
+disconnected with a <span class="Li">&quot;Permission denied&quot;</span>
+message containing the contents (a &quot;reason&quot; string) of this
+parameter. Some newsreaders will then display the reason to the user.</dd>
+<dt id="strippath"><a class="permalink" href="#strippath"><i>strippath</i></a></dt>
+<dd>If set to true, any Path header field provided by a user in a post is
+stripped rather than used as the beginning of the Path header field body
+of the article. This is a boolean value and the default is false.</dd>
+<dt id="users"><a class="permalink" href="#users"><i>users</i></a></dt>
+<dd>The privileges given by this access group apply to any user identity which
+matches this comma-separated list of wildmat patterns. If this parameter
+isn't given, the access group applies to all users (and is essentially
+equivalent to <span class="Li">&quot;users: *&quot;</span>).</dd>
+<dt id="virtualhost"><a class="permalink" href="#virtualhost"><i>virtualhost</i></a></dt>
+<dd>Set this parameter to true in order to make <b>nnrpd</b> behave as if it
+is running on a server with a different name than it actually has. The
+<i>domain</i> parameter must then be set, either in <i>inn.conf</i> or in
+the same access group. All articles and overview data displayed to clients
+will have their Xref header field bodies altered to appear to be from the
+server named in <i>domain</i>, and posted articles will use that server
+name in the Message-ID and Injection-Info header field bodies. (Moreover,
+if the <b>-I</b> flag was given to <b>nnrpd</b>, posting agents will be
+proposed to use Message-IDs containing the string specified with
+<b>-I</b>.)
+<p class="Pp">Similarly, the Path header field bodies displayed to clients
+or generated in posted articles will use the value of <i>domain</i> (if
+<i>pathhost</i> is not set in the access group, or has the same value as
+in <i>inn.conf</i>) or <i>pathhost</i> (if <i>pathhost</i> is set in the
+access group to something different than is set in <i>inn.conf</i>).</p>
+<p class="Pp">Also, the domain part (the right-hand side after
+<span class="Li">&quot;@&quot;</span>) of the newsmaster e-mail
+mentioned in the help message returned by <b>nnrpd</b> will use the
+value of <i>domain</i> if the <i>newsmaster</i> parameter does not
+already have a domain part.</p>
+<p class="Pp">At least one of the <i>domain</i> or <i>pathhost</i>
+parameters must be set in the access group to something different than
+in <i>inn.conf</i>, otherwise <b>nnrpd</b> will fail to start.</p>
+<p class="Pp">Note that setting this parameter requires the server modify
+all posts before presenting them to the client and therefore may
+decrease performance slightly.</p>
+</dd>
+</dl>
+<p class="Pp">In addition, all of the following parameters are valid in access
+groups and override the global setting in <i>inn.conf</i>. See
+<a href="/man/inn.conf.5.en">inn.conf(5)</a> for the descriptions of these parameters:</p>
+<pre>addinjectiondate, addinjectionpostingaccount,
+addinjectionpostinghost, backoff_auth, backoff_db, backoff_k,
+backoff_postfast, backoff_postslow, backoff_trigger,
+checkincludedtext, clienttimeout, complaints, fromhost,
+localmaxartsize, moderatormailer, nnrpdauthsender, nnrpdcheckart,
+nnrpdoverstats, nnrpdposthost, nnrpdpostport, organization,
+pathhost, readertrack, spoolfirst, strippostcc.</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SUMMARY"><a class="permalink" href="#SUMMARY">SUMMARY</a></h1>
+<p class="Pp">Here's a basic summary of what happens when a client connects:</p>
+<ul class="Bl-bullet">
+<li>All auth groups are scanned and the ones that don't match the client (due
+to <i>hosts</i>, <i>localaddress</i>, <i>require_encryption</i>, etc.) are
+eliminated.</li>
+<li>The remaining auth groups are scanned from the last to the first, and an
+attempt is made to apply it to the current connection. This means running
+<i>res</i> programs, if any, and otherwise applying <i>default</i>. The
+first auth group (starting from the bottom) to return a valid user is kept
+as the active auth group.</li>
+<li>If no auth groups yield a valid user (none have <i>default</i> parameters
+or successful <i>res</i> programs) but some of the auth groups have
+<i>auth</i> lines (indicating a possibility that the user can authenticate
+and then obtain permissions), the connection is considered to have no
+valid auth group (which means that the access groups are ignored
+completely) but the connection isn't closed. Instead, a 480 response code
+(meaning that authentication is required) is returned for everything until
+the user authenticates.</li>
+<li>When the user authenticates, the auth groups are rescanned, and only the
+matching ones which contain at least one <i>auth</i>, <i>perl_auth</i>, or
+<i>python_auth</i> line are considered. These auth groups are scanned from
+the last to the first, running <i>auth</i> programs and <i>perl_auth</i>
+or <i>python_auth</i> scripts. The first auth group (starting from the
+bottom) to return a valid user is kept as the active auth group.</li>
+<li>Regardless of how an auth group is established, as soon as one is, that
+auth group is used to assign a user identity by taking the result of the
+successful <i>res</i>, <i>auth</i>, <i>perl_auth</i>, or
+<i>python_auth</i> line (or the <i>default</i> if necessary), and
+appending <i>default-domain</i> if necessary. (If the <i>perl_access</i>
+or <i>python_access</i> parameter is present.)</li>
+<li>Finally, an access group is selected by scanning the access groups from
+bottom up and finding the first match. (If the established auth group
+contained a <i>perl_access</i> or <i>python_access</i> line, the
+dynamically generated access group returned by the script is used
+instead.) User permissions are granted based on the established access
+group.</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
+<p class="Pp">Probably the simplest useful example of a complete
+<i>readers.conf</i>, this gives permissions to read and post to all groups
+to any connections from the &quot;example.com&quot; domain, except for Bob's
+machine, and no privileges for anyone connecting elsewhere:</p>
+<pre>auth example.com {
+    hosts: "*.example.com, example.com, !bob.example.com"
+    default: "&lt;EXAMPLE&gt;"
+}
+access full {
+    users: "&lt;EXAMPLE&gt;"
+    newsgroups: *
+    addcanlockuser: none
+}</pre>
+<p class="Pp">Note that the above access realm could also be written without the
+<i>users</i> key, in which case it applies to any user identity (though in
+this example, the user identity that will be assigned to all matching
+connections is <span class="Li">&quot;&lt;EXAMPLE&gt;&quot;</span>). It is
+however recommended to keep an explicit <i>users</i> key so as to better
+view to whom the access block applies.</p>
+<p class="Pp">As the only available auth realm only matches hosts in the
+&quot;example.com&quot; domain, any connections from other hosts will be
+rejected immediately.</p>
+<p class="Pp">If you have some systems that should only have read-only access to
+the server, you can modify t</p>
+<section class="Sh">
+<h1 class="Sh" id="EJEMPLOS"><a class="permalink" href="#EJEMPLOS">EJEMPLOS</a></h1>
+<p class="Pp">El ejemplo anterior se modifica ligeramente añadiendo un
+    grupo adicional de autenticación y acceso:</p>
+<pre>auth lab {
+    hosts: "*.lab.example.com"
+    default: &lt;LAB&gt;
+}
+access lab {
+    users: &lt;LAB&gt;
+    read: *
+}</pre>
+<p class="Pp">Si estos se colocan en el archivo después del ejemplo anterior,
+    tendrán precedencia (porque están más abajo en el archivo) para cualquier
+    usuario que provenga de una máquina del dominio lab.example.com. Todos solo
+    tendrán acceso de lectura, no de publicación.</p>
+<p class="Pp">Aquí tienes un ejemplo similar para un servidor de noticias que
+    acepta conexiones desde cualquier lugar pero requiere que el usuario especifique
+    un nombre de usuario y una contraseña. El nombre de usuario y la contraseña
+    se verifican primero contra una base de datos externa de nombres de usuario y
+    contraseñas, y luego utilizan PAM:</p>
+<pre>auth all {
+    auth: "ckpasswd -f &lt;ruta.db en inn.conf&gt;/newsusers"
+    auth: ckpasswd
+}
+access full {
+    users: *
+    newsgroups: *
+}</pre>
+<p class="Pp">Cuando el usuario se conecta por primera vez, no hay claves
+    <i>res</i> ni valor predeterminado, por lo que no recibe ninguna identidad
+    válida y la conexión no coincide con ningún grupo de acceso (incluso con los
+    que tienen <span class="Li">"users: *</span>"). Dichos usuarios no reciben
+    nada más que respuestas de solicitud de autenticación de <b>nnrpd</b> hasta
+    que se autentican.</p>
+<p class="Pp">Si posteriormente se autentican, el nombre de usuario y la
+    contraseña se verifican primero ejecutando <b>ckpasswd</b> con la opción
+    <b>-f</b> para un archivo externo de contraseñas cifradas, y luego se usa
+    PAM (si INN se compiló con soporte PAM) para verificar la contraseña (y si
+    esto falla, intenta verificar la contraseña contra el campo de contraseña
+    devuelto por <a href="/man/getpwnam.3.en">getpwnam(3)</a>). Si ambos fallan,
+    el usuario seguirá sin identidad; de lo contrario, se asignará una identidad
+    (generalmente el nombre de usuario proporcionado, quizás con un dominio
+    añadido, aunque un autenticador técnicamente puede proporcionar un nombre de
+    usuario completamente diferente para la identidad), y el grupo de acceso
+    coincidirá, otorgando acceso completo.</p>
+<p class="Pp">Puede ser educativo considerar cómo combinar los ejemplos
+    anteriores; los grupos generales siempre van primero. El orden de los grupos
+    de autenticación en realidad no importa, ya que el que tiene <span class="Li">"hosts:
+    example.com"</span> solo coincide con las conexiones antes de que se envíe
+    el nombre de usuario/contraseña, y el que tiene <span class="Li">"auth:
+    ckpasswd"</span> solo coincide después; el orden importaría si alguno de los
+    grupos se aplicara a ambos casos. El orden de los grupos de acceso en este
+    caso sí importa, siempre que las líneas de <i>newsgroups</i> difieran; el
+    grupo de acceso sin línea de <i>users</i> debe ir primero, con el grupo
+    <span class="Li">"users: &lt;LOCAL&gt;"</span> después.</p>
+<p class="Pp">Aquí tienes un ejemplo de otro caso común: un servidor que solo
+    permite conexiones de un dominio local y tiene una jerarquía adicional con
+    restricciones de contraseña.</p>
+<pre>auth "example.com" {
+    hosts: "*.example.com"
+    auth: "ckpasswd -f &lt;ruta.db en inn.conf&gt;/newsusers"
+    default: "anonymous"
+}
+access regular {
+    newsgroups: "*,!example.restricted.*"
+    addcanlockuser: none
+}
+access full {
+    users: "*,!anonymous"
+    newsgroups: *
+}</pre>
+<p class="Pp">En este ejemplo, los usuarios no autenticados obtienen la
+    identidad <span class="Li">"anonymous"</span>, que solo coincide con el primer
+    grupo de acceso y, por lo tanto, no obtienen acceso a la jerarquía
+    "example.restricted.*". No se deben generar elementos de bloqueo de cancelación
+    específicos del usuario para usuarios anónimos. Cualquiera que se autentique
+    utilizando una contraseña en el archivo <i>newsusers</i> obtiene acceso
+    completo a todos los grupos. Sin embargo, ten en cuenta que el único bloque
+    de autenticación se limita a los nombres de host en el dominio example.com;
+    las conexiones fuera de ese dominio nunca tendrán permitido el acceso ni
+    tendrán la oportunidad de autenticarse.</p>
+<p class="Pp">Aquí tienes un ejemplo muy complicado. Esto es para una
+    organización que tiene una jerarquía interna "example.*" solo disponible
+    para usuarios de shell locales, que están en máquinas donde <a href="/man/identd.8.en">identd(8)</a> es de
+    confiar. Los usuarios de acceso telefónico deben proporcionar un nombre de
+    usuario y una contraseña, que luego se verifica contra RADIUS. Los usuarios
+    remotos tienen que usar un nombre de usuario y una contraseña que se verifica
+    contra una base de datos en el servidor de noticias. Finalmente, el personal
+    administrativo (usuarios "joe" y "jane") pueden publicar en cualquier lugar
+    (incluidos los grupos "example.admin.*" que son de solo lectura para todos los
+    demás), y están exentos del filtro Perl. Como un giro adicional, las
+    publicaciones de los usuarios de acceso telefónico tienen su campo de encabezado
+    Sender reemplazado por su identidad autenticada.</p>
+<p class="Pp">Dado que esta organización tiene algunos grupos de noticias
+    moderados internos, el personal administrativo también puede publicar
+    mensajes con campos de encabezado Approved, pero otros usuarios no.</p>
+<pre>auth default {
+    auth: "ckpasswd -f &lt;ruta.db en inn.conf&gt;/newsusers"
+    default: &lt;FAIL&gt;
+    default-domain: example.com
+}
+auth shell {
+    hosts: *.shell.example.com
+    res: ident
+    auth: ckpasswd
+    default: &lt;FAIL&gt;
+    default-domain: shell.example.com
+}
+auth dialup {
+    hosts: *.dialup.example.com
+    auth: radius
+    default: &lt;FAIL&gt;
+    default-domain: dialup.example.com
+}
+access shell {
+    users: *@shell.example.com
+    read: *
+    post: "*, !example.admin.*"
+}
+access dialup {
+    users: *@dialup.example.com
+    newsgroups: *,!example.*
+    nnrpdauthsender: true
+}
+access other {
+    users: "*@example.com, !&lt;FAIL&gt;@example.com"
+    newsgroups: *,!example.*
+}
+access fail {
+    users: "&lt;FAIL&gt;@*"
+    newsgroups: !*
+}
+access admin {
+    users: "joe@*,jane@*"
+    newsgroups: *
+    access: "RPA"
+    perlfilter: false
+}</pre>
+<p class="Pp">Nótese el uso de diferentes dominios para separar fácilmente a los
+    usuarios de acceso telefónico de los de shell. Otra forma de hacerlo sería con
+    parámetros <i>key</i>, pero esta forma proporciona cadenas de identidad
+    ligeramente más intuitivas. Nótese también que el grupo de acceso fail
+    captura no solo las conexiones fallidas de usuarios externos, sino también la
+    autenticación fallida de usuarios de shell y de acceso telefónico antes de que
+    se hayan autenticado. La cadena de identidad dada para, digamos, los usuarios
+    de acceso telefónico antes de que se haya intentado la autenticación RADIUS
+    coincide tanto con el grupo de acceso dialup como con el grupo de acceso fail,
+    ya que es "&lt;FAIL&gt;@dialup.example.com", pero el grupo fail está al final,
+    por lo que tiene precedencia.</p>
+<p class="Pp">El grupo de autenticación shell tiene un parámetro <i>auth</i>
+    para que los usuarios "joe" y "jane" puedan, si lo desean, usar la
+    autenticación de nombre de usuario y contraseña para obtener sus privilegios
+    especiales incluso si han iniciado sesión como otro usuario en las máquinas
+    shell (o si ident no está funcionando). Cuando se conectan por primera vez,
+    tendrían el acceso predeterminado para ese usuario, pero luego podrían
+    autenticarse para obtener su acceso extendido.</p>
+<p class="Pp">También nótese que si los usuarios "joe" y "jane" están usando sus
+    propias cuentas, obtienen sus privilegios especiales independientemente de
+    cómo se conecten, ya sea por acceso telefónico, máquinas shell, o incluso
+    externamente con un nombre de usuario y contraseña.</p>
+<p class="Pp">Finalmente, aquí tienes un ejemplo muy simple de configuración para
+    un servidor público para una jerarquía particular.</p>
+<pre>auth default {
+    hosts: *
+    default: &lt;PUBLIC&gt;
+}
+access default {
+    users: &lt;PUBLIC&gt;
+    newsgroups: example.*
+    addcanlockuser: none
+}</pre>
+<p class="Pp">Se observa que a los clientes no se les permite leer ningún otro
+    grupo; esto les impide acceder a grupos administrativos o leer mensajes de
+    control, solo como precaución. Al ejecutar un servidor público como este, ten
+    en cuenta que muchas jerarquías públicas se descargarán y se reinyectarán en
+    el Usenet principal, por lo que se recomienda encarecidamente que también
+    ejecutes un filtro Perl o Python para rechazar cualquier mensaje publicado
+    fuera de tu jerarquía local, y cualquier mensaje que contenga un campo de
+    encabezado Supersedes. Esto evitará que los mensajes publicados en tu
+    jerarquía pública dañen el resto de Usenet si se filtran.</p>
+<p class="Pp">Para casos más complejos, o si simplemente prefieres usar una base
+    de datos para almacenar información de autenticación y/o autorización, puedes
+    usar scripts de Perl o Python para autenticar dinámicamente a los usuarios y/o
+    generar sus bloques de acceso. Puedes entonces colocar toda la información
+    relacionada (usuario, contraseña, grupos de noticias para lectura, grupos de
+    noticias para publicación, etc.) por ejemplo en una base de datos SQLite, y
+    usar un script <i>nnrpd_auth.pl</i> o <i>nnrpd_auth.py</i> para autenticar a
+    los usuarios, y/o un script <i>nnrpd_access.pl</i> o
+    <i>nnrpd_access.py</i> para otorgar el acceso. Entonces <i>readers.conf</i>
+    solo necesita definirse:</p>
+<pre>auth checkcredentials {
+    perl_auth: "/ruta/al/script/nnrpd_auth.pl"
+    perl_access: "/ruta/al/script/nnrpd_access.pl"
+}</pre>
+<p class="Pp">o:</p>
+<pre>auth checkcredentials {
+    python_auth: "nnrpd_auth"
+    python_access: "nnrpd_access"
+}</pre>
+<p class="Pp">La ventaja de estos scripts externos es que puedes codificar las
+    reglas que desees, posiblemente basándote en una base de datos compartida
+    entre tu servicio de noticias y otros servicios que puedas ofrecer a tus
+    usuarios. Puedes manejar más fácilmente cientos o miles de usuarios con
+    scripts externos que con el simple uso de bloques estándar de
+    <i>readers.conf</i> y un archivo plano para las credenciales de cada usuario
+    listado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CONSIDERACIONES_DE_SEGURIDAD"><a class="permalink" href="#CONSIDERACIONES_DE_SEGURIDAD">CONSIDERACIONES
+    DE SEGURIDAD</a></h1>
+<p class="Pp">En general, se deben usar contraseñas separadas para NNTP siempre
+    que sea posible; el protocolo NNTP en sí mismo no protege las contraseñas de
+    intercepciones casuales, y muchas implementaciones (incluida esta) no
+    "bloquean" cuentas ni disuaden de otra manera los ataques de adivinación de
+    contraseñas. Por lo tanto, es mejor asegurarse de que una contraseña
+    comprometida tenga efectos mínimos.</p>
+<p class="Pp">La autenticación mediante los comandos AUTHINFO USER/PASS se
+    transmite sin cifrar a través de la red. Por lo tanto, se debe tener extrema
+    precaución, especialmente con las contraseñas del sistema (por ejemplo,
+    <span class="Li">"auth: ckpasswd -s"</span>). Las contraseñas se pueden
+    proteger mediante NNTP sobre TLS/SSL o a través de túneles ssh, y este uso
+    puede ser forzado por una configuración de servidor bien pensada que solo
+    permita aplicar ciertos grupos de autenticación en ciertos casos. También se
+    puede autenticar utilizando un mecanismo SASL robusto. Aquí hay algunas
+    ideas:</p>
+<ul class="Bl-bullet">
+  <li>Para restringir las conexiones en el puerto NNTP estándar (119) a usar una
+      capa de cifrado para algunos (o todos) los grupos de autenticación a
+      coincidir, use el parámetro <i>require_encryption</i>. Tenga en cuenta que
+      un cliente puede usar STARTTLS para negociar una conexión TLS cifrada.
+      También se puede negociar una capa segura durante la autenticación a través
+      de AUTHINFO SASL.</li>
+  <li>Si considera que su red local (pero no Internet) es segura, tenga algunos
+      grupos de autenticación con un parámetro <i>hosts</i> restrictivo;
+      irían arriba, con los de aplicabilidad global debajo.</li>
+  <li>Considere ejecutar <b>nnrpd</b> con la bandera <b>-S</b> (ya sea también con
+      <b>-D</b>, o desde un "super-servidor" como <b>inetd</b>) en el puerto NNTPS
+      (563) para clientes que admiten TLS/SSL. Consulte <a href="/man/nnrpd.8.en">nnrpd(8)</a> para
+      más detalles sobre cómo configurar eso. Puede usar el parámetro
+      <i>require_encryption</i> o la bandera <b>-c</b> para especificar un archivo
+      <i>readers.conf</i> alternativo si desea una configuración sustancialmente
+      diferente para este caso.</li>
+  <li>Si desea restringir un</li>
+</ul>
+</section>
+<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>readers.conf(5) — Arch Linux man pages</title>
+        <link rel="stylesheet" href="/css/man.css">
+        <link rel="stylesheet" href="/css/man-extra.css">
+        <link rel="icon" href="/favicon.ico" type="image/x-icon">
+        <meta name="robots" content="noindex">
+    </head>
+    <body>
+        <main>
+            <article>
+
+<section class="Sh">
+<h1 class="Sh" id="IN_A_NUTSHELL">IN A NUTSHELL</h1>
+<p class="Pp">This file controls access to the news server for readers,
+    including authentication and authorization.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION">DESCRIPTION</h1>
+<p class="Pp">The readers.conf file is used by <a href="/man/innd.8.en">innd(8)</a>
+    and <a href="/man/nnrpd.8.en">nnrpd(8)</a> to control which remote news
+    readers are allowed to connect to the server, and what they are allowed to
+    do. It is located in the INN configuration directory (usually
+    <code class="Nm">/etc/inn/</code>).</p>
+<p class="Pp">The file consists of a series of directives, each on its own line.
+    Lines starting with <code class="Nm">#</code> are comments.
+    Directives can be grouped into sections using <code class="Nm">auth</code>
+    and <code class="Nm">access</code> keywords. These directives are described
+    below.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTH_GROUP_PARAMETERS">AUTH GROUP PARAMETERS</h1>
+<p class="Pp">The <code class="Nm">auth</code> directive defines a group of
+    authentication parameters. These parameters are used to determine how
+    clients should authenticate themselves.</p>
+<dl class="Bl-tag">
+    <dt><code class="Nm">auth.default</code></dt>
+    <dd>Specifies the default authentication methods to try. This is a
+        comma-separated list of authentication methods (e.g.,
+        <code class="Nm">auth.default: krb5, password</code>).</dd>
+    <dt><code class="Nm">auth.realm</code></dt>
+    <dd>Specifies the Kerberos realm to use for Kerberos authentication. This
+        parameter is only relevant if Kerberos is one of the authentication
+        methods.</dd>
+    <dt><code class="Nm">auth.passwd-program</code></dt>
+    <dd>Specifies the program to use for password authentication. This program
+        should accept a username on standard input and return the encrypted
+        password on standard output. If this is not specified, password
+        authentication is disabled.</dd>
+    <dt><code class="Nm">auth.reject-message</code></dt>
+    <dd>Specifies the message to send to clients that are rejected. This can be
+        a simple string or a reference to a file.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="ACCESS_GROUP_PARAMETERS">ACCESS GROUP PARAMETERS</h1>
+<p class="Pp">The <code class="Nm">access</code> directive defines a group of
+    access control parameters. These parameters are used to determine whether
+    a client is allowed to connect and what actions they are permitted to
+    perform.</p>
+<dl class="Bl-tag">
+    <dt><code class="Nm">access.allow</code></dt>
+    <dd>Specifies a list of clients that are allowed to connect. This can be
+        hostnames, IP addresses, or wildcards. Connections not matching any
+        <code class="Nm">access.allow</code> directive are denied.</dd>
+    <dt><code class="Nm">access.deny</code></dt>
+    <dd>Specifies a list of clients that are denied access. This can be
+        hostnames, IP addresses, or wildcards. Connections matching any
+        <code class="Nm">access.deny</code> directive are denied, even if they
+        match an <code class="Nm">access.allow</code> directive.</dd>
+    <dt><code class="Nm">access.reject-message</code></dt>
+    <dd>Specifies the message to send to clients that are denied access.</dd>
+    <dt><code class="Nm">access.max-connections</code></dt>
+    <dd>Specifies the maximum number of simultaneous connections allowed from a
+        single client host.</dd>
+    <dt><code class="Nm">access.localonly</code></dt>
+    <dd>If set to <code class="Nm">true</code>, only connections originating from
+        localhost (127.0.0.1) will be allowed for this group. This is useful
+        for restricting access to local users or services.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SUMMARY">SUMMARY</h1>
+<p class="Pp">The <code class="Nm">readers.conf</code> file allows administrators
+    to finely control access to the news server. By combining <code class="Nm">auth</code>
+    and <code class="Nm">access</code> directives, administrators can create
+    complex access control policies that meet their specific security needs.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES">EXAMPLES</h1>
+<p class="Pp">The following example allows connections from <code class="Nm">example.com</code>
+    and <code class="Nm">192.168.1.0/24</code>, requires Kerberos authentication,
+    and denies access to all others.</p>
+<pre>
+auth.default: krb5
+auth.realm: EXAMPLE.COM
+access.allow: example.com
+access.allow: 192.168.1.0/24
+</pre>
+<p class="Pp">The following example allows only loopback connections (for users
+    running newsreaders on localhost or connecting via an SSH tunnel) and uses
+    the <code class="Nm">localaddress</code> parameter.</p>
+<pre>
+auth.default: password
+auth.passwd-program: /usr/lib/news/bin/ckpasswd
+access.allow: 127.0.0.1
+access.localonly: true
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SECURITY_CONSIDERATIONS">SECURITY CONSIDERATIONS</h1>
+<p class="Pp">It is crucial to configure readers.conf carefully to prevent
+    unauthorized access to the news server. Use strong authentication methods
+    and restrict access to only trusted hosts and users. Be particularly careful
+    when configuring password authentication, ensuring that the password program
+    is secure and properly configured.</p>
+<p class="Pp">To restrict an <code class="Nm">auth</code> group to only match loopback
+    connections (for users running newsreaders on localhost or connecting via an
+    SSH tunnel), use the <i>localaddress</i> parameter.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="HISTORY">HISTORY</h1>
+<p class="Pp">Written by Aidan Cully &lt;aidan@panix.com&gt; for InterNetNews.
+    Substantially expanded by Russ Allbery &lt;eagle@eyrie.org&gt;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO">SEE ALSO</h1>
+<p class="Pp"><a href="/man/auth_krb5.8.en">auth_krb5(8)</a>, <a href="/man/ckpasswd.8.en">ckpasswd(8)</a>, <a href="/man/inn.conf.5.en">inn.conf(5)</a>,
+    <a href="/man/innd.8.en">innd(8)</a>, <a href="/man/inn-secrets.conf.5.en">inn-secrets.conf(5)</a>, <a href="/man/libinn_uwildmat.3.en">libinn_uwildmat(3)</a>,
+    <a href="/man/newsfeeds.5.en">newsfeeds(5)</a>, <a href="/man/nnrpd.8.en">nnrpd(8)</a>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-03-29</td>
+    <td class="foot-os">INN 2.7.3</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/inn/">extra/inn</a></dd>
+        <dt>Version:</dt>
+        <dd>2.7.3-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.isc.org/othersoftware/">https://www.isc.org/othersoftware/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>custom:INN</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/inn/">/listing/extra/inn/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#IN_A_NUTSHELL">IN A NUTSHELL</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#AUTH_GROUP_PARAMETERS">AUTH GROUP PARAMETERS</a></li>
+        
+            <li><a href="#ACCESS_GROUP_PARAMETERS">ACCESS GROUP PARAMETERS</a></li>
+        
+            <li><a href="#SUMMARY">SUMMARY</a></li>
+        
+            <li><a href="#EXAMPLES">EXAMPLES</a></li>
+        
+            <li><a href="#SECURITY_CONSIDERATIONS">SECURITY CONSIDERATIONS</a></li>
+        
+            <li><a href="#HISTORY">HISTORY</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/readers.conf.5.en.txt">txt</a>, 
+        
+            <a href="/man/readers.conf.5.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

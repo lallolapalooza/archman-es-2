@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>gitformat-chunk(5) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">gitformat-chunk(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/git/">git</a></p>
+<p class="lic">Licencias: GPL-2.0-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">GITFORMAT-CHUNK(5)</td>
+    <td class="head-vol">Manual de Git</td>
+    <td class="head-rtitle">GITFORMAT-CHUNK(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">gitformat-chunk - Formatos de archivo basados en fragmentos</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Utilizado por <a href='/man/gitformat-commit-graph.5.en'>gitformat-commit-graph(5)</a> y el formato "MIDX"
+    (ver la documentación del formato de paquetes en <a href='/man/gitformat-pack.5.en'>gitformat-pack(5)</a>).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Algunos formatos de archivo en Git utilizan un concepto común de
+    "fragmentos" para describir secciones del archivo. Esto permite el acceso estructurado a un archivo grande escaneando una pequeña "tabla de contenido" para los datos restantes. Este formato común es utilizado por los archivos <b>commit-graph</b> y
+    <b>multi-pack-index</b>. Consulte el formato <b>multi-pack-index</b> en
+    <a href='/man/gitformat-pack.5.en'>gitformat-pack(5)</a> y el formato <b>commit-graph</b> en
+    <a href='/man/gitformat-commit-graph.5.en'>gitformat-commit-graph(5)</a> para ver cómo utilizan los fragmentos para describir
+    datos estructurados.</p>
+<p class="Pp">Un formato de archivo basado en fragmentos comienza con información de cabecera personalizada para ese formato. Esa cabecera debe incluir suficiente información para identificar el tipo de archivo, la versión del formato y el número de fragmentos en el archivo. A partir de esta información, ese archivo puede determinar el inicio de la región basada en fragmentos.</p>
+<p class="Pp">La región basada en fragmentos comienza con una tabla de contenido que describe dónde comienzan y terminan cada fragmento. Esto consiste en (C+1) filas de 12 bytes cada una, donde C es el número de fragmentos. Considere la siguiente tabla:</p>
+<div class="Bd-indent">
+<pre>| ID del fragmento (4 bytes) | Desplazamiento del fragmento (8 bytes) |
+|--------------------------|---------------------------------------|
+| ID[0]                    | OFFSET[0]                             |
+| ...                      | ...                                   |
+| ID[C]                    | OFFSET[C]                             |
+| 0x0000                   | OFFSET[C+1]                           |</pre>
+</div>
+<p class="Pp">Cada fila consta de un identificador de fragmento (ID) de 4 bytes y un desplazamiento de 8 bytes. Cada entero se almacena en orden de bytes de red (network-byte order).</p>
+<p class="Pp">El identificador de fragmento <b>ID</b>[<b>i</b>] es una etiqueta para los datos almacenados dentro de este archivo desde <b>OFFSET</b>[<b>i</b>] (inclusive) hasta
+    <b>OFFSET</b>[<b>i+1</b>] (exclusive). Por lo tanto, el tamaño del <b>i</b>-ésimo
+    <b>fragmento</b> <b>es</b> <b>igual</b> <b>a</b> <b>la</b> <b>diferencia</b>
+    <b>entre</b> `OFFSET[<b>i+1</b>] y <b>OFFSET</b>[<b>i</b>]. Esto requiere que los datos del fragmento aparezcan de forma contigua en el mismo orden que la tabla de contenido.</p>
+<p class="Pp">La entrada final en la tabla de contenido debe ser cuatro bytes cero.
+    Esto confirma que la tabla de contenido está terminando y proporciona el desplazamiento para el final de los datos basados en fragmentos.</p>
+<p class="Pp">Nota: El formato basado en fragmentos espera que el archivo contenga *al menos* un hash final después de <b>OFFSET</b>[<b>C+1</b>].</p>
+<p class="Pp">Las funciones para trabajar con formatos de archivo basados en fragmentos se declaran en
+    <b>chunk-format.h</b>. El uso de estos métodos proporciona verificaciones adicionales que ayudan a los desarrolladores al crear nuevos formatos de archivo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ESCRIBIR_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS'><a class='permalink' href='#ESCRIBIR_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS'>ESCRIBIR FORMATOS DE ARCHIVO BASADOS EN FRAGMENTOS</a></h1>
+<p class="Pp">Para escribir un formato de archivo basado en fragmentos, cree un
+    <b>struct</b>
+    <b>chunkfile</b> llamando a <b>init_chunkfile</b>() y pase un puntero a
+    <b>struct</b>
+    <b>hashfile</b>. El llamante es responsable de abrir el
+    <b>hashfile</b> y escribir la información de cabecera para que el formato de archivo sea identificable antes de que comience el formato basado en fragmentos.</p>
+<p class="Pp">Luego, llame a <b>add_chunk</b>() para cada fragmento que se pretenda escribir. Esto rellena el
+    <b>chunkfile</b> con información sobre el orden y el tamaño de cada fragmento a escribir. Proporcione un puntero a función <b>chunk_write_fn</b> para realizar la escritura de los datos del fragmento cuando se solicite.</p>
+<p class="Pp">Llame a <b>write_chunkfile</b>() para escribir la tabla de contenido en el
+    <b>hashfile</b> seguido de cada uno de los fragmentos. Esto verificará que cada fragmento escribió la cantidad esperada de datos para que la tabla de contenido sea correcta.</p>
+<p class="Pp">Finalmente, llame a <b>free_chunkfile</b>() para liberar los datos de
+    <b>struct</b>
+    <b>chunkfile</b>. El llamante es responsable de finalizar el
+    <b>hashfile</b> escribiendo el hash final y cerrando el archivo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LEER_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS'><a class='permalink' href='#LEER_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS'>LEER FORMATOS DE ARCHIVO BASADOS EN FRAGMENTOS</a></h1>
+<p class="Pp">Para leer un formato de archivo basado en fragmentos, el archivo debe abrirse como una región mapeada en memoria. La API de formato de fragmentos espera que todo el archivo esté mapeado como una región de memoria contigua.</p>
+<p class="Pp">Inicialice un puntero a
+    <b>struct</b>
+    <b>chunkfile</b> con
+    <b>init_chunkfile</b>(<b>NULL</b>).</p>
+<p class="Pp">Después de leer la información de cabecera desde el principio del
+    archivo, incluido el recuento de fragmentos, llame a
+    <b>read_table_of_contents</b>() para rellenar el
+    <b>struct</b>
+    <b>chunkfile</b> con la lista de fragmentos, sus desplazamientos y sus tamaños.</p>
+<p class="Pp">Extraiga la información de datos para cada fragmento utilizando
+    <b>pair_chunk</b>() o <b>read_chunk</b>():</p>
+<div class="Bd-indent">&#x2022;<b>pair_chunk</b>() asigna un puntero dado con
+  la ubicación dentro del archivo mapeado en memoria correspondiente al desplazamiento de ese
+  fragmento. Si el fragmento no existe, el puntero no se modifica.</div>
+<div class="Bd-indent">&#x2022;<b>read_chunk</b>() toma un puntero a función
+    <b>chunk_read_fn</b> y lo llama con la información inicial de puntero y tamaño apropiada. La función no se llama si el fragmento no existe. Utilice este método para leer fragmentos si necesita realizar un análisis inmediato o si necesita ejecutar lógica basada en el tamaño del fragmento.</div>
+<p class="Pp">Después de llamar a estos métodos, llame a
+    <b>free_chunkfile</b>() para liberar los datos de
+    <b>struct</b>
+    <b>chunkfile</b>. Esto no cerrará la región mapeada en memoria. Se espera que los llamantes posean esos datos durante el tiempo que se necesiten los punteros dentro de la región.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">Estos formatos de archivo utilizan la API de formato de fragmentos y pueden servir como ejemplos para formatos futuros:</p>
+<div class="Bd-indent">&#x2022;<b>commit-graph:</b> vea
+  <b>write_commit_graph_file</b>() y <b>parse_commit_graph</b>() en
+  <b>commit-graph.c</b> para ver cómo se utiliza la API de formato de fragmentos para escribir y analizar el formato de archivo commit-graph documentado en el formato de archivo commit-graph en
+  <a href='/man/gitformat-commit-graph.5.en'>gitformat-commit-graph(5)</a>.</div>
+<div class="Bd-indent">&#x2022;<b>multi-pack-index:</b> vea
+  <b>write_midx_internal</b>() y <b>load_multi_pack_index</b>() en
+  <b>midx.c</b> para ver cómo se utiliza la API de formato de fragmentos para escribir y analizar el formato de archivo multi-pack-index documentado en la sección del formato de archivo multi-pack-index de
+  <a href='/man/gitformat-pack.5.en'>gitformat-pack(5)</a>.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GIT'><a class='permalink' href='#GIT'>GIT</a></h1>
+<p class="Pp">Parte de la suite <a href='/man/git.1.en'>git(1)</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-11-17</td>
+    <td class="foot-os">Git 2.52.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/git/">extra/git</a></dd>
+        <dt>Versión:</dt>
+        <dd>2.52.0-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git-scm.com/">https://git-scm.com/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/git/">/listing/extra/git/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ESCRIBIR_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS">ESCRIBIR FORMATOS DE ARCHIVO BASADOS EN FRAGMENTOS</a></li>
+        
+            <li><a href="#LEER_FORMATOS_DE_ARCHIVO_BASADOS_EN_FRAGMENTOS">LEER FORMATOS DE ARCHIVO BASADOS EN FRAGMENTOS</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#GIT">GIT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/gitformat-chunk.5.en.txt">txt</a>, 
+        
+            <a href="/man/gitformat-chunk.5.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la <a href="https://www.gnu.o
+rg/licenses/gpl-3.0.en.html"&gt;licenci</a>a GPL-3.0
+               excepto por</p> el contenido de las páginas del man</footer>ual, que tienen su propia licencia
+</body>               especificada en el pa</html>quete correspondiente de Arch Linux.

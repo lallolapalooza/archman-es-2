@@ -1,0 +1,246 @@
+
+
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ibv_post_send(3) — Páginas del manual </title>de Arch
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ibv_post_send(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/rdma-core/">rdma-core</a></p>
+
+        r
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">IBV_POST_SEN</td>D(3)
+    <td class="head-vol">Manual del Programador de </td>Libibverbs
+    <td class="head-rtitle">IBV_POST_SEN</td>D(</tr>3</table>)
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBR</a></h1>E
+<p class="Pp">ibv_post_send - publica una l</p>ista de solicitudes de traba</section>jo (WRs) en una cola de envío
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSI</a></h1>S
+<pre><b>#include &lt;infiniband/verbs.</b>h&gt;
+
+<b>int ibv_post_send(struct ibv_qp</b> <i>*qp</i><b>, struct ibv_send_wr</b> <i>*wr</i><b></b>,
+<b>                  struct ibv_send_wr</b> <i>**bad_wr</i><b>)</b></pre></section>;
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓ</a></h1>N
+<p class="Pp"><b>ibv_post_send() </b>publica la lista enlazada de solicitudes de trabajo (WRs) que comienza con <i>wr </i>en la cola de envío del par de colas <i>qp.</i>
+    Detiene el procesamiento de las WRs de esta lista en el primer fallo (que puede detectarse inmediatamente mientras se publican las solicitudes) y devuelve esta WR fallida a través de <i>bad_wr</i></p>.
+<p class="Pp">El argumento <i>wr </i>es una estructura ibv_send_wr, tal como se define en
+    &lt;infiniband/verbs.h&gt;</p>.
+<pre>struct ibv_send_wr {
+uint64_t                wr_id;                  /* ID de WR definido por el usuario */
+struct ibv_send_wr     *next;                   /* Puntero a la siguiente WR en la lista, NULL si es la última WR */
+struct ibv_sge         *sg_list;                /* Puntero al array s/g */
+int                     num_sge;                /* Tamaño del array s/g */
+enum ibv_wr_opcode      opcode;                 /* Tipo de operación */
+unsigned int            send_flags;             /* Banderas de las propiedades de la WR */
+union {
+__be32                  imm_data;               /* Datos inmediatos (en orden de bytes de red) */
+uint32_t                invalidate_rkey;        /* Rkey remoto a invalidar */
+};
+union {
+struct {
+uint64_t        remote_addr;    /* Dirección de inicio del búfer de memoria remoto */
+uint32_t        rkey;           /* Clave de la Región de Memoria remota */
+} rdma;
+struct {
+uint64_t        remote_addr;    /* Dirección de inicio del búfer de memoria remoto */
+uint64_t        compare_add;    /* Operando de comparación */
+uint64_t        swap;           /* Operando de intercambio */
+uint32_t        rkey;           /* Clave de la Región de Memoria remota */
+} atomic;
+struct {
+struct ibv_ah  *ah;             /* Manipulador de dirección (AH) para la dirección del nodo remoto */
+uint32_t        remote_qpn;     /* Número de QP de la QP de destino */
+uint32_t        remote_qkey;    /* Número de Q_Key de la QP de destino */
+} ud;
+} wr;
+union {
+struct {
+uint32_t remote_srqn;            /* Número del SRQ remoto */
+} xrc;
+} qp_type;
+union {
+struct {
+struct ibv_mw            *mw;             /* Ventana de memoria (MW) de tipo 2 a enlazar */
+uint32_t                 rkey;            /* El nuevo rkey deseado de la MW */
+struct ibv_mw_bind_info  bind_info;       /* Información adicional de enlace de la MW */
+} bind_mw;
+struct {
+void			*hdr;	/* Dirección de puntero del encabezado en línea */
+uint16_t		hdr_sz;	/* Tamaño del encabezado en línea */
+uint16_t		mss;	/* Tamaño máximo de segmento para cada fragmento TSO */
+} tso;
+};
+}</pre>;
+<pre>struct ibv_mw_bind_info {
+struct ibv_mr            *mr;             /* La Región de memoria (MR) a la que enlazar la MW */
+uint64_t                 addr;           /* La dirección en la que la MW debería comenzar */
+uint64_t                 length;          /* La longitud (en bytes) que la MW debería abarcar */
+unsigned int             mw_access_flags; /* Banderas de acceso a la MW. Utilice ibv_access_flags */
+}</pre>;
+<pre>struct ibv_sge {
+uint64_t                addr;                   /* Dirección de inicio del búfer de memoria local o número de bytes desde el
+                                                   inicio de la MR para MRs que son IBV_ACCESS_ZERO_BASED */
+uint32_t                length;                 /* Longitud del búfer */
+uint32_t                lkey;                   /* Clave de la Región de memoria local */
+}</pre>;
+<p class="Pp">Cada Tipo de Servicio de Transporte de QP admite un conjunto específico de códigos de operación, como se muestra en la siguiente </p>tabla:
+<pre>CÓDIGO DE OPERACIÓN            | IBV_QPT_UD | IBV_QPT_UC | IBV_QPT_RC | IBV_QPT_XRC_SEND | IBV_QPT_RAW_PACKET
+----------------------------+------------+------------+------------+------------------+--------------------
+IBV_WR_SEND                 |     X      |     X      |     X      |         X        |         X
+IBV_WR_SEND_WITH_IMM        |     X      |     X      |     X      |         X        |
+IBV_WR_RDMA_WRITE           |            |     X      |     X      |         X        |
+IBV_WR_RDMA_WRITE_WITH_IMM  |            |     X      |     X      |         X        |
+IBV_WR_RDMA_READ            |            |            |     X      |         X        |
+IBV_WR_ATOMIC_CMP_AND_SWP   |            |            |     X      |         X        |
+IBV_WR_ATOMIC_FETCH_AND_ADD |            |            |     X      |         X        |
+IBV_WR_LOCAL_INV            |            |     X      |     X      |         X        |
+IBV_WR_BIND_MW              |            |     X      |     X      |         X        |
+IBV_WR_SEND_WITH_INV        |            |     X      |     X      |         X        |
+IBV_WR_TSO                  |     X      |            |            |                  |         </pre>X
+<p class="Pp">El atributo send_flags describe las propiedades de la WR. Es
+    0 o el OR bit a bit de uno o más de los siguientes </p>indicadores:
+<dl class="Bl-tag">
+  <dt id="IBV_SEND_FENCE"><a class="permalink" href="#IBV_SEND_FENCE"><b>IBV_SEND_FENCE
+    Establece el indicador de valla. Válido solo para QPs con Tipo de Servicio de Transporte
+    <b>IBV_QPT_</b></b></a></dt>RC
+  <dd></dd>
+  <dt id="IBV_SEND_SIGNALED"><a class="permalink" href="#IBV_SEND_SIGNALED"><b>IBV_SEND_SIGNALED
+    Establece el indicador de notificación de finalización. Relevante solo si la QP fue creada
+    con </b></a></dt>sq_sig_all=0
+  <dd></dd>
+  <dt id="IBV_SEND_SOLICITED"><a class="permalink" href="#IBV_SEND_SOLICITED"><b>IBV_SEND_SOLICITED
+    Establece el indicador de evento solicitado. Válido solo para Envío y Escritura RDMA con
+    </b></a></dt>inmediato
+  <dd></dd>
+  <dt id="IBV_SEND_INLINE"><a class="permalink" href="#IBV_SEND_INLINE"><b>IBV_SEND_INLINE
+    Envía los datos de la lista de recopilación dada como datos en </b></a></dt>línea
+  <dd>en un WQE de envío. Válido solo para Envío y Escritura RDMA. La L_Key no será
+      </dd>comprobada.
+  <dt id="IBV_SEND_IP_CSUM"><a class="permalink" href="#IBV_SEND_IP_CSUM"><b>IBV_SEND_IP_CSUM
+    Descarga el cálculo de la suma de comprobación de IPv4 y </b></a></dt>TCP/UDP.
+  <dd>Válido solo cuando <b>device_cap_flags en dev</b>ice_attr indica que la </dd>QP
+      actual es compa</dl>tible con la descarga d</section>e suma de comprobación.
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE </a></h1>RETORNO
+<p class="Pp"><b>ibv_post_send() devuelve 0 en c</b>aso de éxito, o el valor de err</p>no
+    en caso de fallo (lo cu</section>al indica el motivo del fallo).
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTA</a></h1>S
+<p class="Pp">El usuario no debe alterar ni destruir los AHs asociados con las WRs hasta que
+    la solicitud se haya ejecutado completamente y se haya recuperado una finalización de trabajo de la
+    cola de finalización (CQ) correspondiente para evitar un comportamiento </p>inesperado.
+<p class="Pp">Los búfers utilizados por una WR solo pueden reutilizarse de forma segura después de que la solicitud de la WR se haya ejecutado completamente y se haya recuperado una finalización de trabajo de la
+    cola de finalización (CQ) correspondiente. Sin embargo, si se estableció la bandera IBV_SEND_INLINE,
+    el búfer puede reutilizarse inmediatamente después de que la llamada </p>retorne.
+<p class="Pp">IBV_WR_DRIVER1 es un código de operació</p>n que debe utilizarse para emitir una
+  </section>  operación específica del controlador.
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VÉASE   </a></h1>TAMBIÉN
+<p class="Pp"><a href='/man/ibv_create_qp.3.en'>ibv_create_qp(3)</a>, <a href='/man/ibv_create_ah.3.en'>ibv_create_ah(3)</a>,
+    <a href='/man/ibv_post_recv.3.en'>ibv_post_recv(3)</a>, <a href='/man/ibv_post_srq_recv.3.en'>ibv_post_srq_recv(3)</a>,
+  <a href='/man/ibv_poll_cq.3.en'>ibv_poll_cq(</a></p>3</section>)
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORE</a></h1>S
+<dl class="Bl-tag">
+  <dt id="Dotan"><a class="permalink" href="#Dotan">Dotan Barak
+    &lt;dotanba@gmail.</a></dt>com&gt;
+  <dd></dd>
+  <dt id="Majd"><a class="permalink" href="#Majd">Majd Dibbiny
+    &lt;majd@mellanox.</a></dt>com&gt;
+  <dd></dd>
+  <dt id="Yishai"><a class="permalink" href="#Yishai">Yishai Hadas
+    &lt;yishaih@mellanox.</a></dt>com&gt;
+  <dd></dd>
+</dl>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2006-10</td>-31
+    <td class="foot-os">li</td>b</tr>ib</table>ve</section>r</article>bs
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del </p>paquete:
+    <dl>
+        <dt>Nombre del </dt>paquete:
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/rdma-core/">extra/rdm</a></dd>a-core
+        <dt>Vers</dt>ión:
+        <dd>60.</dd>0-2
+        <dt>Upst</dt>ream:
+        <dd><a href="https://github.com/linux-rdma/rdma-core">https://github.com/linux-rdma/rd</a></dd>ma-core
+        <dt>Licen</dt>cias:
+        <dd>GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.</dd>0-or-later
+        <dt>Manu</dt>ales:
+        <dd><a href="/listing/extra/rdma-core/">/listing/extra/rdma-c</a></dd>ore/</dl>
+    
+</section>
+
+<details>
+    <summary>Tabla de </summary>contenidos
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">N</a></li>OMBRE
+        
+            <li><a href="#SYNOPSIS">SI</a></li>NOPSIS
+        
+            <li><a href="#DESCRIPTION">DESC</a></li>RIPCIÓN
+        
+            <li><a href="#RETURN_VALUE">VALOR </a></li>DE RETORNO
+        
+            <li><a href="#NOTES">N</a></li>OTAS
+        
+            <li><a href="#SEE_ALSO">VÉASE </a></li>TAMBIÉN
+        
+            <li><a href="#AUTHORS">A</a></li>UTO</ul>R</nav>E</details>S
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ibv_post_send.3.en.txt">t</a>xt, 
+        
+            <a href="/man/ibv_post_send.3.en.raw"></a>r</p>a</nav></aside></main>w
+        <footer>
+            de manual.
+            <p>El sitio web está disponible bajo los términos de la <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">licencia
+               GPL-3.0</a>, excepto por el contenido de l</p>as páginas de manual, que tiene</footer>n su propia licencia
+          </body>     especificada en el paquete</html> correspondiente de Arch Linux.

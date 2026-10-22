@@ -1,0 +1,1906 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perliol(1perl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perliol.1perl</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLIOL(1perl)</td>
+    <td class="head-vol">Guía de Referencia del Programador de Perl</td>
+    <td class="head-rtitle">PERLIOL(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perliol - API de C para la implementación de IO en Capas de Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SINOPSIS"><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>/* Definiendo una capa ... */
+#include &lt;perliol.h&gt;</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN"><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este documento describe el comportamiento y la implementación de la
+    abstracción PerlIO descrita en perlapio cuando
+    <span class="Li">&quot;USE_PERLIO&quot;</span> está definida.</p>
+<section class="Ss">
+<h2 class="Ss" id="Historia_y_Antecedentes"><a class='permalink' href='#Historia_y_Antecedentes'>Historia y Antecedentes</a></h2>
+<p class="Pp">La abstracción PerlIO se introdujo en perl5.003_02 pero languideció
+    como solo una abstracción hasta perl5.7.0. Sin embargo, durante ese tiempo,
+    varias extensiones de perl cambiaron a usarla, por lo que la API está en
+    gran parte fija para mantener la compatibilidad (fuente).</p>
+<p class="Pp">El objetivo de la implementación es proporcionar la API de PerlIO de
+    manera flexible y neutral en cuanto a plataforma. También es una prueba de un
+    enfoque de &quot;C Orientada a Objetos, con vtables&quot; que puede ser
+    aplicado a Raku.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Estructura_Básica"><a class='permalink' href='#Estructura_Básica'>Estructura Básica</a></h2>
+<p class="Pp">PerlIO es una pila de capas.</p>
+<p class="Pp">Los niveles bajos de la pila trabajan con las llamadas de bajo nivel
+    del sistema operativo (descriptores de archivo en C) obteniendo bytes de
+    entrada y salida, las capas más altas de la pila almacenan en búfer, filtran
+    y manipulan de otra manera la E/S, y devuelven caracteres (o bytes) a Perl.
+    Se utilizan los términos *superior* e *inferior* para referirse a la
+    posición relativa de las capas de la pila.</p>
+<p class="Pp">Una capa contiene una &quot;vtable&quot;, la tabla de operaciones de
+    E/S (en nivel C una tabla de punteros a funciones), y banderas de estado. Las
+    funciones de la vtable implementan operaciones como &quot;open&quot;,
+    &quot;read&quot; y &quot;write&quot;.</p>
+<p class="Pp">Cuando se solicita una E/S, por ejemplo &quot;read&quot;, la
+    solicitud va desde Perl primero hacia abajo en la pila usando las funciones
+    &quot;read&quot; de cada capa, luego en la parte inferior se solicita la entrada
+    a los servicios del sistema operativo, luego el resultado se devuelve hacia
+    arriba en la pila, finalmente siendo interpretado como datos de Perl.</p>
+<p class="Pp">Las solicitudes no necesariamente van siempre hasta abajo del todo
+    hacia el sistema operativo: ahí es donde entra en juego el almacenamiento en
+    búfer de PerlIO.</p>
+<p class="Pp">Cuando haces un <b>open()</b> y especificas capas PerlIO adicionales
+    que se implementarán, las capas que especificas se &quot;insertan&quot;
+    encima de la pila predeterminada ya existente. Una forma de verlo es que
+    &quot;el sistema operativo está a la izquierda&quot; y &quot;Perl está a la
+    derecha&quot;.</p>
+<p class="Pp">Qué capas exactas están en esta pila predeterminada depende de
+    muchas cosas: tu sistema operativo, la versión de Perl, la configuración de
+    compilación de Perl y la configuración de ejecución de Perl. Ver PerlIO,
+    &quot;PERLIO&quot; en perlrun, y open para más información.</p>
+<p class="Pp"><b>binmode()</b> opera de manera similar a <b>open()</b>: por
+    defecto, las capas especificadas se insertan encima de la pila existente.</p>
+<p class="Pp">Sin embargo, ten en cuenta que incluso cuando las capas especificadas
+    se &quot;insertan encima&quot; para <b>open()</b> y <b>binmode()</b>, esto
+    no significa que los efectos se limiten a la &quot;cima&quot;: las capas
+    PerlIO pueden ser muy 'activas' e inspeccionar y afectar capas también más
+    profundas en la pila. Por ejemplo, existe una capa llamada &quot;raw&quot;
+    que &quot;elimina&quot; capas repetidamente hasta que llega a la primera
+    capa que se ha declarado capaz de manejar datos binarios. Las capas
+    &quot;insertadas&quot; se procesan en orden de izquierda a derecha.</p>
+<p class="Pp"><b>sysopen()</b> opera (como era de esperar) a un nivel más bajo en la
+    pila que <b>open()</b>. Por ejemplo, en sistemas Unix o similares a Unix,
+    <b>sysopen()</b> opera directamente en el nivel de los descriptores de
+    archivo: en los términos de las capas PerlIO, solo utiliza la capa
+    &quot;unix&quot;, que es un envoltorio bastante delgado sobre los
+    descriptores de archivo de Unix.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Capas_vs_Disciplinas"><a class='permalink' href='#Capas_vs_Disciplinas'>Capas vs Disciplinas</a></h2>
+<p class="Pp">La discusión inicial sobre la capacidad de modificar el
+    comportamiento de los flujos de E/S utilizó el término
+    &quot;disciplina&quot; para las entidades que se agregaban. Esto vino (creo)
+    del uso del término en &quot;sfio&quot;, que a su vez lo tomó prestado de las
+    &quot;disciplinas de línea&quot; en los terminales Unix. Sin embargo, este
+    documento (y el código C) utiliza el término &quot;capa&quot;.</p>
+<p class="Pp">Esto es, espero, un término natural dada la implementación, y debería
+    evitar connotaciones inherentes a usos anteriores de
+    &quot;disciplina&quot; para cosas que son bastante diferentes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Estructuras_de_Datos"><a class='permalink' href='#Estructuras_de_Datos'>Estructuras de Datos</a></h2>
+<p class="Pp">La estructura de datos básica es un PerlIOl:</p>
+<pre>typedef struct _PerlIO PerlIOl;
+typedef struct _PerlIO_funcs PerlIO_funcs;
+typedef PerlIOl *PerlIO;
+struct _PerlIO
+{
+ PerlIOl *      next;       /* Capa inferior */
+ PerlIO_funcs * tab;        /* Funciones para esta capa */
+ U32            flags;      /* Varios flags para el estado */
+};</pre>
+<p class="Pp">Un <span class="Li">&quot;PerlIOl *&quot;</span> es un puntero a la
+    estructura, y el nivel de *aplicación* <span class="Li">&quot;PerlIO
+    *&quot;</span> es un puntero a un <span class="Li">&quot;PerlIOl
+    *&quot;</span> - es decir, un puntero a un puntero a la estructura. Esto
+    permite que el nivel de aplicación <span class="Li">&quot;PerlIO *&quot;</span>
+    permanezca constante mientras el <span class="Li">&quot;PerlIOl *&quot;</span>
+    real debajo cambia. (Compare el <span class="Li">&quot;SV *&quot;</span> de
+    Perl que permanece constante mientras su campo <span class="Li">&quot;sv_any&quot;</span>
+    cambia a medida que el tipo del escalar cambia). Un flujo de E/S se
+    representa generalmente como un puntero a esta lista enlazada de
+    &quot;capas&quot;.</p>
+<p class="Pp">Cabe señalar que debido a la doble indirección en un
+    <span class="Li">&quot;PerlIO *&quot;</span>, un
+    <span class="Li">&quot;&amp;(perlio-&gt;next)&quot;</span> &quot;es&quot; un
+    <span class="Li">&quot;PerlIO *&quot;</span>, y por lo tanto, hasta cierto
+    punto al menos una capa puede usar la API &quot;estándar&quot; en la
+    siguiente capa inferior.</p>
+<p class="Pp">Una &quot;capa&quot; se compone de dos partes:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Las funciones y atributos de la &quot;clase de capa&quot;.</dd>
+  <dt>2.</dt>
+  <dd>Los datos por instancia para un manejador particular.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Funciones_y_Atributos"><a class='permalink' href='#Funciones_y_Atributos'>Funciones y Atributos</a></h2>
+<p class="Pp">Las funciones y atributos se acceden a través del miembro
+    &quot;tab&quot; (de tabla) de <span class="Li">&quot;PerlIOl&quot;</span>. Las
+    funciones (métodos de la &quot;clase&quot; de capa) son fijas y están
+    definidas por el tipo <span class="Li">&quot;PerlIO_funcs&quot;</span>. Son en
+    general las mismas que las funciones públicas
+    <span class="Li">&quot;PerlIO_xxxxx&quot;</span>:</p>
+<pre>struct _PerlIO_funcs
+{
+ Size_t     fsize;
+ char *     name;
+ Size_t     size;
+ IV         kind;
+ IV         (*Pushed)(pTHX_ PerlIO *f,
+                            const char *mode,
+                            SV *arg,
+                            PerlIO_funcs *tab);
+ IV         (*Popped)(pTHX_ PerlIO *f);
+ PerlIO *   (*Open)(pTHX_ PerlIO_funcs *tab,
+                          PerlIO_list_t *layers, IV n,
+                          const char *mode,
+                          int fd, int imode, int perm,
+                          PerlIO *old,
+                          int narg, SV **args);
+ IV         (*Binmode)(pTHX_ PerlIO *f);
+ SV *       (*Getarg)(pTHX_ PerlIO *f, CLONE_PARAMS *param, int flags)
+ IV         (*Fileno)(pTHX_ PerlIO *f);
+ PerlIO *   (*Dup)(pTHX_ PerlIO *f,
+                         PerlIO *o,
+                         CLONE_PARAMS *param,
+                         int flags)
+ /* Funciones estilo Unix - cf sfio line disciplines */
+ SSize_t    (*Read)(pTHX_ PerlIO *f, void *vbuf, Size_t count);
+ SSize_t    (*Unread)(pTHX_ PerlIO *f, const void *vbuf, Size_t count);
+ SSize_t    (*Write)(pTHX_ PerlIO *f, const void *vbuf, Size_t count);
+ IV         (*Seek)(pTHX_ PerlIO *f, Off_t offset, int whence);
+ Off_t      (*Tell)(pTHX_ PerlIO *f);
+ IV         (*Close)(pTHX_ PerlIO *f);
+ /* Funciones de E/S con búfer estilo stdio */
+ IV         (*Flush)(pTHX_ PerlIO *f);
+ IV         (*Fill)(pTHX_ PerlIO *f);
+ IV         (*Eof)(pTHX_ PerlIO *f);
+ IV         (*Error)(pTHX_ PerlIO *f);
+ void       (*Clearerr)(pTHX_ PerlIO *f);
+ void       (*Setlinebuf)(pTHX_ PerlIO *f);
+ /* Funciones de inspección de Perl */
+ STDCHAR *  (*Get_base)(pTHX_ PerlIO *f);
+ Size_t     (*Get_bufsiz)(pTHX_ PerlIO *f);
+ STDCHAR *  (*Get_ptr)(pTHX_ PerlIO *f);
+ SSize_t    (*Get_cnt)(pTHX_ PerlIO *f);
+ void       (*Set_ptrcnt)(pTHX_ PerlIO *f,STDCHAR *ptr,SSize_t cnt);
+};</pre>
+<p class="Pp">Los primeros miembros de la estructura proporcionan un tamaño de tabla
+    de funciones para comprobación de compatibilidad, el &quot;nombre&quot; de
+    la capa, el tamaño para <span class="Li">&quot;malloc&quot;</span> para los
+    datos por instancia, y algunas banderas que son atributos de la clase en su
+    conjunto (como si es una capa de almacenamiento en búfer), luego siguen las
+    funciones que se dividen en cuatro grupos básicos:</p>
+<dl class=
+<section class="Ss">
+<h2 class="Ss" id='PerlIO_implementation_details'><a class='permalink' href='#PerlIO_implementation_details'>PerlIO implementation details</a></h2>
+<p class="Pp">This document describes the design and implementation of the PerlIO
+    system introduced in Perl 5.7.0.</p>
+<section class="Ss">
+<h2 class="Ss" id='The_PerlIO_interface'><a class='permalink' href='#The_PerlIO_interface'>The PerlIO interface</a></h2>
+<p class="Pp">The PerlIO system is based on a table of functions that operate on a
+    <span class="Li">PerlIO</span> object. This table is specific to the layer.
+    The layer itself is specified when opening a file.</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Funciones de apertura e inicialización</dd>
+  <dt>2.</dt>
+  <dd>Operaciones básicas de E/S</dd>
+  <dt>3.</dt>
+  <dd>Opciones de bufferizado de la clase Stdio.</dd>
+  <dt>4.</dt>
+  <dd>Funciones para soportar el acceso tradicionalmente "rápido" de Perl al
+      buffer.</dd>
+</dl>
+<p class="Pp">Una capa no tiene que implementar todas las funciones, pero la
+    tabla completa debe estar presente. Las ranuras no implementadas pueden ser
+    NULL (lo que resultará en un error al ser llamadas) o pueden ser rellenadas
+    con stubs para "heredar" el comportamiento de una "clase base". Esta
+    "herencia" es fija para todas las instancias de la capa, pero como la capa
+    elige qué stubs poblar la tabla, es posible una "herencia múltiple" limitada.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Datos por instancia</h2>
+<p class="Pp">Los datos por instancia se mantienen en memoria más allá de la estructura
+    básica PerlIOl, haciendo de PerlIOl el primer miembro de la estructura de la
+    capa de la siguiente manera:</p>
+<pre>typedef struct
+{
+ struct _PerlIO base;       /* Información de la "clase" base */
+ STDCHAR *      buf;        /* Inicio del buffer */
+ STDCHAR *      end;        /* Fin de la parte válida del buffer */
+ STDCHAR *      ptr;        /* Posición actual en el buffer */
+ Off_t          posn;       /* Desplazamiento de buf en el archivo */
+ Size_t         bufsiz;     /* Tamaño real del buffer */
+ IV             oneword;    /* Buffer de emergencia */
+} PerlIOBuf;</pre>
+<p class="Pp">De esta manera (como para los escalares de perl) un puntero a un
+    PerlIOBuf puede ser tratado como un puntero a un PerlIOl.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Layers_in_action'><a class='permalink' href='#Layers_in_action'>Capas en acción</a></h2>
+<pre>             table           perlio          unix
+         |           |
+         +-----------+    +----------+    +--------+
+PerlIO -&gt;|           |---&gt;|  next    |---&gt;|  NULL  |
+         +-----------+    +----------+    +--------+
+         |           |    |  buffer  |    |   fd   |
+         +-----------+    |          |    +--------+
+         |           |    +----------+</pre>
+<p class="Pp">Lo anterior intenta mostrar cómo funciona el esquema de capas en un
+    caso simple. El <span class="Li">&quot;PerlIO *&quot;</span> de la aplicación
+    apunta a una entrada en la(s) tabla(s) que representa(n) handles abiertos
+    (asignados). Por ejemplo, las tres primeras ranuras de la tabla corresponden
+    a <span class="Li">&quot;stdin&quot;</span>, <span class="Li">&quot;stdout&quot;</span>
+    y <span class="Li">&quot;stderr&quot;</span>. La tabla a su vez apunta a la capa
+    "superior" actual para el handle - en este caso, una instancia de la capa de
+    bufferizado genérico "perlio". Esa capa a su vez apunta a la siguiente capa
+    inferior - en este caso, la capa de bajo nivel "unix".</p>
+<p class="Pp">Lo anterior es aproximadamente equivalente a un stream bufferizado
+    "stdio", pero con mucha más flexibilidad:</p>
+<ul class="Bl-bullet">
+  <li>Si la
+      <span class="Li">&quot;lectura&quot;</span>/<span class="Li">&quot;escritura&quot;</span>/<span class="Li">&quot;lseek&quot;</span>
+      de nivel Unix no es apropiada para (por ejemplo) sockets, entonces la capa
+      "unix" puede ser reemplazada (en el momento de la apertura o incluso
+      dinámicamente) con una capa de "socket".</li>
+  <li>Diferentes handles pueden tener diferentes esquemas de bufferizado. La capa
+      "superior" podría ser la capa "mmap" si leer archivos de disco fuera más
+      rápido usando <span class="Li">&quot;mmap&quot;</span> que
+      <span class="Li">&quot;read&quot;</span>. Un stream "sin bufferizar" se puede
+      implementar simplemente no teniendo una capa de buffer.</li>
+  <li>Se pueden insertar capas adicionales para procesar los datos mientras fluyen.
+      Esta fue la necesidad principal para incluir el esquema en perl 5.7.0+ -
+      necesitábamos un mecanismo para permitir la traducción de datos entre la
+      codificación interna de perl (conceptualmente al menos Unicode como UTF-8)
+      y el formato "nativo" utilizado por el sistema. Esto lo proporciona la
+      capa ":encoding(xxxx)" que normalmente se sitúa por encima de la capa de
+      bufferizado.</li>
+  <li>Se puede añadir una capa que realice la traducción de "\n" a CRLF. Esta capa
+      se puede usar en cualquier plataforma, no solo en aquellas que normalmente
+      hacen tales cosas.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss">Bits de flags por instancia</h2>
+<p class="Pp">Los bits de flags genéricos son un híbrido de flags estilo
+    <span class="Li">&quot;O_XXXXX&quot;</span> deducidos de la cadena de modo pasada
+    a <span class="Li">PerlIO_open()</span>, y bits de estado para capas de buffer
+    típicas.</p>
+<dl class="Bl-tag">
+  <dt id="PERLIO_F_EOF"><a class="permalink" href="#PERLIO_F_EOF">PERLIO_F_EOF</a></dt>
+  <dd>Fin de archivo.</dd>
+  <dt id="PERLIO_F_CANWRITE"><a class="permalink" href="#PERLIO_F_CANWRITE">PERLIO_F_CANWRITE</a></dt>
+  <dd>Se permiten escrituras, es decir, abierto como "w" o "r+" o "a", etc.</dd>
+  <dt id="PERLIO_F_CANREAD"><a class="permalink" href="#PERLIO_F_CANREAD">PERLIO_F_CANREAD</a></dt>
+  <dd>Se permiten lecturas, es decir, abierto "r" o "w+" (o incluso "a+" -
+      puaj).</dd>
+  <dt id="PERLIO_F_ERROR"><a class="permalink" href="#PERLIO_F_ERROR">PERLIO_F_ERROR</a></dt>
+  <dd>Ha ocurrido un error (para <span class="Li">PerlIO_error()</span>).</dd>
+  <dt id="PERLIO_F_TRUNCATE"><a class="permalink" href="#PERLIO_F_TRUNCATE">PERLIO_F_TRUNCATE</a></dt>
+  <dd>Se sugirió truncar el archivo por el modo de apertura.</dd>
+  <dt id="PERLIO_F_APPEND"><a class="permalink" href="#PERLIO_F_APPEND">PERLIO_F_APPEND</a></dt>
+  <dd>Todas las escrituras deben ser de adición.</dd>
+  <dt id="PERLIO_F_CRLF"><a class="permalink" href="#PERLIO_F_CRLF">PERLIO_F_CRLF</a></dt>
+  <dd>La capa está realizando la traducción de "\n" a CR, LF para salida y CR, LF
+      a "\n" para entrada, similar a Win32. Normalmente, la capa
+      "crlf" proporcionada es la única que necesita preocuparse por esto.
+      <span class="Li">PerlIO_binmode()</span> modificará este flag en lugar de
+      añadir/eliminar capas si el bit <span class="Li">&quot;PERLIO_K_CANCRLF&quot;</span>
+      está activado para la clase de la capa.</dd>
+  <dt id="PERLIO_F_UTF8"><a class="permalink" href="#PERLIO_F_UTF8">PERLIO_F_UTF8</a></dt>
+  <dd>Los datos escritos en esta capa deben ser codificados en UTF-8; los datos
+      proporcionados por esta capa deben considerarse codificados en UTF-8. Puede
+      ser establecido en cualquier capa por la capa dummy ":utf8". También se
+      establece en la capa ":encoding".</dd>
+  <dt id="PERLIO_F_UNBUF"><a class="permalink" href="#PERLIO_F_UNBUF">PERLIO_F_UNBUF</a></dt>
+  <dd>La capa está sin bufferizar - es decir, la escritura a la capa inferior
+      debe ocurrir por cada escritura a esta capa.</dd>
+  <dt id="PERLIO_F_WRBUF"><a class="permalink" href="#PERLIO_F_WRBUF">PERLIO_F_WRBUF</a></dt>
+  <dd>El buffer de esta capa contiene actualmente datos escritos en ella pero no
+      enviados a la capa inferior.</dd>
+  <dt id="PERLIO_F_RDBUF"><a class="permalink" href="#PERLIO_F_RDBUF">PERLIO_F_RDBUF</a></dt>
+  <dd>El buffer de esta capa contiene actualmente datos no consumidos leídos de la
+      capa inferior.</dd>
+  <dt id="PERLIO_F_LINEBUF"><a class="permalink" href="#PERLIO_F_LINEBUF">PERLIO_F_LINEBUF</a></dt>
+  <dd>La capa está bufferizada por línea. Los datos de escritura deben ser
+      pasados a la capa inferior cada vez que se ve un "\n". Cualquier dato
+      posterior al "\n" debe ser procesado.</dd>
+  <dt id="PERLIO_F_TEMP"><a class="permalink" href="#PERLIO_F_TEMP">PERLIO_F_TEMP</a></dt>
+  <dd>El archivo ha sido <span class="Li">unlink()</span>ado, o debe ser eliminado
+      al cerrar (<span class="Li">close()</span>).</dd>
+  <dt id="PERLIO_F_OPEN"><a class="permalink" href="#PERLIO_F_OPEN">PERLIO_F_OPEN</a></dt>
+  <dd>El handle está abierto.</dd>
+  <dt id="PERLIO_F_FASTGETS"><a class="permalink" href="#PERLIO_F_FASTGETS">PERLIO_F_FASTGETS</a></dt>
+  <dd>Esta instancia de esta capa soporta la interfaz de "obtención rápida
+      <span class="Li">&quot;gets&quot;</span>". Normalmente se establece basándose
+      en <span class="Li">&quot;PERLIO_K_FASTGETS&quot;</span> para la clase y
+      por la existencia de la(s) función(es) en la tabla. Sin embargo, una clase
+      que normalmente proporciona esa interfaz puede necesitar evitarla en una
+      instancia particular. La capa "pending" necesita hacer esto cuando se
+      inserta por encima de una capa que no soporta la interfaz. (El
+      <span class="Li">sv_gets()</span> de Perl no espera que el comportamiento
+      de "obtención rápida" de los streams cambie durante una "obtención".)</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Methods_in_Detail'><a class='permalink' href='#Methods_in_Detail'>Métodos en detalle</a></h2>
+<dl class="Bl-tag">
+  <dt id="fsize"><a class="permalink" href="#fsize">fsize</a></dt>
+  <dd>
+    <pre>Size_t fsize;
+</pre>
+    <p class="Pp">Tamaño de la tabla de funciones. Esto se compara con el valor que
+        el código Perl "conoce" como una comprobación de compatibilidad. Las
+        versiones futuras *pueden* ser capaces de tolerar capas compiladas contra
+        una versión antigua de las cabeceras.</p>
+  </dd>
+  <dt id="name"><a class="permalink" href="#name">name</a></dt>
+  <dd>
+    <pre>char * name;
+</pre>
+    <p class="Pp">El nombre de la capa cuyo método <b>open()</b> Perl debería
+        invocar en <b>open()</b>. Por ejemplo, si la capa se llama APR, se
+        invocará:</p>
+        <pre>open $fh, "&gt;:APR", ...
+</pre>
+    <p class="Pp">y Perl sabrá que tiene que invocar el método
+        <b>PerlIOAPR_open()</b> implementado por la capa APR.</p>
+  </dd>
+  <dt id="size"><a class="permalink" href="#size">size</a></dt>
+  <dd>
+    <pre>Size_t size;
+</pre>
+    <p class="Pp">El tamaño de la estructura de datos por instancia, por ejemplo:</p>
+        <pre>sizeof(PerlIOAPR)
+</pre>
+    <p class="Pp">Si este campo es cero, entonces <span class="Li">&quot;PerlIO_pushed&quot;</span>
+        no asigna memoria y asume que la función Pushed de la capa se encargará de
+        cualquier manipulación necesaria de la pila de capas - se utiliza para
+        evitar la sobrecarga de malloc/free para capas dummy. Si el campo no es
+        cero, debe ser al menos del tamaño de <span class="Li">&quot;PerlIOl&quot;</span>,
+        <span class="Li">&quot;PerlIO_pushed&quot;</span> asignará memoria para
+        las estructuras de datos de la capa y enlazará la nueva capa a la pila del
+        stream. (Si el método Pushed de la capa devuelve una indicación de error,
+        la capa se vuelve a sacar de la pila.)</p>
+  </dd>
+  <dt id="kind"><a class="permalink" href="#kind">kind</a></dt>
+  <dd>
+    <pre>IV kind;
+</pre>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>PERLIO_K_BUFFERED
+    <p class="Pp">La capa está bufferizada.</p>
+  </li>
+  <li>PERLIO_K_RAW
+    <p class="Pp">La capa es aceptable para tenerla en una pila binmode(FH) -
+        es decir, no transforma (o se configurará para no transformar) los bytes
+        que pasan a través de ella.</p>
+  </li>
+  <li>PERLIO_K_CANCRLF
+    <p class="Pp">La capa puede traducir entre finales de línea "\n" y CRLF.</p>
+  </li>
+  <li>PERLIO_K_FASTGETS
+    <p class="Pp">La capa permite la inspección del buffer.</p>
+  </li>
+  <li>PERLIO_K_MULTIARG
+    <p class="Pp">Se usa cuando el <b>open()</b> de la capa acepta más argumentos
+        de lo normal. Los argumentos adicionales no deben ir antes del argumento
+        <span class="Li">&quot;MODE&quot;</span>. Cuando se usa este flag, depende
+        de la capa validar los argumentos.</p>
+  </li>
+</ul>
+</div>
+<dl class="Bl-tag">
+  <dt id="Pushed"><a class="permalink" href="#Pushed">Pushed</a></dt>
+  <dd>
+    <pre>IV     (*Pushed)(pTHX_ PerlIO *f,const char *mode, SV *arg);
+</pre>
+    <p class="Pp">El único método absolutamente obligatorio. Se llama cuando la capa
+        se inserta en la pila. El argumento <span class="Li">&quot;mode&quot;</span>
+        puede ser NULL si esto ocurre después de la apertura. El
+        <span class="Li">&quot;arg&quot;</span> no será <span class="Li">&quot;NULL&quot;</span>
+        si se pasó una cadena de argumento. En la mayoría de los casos, esto debería
+        llamar a <span class="Li">PerlIOBase_pushe</dd>
+</dl>
+</section>
+[
+  {
+    "type": "dt",
+    "id": "Pushed",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Pushed",
+        "content": [
+          "Pushed"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "void    (*Pushed)(pTHX_ PerlIO *f, PerlIO_funcs *funcs, SV *arg);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Called when the layer is pushed onto the stack. The layer should save the",
+          {
+            "type": "code",
+            "content": "funcs"
+          },
+          "pointer, and the argument (if any) passed to it. The argument is",
+          "an",
+          {
+            "type": "code",
+            "content": "SV *"
+          },
+          "which may be",
+          {
+            "type": "code",
+            "content": "NULL"
+          },
+          ". The layer may choose to ignore the argument, or use it to configure",
+          "itself. It may also choose to convert the argument into other",
+          "information (e.g. by calling",
+          {
+            "type": "code",
+            "content": "PerlIO_arg2mode()"
+          },
+          "to convert",
+          {
+            "type": "code",
+            "content": "\"mode\""
+          },
+          "into the appropriate",
+          {
+            "type": "code",
+            "content": "\"PERLIO_F_XXXXX\""
+          },
+          "flags in addition to any actions the layer itself takes. If a layer",
+          "is not expecting an argument it need neither save the one passed to",
+          "it, nor provide",
+          {
+            "type": "code",
+            "content": "Getarg()"
+          },
+          "(it could perhaps",
+          {
+            "type": "code",
+            "content": "\"Perl_warn\""
+          },
+          "that the argument was un-expected)."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns 0 on success. On failure returns -1 and should set",
+          {
+            "type": "code",
+            "content": "errno"
+          },
+          "."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Popped",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Popped",
+        "content": [
+          "Popped"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "IV      (*Popped)(pTHX_ PerlIO *f);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Called when the layer is popped from the stack. A layer will normally",
+          "be popped after",
+          {
+            "type": "code",
+            "content": "Close()"
+          },
+          "is called. But a layer can be popped without being closed if the",
+          "program is dynamically managing layers on the stream. In such cases",
+          {
+            "type": "code",
+            "content": "Popped()"
+          },
+          "should free any resources (buffers, translation tables, ...) not",
+          "held directly in the layer's struct. It should also",
+          {
+            "type": "code",
+            "content": "Unread()"
+          },
+          "any unconsumed data that has been read and buffered from the layer",
+          "below back to that layer, so that it can be re-provided to what",
+          "ever is now above."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns 0 on success and failure. If",
+          {
+            "type": "code",
+            "content": "Popped()"
+          },
+          "returns",
+          {
+            "type": "code",
+            "content": "true"
+          },
+          "then",
+          {
+            "type": "code",
+            "content": "perlio.c"
+          },
+          "assumes that either the layer has popped itself, or the layer is",
+          "super special and needs to be retained for other reasons. In most",
+          "cases it should return",
+          {
+            "type": "code",
+            "content": "false"
+          },
+          "."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Open",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Open",
+        "content": [
+          "Open"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "PerlIO *        (*Open)(...);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "The",
+          {
+            "type": "code",
+            "content": "Open()"
+          },
+          "method has lots of arguments because it combines the functions of",
+          "perl's",
+          {
+            "type": "code",
+            "content": "\"open\""
+          },
+          ",",
+          {
+            "type": "code",
+            "content": "\"PerlIO_open\""
+          },
+          ", perl's",
+          {
+            "type": "code",
+            "content": "\"sysopen\""
+          },
+          ",",
+          {
+            "type": "code",
+            "content": "\"PerlIO_fdopen\""
+          },
+          "and",
+          {
+            "type": "code",
+            "content": "\"PerlIO_reopen\""
+          },
+          ". The full prototype is as follows:",
+          {
+            "type": "code",
+            "language": "c",
+            "content": "PerlIO *       (*Open)(pTHX_ PerlIO_funcs *tab, \n                       PerlIO_list_t *layers, IV n,\n                       const char *mode,\n                       int fd, int imode, int perm,\n                       PerlIO *old,\n                       int narg, SV **args);\n"
+          },
+          "Open should (perhaps indirectly) call",
+          {
+            "type": "code",
+            "content": "PerlIO_allocate()"
+          },
+          "to allocate a slot in the table and associate it with the layers",
+          "information for the opened file, by calling",
+          {
+            "type": "code",
+            "content": "\"PerlIO_push\""
+          },
+          ". The",
+          {
+            "type": "code",
+            "content": "layers"
+          },
+          "is an array of all the layers destined for the",
+          {
+            "type": "code",
+            "content": "\"PerlIO *\""
+          },
+          ", and any arguments passed to them, ",
+          {
+            "type": "code",
+            "content": "n"
+          },
+          "is the index into that array of the layer being called. The macro",
+          {
+            "type": "code",
+            "content": "\"PerlIOArg\""
+          },
+          "will return a (possibly",
+          {
+            "type": "code",
+            "content": "\"NULL\""
+          },
+          ") SV * for the argument passed to the layer."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Where a layer opens or takes ownership of a file descriptor, that",
+          "layer is responsible for getting the file descriptor's close-on-exec",
+          "flag into the correct state. The flag should be clear for a file",
+          "descriptor numbered less than or equal to",
+          {
+            "type": "code",
+            "content": "\"PL_maxsysfd\""
+          },
+          ", and set for any file descriptor numbered higher. For thread safety,",
+          "when a layer opens a new file descriptor it should if possible open",
+          "it with the close-on-exec flag initially set."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "The",
+          {
+            "type": "code",
+            "content": "mode"
+          },
+          "string is an \"",
+          {
+            "type": "code",
+            "content": "fopen()"
+          },
+          "-like\" string which would match the regular expression",
+          {
+            "type": "code",
+            "content": "\"^[I#]?[rwa]+[bt]?$\""
+          },
+          "."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "The",
+          {
+            "type": "code",
+            "content": "'I'"
+          },
+          "prefix is used during creation of",
+          {
+            "type": "code",
+            "content": "\"stdin\"..\"stderr\""
+          },
+          "via special",
+          {
+            "type": "code",
+            "content": "\"PerlIO_fdopen\""
+          },
+          "calls; the",
+          {
+            "type": "code",
+            "content": "'#'"
+          },
+          "prefix means that this is",
+          {
+            "type": "code",
+            "content": "\"sysopen\""
+          },
+          "and that",
+          {
+            "type": "code",
+            "content": "imode"
+          },
+          "and",
+          {
+            "type": "code",
+            "content": "perm"
+          },
+          "should be passed to",
+          {
+            "type": "code",
+            "content": "\"PerlLIO_open3\""
+          },
+          ";",
+          {
+            "type": "code",
+            "content": "'r'"
+          },
+          "means",
+          {
+            "type": "code",
+            "content": "r"
+          },
+          "ead, ",
+          {
+            "type": "code",
+            "content": "'w'"
+          },
+          "means",
+          {
+            "type": "code",
+            "content": "w"
+          },
+          "rite and ",
+          {
+            "type": "code",
+            "content": "'a'"
+          },
+          "means",
+          {
+            "type": "code",
+            "content": "a"
+          },
+          "ppend. The",
+          {
+            "type": "code",
+            "content": "'+'"
+          },
+          "suffix means that both reading and writing/appending are permitted. The",
+          {
+            "type": "code",
+            "content": "'b'"
+          },
+          "suffix means file should be binary, and",
+          {
+            "type": "code",
+            "content": "'t'"
+          },
+          "means it is text. (Almost all layers should do the IO in binary",
+          "mode, and ignore the b/t bits. The",
+          {
+            "type": "code",
+            "content": "\":crlf:\""
+          },
+          "layer should be pushed to handle the distinction.)"
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "If",
+          {
+            "type": "code",
+            "content": "old"
+          },
+          "is not",
+          {
+            "type": "code",
+            "content": "\"NULL\""
+          },
+          "then this is a",
+          {
+            "type": "code",
+            "content": "\"PerlIO_reopen\""
+          },
+          ". Perl itself does not use this (yet?) and semantics are a little",
+          "vague."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "If",
+          {
+            "type": "code",
+            "content": "fd"
+          },
+          "not negative then it is the numeric file descriptor",
+          {
+            "type": "code",
+            "content": "fd"
+          },
+          ", which will be open in a manner compatible with the supplied mode",
+          "string, the call is thus equivalent to",
+          {
+            "type": "code",
+            "content": "\"PerlIO_fdopen\""
+          },
+          ". In this case",
+          {
+            "type": "code",
+            "content": "nargs"
+          },
+          "will be zero. The file descriptor may have the close-on-exec flag",
+          "either set or clear; it is the responsibility of the layer that",
+          "takes ownership of it to get the flag into the correct state."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "If",
+          {
+            "type": "code",
+            "content": "nargs"
+          },
+          "is greater than zero then it gives the number of arguments passed to",
+          {
+            "type": "code",
+            "content": "\"open\""
+          },
+          ", otherwise it will be 1 if for example",
+          {
+            "type": "code",
+            "content": "\"PerlIO_open\""
+          },
+          "was called. In simple cases SvPV_nolen(*args) is the pathname to open."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "If a layer provides",
+          {
+            "type": "code",
+            "content": "Open()"
+          },
+          "it should normally call the",
+          {
+            "type": "code",
+            "content": "Open()"
+          },
+          "method of next layer down (if any) and then push itself on top if",
+          "that succeeds.",
+          {
+            "type": "code",
+            "content": "\"PerlIOBase_open\""
+          },
+          "is provided to do exactly that, so in most cases you don't have to",
+          "write your own",
+          {
+            "type": "code",
+            "content": "Open()"
+          },
+          "method. If this method is not defined, other layers may have",
+          "difficulty pushing themselves on top of it during open."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "If",
+          {
+            "type": "code",
+            "content": "\"PerlIO_push\""
+          },
+          "was performed and open has failed, it must",
+          {
+            "type": "code",
+            "content": "\"PerlIO_pop\""
+          },
+          "itself, since if it's not, the layer won't be removed and may cause",
+          "bad problems."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns",
+          {
+            "type": "code",
+            "content": "\"NULL\""
+          },
+          "on failure."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Binmode",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Binmode",
+        "content": [
+          "Binmode"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "IV        (*Binmode)(pTHX_ PerlIO *f);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Optional. Used when",
+          {
+            "type": "code",
+            "content": "\":raw:\""
+          },
+          "layer is pushed (explicitly or as a result of binmode(FH)). If not",
+          "present layer will be popped. If present should configure layer as",
+          "binary (or pop itself) and return 0. If it returns -1 for error",
+          {
+            "type": "code",
+            "content": "\"binmode\""
+          },
+          "will fail with layer still on the stack."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Getarg",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Getarg",
+        "content": [
+          "Getarg"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "SV *      (*Getarg)(pTHX_ PerlIO *f,\n                    CLONE_PARAMS *param, int flags);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Optional. If present should return an SV * representing the string",
+          "argument passed to the layer when it was pushed. e.g.",
+          "&quot;:encoding(ascii)&quot; would return an SvPV with value",
+          "&quot;ascii&quot;. (",
+          {
+            "type": "code",
+            "content": "param"
+          },
+          "and",
+          {
+            "type": "code",
+            "content": "flags"
+          },
+          "arguments can be ignored in most cases)"
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          {
+            "type": "code",
+            "content": "\"Dup\""
+          },
+          "uses",
+          {
+            "type": "code",
+            "content": "\"Getarg\""
+          },
+          "to retrieve the argument originally passed to",
+          {
+            "type": "code",
+            "content": "\"Pushed\""
+          },
+          ", so you must implement this function if your layer has an extra",
+          "argument to",
+          {
+            "type": "code",
+            "content": "\"Pushed\""
+          },
+          "and will ever be",
+          {
+            "type": "code",
+            "content": "\"Dup\""
+          },
+          "ed."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Fileno",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Fileno",
+        "content": [
+          "Fileno"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "IV        (*Fileno)(pTHX_ PerlIO *f);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns the Unix/Posix numeric file descriptor for the handle. Normally",
+          {
+            "type": "code",
+            "content": "PerlIOBase_fileno()"
+          },
+          "(which just asks next layer down) will suffice for this."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns -1 on error, which is considered to include the case where",
+          "the layer cannot provide such a file descriptor."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Dup",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Dup",
+        "content": [
+          "Dup"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "PerlIO * (*Dup)(pTHX_ PerlIO *f, PerlIO *o,\n                CLONE_PARAMS *param, int flags);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "XXX: Needs more docs."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Used as part of the &quot;clone&quot; process when a thread is spawned",
+          "(in which case param will be non-NULL) and when a stream is being",
+          "duplicated via '&amp;' in the",
+          {
+            "type": "code",
+            "content": "\"open\""
+          },
+          "."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Similar to",
+          {
+            "type": "code",
+            "content": "\"Open\""
+          },
+          ", returns PerlIO* on success,",
+          {
+            "type": "code",
+            "content": "\"NULL\""
+          },
+          "on failure."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Read",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Read",
+        "content": [
+          "Read"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "SSize_t (*Read)(pTHX_ PerlIO *f, void *vbuf, Size_t count);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Basic read operation."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Typically will call",
+          {
+            "type": "code",
+            "content": "\"Fill\""
+          },
+          "and manipulate pointers (possibly via the API).",
+          {
+            "type": "code",
+            "content": "PerlIOBuf_read()"
+          },
+          "may be suitable for derived classes which provide \"fast gets\" methods."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns actual bytes read, or -1 on an error."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Unread",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Unread",
+        "content": [
+          "Unread"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "SSize_t (*Unread)(pTHX_ PerlIO *f,\n                  const void *vbuf, Size_t count);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "A superset of stdio's",
+          {
+            "type": "code",
+            "content": "ungetc()"
+          },
+          ". Should arrange for future reads to see the bytes in",
+          {
+            "type": "code",
+            "content": "\"vbuf\""
+          },
+          ". If there is no obviously better implementation then",
+          {
+            "type": "code",
+            "content": "PerlIOBase_unread()"
+          },
+          "provides the function by pushing a \"fake\" \"pending\" layer above the",
+          "calling layer."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns the number of unread chars."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Write",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Write",
+        "content": [
+          "Write"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "SSize_t (*Write)(PerlIO *f, const void *vbuf, Size_t count);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Basic write operation."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns bytes written or -1 on an error."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Seek",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Seek",
+        "content": [
+          "Seek"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "IV      (*Seek)(pTHX_ PerlIO *f, Off_t offset, int whence);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Position the file pointer. Should normally call its own",
+          {
+            "type": "code",
+            "content": "\"Flush\""
+          },
+          "method and then the",
+          {
+            "type": "code",
+            "content": "\"Seek\""
+          },
+          "method of next layer down."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns 0 on success, -1 on failure."
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dt",
+    "id": "Tell",
+    "content": [
+      {
+        "type": "a",
+        "href": "#Tell",
+        "content": [
+          "Tell"
+        ]
+      }
+    ]
+  },
+  {
+    "type": "dd",
+    "content": [
+      {
+        "type": "code",
+        "language": "c",
+        "content": "Off_t   (*Tell)(pTHX_ PerlIO *f);\n"
+      },
+      {
+        "type": "p",
+        "content": [
+          "Return the file pointer. May be based on layers cached concept of",
+          "position to avoid overhead."
+        ]
+      },
+      {
+        "type": "p",
+        "content": [
+          "Returns -1 on failure to get the file"
+        ]
+      }
+    ]
+  }
+]
+# -*- coding: utf-8 -*-
+---
+abstract: Implementación de PerlIO
+name: perlapi
+section: 3
+title: PerlIO - Implementación de PerlIO
+type: perlapi
+version: '5.35'
+...
+---
+# -*- coding: utf-8 -*-
+# Note: No se pueden usar las etiquetas porque algunas no son válidas para XML/HTML.
+
+<section class="Sh">
+<h1 class="Sh" id="NAME">NAME</h1>
+<p class="Pp">PerlIO - Implementación de PerlIO</p>
+</section>
+
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS">SYNOPSIS</h1>
+<pre>
+    PerlIO *f;
+    char *buf;
+    size_t len;
+    int ret;
+    IV iv;
+    STDCHAR *ptr;
+    SSize_t cnt;
+
+    /* ... */
+
+    iv = f-&gt;vtbl-&gt;Read(aTHX_ f, buf, len);
+    iv = f-&gt;vtbl-&gt;Write(aTHX_ f, buf, len);
+    iv = f-&gt;vtbl-&gt;Seek(aTHX_ f, iv, 0);
+    iv = f-&gt;vtbl-&gt;Tell(aTHX_ f, 0);
+    iv = f-&gt;vtbl-&gt;Close(aTHX_ f);
+    iv = f-&gt;vtbl-&gt;Flush(aTHX_ f);
+    iv = f-&gt;vtbl-&gt;Fill(aTHX_ f);
+    iv = f-&gt;vtbl-&gt;Eof(aTHX_ f);
+    iv = f-&gt;vtbl-&gt;Error(aTHX_ f);
+    f-&gt;vtbl-&gt;Clearerr(aTHX_ f);
+    f-&gt;vtbl-&gt;Setlinebuf(aTHX_ f);
+    ptr = f-&gt;vtbl-&gt;Get_base(aTHX_ f);
+    len = f-&gt;vtbl-&gt;Get_bufsiz(aTHX_ f);
+    ptr = f-&gt;vtbl-&gt;Get_ptr(aTHX_ f);
+    cnt = f-&gt;vtbl-&gt;Get_cnt(aTHX_ f);
+    f-&gt;vtbl-&gt;Set_ptrcnt(aTHX_ f, ptr, cnt);
+</pre>
+</section>
+
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION">DESCRIPTION</h1>
+<p class="Pp">This document describes the PerlIO interface, the implementation
+    details, and how to implement new PerlIO layers.</p>
+<p class="Pp">The PerlIO system is a C API for managing I/O streams, providing a
+    way to layer different I/O behaviors (like buffering, character encoding,
+    line ending conversion, etc.) on top of each other. Each layer implements
+    a standard set of methods, and these methods can call the methods of the
+    layer below them.</p>
+<section class="Ss">
+<h2 class="Ss" id="PerlIO_vtbl">PerlIO_vtbl</h2>
+<p class="Pp">The core of the PerlIO system is the <code class="Li">PerlIO_vtbl</code>
+    structure, which is a virtual function table containing pointers to the
+    methods implemented by a specific PerlIO layer.</p>
+<dl class="Bl-tag">
+  <dt id="Read"><a class="permalink" href="#Read">Read</a></dt>
+  <dd>
+    <pre>IV      (*Read)(pTHX_ PerlIO *f, void *vbuf, STRLEN len);
+</pre>
+    <p class="Pp">Read up to <code class="Li">len</code> bytes from the stream
+        <code class="Li">f</code> into the buffer <code class="Li">vbuf</code>.
+        Should normally call <code class="Li">PerlIOBase_read()</code> to
+        handle buffering and call the layer below.</p>
+    <p class="Pp">Returns the number of bytes read on success, or -1 on
+        failure.</p>
+  </dd>
+  <dt id="Write"><a class="permalink" href="#Write">Write</a></dt>
+  <dd>
+    <pre>IV      (*Write)(pTHX_ PerlIO *f, const void *vbuf, STRLEN len);
+</pre>
+    <p class="Pp">Write up to <code class="Li">len</code> bytes from the buffer
+        <code class="Li">vbuf</code> to the stream <code class="Li">f</code>.
+        Should normally call <code class="Li">PerlIOBase_write()</code> to
+        handle buffering and call the layer below.</p>
+    <p class="Pp">Returns the number of bytes written on success, or -1 on
+        failure.</p>
+  </dd>
+  <dt id="Seek"><a class="permalink" href="#Seek">Seek</a></dt>
+  <dd>
+    <pre>IV      (*Seek)(pTHX_ PerlIO *f, IV offset, int whence);
+</pre>
+    <p class="Pp">Set the stream position. <code class="Li">whence</code> can be
+        SEEK_SET, SEEK_CUR, or SEEK_END. Should normally call
+        <code class="Li">PerlIOBase_seek()</code>.</p>
+    <p class="Pp">Returns the new position on success, or -1 on failure.</p>
+  </dd>
+  <dt id="Tell"><a class="permalink" href="#Tell">Tell</a></dt>
+  <dd>
+    <pre>IV      (*Tell)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return the current stream position. Should normally call
+        <code class="Li">PerlIOBase_tell()</code>.</p>
+    <p class="Pp">Returns the current position on success, or -1 on
+        failure.</p>
+  </dd>
+  <dt id="Close"><a class="permalink" href="#Close">Close</a></dt>
+  <dd>
+    <pre>IV      (*Close)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Close the stream. Should normally call
+        <code class="Li">PerlIOBase_close()</code> to flush itself and close
+        layers below, and then deallocate any data structures (buffers,
+        translation tables, ...) not held directly in the data structure.</p>
+    <p class="Pp">Returns 0 on success, -1 on failure.</p>
+  </dd>
+  <dt id="Flush"><a class="permalink" href="#Flush">Flush</a></dt>
+  <dd>
+    <pre>IV      (*Flush)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Should make stream's state consistent with layers below. That
+        is, any buffered write data should be written, and file position of
+        lower layers adjusted for data read from below but not actually
+        consumed. (Should perhaps <code class="Li">Unread()</code> such data to
+        the lower layer.)</p>
+    <p class="Pp">Returns 0 on success, -1 on failure.</p>
+  </dd>
+  <dt id="Fill"><a class="permalink" href="#Fill">Fill</a></dt>
+  <dd>
+    <pre>IV      (*Fill)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">The buffer for this layer should be filled (for read) from
+        layer below. When you &quot;subclass&quot; PerlIOBuf layer, you want to
+        use its <i>_read</i> method and to supply your own fill method, which
+        fills the PerlIOBuf's buffer.</p>
+    <p class="Pp">Returns 0 on success, -1 on failure.</p>
+  </dd>
+  <dt id="Eof"><a class="permalink" href="#Eof">Eof</a></dt>
+  <dd>
+    <pre>IV      (*Eof)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return end-of-file indicator.
+        <code class="Li">PerlIOBase_eof()</code> is normally sufficient.</p>
+    <p class="Pp">Returns 0 on end-of-file, 1 if not end-of-file, -1 on
+        error.</p>
+  </dd>
+  <dt id="Error"><a class="permalink" href="#Error">Error</a></dt>
+  <dd>
+    <pre>IV      (*Error)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return error indicator.
+        <code class="Li">PerlIOBase_error()</code> is normally sufficient.</p>
+    <p class="Pp">Returns 1 if there is an error (usually when
+        <code class="Li">&quot;PERLIO_F_ERROR&quot;</code> is set), 0
+        otherwise.</p>
+  </dd>
+  <dt id="Clearerr"><a class="permalink" href="#Clearerr">Clearerr</a></dt>
+  <dd>
+    <pre>void    (*Clearerr)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Clear end-of-file and error indicators. Should call
+        <code class="Li">PerlIOBase_clearerr()</code> to set the
+        <code class="Li">&quot;PERLIO_F_XXXXX&quot;</code> flags, which may
+        suffice.</p>
+  </dd>
+  <dt id="Setlinebuf"><a class="permalink" href="#Setlinebuf">Setlinebuf</a></dt>
+  <dd>
+    <pre>void    (*Setlinebuf)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Mark the stream as line buffered.
+        <code class="Li">PerlIOBase_setlinebuf()</code> sets the
+        PERLIO_F_LINEBUF flag and is normally sufficient.</p>
+  </dd>
+  <dt id="Get_base"><a class="permalink" href="#Get_base">Get_base</a></dt>
+  <dd>
+    <pre>STDCHAR *       (*Get_base)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Allocate (if not already done so) the read buffer for this
+        layer and return pointer to it. Return NULL on failure.</p>
+  </dd>
+  <dt id="Get_bufsiz"><a class="permalink" href="#Get_bufsiz">Get_bufsiz</a></dt>
+  <dd>
+    <pre>Size_t  (*Get_bufsiz)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return the number of bytes that last
+        <code class="Li">Fill()</code> put in the buffer.</p>
+  </dd>
+  <dt id="Get_ptr"><a class="permalink" href="#Get_ptr">Get_ptr</a></dt>
+  <dd>
+    <pre>STDCHAR *       (*Get_ptr)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return the current read pointer relative to this layer's
+        buffer.</p>
+  </dd>
+  <dt id="Get_cnt"><a class="permalink" href="#Get_cnt">Get_cnt</a></dt>
+  <dd>
+    <pre>SSize_t (*Get_cnt)(pTHX_ PerlIO *f);
+</pre>
+    <p class="Pp">Return the number of bytes left to be read in the current
+        buffer.</p>
+  </dd>
+  <dt id="Set_ptrcnt"><a class="permalink" href="#Set_ptrcnt">Set_ptrcnt</a></dt>
+  <dd>
+    <pre>void    (*Set_ptrcnt)(pTHX_ PerlIO *f,
+                      STDCHAR *ptr, SSize_t cnt);
+</pre>
+    <p class="Pp">Adjust the read pointer and count of bytes to match
+        <code class="Li">&quot;ptr&quot;</code> and/or
+        <code class="Li">&quot;cnt&quot;</code>. The application (or layer
+        above) must ensure they are consistent. (Checking is allowed by the
+        paranoid.)</p>
+  </dd>
+</dl>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id="Utilities">Utilities</h2>
+<p class="Pp">To ask for the next layer down use PerlIONext(PerlIO *f).</p>
+<p class="Pp">To check that a PerlIO* is valid use PerlIOValid(PerlIO *f). (All
+    this does is really just to check that the pointer is non-NULL and that the
+    pointer behind that is non-NULL.)</p>
+<p class="Pp">PerlIOBase(PerlIO *f) returns the &quot;Base&quot; pointer, or in
+    other words, the <code class="Li">&quot;PerlIOl*&quot;</code> pointer.</p>
+<p class="Pp">PerlIOSelf(PerlIO* f, type) return the PerlIOBase cast to a
+    type.</p>
+<p class="Pp">Perl_PerlIO_or_Base(PerlIO* f, callback, base, failure, args)
+    either calls the <i>callback</i> from the functions of the layer <i>f</i>
+    (just by the name of the IO function, like &quot;Read&quot;) with the
+    <i>args</i>, or if there is no such callback, calls the <i>base</i> version
+    of the callback with the same args, or if the f is invalid, set errno to
+    EBADF and return <i>failure</i>.</p>
+<p class="Pp">Perl_PerlIO_or_fail(PerlIO* f, callback, failure, args) either
+    calls the <i>callback</i> of the functions of the layer <i>f</i> with the
+    <i>args</i>, or if there is no such callback, set errno to EINVAL. Or if the
+    f is invalid, set errno to EBADF and return <i>failure</i>.</p>
+<p class="Pp">Perl_PerlIO_or_Base_void(PerlIO* f, callback, base, args) either
+    calls the <i>callback</i> of the functions of the layer <i>f</i> with the
+    <i>args</i>, or if there is no such callback, calls the <i>base</i> version
+    of the callback with the same args, or if the f is invalid, set errno to
+    EBADF.</p>
+<p class="Pp">Perl_PerlIO_or_fail_void(PerlIO* f, callback, args) either calls
+    the <i>callback</i> of the functions of the layer <i>f</i> with the
+    <i>args</i>, or if there is no such callback, set errno to EINVAL. Or if the
+    f is invalid, set errno to EBADF.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id="Implementing_PerlIO_Layers">Implementing PerlIO Layers</h2>
+<p class="Pp">If you find the implementation document unclear or not sufficient,
+    look at the existing PerlIO layer implementations, which include:</p>
+<ul class="Bl-bullet">
+  <li>C implementations
+    <p class="Pp">The <i>perlio.c</i> and <i>perliol.h</i> in the Perl core
+        implement the &quot;unix&quot;, &quot;perlio&quot;, &quot;stdio&quot;,
+        &quot;crlf&quot;, &quot;utf8&quot;, &quot;byte&quot;, &quot;raw&quot;,
+        &quot;pending&quot; layers, and also the &quot;mmap&quot; and
+        &quot;win32&quot; layers if applicable. (The &quot;win32&quot; is
+        currently unfinished and unused, to see what is used instead in Win32,
+        see &quot;Querying the layers of filehandles&quot; in PerlIO .)</p>
+    <p class="Pp">PerlIO::encoding, PerlIO::scalar, PerlIO::via in the Perl
+        core.</p>
+    <p class="Pp">PerlIO::gzip and APR::PerlIO (mod_perl 2.0) on CPAN.</p>
+  </li>
+  <li>Perl implementations
+    <p class="Pp">PerlIO::via::QuotedPrint in the Perl core and PerlIO::via::*
+        on CPAN.</p>
+  </li>
+</ul>
+<p class="Pp">If you are creating a PerlIO layer, you may want to be lazy, in
+    other words, implement only the methods that interest you. The other methods
+    you can either replace with the &quot;blank&quot; methods</p>
+<pre>
+    PerlIOBase_noop_ok
+    PerlIOBase_noop_fail
+</pre>
+<p class="Pp">(which do nothing, and return zero and -1, respectively) or for
+    certain methods you may assume a default behaviour by using a NULL method.
+    The Open method looks for help in the 'parent' layer. The following table
+    summarizes the behaviour:</p>
+<pre>
+   method      behaviour with NULL
+   Clearerr    PerlIOBase_clearerr
+   Close       PerlIOBase_close
+   Dup         PerlIOBase_dup
+   Eof         PerlIOBase_eof
+   Error       PerlIOBase_error
+   Fileno      PerlIOBase_fileno
+   Fill        FAILURE
+   Flush       SUCCESS
+   Getarg      SUCCESS
+   Get_base    FAILURE
+   Get_bufsiz  FAILURE
+   Get_cnt     FAILURE
+   Get_ptr     FAILURE
+   Open        INHERITED
+   Popped      SUCCESS
+   Pushed      SUCCESS
+   Read        PerlIOBase_read
+   Seek        FAILURE
+   Set_cnt     FAILURE
+   Set_ptrcnt  FAILURE
+   Setlinebuf  PerlIOBase_setlinebuf
+   Tell        FAILURE
+   Unread      PerlIOBase_unread
+   Write       FAILURE
+</pre>
+<p class="Pp">FAILURE        Set errno (to EINVAL in Unixish, to LIB$_INVARG in VMS)
+    and return -1 (for numeric return values) or NULL (for pointers)</p>
+<p class="Pp">INHERITED      Inherited from the layer below</p>
+<p class="Pp">SUCCESS        Return 0 (for numeric return values) or a pointer</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id="Core_Layers">Core Layers</h2>
+<p class="Pp">The file <span class="Li">&quot;perlio.c&quot;</span> provides the
+    following layers:</p>
+<dl class="Bl-tag">
+  <dt>&quot;unix&quot;</dt>
+  <dd>A basic non-buffered layer which calls Unix/POSIX
+        <code class="Li">read()</code>, <code class="Li">write()</code>,
+        <code class="Li">lseek()</code>, <code class="Li">close()</code>. No
+        buffering. Even on platforms that distinguish between O_TEXT and O_BINARY
+        this layer is always O_BINARY.</dd>
+  <dt>&quot;perlio&quot;</dt>
+  <dd>A very complete generic buffering layer which provides the whole of PerlIO
+      API. It is also intended to be used as a &quot;base class&quot; for other
+      layers. (For example its <code class="Li">Read()</code> method is
+      implemented in terms of the
+      <code class="Li">Get_cnt()</code>/<code class="Li">Get_ptr()</code>/<code class="Li">Set_ptrcnt()</code>
+      methods).
+    <p class="Pp">&quot;perlio&quot; over &quot;unix&quot; provides a complete
+        replacement for stdio as seen via PerlIO API. This is the default for
+        USE_PERLIO when system's stdio does not permit perl's &quot;fast
+        gets&quot; access, and which do not distinguish between
+        <code class="Li">&quot;O_TEXT&quot;</code> and
+        <code class="Li">&quot;O_BINARY&quot;</code>.</p>
+  </dd>
+  <dt>&quot;stdio&quot;</dt>
+  <dd>A layer which provides the PerlIO API via the layer scheme, but implements
+      it by calling system's stdio. This is (currently) the default if system's
+      stdio provides sufficient access to allow perl's &quot;fast gets&quot;
+      access and which do not distinguish between
+      <code class="Li">&quot;O_TEXT&quot;</code> and
+      <code class="Li">&quot;O_BINARY&quot;</code>.</dd>
+  <dt>&quot;crlf&quot;</dt>
+  <dd>A layer derived using &quot;perlio&quot; as a base class. It provides
+      Win32-like &quot;\n&quot; to CR,LF translation. Can either be applied
+      above &quot;perlio&quot; or serve as the buffer layer itself.
+      &quot;crlf&quot; over &quot;unix&quot; is the default if system
+      distinguishes between <code class="Li">&quot;O_TEXT&quot;</code> and
+      <code class="Li">&quot;O_BINARY&quot;</code> opens. (At some point
+      &quot;unix&quot; will be replaced by a &quot;native&quot; Win32 IO layer
+      on that platform, as Win32's read/write layer has various drawbacks.) The
+      &quot;crlf&quot; layer is a reasonable model for a layer which transforms
+      data in some way.</dd>
+  <dt>&quot;mmap&quot;</dt>
+  <dd>If Configure detects <code class="Li">mmap()</code> functions this layer
+      is provided (with &quot;perlio&quot; as a &quot;base&quot;) which does
+      &quot;read&quot; operations by mmap()ing the file. This is typically only
+      useful for reading.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN"><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Las capas de PerlIO son una forma de modificar el comportamiento de
+    E/S de archivos de Perl. Permiten a los módulos de extensión o al código
+    incorporado agregar funcionalidades como codificación, compresión o
+    manejo de datos en memoria.</p>
+<section class="Ss">
+<h2 class="Ss" id="Capas_Incluidas"><a class='permalink' href='#Capas_Incluidas'>Capas Incluidas</a></h2>
+<p class="Pp">Estas capas están disponibles directamente desde el núcleo de PerlIO.</p>
+<dl class="Bl-tag">
+    <dt>&quot;mmap&quot;</dt>
+    <dd>Intenta usar <b>mmap()</b> para acceder al archivo. La mejora de
+        rendimiento es marginal en sistemas modernos, por lo que existe
+        principalmente como prueba de concepto. Es probable que se desvincule del
+        núcleo en algún momento. La capa &quot;mmap&quot; es un modelo razonable
+        para una capa &quot;derivada&quot; minimalista.</dd>
+    <dt>&quot;pending&quot;</dt>
+    <dd>Un derivado &quot;interno&quot; de &quot;perlio&quot; que se puede usar para
+        proporcionar la función <b>Unread()</b> para capas que no tienen búfer o
+        no quieren molestarse. (Básicamente, el <span class="Li">Fill()</span> de
+        esta capa se saca de la pila y, por lo tanto, reanuda la lectura de la
+        capa inferior).</dd>
+    <dt>&quot;raw&quot;</dt>
+    <dd>Una capa ficticia que nunca existe en la pila de capas. En cambio, cuando
+        se &quot;empuja&quot;, realmente saca la pila eliminándose a sí misma, y
+        luego llama a la entrada de la tabla de funciones Binmode en todas las
+        capas de la pila, lo que normalmente (a través de PerlIOBase_binmode)
+        elimina cualquier capa que no tenga el bit
+        <span class="Li">&quot;PERLIO_K_RAW&quot;</span> establecido. Las capas
+        pueden modificar ese comportamiento definiendo su propia entrada Binmode.</dd>
+    <dt>&quot;utf8&quot;</dt>
+    <dd>Otra capa ficticia. Cuando se empuja, se saca a sí misma y establece la
+        bandera <span class="Li">&quot;PERLIO_F_UTF8&quot;</span> en la capa que
+        era (y ahora vuelve a ser) la parte superior de la pila.</dd>
+</dl>
+<p class="Pp">Además, <i>perlio.c</i> proporciona una serie de funciones
+    <span class="Li">PerlIOBase_xxxx()</span> que están destinadas a ser utilizadas
+    en las ranuras de tabla de clases que no necesitan hacer nada especial para un
+    método en particular.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Extension_Layers'><a class='permalink' href='#Extension_Layers'>Capas de Extensión</a></h2>
+<p class="Pp">Las capas se pueden poner a disposición mediante módulos de
+    extensión. Cuando se encuentra una capa desconocida, el código PerlIO realizará
+    el equivalente a:</p>
+<pre>use PerlIO 'layer';</pre>
+<p class="Pp">Donde <i>layer</i> es la capa desconocida. <i>PerlIO.pm</i>
+    intentará entonces:</p>
+<pre>require PerlIO::layer;</pre>
+<p class="Pp">Si después de ese proceso la capa aún no está definida, la llamada a
+    <span class="Li">&quot;open&quot;</span> fallará.</p>
+<p class="Pp">Las siguientes capas de extensión se incluyen con perl:</p>
+<dl class="Bl-tag">
+    <dt>&quot;:encoding&quot;</dt>
+    <dd>
+        <pre>use Encoding;
+</pre>
+        <p class="Pp">hace que esta capa esté disponible, aunque <i>PerlIO.pm</i>
+            &quot;sabe&quot; dónde encontrarla. Es un ejemplo de una capa que toma
+            un argumento, ya que se llama así:</p>
+        <pre>open( $fh, &quot;&lt;:encoding(iso-8859-7)&quot;, $pathname );
+</pre>
+    </dd>
+    <dt>&quot;:scalar&quot;</dt>
+    <dd>Proporciona soporte para leer datos desde y escribir datos a un escalar.
+        <pre>open( $fh, &quot;+&lt;:scalar&quot;, \$scalar );
+</pre>
+        <p class="Pp">Cuando un manejador se abre de esta manera, las lecturas
+            obtienen bytes del valor de cadena de <span class="Li"><i>$scalar</i></span>
+            y las escrituras cambian el valor. En ambos casos, la posición en
+            <i></i><span class="Li"><i>$scalar</i></span><i></i> comienza en
+            cero pero puede ser alterada mediante <span class="Li">&quot;seek&quot;</span>
+            y determinada mediante <span class="Li">&quot;tell&quot;</span>.</p>
+        <p class="Pp">Tenga en cuenta que esta capa se implica al llamar a
+            <b>open()</b> de esta manera:</p>
+        <pre>open( $fh, &quot;+&lt;&quot;, \$scalar );
+</pre>
+    </dd>
+    <dt>&quot;:via&quot;</dt>
+    <dd>Proporcionado para permitir que las capas se implementen como código Perl.
+        Por ejemplo:
+        <pre>use PerlIO::via::StripHTML;
+open( my $fh, &quot;&lt;:via(StripHTML)&quot;, &quot;index.html&quot; );
+</pre>
+        <p class="Pp">Ver PerlIO::via para más detalles.</p>
+    </dd>
+</dl>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TODO'><a class='permalink' href='#TODO'>TODO</a></h1>
+<p class="Pp">Cosas que deben hacerse para mejorar este documento.</p>
+<ul class="Bl-bullet">
+    <li>Explicar cómo crear un fh válido sin pasar por <b>open()</b> (es decir,
+        aplicar una capa). Por ejemplo, si el archivo no se abre a través de
+        perl, pero queremos obtener un fh, como si lo hubiera abierto Perl.
+        <p class="Pp">¿Cómo encaja PerlIO_apply_layers, dónde están sus docs, se
+            hizo público?</p>
+        <p class="Pp">Actualmente, el ejemplo podría ser algo como esto:</p>
+        <pre>PerlIO *foo_to_PerlIO(pTHX_ char *mode, ...)
+{
+    char *mode; /* &quot;w&quot;, &quot;r&quot;, etc */
+    const char *layers = &quot;:APR&quot;; /* el nombre de la capa */
+    PerlIO *f = PerlIO_allocate(aTHX);
+    if (!f) {
+        return NULL;
+    }
+    PerlIO_apply_layers(aTHX_ f, mode, layers);
+    if (f) {
+        PerlIOAPR *st = PerlIOSelf(f, PerlIOAPR);
+        /* rellenar la estructura st, como en _open() */
+        st-&gt;file = file;
+        PerlIOBase(f)-&gt;flags |= PERLIO_F_OPEN;
+        return f;
+    }
+    return NULL;
+}
+</pre>
+    </li>
+    <li>Corregir/agregar la documentación en los lugares marcados como XXX.</li>
+    <li>El manejo de errores por parte de la capa no está especificado. Por
+        ejemplo, cuándo debe establecerse explícitamente $!, cuándo el manejo
+        de errores solo debe delegarse a la capa superior.
+        <p class="Pp">Probablemente dar algunas pistas sobre el uso de
+            <b>SETERRNO()</b> o punteros a dónde se pueden encontrar.</p>
+    </li>
+    <li>Creo que ayudaría dar algunos ejemplos concretos para que sea más fácil
+        entender la API. Por supuesto, estoy de acuerdo en que la API debe ser
+        concisa, pero dado que no hay un segundo documento que sea más una guía,
+        creo que facilitaría comenzar con el documento que es una API, pero que
+        tiene ejemplos en lugares donde las cosas no están claras, para una
+        persona que no es una gurú de PerlIO (todavía).</li>
+</ul>
+</section>

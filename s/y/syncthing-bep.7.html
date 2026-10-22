@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>syncthing-bep(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">syncthing-bep(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYNCTHING-BEP(7)</td>
+    <td class="head-vol">Syncthing</td>
+    <td class="head-rtitle">SYNCTHING-BEP(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">syncthing-bep - Protocolo de Intercambio de Bloques v1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='INTRODUCCIÓN_Y_DEFINICIONES'><a class='permalink' href='#INTRODUCCIÓN_Y_DEFINICIONES'>INTRODUCCIÓN   Y DEFINICIONES</a></h1>
+<p class="Pp">El Protocolo de Intercambio de Bloques (BEP) se utiliza entre dos o
+    más <i>dispositivos</i> que forman un <i>clúster</i>. Cada dispositivo tiene
+    una o más <i>carpetas</i> de archivos descritos por el <i>modelo local</i>,
+    que contiene metadatos y hashes de bloques. El modelo local se envía a los
+    otros dispositivos del clúster. La unión de todos los archivos en los modelos
+    locales, con los archivos seleccionados para la versión de cambio más alta,
+    forma el <i>modelo global</i>. Cada dispositivo se esfuerza por sincronizar
+    sus carpetas con el modelo global solicitando bloques faltantes o obsoletos a
+    los otros dispositivos del clúster.</p>
+<p class="Pp">Los datos de los archivos se describen y transfieren en unidades de
+    <i>bloques</i>, cada uno de entre 128 KiB (131072 bytes) y 16 MiB, en pasos
+    de potencias de dos. El tamaño del bloque puede variar entre archivos, pero
+    es constante en un archivo dado, excepto por el último bloque que puede ser
+    más pequeño.</p>
+
+</section>
+<section class="Sh">
+<h1 class="Sh" id='TRANSPORTE_Y_AUTENTICACIÓN'><a class='permalink' href='#TRANSPORTE_Y_AUTENTICACIÓN'>TRANSPORTE   Y AUTENTICACIÓN</a></h1>
+<p class="Pp">BEP se implementa como el nivel más alto en una pila de protocolos,
+    con los protocolos de nivel inferior proporcionando cifrado y autenticación.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>+-----------------------------+
+|   Protocolo de Intercambio  |
+|          de Bloques         |
+|-----------------------------|
+| Cifrado y Autenticación (TLS 1.3)|
+|-----------------------------|
+|      Transporte Fiable      |
+|-----------------------------|
+v             ...             v</pre>
+</div>
+</div>
+<p class="Pp">La capa de cifrado y autenticación DEBERÁ utilizar TLS 1.3 o una
+    revisión superior.</p>
+<p class="Pp">La naturaleza exacta de la autenticación depende de la aplicación,
+    sin embargo, DEBERÁ basarse en el certificado TLS presentado al inicio de la
+    conexión. Las posibilidades incluyen certificados firmados por una CA común
+    de confianza, certificados precompartidos, huellas digitales de certificados
+    precompartidos o anclaje de certificados combinado con alguna verificación
+    inicial fuera de banda. La implementación de referencia utiliza huellas
+    digitales de certificados precompartidos (SHA-256) denominadas
+    &#x201C;IDs de Dispositivo&#x201D;.</p>
+<p class="Pp">No hay un orden o sincronización requerida entre los mensajes BEP
+    excepto como se indica por tipo de mensaje: cualquier tipo de mensaje puede
+    enviarse en cualquier momento y el remitente no necesita esperar una respuesta
+    a un mensaje antes de enviar otro.</p>
+<p class="Pp">El protocolo de transporte subyacente DEBE garantizar la entrega
+    fiable de paquetes.</p>
+<p class="Pp">En este documento, en diagramas y texto, &#x201C;bit 0&#x201D;
+    se refiere al bit <i>más</i> <i>significativo</i> de una palabra;
+    &#x201C;bit 15&#x201D; es, por lo tanto, el bit menos significativo de una palabra
+    de 16 bits (int16) y &#x201C;bit 31&#x201D; es el bit menos significativo de una
+    palabra de 32 bits (int32). Los enteros que no son de protocolo buffer se
+    representan siempre en orden de bytes de red (es decir, big endian) y son
+    con signo a menos que se indique lo contrario, pero al describir longitudes de
+    mensajes, los valores negativos no tienen sentido y el bit más significativo
+    DEBE ser cero.</p>
+<p class="Pp">Los esquemas de protocolo buffer en este documento están en sintaxis
+    <b>proto3</b>. Esto significa, entre otras cosas, que todos los campos son
+    opcionales y asumirán su valor predeterminado cuando falten. Esto no significa
+    necesariamente que un mensaje sea <i>válido</i> con todos los campos
+    vacíos; por ejemplo, una entrada de índice para un archivo que no tiene
+    nombre no es útil y PUEDE ser rechazada por la implementación. Sin embargo,
+    la etiqueta de la carpeta es solo para consumo humano, por lo que se debe
+    aceptar una etiqueta vacía; la implementación tendrá que elegir alguna
+    manera de representar la carpeta, quizás usando el ID en su lugar o generando
+    automáticamente una etiqueta.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MENSAJES_PRE-AUTENTICACIÓN'><a class='permalink' href='#MENSAJES_PRE-AUTENTICACIÓN'>MENSAJES   PRE-AUTENTICACIÓN</a></h1>
+<p class="Pp">DESPUÉS de establecer una conexión, pero ANTES de realizar
+    cualquier autenticación, los dispositivos DEBEN intercambiar mensajes Hello.</p>
+<p class="Pp">Los mensajes Hello se utilizan para transportar información adicional
+    sobre el par, que puede ser de interés para el usuario incluso si el par no
+    tiene permiso para comunicarse debido a una autenticación fallida. Tenga en
+    cuenta que la autenticación basada en certificados puede considerarse parte
+    del handshake TLS que precede al intercambio de mensajes Hello, pero incluso
+    en el caso de que se rechace una conexión, se debe enviar un mensaje Hello
+    antes de que se termine la conexión.</p>
+<p class="Pp">Los mensajes Hello DEBEN ir precedidos por un int32 que contenga el
+    número mágico <b>0x2EA7D90B</b>, seguido de un int16 que representa el
+    tamaño del mensaje, seguido por el contenido del mensaje Hello en sí.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|             Mágia             |
+|           (32 bits)           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|             Longitud            |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                               /
+\             Hola              \
+/                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+</pre>
+</div>
+</div>
+<p class="Pp">El mensaje Hello en sí está en formato de protocolo buffer con el
+    siguiente esquema:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Hello {
+    string device_name    = 1;
+    string client_name    = 2;
+    string client_version = 3;
+}</pre>
+</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(mensaje_Hello)'><a class='permalink' href='#Campos_(mensaje_Hello)'>Campos   (mensaje Hello)</a></h2>
+<p class="Pp">El <b>device_name</b> es un nombre de dispositivo o nombre de host
+    legible por humanos (configurado o detectado automáticamente) para el
+    dispositivo remoto.</p>
+<p class="Pp">El <b>client_name</b> y <b>client_version</b> identifican la
+    implementación. Los valores DEBERÍAN ser cadenas simples que identifiquen el
+    nombre de la implementación, tal como lo esperaría ver un usuario, y la cadena
+    de versión de la misma manera. Un nombre de cliente de ejemplo es
+    &#x201C;syncthing&#x201D; y una versión de cliente de ejemplo es
+    &#x201C;v0.7.2&#x201D;. El campo de versión del cliente DEBERÍA seguir los
+    patrones establecidos en el estándar de <i>Versionamiento</i>
+    <i>Semántico</i>
+    <a href='https://semver.org/'>https://semver.org/</a>.</p>
+<p class="Pp">Inmediatamente después de intercambiar mensajes Hello, la conexión
+    DEBE cerrarse si el dispositivo remoto no pasa la autenticación.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MENSAJES_POST-AUTENTICACIÓN'><a class='permalink' href='#MENSAJES_POST-AUTENTICACIÓN'>MENSAJES   POST-AUTENTICACIÓN</a></h1>
+<p class="Pp">Cada mensaje posterior a la autenticación consta de varias partes:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Una palabra de longitud de encabezado</li>
+  <li>Un <b>Encabezado</b></li>
+  <li>Una palabra de longitud de mensaje</li>
+  <li>Un <b>Mensaje</b></li>
+</ul>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|      Longitud del Encabezado    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                               /
+\            Encabezado           \
+/                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|      Longitud del Mensaje     |
+|           (32 bits)           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                               /
+\            Mensaje            \
+/                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+</pre>
+</div>
+</div>
+<p class="Pp">La palabra de longitud del encabezado es de 16 bits. Indica la
+    longitud del siguiente mensaje <b>Header</b>. El Encabezado está en formato
+    de protocolo buffer. El Encabezado describe el tipo y el estado de
+    compresión del siguiente mensaje.</p>
+<p class="Pp">El mensaje va precedido por la palabra de longitud del mensaje de
+    32 bits y es uno de los mensajes BEP concretos descritos a continuación,
+    identificado por el campo <b>type</b> del Encabezado.</p>
+<p class="Pp">Como siempre, las palabras de longitud están en orden de bytes de
+    red (big endian).</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Header {
+    MessageType        type        = 1;
+    MessageCompression compression = 2;
+}
+enum MessageType {
+    CLUSTER_CONFIG    = 0;
+    INDEX             = 1;
+    INDEX_UPDATE      = 2;
+    REQUEST           = 3;
+    RESPONSE          = 4;
+    DOWNLOAD_PROGRESS = 5;
+    PING              = 6;
+    CLOSE             = 7;
+}
+enum MessageCompression {
+    NONE = 0;
+    LZ4  = 1;
+}</pre>
+</div>
+</div>
+<p class="Pp">Cuando el campo <b>compression</b> es <b>NONE</b>, el mensaje está
+    directamente en formato de protocolo buffer.</p>
+<p class="Pp">Cuando el campo de compresión es <b>LZ4</b>, el mensaje consiste en
+    un entero de 32 bits que describe la longitud sin comprimir del mensaje seguido
+    de un solo bloque LZ4. Después de descomprimir el bloque LZ4</p>
+</div>
+</section>
+ it should be interpreted
+    as a protocol buffer message just as in the uncompressed case.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SUBTIPOS_DE_MENSAJE'><a class='permalink' href='#SUBTIPOS_DE_MENSAJE'>SUBTIPOS DE MENSAJE</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Configuración_de_Clúster'><a class='permalink' href='#Configuración_de_Clúster'>Configuración de Clúster</a></h2>
+<p class="Pp">Este mensaje informativo proporciona información sobre la configuración
+    del clúster en lo que respecta a la conexión actual. Un mensaje de
+    Configuración de Clúster DEBE ser el primer mensaje posterior a la
+    autenticación enviado en una conexión BEP. Se PUEDEN enviar mensajes
+    adicionales de Configuración de Clúster después del intercambio inicial para
+    cambiar la configuración de la conexión en el lugar. Si una implementación no
+    soporta esto, DEBERÍA cerrar la conexión.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocol Buffer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message ClusterConfig {
+    repeated Folder folders = 1;
+}
+message Folder {
+    string id                    = 1;
+    string label                 = 2;
+    FolderType type              = 3;
+    FolderStopReason stop_reason = 7;
+    reserved 4 to 6;
+    repeated Device devices = 16;
+}
+message Device {
+    bytes           id                         = 1;
+    string          name                       = 2;
+    repeated string addresses                  = 3;
+    Compression     compression                = 4;
+    string          cert_name                  = 5;
+    int64           max_sequence               = 6;
+    bool            introducer                 = 7;
+    uint64          index_id                   = 8;
+    bool            skip_introduction_removals = 9;
+    bytes           encryption_password_token  = 10;
+}
+enum Compression {
+    METADATA = 0;
+    NEVER    = 1;
+    ALWAYS   = 2;
+}
+enum FolderType {
+    FOLDER_TYPE_SEND_RECEIVE      = 0;
+    FOLDER_TYPE_SEND_ONLY         = 1;
+    FOLDER_TYPE_RECEIVE_ONLY      = 2;
+    FOLDER_TYPE_RECEIVE_ENCRYPTED = 3;
+}
+enum FolderStopReason {
+    FOLDER_STOP_REASON_RUNNING = 0;
+    FOLDER_STOP_REASON_PAUSED  = 1;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(Mensaje_de_Configuración_de_Clúster)'><a class='permalink' href='#Campos_(Mensaje_de_Configuración_de_Clúster)'>Campos (Mensaje de Configuración de Clúster)</a></h2>
+<p class="Pp">El campo <b>folders</b> contiene la lista de carpetas que se
+    sincronizarán a través de la conexión actual.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(Mensaje_de_Carpeta)'><a class='permalink' href='#Campos_(Mensaje_de_Carpeta)'>Campos (Mensaje de Carpeta)</a></h2>
+<p class="Pp">El campo <b>id</b> contiene el ID de la carpeta, que es el
+    identificador único de la carpeta.</p>
+<p class="Pp">El campo <b>label</b> contiene la etiqueta de la carpeta, el nombre
+    legible por humanos de la carpeta.</p>
+<p class="Pp">El campo <b>folder_type</b> contiene el tipo de la carpeta según
+    se define en la enumeración FolderType.</p>
+<p class="Pp">El campo <b>stop_reason</b> se establece para las carpetas que
+    actualmente están detenidas por cualquier motivo. El valor cero significa que
+    la carpeta no está detenida; las razones adicionales se definen en la
+    enumeración FolderStopReason.</p>
+<p class="Pp">El campo <b>devices</b> es una lista de dispositivos que participan
+    en el intercambio de esta carpeta.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(Mensaje_de_Dispositivo)'><a class='permalink' href='#Campos_(Mensaje_de_Dispositivo)'>Campos (Mensaje de Dispositivo)</a></h2>
+<p class="Pp">El campo <b>id</b> del dispositivo es un número de 32 bytes que
+    identifica de forma única el dispositivo. Por ejemplo, la implementación de
+    referencia utiliza el SHA-256 del certificado X.509 del dispositivo.</p>
+<p class="Pp">El campo <b>name</b> es un nombre legible por humanos asignado al
+    dispositivo descrito por el dispositivo que lo envía. PUEDE estar vacío y no
+    necesita ser único.</p>
+<p class="Pp">La lista de <b>addresses</b> es la que utiliza el dispositivo
+    remitente para conectarse al dispositivo descrito.</p>
+<p class="Pp">El campo <b>compression</b> indica el modo de compresión en uso
+    para este dispositivo y carpeta. Los siguientes valores son válidos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>0</b></dt>
+  <dd>Comprimir metadatos. Esto habilita la compresión de mensajes de
+      metadatos como Index.</dd>
+  <dt><b>1</b></dt>
+  <dd>Compresión deshabilitada. No se utiliza compresión en ningún mensaje.</dd>
+  <dt><b>2</b></dt>
+  <dd>Comprimir siempre. Se comprimen tanto los mensajes de metadatos como los
+      mensajes de respuesta.</dd>
+</dl>
+</div>
+<p class="Pp">El campo <b>cert_name</b> indica el nombre de certificado esperado
+    para este dispositivo. Comúnmente está en blanco, indicando que se use el
+    valor predeterminado de la implementación.</p>
+<p class="Pp">El campo <b>max_sequence</b> contiene el número de secuencia más
+    alto de los archivos en el índice. Ver <i>Intercambio de Índices
+    Delta</i> para el uso de este campo.</p>
+<p class="Pp">El campo <b>introducer</b> se establece para los dispositivos que
+    son de confianza como introductor del clúster.</p>
+<p class="Pp">El campo <b>index_id</b> contiene el identificador único del
+    conjunto actual de datos del índice. Ver <i>Intercambio de Índices
+    Delta</i> para el uso de este campo.</p>
+<p class="Pp">El campo <b>skip_introduction_removals</b> indica si el dispositivo
+    remoto ha optado por ignorar las eliminaciones de introducción para el
+    dispositivo dado. Esta configuración se copia a medida que nos introducimos a
+    un nuevo dispositivo.</p>
+<p class="Pp">El campo <b>encryption_password_token</b> contiene un token
+    derivado de la contraseña, que se utiliza para cifrar los datos enviados a
+    este dispositivo. Si el dispositivo es el mismo que el dispositivo que envía
+    el mensaje, indica que el propio dispositivo tiene datos cifrados que fueron
+    cifrados con el token dado. Está vacío o ausente si no hay cifrado. Ver
+    <i>Cifrado de Dispositivos No Confiables</i> para más detalles sobre el
+    esquema de cifrado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Índice_e_Actualización_de_Índice'><a class='permalink' href='#Índice_e_Actualización_de_Índice'>Índice e Actualización de Índice</a></h2>
+<p class="Pp">Los mensajes Index e Index Update definen el contenido de la carpeta
+    del remitente. Un mensaje Index representa el contenido completo de la carpeta
+    y, por lo tanto, reemplaza cualquier índice anterior. Un Index Update
+    modifica un índice existente con información nueva, sin afectar ninguna
+    entrada no incluida en el mensaje. Un Index Update NO PUEDE enviarse a menos
+    que sea precedido por un Index, a menos que se haya anunciado una secuencia
+    máxima (Max Sequence) distinta de cero para la carpeta dada por el dispositivo
+    par.</p>
+<p class="Pp">Los mensajes Index e Index Update son actualmente idénticos en
+    formato, aunque esto no está garantizado para ser el caso en el futuro.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocol Buffer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Index {
+    string            folder = 1;
+    repeated FileInfo files  = 2;
+}
+message IndexUpdate {
+    string            folder = 1;
+    repeated FileInfo files  = 2;
+}
+message FileInfo {
+    string       name           = 1;
+    FileInfoType type           = 2;
+    int64        size           = 3;
+    uint32       permissions    = 4;
+    int64        modified_s     = 5;
+    int32        modified_ns    = 11;
+    uint64       modified_by    = 12;
+    bool         deleted        = 6;
+    bool         invalid        = 7;
+    bool         no_permissions = 8;
+    Vector       version        = 9;
+    int64        sequence       = 10;
+    int32        block_size     = 13;
+    repeated BlockInfo Blocks         = 16;
+    string             symlink_target = 17;
+}
+enum FileInfoType {
+    FILE              = 0;
+    DIRECTORY         = 1;
+    SYMLINK_FILE      = 2 [deprecated = true];
+    SYMLINK_DIRECTORY = 3 [deprecated = true];
+    SYMLINK           = 4;
+}
+message BlockInfo {
+    int64 offset = 1;
+    int32 size   = 2;
+    bytes hash   = 3;
+    reserved 4;
+}
+message Vector {
+    repeated Counter counters = 1;
+}
+message Counter {
+    uint64 id    = 1;
+    uint64 value = 2;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(Mensaje_Índice)'><a class='permalink' href='#Campos_(Mensaje_Índice)'>Campos (Mensaje Índice)</a></h2>
+<p class="Pp">El campo <b>folder</b> identifica la carpeta a la que pertenece el
+    mensaje de índice.</p>
+<p class="Pp">El campo <b>files</b> es una lista de archivos que componen la
+    información del índice.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Campos_(Mensaje_FileInfo)'><a class='permalink' href='#Campos_(Mensaje_FileInfo)'>Campos (Mensaje FileInfo)</a></h2>
+<p class="Pp">El <b>name</b> es la ruta del nombre del archivo relativa a la raíz
+    de la carpeta. Al igual que todas las cadenas en BEP, el Nombre siempre está en
+    UTF-8 NFC independientemente de las convenciones específicas del sistema
+    operativo o del sistema de archivos. El campo name utiliza el carácter de
+    barra (&#x201C;/&#x201D;) como separador de ruta, independientemente de las
+    convenciones del sistema operativo de la implementación. La combinación de
+    carpeta y nombre identifica de forma única cada archivo en un clúster.</p>
+<p class="Pp">El campo <b>type</b> contiene el tipo del elemento descrito. El
+    tipo es uno de <b>file (0)</b>, <b>directory (1)</b> o <b>symlink
+  (4)</b>.</p>
+<p class="Pp">El campo <b>size</b> contiene el tamaño del archivo, en bytes. Para
+    directorios y enlaces simbólicos, el tamaño es cero.</p>
+<p class="Pp">El campo <b>permissions</b> contiene los bits de permisos comunes
+    de Unix. Una implementación PUEDE ignorarlos o interpretarlos según sea
+    adecuado en el sistema operativo anfitrión.</p>
+<p class="Pp">El tiempo <b>modified_s</b> se expresa como el número de segundos
+    desde la Época Unix (1970-01-01 00:00:00 UTC). El campo <b>modified_ns</b>
+    contiene la parte de nanosegundos de la hora de modificación.</p>
+<p class="Pp">El campo <b>modified_by</b> contiene el ID corto del cliente que
+    realizó la última modificación en el archivo, ya sea agregar, cambiar o
+    eliminar. Este campo se sobrescribe cada vez que se realiza un cambio en el
+    archivo por el último cliente que lo hizo, por lo que no mantiene un historial.</p>
+<p class="Pp">El campo <b>deleted</b> se establece cuando el archivo ha sido
+    eliminado. La lista de bloques DEBERÁ tener longitud cero y la hora de
+    modificación indica la hora de la eliminación o, si la hora de la eliminación
+    no se puede determinar de manera confiable, la última hora de modificación
+    conocida.</p>
+<p class="Pp">El campo <b>invalid</b> se establece cuando el archivo no es
+    válido y no está disponible para sincronización. Un par PUEDE establecer este
+    bit para indicar que temporalmente no puede servir datos para el archivo.</p>
+<p class="Pp">El campo <b>no_permissions</b> se establece cuando no hay
+    información de permisos para el archivo. Este es el caso cuando se origina en
+    un sistema de archivos que no admite permisos. Los cambios solo en los bits de
+    permiso DEBERÍAN ignorarse en los archivos con este bit establecido. Los bits
+    de permisos DEBEN establecerse en el valor octal 0666.</p>
+<p class="Pp">El campo <b>version</b> es un vector de versión que describe las
+    actualizaciones realizadas en un archivo por todos los miembros del clúster.
+    Cada contador en el vector de versión es una tupla ID-Valor. El ID es los
+    primeros 64 bits del ID del dispositivo. El Valor es un contador simple
+    incremental, que comienza en cero. La combinación de Carpeta, Nombre y
+    Versión identifica de forma única el contenido de un archivo en un momento
+    dado.</p>
+<p class="Pp">El campo <b>sequence</b> es el valor de un reloj monotónico local
+    del dispositivo en el momento de la última actualización de la base de datos
+    local a un archivo. El reloj hace tictac en cada actualización de la base de
+    datos local, formando así un número de secuencia sobre las actualizaciones de
+    la base de datos.</p>
+<p class="Pp">El campo <b>block_size</b> es el tamaño, en bytes, de cada bloque
+    individual en la lista de bloques (excepto, posiblemente, el último bloque).
+    Si este campo está ausente o es cero, se asume que el tamaño del bloque es
+    128 KiB (131072 bytes). Los valores válidos de este campo son las potencias de
+    dos desde 128 KiB hasta 16 MiB. Ver también <i>Selección del Tamaño de
+    Bloque</i>.</p>
+<p class="Pp">La lista <b>blocks</b> contiene el tamaño y el hash de cada bloque
+    en el archivo. Cada bloque representa un <b>bl</b><section class="Sh">
+<h1 class="Sh" id="Protocol_Messages"><a class="permalink" href="#Protocol_Messages">Mensajes del Protocolo</a></h1>
+<p class="Pp">El protocolo de comunicación usa los siguientes mensajes definidos en protobuf:</p>
+<section class="Ss">
+<h2 class="Ss" id="Index"><a class="permalink" href="#Index">Índice</a></h2>
+<p class="Pp">El mensaje Index se usa para informar a otros pares sobre el contenido de la carpeta local. Cada mensaje de Índice está dirigido a una carpeta específica y puede contener cero o más mensajes FileInfo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Index {
+    string folder  = 1;
+    repeated FileInfo file_infos = 2;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Campos</h2>
+<p class="Pp">El campo <b>folder</b> representa el ID de la carpeta para la cual se proporciona la información.</p>
+<p class="Pp">El campo <b>file_infos</b> es una lista de información sobre los archivos contenidos en la carpeta. Cada entrada FileInfo describe un archivo y sus bloques correspondientes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">FileInfo</h2>
+<p class="Pp">El mensaje FileInfo describe un archivo individual y sus bloques.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message FileInfo {
+    string       name              = 1;
+    Vector       version           = 2;
+    repeated Block blocks            = 3;
+    FileDataType type              = 4;
+    string       symlink_target    = 5;
+    optional int64  size              = 6;
+    optional bytes  hash              = 7;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Campos</h2>
+<p class="Pp">El campo <b>name</b> es el nombre del archivo.</p>
+<p class="Pp">El campo <b>version</b> es el hash del contenido del archivo. Se utiliza para detectar cambios en el archivo.</p>
+<p class="Pp">El campo <b>blocks</b> es una lista de información sobre los bloques de datos del archivo. Cada elemento Block contiene el tamaño del bloque y su hash.</p>
+<p class="Pp">El campo <b>type</b> indica el tipo de archivo (por ejemplo, regular, directorio, symlink).</p>
+<p class="Pp">El campo <b>symlink_target</b> contiene el destino del symlink para las entradas de tipo symlink. Está vacío para otros tipos de entrada.</p>
+<p class="Pp">El campo <b>size</b> representa el tamaño total del archivo en bytes. Es opcional y puede estar ausente para directorios o symlinks.</p>
+<p class="Pp">El campo <b>hash</b> representa el hash de todo el archivo. Es opcional y puede estar ausente si el cálculo del hash no es necesario o posible.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Block</h2>
+<p class="Pp">El mensaje Block describe un bloque de datos dentro de un archivo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Block {
+    int64  size = 1;
+    bytes  hash = 2;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss">Campos</h2>
+<p class="Pp">El campo <b>size</b> es el tamaño del bloque de datos en bytes. El último bloque de un archivo puede ser más pequeño que el tamaño del bloque estándar.</p>
+<p class="Pp">El campo <b>hash</b> es el hash del contenido del bloque. Se utiliza para verificar la integridad del bloque.</p>
+<p class="Pp">La lista de bloques está vacía para directorios y symlinks.</p>
+<p class="Pp">El campo <b>symlink_target</b> contiene el destino del symlink, para entradas de tipo symlink. Está vacío para todos los demás tipos de entrada.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Request"><a class="permalink" href="#Request">Solicitud</a></h1>
+<p class="Pp">El mensaje Request expresa el deseo de recibir un bloque de datos correspondiente a una parte de un archivo determinado en la carpeta del par.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Request {
+    int32  id             = 1;
+    string folder         = 2;
+    string name           = 3;
+    int64  offset         = 4;
+    int32  size           = 5;
+    bytes  hash           = 6;
+    bool   from_temporary = 7;
+    int32 block_no        = 9;
+    reserved 8;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Fields"><a class="permalink" href="#Fields">Campos</a></h2>
+<p class="Pp">El <b>id</b> es el identificador de la solicitud. Se corresponderá en el mensaje <b>Response</b> correspondiente. Cada solicitud pendiente debe tener un ID único.</p>
+<p class="Pp">Los campos <b>folder</b> y <b>name</b> son como se documenta para el mensaje Index. Los campos <b>offset</b> y <b>size</b> especifican la región del archivo a transferir. Esto DEBERÍA equivaler exactamente a un bloque como se ve en un mensaje Index.</p>
+<p class="Pp">El campo <i>hash</i> PUEDE establecerse en el valor hash esperado del bloque. Si se establece, el otro dispositivo DEBERÍA asegurarse de que el bloque transmitido coincida con el hash solicitado. El otro dispositivo PUEDE reutilizar un bloque de un archivo y desplazamiento diferentes que tengan el mismo tamaño y hash, si existe.</p>
+<p class="Pp">El campo <b>from_temporary</b> se establece para indicar que la lectura debe realizarse desde el archivo temporal (convirtiendo el nombre a su forma temporal) y recurriendo al archivo no temporal si ocurre algún error. El conocimiento del contenido de los archivos temporales proviene de los mensajes DownloadProgress.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Response"><a class="permalink" href="#Response">Respuesta</a></h1>
+<p class="Pp">El mensaje Response se envía en respuesta a un mensaje Request.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Response {
+    int32     id   = 1;
+    bytes     data = 2;
+    ErrorCode code = 3;
+}
+enum ErrorCode {
+    NO_ERROR     = 0;
+    GENERIC      = 1;
+    NO_SUCH_FILE = 2;
+    INVALID_FILE = 3;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Fields_2"><a class="permalink" href="#Fields_2">Campos</a></h2>
+<p class="Pp">El campo <b>id</b> es el identificador de la solicitud. Debe coincidir con el ID de la <b>Request</b> a la que se está respondiendo.</p>
+<p class="Pp">El campo <b>data</b> contiene el bloque de datos solicitado o está vacío si el bloque solicitado no está disponible.</p>
+<p class="Pp">El campo <b>code</b> contiene un código de error que describe la razón por la cual una Solicitud no pudo ser satisfecha, en el caso de que se devolviera cero bytes de datos. Los siguientes valores están definidos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>0</b></dt>
+  <dd>Sin Error (los datos deberían estar presentes)</dd>
+  <dt><b>1</b></dt>
+  <dd>Error Genérico</dd>
+  <dt><b>2</b></dt>
+  <dd>No Existe Tal Archivo (el archivo solicitado no existe, o el desplazamiento está fuera del rango aceptable para el archivo)</dd>
+  <dt><b>3</b></dt>
+  <dd>Inválido (el archivo existe pero tiene un bit inválido establecido o no está disponible de otra manera)</dd>
+</dl>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DownloadProgress"><a class="permalink" href="#DownloadProgress">Progreso de Descarga</a></h1>
+<p class="Pp">El mensaje DownloadProgress se utiliza para notificar a los dispositivos remotos sobre la disponibilidad parcial de archivos. Por defecto, estos mensajes se envían cada 5 segundos y solo en los casos en que se han detectado cambios en el progreso o el estado. Cada mensaje DownloadProgress se dirige a una carpeta específica y DEBE contener cero o más mensajes FileDownloadProgressUpdate.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message DownloadProgress {
+    string                              folder  = 1;
+    repeated FileDownloadProgressUpdate updates = 2;
+}
+message FileDownloadProgressUpdate {
+    FileDownloadProgressUpdateType update_type   = 1;
+    string                         name          = 2;
+    Vector                         version       = 3;
+    repeated int32                 block_indexes = 4;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Fields_(DownloadProgress_Message)"><a class="permalink" href="#Fields_(DownloadProgress_Message)">Campos (Mensaje DownloadProgress)</a></h2>
+<p class="Pp">El campo <b>folder</b> representa el ID de la carpeta para la cual se proporciona la actualización.</p>
+<p class="Pp">El campo <b>updates</b> es una lista de mensajes de actualización de progreso.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Fields_(FileDownloadProgressUpdate_Message)"><a class="permalink" href="#Fields_(FileDownloadProgressUpdate_Message)">Campos (Mensaje FileDownloadProgressUpdate)</a></h2>
+<p class="Pp">El <b>update_type</b> indica si la actualización es de tipo <b>append (0)</b> (nuevos bloques están disponibles) o <b>forget (1)</b> (la transferencia del archivo ha finalizado o fallado).</p>
+<p class="Pp">El campo <b>name</b> define el nombre del archivo del índice global para el cual se envía esta actualización.</p>
+<p class="Pp">El mensaje <b>version</b> define la versión del archivo para la cual se envía esta actualización.</p>
+<p class="Pp">El campo <b>block_indexes</b> es una lista de enteros positivos, donde cada entero representa el índice del bloque en el array Blocks del mensaje FileInfo que ha estado disponible para la descarga. Por ejemplo, un entero con valor 3 representa que los datos definidos en el cuarto mensaje BlockInfo del mensaje FileInfo de ese archivo ya están disponibles. Tenga en cuenta que la coincidencia debe realizarse en <b>name</b> Y <b>version</b>. Además, cada actualización recibida es incremental, por ejemplo, el mensaje de actualización inicial puede contener los índices 0, 1, 2, una actualización 5 segundos después puede contener los índices 3, 4, 5 que deben agregarse a la lista original, lo que implica que los bloques 0-5 están actualmente disponibles.</p>
+<p class="Pp">Los índices de bloque PUEDEN agregarse en cualquier orden. Una implementación NO DEBE asumir que los índices de bloque se agregan en ningún orden específico.</p>
+<p class="Pp">El campo <b>forget</b> establecido implica que el archivo anunciado previamente ya no está disponible, por lo tanto, la lista de índices de bloque debe truncarse.</p>
+<p class="Pp">Los mensajes con el campo <b>forget</b> establecido NO DEBEN tener ningún índice de bloque.</p>
+<p class="Pp">Cualquier mensaje de actualización que se envíe para una <b>version</b> diferente del mismo nombre de archivo debe ir precedido de un mensaje de actualización para la versión antigua de ese archivo con el campo <b>forget</b> establecido.</p>
+<p class="Pp">Como medida de seguridad en el lado receptor, el valor de <b>version</b> que cambia entre los mensajes de actualización implica que el archivo ha cambiado y que los índices anunciados previamente ya no están disponibles. La lista de índices de bloque disponibles DEBE ser reemplazada (en lugar de agregada) con los índices especificados en este mensaje.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Ping"><a class="permalink" href="#Ping">Ping</a></h1>
+<p class="Pp">El mensaje Ping se utiliza para determinar que una conexión está activa y para mantener las conexiones activas a través de elementos de red de seguimiento de estado como firewalls y puertas de enlace NAT. Se envía un mensaje Ping cada 90 segundos, si no se ha enviado ningún otro mensaje en los 90 segundos anteriores.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Ping {
+}</pre>
+</div>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Close"><a class="permalink" href="#Close">Cerrar</a></h1>
+<p class="Pp">El mensaje Close PUEDE enviarse para indicar que la conexión se cerrará debido a una condición de error. Un mensaje Close NO DEBE ser seguido por más mensajes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Esquema de Protocolo de Búfer</h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>message Close {
+    string reason = 1;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Fields_3"><a class="permalink" href="#Fields_3">Campos</a></h2>
+<p class="Pp">El campo <b>reason</b> contiene una descripción legible por humanos de la condición de error.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SHARING_MODES"><a class="permalink" href="#SHARING_MODES">MODOS DE COMPARTICIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id="Trusted"><a class="permalink" href="#Trusted">Confiable</a></h2>
+<p class="Pp">El modo confiable es el modo de compartición predeterminado. Las actualizaciones se intercambian en ambas direcciones.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>+------------+     Updates      /---------\
+|            |  -----------&gt;   /           \
+|   Device   |                 |  Cluster  |
+|            |  &lt;-----------   \           /
++------------+     Updates      \---------/</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Send_Only"><a class="permalink" href="#Send_Only">Solo Enviar</a></h2>
+<p class="Pp">En el modo solo enviar, un dispositivo no aplica ninguna actualización del clúster, pero publica los cambios de su carpeta local al clúster como de costumbre.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>+------------+     Updates      /---------\
+|            |  -----------&gt;   /           \
+|   Device   |                 |  Cluster  |
+|            |                 \           /
++------------+                  \---------/</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Receive_Only"><a class="permalink" href="#Receive_Only">Solo Recibir</a></h2>
+<p class="Pp">En el modo solo recibir, un dispositivo no envía ninguna actualización al clúster, pero acepta los cambios en su carpeta local del clúster como de costumbre.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>+------------+     Updates      /---------\
+|            |  &lt;-----------   /           \
+|   Device   |                 |  Cluster  |
+|            |                 \           /
++------------+                  \---------/</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DELTA_INDEX_EXCHANGE"><a class="permalink" href="#DELTA_INDEX_EXCHANGE">INTERCAMBIO DE ÍNDICES DELTA</a></h1>
+<p class="Pp">Los datos del índice deben intercambiarse cada vez que dos dispositivos se conectan para que uno conozca los archivos disponibles en el otro. En el caso más básico, esto ocurre enviando un mensaje <b>Index</b> seguido de uno o más mensajes <b>Index Update</b>. Cualquier dato de índice anterior conocido para un dispositivo remoto se elimina y se reemplaza con los nuevos datos de índice recibidos en un mensaje <b>Index</b>, mientras que el contenido de un mensaje <b>Index Update</b> simplemente se agrega a los datos de índice existentes.</p>
+<p class="Pp">Para situaciones con índices grandes o reconexiones frecuentes, esto puede ser bastante ineficiente. Luego se puede utilizar un mecanismo para retener los datos del índice entre conexiones y transmitir solo los cambios desde esos datos al inicio de la conexión. Esto se llama "índices delta". Para habilitar este mecanismo, se utilizan los campos <b>sequence</b> e <b>index ID</b>.</p>
+<div class="Bd-indent">
+<dl clas
+{
+  "title": "syncthing-relaysrv(8) — Syncthing v2.0.0 documentation",
+  "sections": [
+    {
+      "title": "NAME",
+      "content": [
+        "syncthing-relaysrv — Syncthing relay server configuration"
+      ]
+    },
+    {
+      "title": "INTRODUCTION",
+      "content": [
+        "The syncthing relay server is a small utility that allows Syncthing devices to connect to each other, even when they are unable to connect directly.",
+        "It acts as a man-in-the-middle, forwarding data between devices that are behind firewalls or NAT.",
+        "The relay server is configured via a configuration file, which is typically located at /etc/syncthing/relaysrv.conf."
+      ]
+    },
+    {
+      "title": "CONFIGURATION",
+      "content": [
+        "The configuration file is written in JSON format and contains the following options:",
+        {
+          "type": "list",
+          "items": [
+            {
+              "term": "listen",
+              "description": "The address and port to listen on for incoming connections. Default is :20000."
+            },
+            {
+              "term": "relay-url",
+              "description": "The URL of the relay server. This is used by Syncthing devices to connect to the relay server. Default is \"relay://\"."
+            },
+            {
+              "term": "protocol",
+              "description": "The protocol to use for relaying data. Options are \"tcp\" and \"udp\". Default is \"tcp\"."
+            },
+            {
+              "term": "provided-by",
+              "description": "A string to identify the provider of the relay service. Default is \"\"."
+            },
+            {
+              "term": "user",
+              "description": "The username to use for authentication. If not specified, anonymous access is allowed."
+            },
+            {
+              "term": "password",
+              "description": "The password to use for authentication. If not specified, anonymous access is allowed."
+            },
+            {
+              "term": "max-clients",
+              "description": "The maximum number of clients allowed to connect to the relay server. Default is 0 (unlimited)."
+            },
+            {
+              "term": "rate-limit",
+              "description": "The rate limit for data transfer in bytes per second. Default is 0 (unlimited)."
+            },
+            {
+              "term": "log-level",
+              "description": "The log level. Options are \"debug\", \"info\", \"warn\", and \"error\". Default is \"info\"."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "title": "EXAMPLE CONFIGURATION FILE",
+      "content": [
+        {
+          "type": "code",
+          "text": "{\n  \"listen\": \":20000\",\n  \"relay-url\": \"relay://your-relay-domain.com:20000/?id=YOUR_RELAY_ID\",\n  \"provided-by\": \"My Relay Service\",\n  \"user\": \"your_username\",\n  \"password\": \"your_password\"\n}"
+        }
+      ]
+    },
+    {
+      "title": "RUNNING THE RELAY SERVER",
+      "content": [
+        "To run the relay server, simply execute the syncthing-relaysrv binary:",
+        {
+          "type": "code",
+          "text": "syncthing-relaysrv -f /etc/syncthing/relaysrv.conf"
+        },
+        "The -f option specifies the configuration file to use. If no configuration file is specified, the default configuration file (/etc/syncthing/relaysrv.conf) will be used."
+      ]
+    },
+    {
+      "title": "SEE ALSO",
+      "content": [
+        "syncthing(1)"
+      ]
+    },
+    {
+      "title": "AUTHOR",
+      "content": [
+        "The Syncthing Authors"
+      ]
+    },
+    {
+      "title": "COPYRIGHT",
+      "content": [
+        "2014-2025, The Syncthing Authors"
+      ]
+    }
+  ],
+  "footer": {
+    "date": "November 23, 2025",
+    "version": "v2.0.0"
+  }
+}
+</details>
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/syncthing-bep.7.es.txt">txt</a>, 
+        
+            <a href="/man/syncthing-bep.7.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

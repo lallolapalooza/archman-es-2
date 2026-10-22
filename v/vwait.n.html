@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>vwait(n) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">vwait(n)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/tcl/">tcl</a></p>
+<p class="lic">Licencias: TCL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">vwait(n)</td>
+    <td class="head-vol">Comandos integrados de Tcl</td>
+    <td class="head-rtitle">vwait(n)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp"><b>vwait</b> - Procesa eventos hasta que una variable es escrita</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>vwait</b> <i>nombreVar</i></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCION'><a class='permalink' href='#DESCRIPCION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este comando entra en el bucle de eventos de Tcl para procesar eventos,
+    bloqueando la aplicación si no hay eventos listos. Continúa procesando eventos
+    hasta que algún manejador de eventos establece el valor de la variable global
+    <i>nombreVar</i>. Una vez que se ha establecido <i>nombreVar</i>, el comando
+    <b>vwait</b> regresará tan pronto como el manejador de eventos que modificó
+    <i>nombreVar</i> se complete. El argumento <i>nombreVar</i> siempre se
+    interpreta como un nombre de variable con respecto al espacio de nombres
+    global, pero puede referirse a las variables de cualquier espacio de nombres si
+    se proporciona el nombre completamente calificado.</p>
+<p class="Pp">En algunos casos, el comando <b>vwait</b> puede no regresar
+    inmediatamente después de que se establezca <i>nombreVar</i>. Esto sucede si el
+    manejador de eventos que establece <i>nombreVar</i> no se completa
+    inmediatamente. Por ejemplo, si un manejador de eventos establece
+    <i>nombreVar</i> y luego llama a <b>vwait</b> para esperar una variable
+    diferente, es posible que no regrese por mucho tiempo. Durante este tiempo, el
+    <b>vwait</b> de nivel superior está bloqueado esperando que el manejador de
+    eventos se complete, por lo que tampoco puede regresar. (Ver los
+    <b>VWAIITS ANIDADOS POR EJEMPLO</b> a continuación).</p>
+<p class="Pp">Para ser claros, <i>múltiples llamadas a</i> <b>vwait</b><i> se anidarán y no ocurrirán en</i> <i>paralelo</i>. La llamada más externa a <b>vwait</b> no regresará hasta que todas las internas lo hagan. Se recomienda que el código nunca anide llamadas a <b>vwait</b> (evitando colocarlas en callbacks de eventos), pero cuando eso no sea posible, se debe tener cuidado de agregar variables de bloqueo al código para prevenir todas las llamadas reentrantes a <b>vwait</b> que no sean *estrictamente* necesarias. Tenga en cuenta que los modos de operación síncronos de algunos paquetes de Tcl
+    (por ejemplo, <b>http</b>) utilizan <b>vwait</b> internamente; si se utiliza el bucle de eventos, es mejor utilizar los modos de operación asíncronos basados en callbacks de esos paquetes donde estén disponibles.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">Ejecuta el bucle de eventos continuamente hasta que algún evento llame a
+    <b>exit</b>. (Puedes usar cualquier variable no mencionada en otro lugar, pero
+    el nombre <i>forever</i> te recuerda la intención de un vistazo).</p>
+<div class="Bd-indent">
+<pre><b>vwait</b> forever</pre>
+</div>
+<p class="Pp">Espera cinco segundos para conectarse a un socket de servidor, de lo
+    contrario, cierra el socket y continúa ejecutando el script:</p>
+<div class="Bd-indent">
+<pre># Inicializar el estado
+after 5000 set state timeout
+set server [socket -server accept 12345]
+proc accept {args} {
+    global state connectionInfo
+    set state accepted
+    set connectionInfo $args
+}
+# Esperar a que algo suceda
+<b>vwait</b> state
+# Limpiar eventos que podrían haber ocurrido
+close $server
+after cancel set state timeout
+# Hacer algo basado en cómo terminó vwait...
+switch $state {
+    timeout {
+        puts &quot;no connection on port 12345&quot;
+    }
+    accepted {
+       puts &quot;connection: $connectionInfo&quot;
+       puts [lindex $connectionInfo 0] &quot;Hello there!&quot;
+    }
+}</pre>
+</div>
+<p class="Pp">Un comando que esperará un cierto retraso esperando que se establezca
+    una variable de espacio de nombres. Incluye un bloqueo para prevenir esperas
+    anidadas.</p>
+<div class="Bd-indent">
+<pre>namespace eval example {
+    variable v done
+    proc wait {delay} {
+        variable v
+        if {$v ne &quot;waiting&quot;} {
+            set v waiting
+            after $delay [namespace code {set v done}]
+            <b>vwait</b> [namespace which -variable v]
+        }
+        return $v
+    }
+}</pre>
+</div>
+<p class="Pp">Al ejecutarse dentro de una <b>coroutine</b>, una alternativa a usar
+    <b>vwait</b> es <b>yield</b> a un bucle de eventos externo y ser
+    recomenzado cuando la variable se establece, o en un momento ocioso después
+    de eso.</p>
+<div class="Bd-indent">
+<pre>coroutine task apply {{} {
+    # simular [after 1000]
+    after 1000 [info coroutine]
+    yield
+    # programar el establecimiento de una variable global, como normal
+    after 2000 {set var 1}
+    # simular [<b>vwait</b> var]
+    proc updatedVar {task args} {
+        after idle $task
+        trace remove variable ::var write &quot;updatedVar $task&quot;
+    }
+    trace add variable ::var write &quot;updatedVar [info coroutine]&quot;
+    yield
+}}</pre>
+</div>
+<section class="Ss">
+<h2 class="Ss" id='VWAIITS_ANIDADOS_POR_EJEMPLO'><a class='permalink' href='#VWAIITS_ANIDADOS_POR_EJEMPLO'>VWAIITS   ANIDADOS POR EJEMPLO</a></h2>
+<p class="Pp">Este ejemplo demuestra lo que puede suceder cuando el comando
+    <b>vwait</b> está anidado. El script nunca terminará porque la espera de la
+    variable <i>a</i> nunca termina; ese comando <b>vwait</b> todavía está esperando
+    que se complete un script programado con <b>after</b>, que resulta estar
+    ejecutando un <b>vwait</b> interno (para <i>b</i>) a pesar de que el evento que
+    el <b>vwait</b> externo estaba esperando (el establecimiento de <i>a</i>) ha
+    ocurrido.</p>
+<div class="Bd-indent">
+<pre>after 500 {
+    puts &quot;esperando a b&quot;
+    <b>vwait</b> b
+    puts &quot;b fue establecido&quot;
+}
+after 1000 {
+    puts &quot;estableciendo a&quot;
+    set a 10
+}
+puts &quot;esperando a a&quot;
+<b>vwait</b> a
+puts &quot;a fue establecido&quot;
+puts &quot;estableciendo b&quot;
+set b 42</pre>
+</div>
+<p class="Pp">Si ejecutas el código anterior, obtendrás esta salida:</p>
+<div class="Bd-indent">
+<pre>esperando a a
+esperando a b
+estableciendo a</pre>
+</div>
+<p class="Pp">El script nunca imprimirá &#x201C;a fue establecido&#x201D; hasta
+    después de haber impreso &#x201C;b fue establecido&#x201D; debido al anidamiento de
+    los comandos <b>vwait</b>, y sin embargo <i>b</i> no se establecerá hasta
+    después de que el <b>vwait</b> externo regrese, por lo que el script se ha
+    bloqueado. Las únicas formas de evitar esto son estructurar el programa
+    general en estilo de paso de continuación o usar <b>coroutine</b> para hacer
+    que las continuaciones sean implícitas. La primera de estas opciones se escribiría
+    así:</p>
+<div class="Bd-indent">
+<pre>after 500 {
+    puts &quot;esperando a b&quot;
+    trace add variable b write {apply {args {
+        global a b
+        trace remove variable ::b write \
+                [lrange [info level 0] 0 1]
+        puts &quot;b fue establecido&quot;
+        set ::done ok
+    }}}
+}
+after 1000 {
+    puts &quot;estableciendo a&quot;
+    set a 10
+}
+puts &quot;esperando a a&quot;
+trace add variable a write {apply {args {
+    global a b
+    trace remove variable a write [lrange [info level 0] 0 1]
+    puts &quot;a fue establecido&quot;
+    puts &quot;estableciendo b&quot;
+    set b 42
+}}}
+<b>vwait</b> done</pre>
+</div>
+<p class="Pp">La segunda opción, con <b>coroutine</b> y algunos procedimientos
+    auxiliares, se hace de esta manera:</p>
+<div class="Bd-indent">
+<pre># Un comando de espera de variable basado en coroutine
+proc waitvar globalVar {
+    trace add variable ::$globalVar write \
+            [list apply {{v c args} {
+        trace remove variable $v write \
+                [lrange [info level 0] 0 3]
+        after 0 $c
+    }} ::$globalVar [info coroutine]]
+    yield
+}
+# Un comando de espera de tiempo basado en coroutine
+proc waittime ms {
+    after $ms [info coroutine]
+    yield
+}
+coroutine task-1 eval {
+    puts &quot;esperando a a&quot;
+    waitvar a
+    puts &quot;a fue establecido&quot;
+    puts &quot;estableciendo b&quot;
+    set b 42
+}
+coroutine task-2 eval {
+    waittime 500
+    puts &quot;esperando a b&quot;
+    waitvar b
+    puts &quot;b fue establecido&quot;
+    set done ok
+}
+coroutine task-3 eval {
+    waittime 1000
+    puts &quot;estableciendo a&quot;
+    set a 10
+}
+<b>vwait</b> done</pre>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIEN'><a class='permalink' href='#VER_TAMBIEN'>VER TAMBIÉN</a></h1>
+<p class="Pp">global(n), update(n)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PALABRAS_CLAVE'><a class='permalink' href='#PALABRAS_CLAVE'>PALABRAS CLAVE</a></h1>
+<p class="Pp">E/S asíncrona, evento, variable, esperar</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">8.0</td>
+    <td class="foot-os">Tcl</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/tcl/">extra/tcl</a></dd>
+        <dt>Versión:</dt>
+        <dd>8.6.16-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="http://tcl.sourceforge.net/">http://tcl.sourceforge.net/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>TCL</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/tcl/">/listing/extra/tcl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VER_TAMBIEN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#PALABRAS_CLAVE">PALABRAS CLAVE</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+    </nav>
+</details>
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/vwait.n.en.txt">txt</a>, 
+        
+            <a href="/man/vwait.n.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

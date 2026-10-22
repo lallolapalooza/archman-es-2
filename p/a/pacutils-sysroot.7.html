@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pacutils-sysroot(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pacutils-sysroot(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/pacutils/">pacutils</a></p>
+<p class="lic">Licencias: MIT</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PACUTILS-SYSROOT(7)</td>
+    <td class="head-vol">pacutils-sysroot</td>
+    <td class="head-rtitle">PACUTILS-SYSROOT(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pacutils-sysroot - gestión de un sistema invitado montado</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Gestión_de_invitados_con_--root'><a class='permalink' href='#Gestión_de_invitados_con_--root'>Gestión de invitados con --root</a></h2>
+<p class="Pp">Cuando una instalación basada en libalpm se rompe hasta el punto en que el propio gestor de paquetes ya no se puede utilizar, debe arreglarse cargando un entorno de trabajo y montando la instalación que necesita reparación como invitado. Normalmente esto se hace estableciendo la raíz de la instalación al invitado con la opción <b>--root</b>. Libalpm solo usa la raíz de la instalación para determinar dónde instalar y eliminar archivos durante las transacciones de paquetes. Es completamente independiente de todas las demás opciones de configuración. ¡Esto hace que usar <b>--root</b> no sea fiable para gestionar un invitado montado!</p>
+<p class="Pp">El primer problema es que al cambiar la raíz de la instalación, todavía se utiliza la configuración del sistema anfitrión. Dado que la raíz de la instalación es una opción de configuración (<span class="Li">&quot;RootDir&quot;</span>) no se puede usar para cargar un archivo de configuración alternativo. Incluso si se añade <b>--config</b> para cargar la configuración del invitado, cualquier ruta <span class="Li">&quot;Include&quot;</span>'d todavía se resolverá en relación con la raíz del anfitrión. La única forma de utilizar realmente la configuración del invitado sin usar <span class="Li">&quot;chroot&quot;</span> es usar <b>--config</b> y añadir manualmente la ruta de montaje a todas las rutas <span class="Li">&quot;Include&quot;</span>.</p>
+<p class="Pp">Ahora se utilizan los archivos de configuración del invitado, pero todas las rutas configuradas seguirán refiriéndose a rutas bajo la raíz del anfitrión, no a las del invitado. Si se proporciona explícitamente una raíz de instalación, pacman y pacutils establecerán valores predeterminados para algunas, pero no todas, las rutas de configuración para que estén debajo de ella. Esto generalmente funciona, porque esas rutas rara vez se establecen explícitamente, por lo que los valores predeterminados generalmente hacen lo correcto. Sin embargo, si se han establecido, se utilizarán los valores configurados sin modificaciones. Para operar de manera fiable en el invitado, todas las rutas de configuración deben establecerse en relación con la raíz de la instalación (excepto las rutas de la base de datos y el archivo de registro que, si no están definidas, se establecerán por defecto en rutas dentro de la raíz de la instalación).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Introducción_del_Sysroot'><a class='permalink' href='#Introducción_del_Sysroot'>Introducción del Sysroot</a></h2>
+<p class="Pp">Esto es una gran cantidad de trabajo solo para poder operar en un sistema montado. Para permitir la operación fiable en un invitado montado, pacman y pacutils han añadido el concepto de un &quot;sysroot&quot;. El sysroot es lo que comúnmente se pretende al usar la opción <b>--root</b>; el programa operará como si el sysroot fuera realmente la raíz del sistema de archivos. Esto es similar a usar <span class="Li">&quot;chroot&quot;</span> para entrar en el sistema montado antes de ejecutar el programa, pero aún ejecuta la copia del anfitrión. Hay dos maneras de hacer esto: chroot al sysroot poco después de iniciar la lectura de cualquier configuración o anteponer el sysroot a todas las rutas.</p>
+<p class="Pp">Usar <span class="Li">&quot;chroot&quot;</span> directamente puede causar problemas con bibliotecas que usan carga retardada de archivos de configuración u objetos compartidos. Notablemente, glibc retrasa la carga de ciertos objetos hasta que su funcionalidad se utiliza realmente. Esto puede causar una discrepancia entre los componentes cargados antes del <span class="Li">&quot;chroot&quot;</span> y los cargados después. Para evitar este problema, libalpm generalmente debe configurarse para usar rutas bajo el sysroot sin llamar realmente a <span class="Li">&quot;chroot&quot;</span>.</p>
+<p class="Pp">Pacutils proporciona versiones conscientes del sysroot de sus funciones de análisis de configuración para simplificar el proceso. Tenga en cuenta que el sysroot se antepone a todas las rutas durante la resolución de la configuración. Los programas que utilizan las rutinas de análisis de configuración del sysroot NO deben anteponer el sysroot a las rutas de configuración proporcionadas en la línea de comandos.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<pre>#include &lt;alpm.h&gt;
+#include &lt;getopt.h&gt;
+#include &lt;pacutils.h&gt;
+enum {
+       FLAG_CONFIG = 1,
+       FLAG_SYSROOT,
+};
+int main(int argc, char *argv[]) {
+ const char *config_file = &quot;/etc/pacman.conf&quot;;
+ const char *sysroot = NULL;
+       alpm_handle_t *handle = NULL;
+       pu_config_t *config = NULL;
+       struct option long_opts[] = {
+               { &quot;config&quot;        , required_argument , NULL    , FLAG_CONFIG        } ,
+               { &quot;sysroot&quot;       , required_argument , NULL    , FLAG_SYSROOT       } ,
+               { 0, 0, 0, 0 },
+       };
+       while((c = getopt_long(argc, argv, short_opts, long_opts, NULL)) != -1) {
+               switch(c) {
+                       case FLAG_CONFIG: config_file = optarg; break;
+                       case FLAG_SYSROOT: sysroot = optarg; break;
+                       case '?': return 1; /* getopt_long ya imprimió un mensaje de error */
+               }
+       }
+       if((config = pu_ui_config_load_sysroot(NULL, config_file, sysroot)) == NULL)
+               { return 1; } /* load_sysroot ya imprimió un mensaje de error */
+       if(!(handle = pu_initialize_handle_from_config(config))) {
+               fprintf(stderr, &quot;error: fallo al inicializar alpm.\n&quot;);
+               return 1;
+       }
+       puts(alpm_option_get_root(handle));
+       pu_config_free(config);
+       alpm_release(handle);
+       return 0;
+}</pre>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-03-13</td>
+    <td class="foot-os">pacutils</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/pacutils/">extra/pacutils</a></dd>
+        <dt>Versión:</dt>
+        <dd>0.15.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/andrewgregory/pacutils">https://github.com/andrewgregory/pacutils</a></dd>
+        <dt>Licencias:</dt>
+        <dd>MIT</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/pacutils/">/listing/extra/pacutils/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pacutils-sysroot.7.es.txt">txt</a>, 
+        
+            <a href="/man/pacutils-sysroot.7.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

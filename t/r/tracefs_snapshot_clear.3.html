@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tracefs_snapshot_clear(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tracefs_snapshot_clear(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libtracefs/">libtracefs</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LIBTRACEFS(3)</td>
+    <td class="head-vol">Manual de libtracefs</td>
+    <td class="head-rtitle">LIBTRACEFS(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">tracefs_snapshot_snap, tracefs_snapshot_clear,
+    tracefs_snapshot_free - API para crear, borrar y leer instantáneas</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;tracefs.h&gt;</b>
+int <b>tracefs_snapshot_snap</b>(struct tracefs_instance *instance);
+int <b>tracefs_snapshot_clear</b>(struct tracefs_instance *instance);
+int <b>tracefs_snapshot_free</b>(struct tracefs_instance *instance);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El rastreo del kernel de Linux proporciona una característica de
+    "instantánea". El kernel tiene dos búferes de anillo. Uno que es escrito
+    por el sistema de rastreo y otro que es el búfer de "instantánea". Cuando
+    ocurre una instantánea, los dos búferes se intercambian, y el búfer de
+    instantánea actual se convierte en el que se está escribiendo, y el búfer
+    que se estaba escribiendo se convierte en la instantánea guardada.</p>
+<p class="Pp">Nota, el búfer de instantánea se asigna la primera vez que se
+    toma, por lo que es mejor tomar una instantánea al principio antes de que se
+    necesite para que se asigne y una instantánea esté lista, entonces la
+    instantánea ocurrirá inmediatamente.</p>
+<p class="Pp">La función <b>tracefs_snapshot_snap()</b> asignará (si aún no está
+    asignado) el búfer de instantánea y luego tomará una "instantánea" (intercambiará
+    el búfer principal que se está escribiendo con el búfer de instantánea
+    asignado). Hará esto al búfer de instancia dado o a la instancia superior
+    si <i>instance</i> es NULL.</p>
+<p class="Pp">La función <b>tracefs_snapshot_clear()</b> borrará el contenido
+    del búfer de instantánea para la instancia dada o la instancia de nivel
+    superior si <i>instance</i> es NULL.</p>
+<p class="Pp">La función <b>tracefs_snapshot_free()</b> liberará la instantánea
+    asignada para la instancia dada o la instancia de nivel superior si
+    <i>instance</i> es NULL. Es decir, si se realiza otra llamada a
+    <b>tracefs_snapshot_snap()</b> después de esta, necesitará asignar el
+    búfer de instantánea nuevamente antes de que pueda tomar una instantánea.
+    Esta función debe usarse para liberar la memoria del kernel utilizada por
+    el búfer de instantánea cuando ya no se use.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Las funciones <b>tracefs_snapshot_snap()</b>,
+    <b>tracefs_snapshot_clear()</b> y <b>tracefs_snapshot_free()</b> devuelven
+    0 en caso de éxito y -1 en caso de fallo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE'><a class='permalink' href='#EXAMPLE'>EJEMPLO</a></h1>
+<div class="Bd-indent">
+<pre>#include &lt;stdlib.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;tracefs.h&gt;
+static int callback(struct tep_event *event, struct tep_record *record, int cpu, void *data)
+{
+        static struct trace_seq seq;
+        struct tep_handle *tep = event-&gt;tep;
+        if (!seq.buffer)
+                trace_seq_init(&amp;seq);
+        trace_seq_reset(&amp;seq);
+        tep_print_event(tep, &amp;seq, record, &quot;[%03d] %s-%d %6.1000d\t%s: %s\n&quot;,
+                                TEP_PRINT_CPU,
+                                TEP_PRINT_COMM,
+                                TEP_PRINT_PID,
+                                TEP_PRINT_TIME,
+                                TEP_PRINT_NAME,
+                                TEP_PRINT_INFO);
+        trace_seq_do_printf(&amp;seq);
+        return 0;
+}
+int main (int argc, char **argv)
+{
+        struct tracefs_instance *instance;
+        struct tep_handle *tep;
+        char *line = NULL;
+        size_t len = 0;
+        int ret;
+        instance = tracefs_instance_create(&quot;my_snapshots&quot;);
+        if (!instance) {
+                perror(&quot;creando instancia&quot;);
+                exit(-1);
+        }
+        tep = tracefs_local_events(NULL);
+        if (!tep) {
+                perror(&quot;leyendo formatos de evento&quot;);
+                goto out;
+        }
+        /* Asegurarse de que el búfer de instantánea esté asignado */
+        ret = tracefs_snapshot_snap(instance);
+        if (ret &lt; 0)
+                goto out;
+        ret = tracefs_event_enable(instance, &quot;sched&quot;, NULL);
+        if (ret &lt; 0) {
+                perror(&quot;habilitando evento&quot;);
+                goto out;
+        }
+        for (;;) {
+                printf(&quot;¡Presiona Enter sin texto para tomar una instantánea!\n&quot;);
+                printf(&quot;Introduce cualquier texto para mostrar la instantánea\n&quot;);
+                printf(&quot;Introduce 'quit' para salir\n&quot;);
+                getline(&amp;line, &amp;len, stdin);
+                ret = tracefs_snapshot_snap(instance);
+                if (ret &lt; 0) {
+                        perror(&quot;tomando instantánea&quot;);
+                        goto out;
+                }
+                if (!line)
+                        break;
+                if (strlen(line) &lt; 2)
+                        continue;
+                if (strncmp(line, &quot;quit&quot;, 4) == 0)
+                        break;
+                tracefs_iterate_snapshot_events(tep, instance, NULL, 0, callback, NULL);
+        }
+        free(line);
+        tracefs_instance_clear(instance);
+ out:
+        tracefs_snapshot_free(instance);
+        tracefs_event_disable(instance, &quot;sched&quot;, NULL);
+        tracefs_instance_destroy(instance);
+        tracefs_instance_free(instance);
+        exit(0);
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FILES'><a class='permalink' href='#FILES'>ARCHIVOS</a></h1>
+<div class="Bd-indent">
+<pre><b>tracefs.h</b>
+        Archivo de cabecera para incluir con el fin de tener acceso a las APIs de la biblioteca.
+<b>-ltracefs</b>
+        Interruptor del enlazador para añadir al compilar un programa que usa la biblioteca.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/tracefs_iterate_snapshot_events.3.en'>tracefs_iterate_snapshot_events(3)</a> <a href='/man/libtracefs.3.en'>libtracefs(3)</a>,
+    <a href='/man/libtraceevent.3.en'>libtraceevent(3)</a>, <a href='/man/trace-cmd.1.en'>trace-cmd(1)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<div class="Bd-indent">
+<pre><b>Steven Rostedt</b> &lt;<b>rostedt@goodmis.org</b>[1]&gt;</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTING_BUGS'><a class='permalink' href='#REPORTING_BUGS'>INFORMANDO ERRORES</a></h1>
+<p class="Pp">Reportar errores a
+  &lt;<b>linux-trace-devel@vger.kernel.org</b>[2]&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCIA</a></h1>
+<p class="Pp">libtracefs es Software Libre licenciado bajo la GNU LGPL 2.1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESOURCES'><a class='permalink' href='#RESOURCES'>RECURSOS</a></h1>
+<p class="Pp"><a href='https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/'>https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYING'><a class='permalink' href='#COPYING'>COPIANDO</a></h1>
+<p class="Pp">Copyright (C) 2023 Google, LLC. El uso gratuito de este software se
+    concede en los términos de la Licencia Pública de GNU (GPL).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>rostedt@goodmis.org</dd>
+</dl>
+<div class="Bd-indent">mailto:rostedt@goodmis.org</div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>linux-trace-devel@vger.kernel.org</dd>
+</dl>
+<div class="Bd-indent">mailto:linux-trace-devel@vger.kernel.org</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">24/08/2025</td>
+    <td class="foot-os">libtracefs 1.8.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libtracefs/">extra/libtracefs</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.8.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/">https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libtracefs/">/listing/extra/libtracefs/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EXAMPLE">EJEMPLO</a></li>
+        
+            <li><a href="#FILES">ARCHIVOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#REPORTING_BUGS">INFORMANDO ERRORES</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#RESOURCES">RECURSOS</a></li>
+        
+            <li><a href="#COPYING">COPIANDO</a></li>
+        
+            <li><a href="#NOTES">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tracefs_snapshot_clear.3.es.html</title>
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        
+        <main>
+            <section class="section">
+                <h2>NOMBRE</h2>
+                <p>tracefs_snapshot_clear - Limpia un snapshot de eventos de traza de eventos en el espacio de usuario.</p>
+            </section>
+            <section class="section">
+                <h2>SINOPSIS</h2>
+                <pre>
+#include &lt;tracefs.h&gt;
+
+int tracefs_snapshot_clear(const char *snapshot_name);
+                </pre>
+            </section>
+            <section class="section">
+                <h2>DESCRIPCIÓN</h2>
+                <p>
+                    La función <strong>tracefs_snapshot_clear</strong> elimina los eventos de traza
+                    almacenados para un snapshot dado en el sistema de archivos tracefs.
+                    El nombre del snapshot se especifica mediante el argumento
+                    <code>snapshot_name</code>.
+                </p>
+                <p>
+                    Este comando es útil para liberar espacio en disco o para limpiar
+                    los datos de traza después de que se hayan analizado o guardado.
+                </p>
+            </section>
+            <section class="section">
+                <h2>ARGUMENTOS</h2>
+                <ul>
+                    <li>
+                        <code>snapshot_name</code>: Una cadena que contiene el nombre del snapshot
+                        de eventos de traza que se va a limpiar.
+                    </li>
+                </ul>
+            </section>
+            <section class="section">
+                <h2>VALOR DE RETORNO</h2>
+                <p>
+                    Devuelve 0 en caso de éxito, o un número negativo en caso de error.
+                    En caso de error, <code>errno</code> se establecerá para indicar la causa.
+                </p>
+            </section>
+            <section class="section">
+                <h2>ERRORES</h2>
+                <ul>
+                    <li><code>EINVAL</code>: El nombre del snapshot proporcionado no es válido o no existe.</li>
+                    <li><code>EACCES</code>: Permisos insuficientes para acceder o modificar el snapshot.</li>
+                    <li><code>EIO</code>: Un error de entrada/salida al interactuar con el sistema de archivos tracefs.</li>
+                </ul>
+            </section>
+            <section class="section">
+                <h2>EJEMPLO</h2>
+                <pre>
+#include &lt;tracefs.h&gt;
+#include &lt;stdio.h&gt;
+
+int main() {
+    const char *snapshot = "my_snapshot";
+    int ret;
+
+    // Asumiendo que 'my_snapshot' ya ha sido creado y poblado con eventos
+
+    ret = tracefs_snapshot_clear(snapshot);
+    if (ret == 0) {
+        printf("Snapshot '%s' limpiado con éxito.\n", snapshot);
+    } else {
+        perror("Error al limpiar el snapshot");
+        return 1;
+    }
+
+    return 0;
+}
+                </pre>
+            </section>
+            <section class="section">
+                <h2>VER TAMBIÉN</h2>
+                <p>
+                    <code>tracefs_snapshot_create</code>(3), <code>tracefs_snapshot_list</code>(3), <code>tracefs_event_read</code>(3)
+                </p>
+            </section>
+            <section class="section">
+                <h2>RECURSOS</h2>
+                <p>
+                    <a href="https://www.kernel.org/doc/html/latest/trace/userspace-trace.html">Documentación de User-space Tracing (Kernel.org)</a>
+                </p>
+            </section>
+            <section class="section">
+                <h2>COPIA</h2>
+                <p>
+                    Este documento está sujeto a la Licencia Pública General de GNU Versión 3.0.
+                    Se espera que la librería tracefs también se distribuya bajo la GPLv3.
+                </p>
+            </section>
+            <section class="section">
+                <h2>NOTAS</h2>
+                <p>
+                    Asegúrese de que el sistema de archivos tracefs esté montado (normalmente en <code>/sys/kernel/tracing</code>).
+                    Los permisos de acceso a los archivos de tracefs son necesarios para que esta función funcione correctamente.
+                </p>
+            </section>
+            <aside>
+                <details>
+                    <summary>Navegación</summary>
+                    <nav>
+                        <ul>
+                            <li><a href="#NOMBRE">NOMBRE</a></li>
+                            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+                            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+                            <li><a href="#ARGUMENTOS">ARGUMENTOS</a></li>
+                            <li><a href="#VALOR DE RETORNO">VALOR DE RETORNO</a></li>
+                            <li><a href="#ERRORES">ERRORES</a></li>
+                            <li><a href="#EJEMPLO">EJEMPLO</a></li>
+                            <li><a href="#VER TAMBIÉN">VER TAMBIÉN</a></li>
+                            <li><a href="#RECURSOS">RECURSOS</a></li>
+                            <li><a href="#COPIA">COPIA</a></li>
+                            <li><a href="#NOTAS">NOTAS</a></li>
+                        </ul>
+                    </nav>
+                </details>
+                <nav class="other-formats">
+                    <p>Otros formatos:
+                        <a href="/man/tracefs_snapshot_clear.3.en.txt">txt</a>,
+                        <a href="/man/tracefs_snapshot_clear.3.en.raw">raw</a>
+                    </p>
+                </nav>
+            </aside>
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas man, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

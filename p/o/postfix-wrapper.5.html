@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>postfix-wrapper(5) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">postfix-wrapper(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/postfix/">postfix</a></p>
+<p class="lic">Licencias: EPL-2.0 OR IPL-1.0, BSD-4-Clause-UC</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">POSTFIX-WRAPPER(5)</td>
+    <td class="head-vol">Manual de Formatos de Archivos</td>
+    <td class="head-rtitle">POSTFIX-WRAPPER(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">postfix-wrapper - API de Postfix multi-instancia</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" DESCRIPCIÓN"><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<br/>
+<p class="Pp">El soporte para la gestión de múltiples instancias de Postfix está
+    disponible a partir de la versión 2.6. Las instancias comparten archivos
+    ejecutables y documentación, pero tienen sus propios directorios para
+    archivos de configuración, cola y datos.</p>
+<p class="Pp">Este documento describe cómo la familiar interfaz de usuario
+    &quot;postfix start&quot; etc. puede ser utilizada para gestionar una o múltiples
+    instancias de Postfix, y proporciona detalles de una API para coordinar
+    actividades entre el comando postfix(1) y un programa gestor multi-instancia.</p>
+<p class="Pp">Con el soporte multi-instancia, la instancia por defecto de Postfix
+    siempre es requerida. Esta instancia se identifica por el valor por defecto
+    del parámetro config_directory.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" OPERACIÓN_GENERAL"><a class='permalink' href='#OPERACIÓN_GENERAL'>OPERACIÓN GENERAL</a></h1>
+<p class="Pp">El soporte multi-instancia es compatible con versiones anteriores:
+    cuando se ejecuta solo una instancia de Postfix, comandos como &quot;postfix
+    start&quot; no cambiarán su comportamiento en absoluto.</p>
+<p class="Pp">Incluso con múltiples instancias de Postfix, puedes seguir usando
+    los mismos comandos de postfix en scripts de arranque, procedimientos de
+    actualización y otros lugares. Los comandos hacen más trabajo, pero los
+    humanos no se ven obligados a aprender trucos nuevos.</p>
+<p class="Pp">Por ejemplo, para iniciar todas las instancias de Postfix, usa:</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd># postfix start</dd>
+</dl>
+<p class="Pp">Otros comandos de postfix(1) también funcionan como se espera. Por
+    ejemplo, para averiguar qué instancias de Postfix existen en una
+    configuración multi-instancia, usa:</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd># postfix status</dd>
+</dl>
+<p class="Pp">Esto enumera el estado de todas las instancias de Postfix dentro de
+    una configuración multi-instancia.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" GESTIÓN_DE_UNA_INSTANCIA_INDIVIDUAL_DE_POSTFIX"><a class='permalink' href='#GESTIÓN_DE_UNA_INSTANCIA_INDIVIDUAL_DE_POSTFIX'>GESTIÓN DE UNA INSTANCIA INDIVIDUAL DE POSTFIX</a></h1>
+<p class="Pp">Para gestionar una instancia específica de Postfix, especifica su
+    directorio de configuración en la línea de comandos de postfix(1):</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd># postfix -c <i>/ruta/al/directorio_de_configuración comando</i></dd>
+</dl>
+<p class="Pp">Alternativamente, el comando postfix(1) acepta el directorio de
+    configuración de la instancia a través de la variable de entorno
+    MAIL_CONFIG (la opción de línea de comandos -c tiene mayor precedencia).</p>
+<p class="Pp">De lo contrario, el comando postfix(1) operará en todas las
+    instancias de Postfix.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" HABILITACIÓN_DEL_MODO_MULTI-INSTANCIA_DE_POSTFIX(1)"><a class='permalink' href='#HABILITACIÓN_DEL_MODO_MULTI-INSTANCIA_DE_POSTFIX(1)'>HABILITACIÓN DEL MODO MULTI-INSTANCIA DE POSTFIX(1)</a></h1>
+<p class="Pp">Por defecto, el comando postfix(1) opera en modo de instancia única.
+    En este modo, el comando invoca directamente el archivo postfix-script
+    (actualmente instalado en el directorio del demonio). Este archivo contiene
+    los comandos que inician o detienen una instancia de Postfix, actualizan la
+    configuración de una instancia de Postfix, etc.</p>
+<p class="Pp">Cuando el comando postfix(1) opera en modo multi-instancia como se
+    discute a continuación, el comando necesita ejecutar comandos de inicio,
+    detención, etc. para cada instancia de Postfix. Esta multiplicación de
+    comandos es manejada por un programa gestor multi-instancia.</p>
+<p class="Pp">La habilitación del modo multi-instancia de postfix(1) se realiza de
+    la siguiente manera: en el archivo main.cf de la instancia por defecto de
+    Postfix, 1) especifica la ruta del programa gestor multi-instancia con el
+    parámetro multi_instance_wrapper; 2) pobla el parámetro
+    multi_instance_directories con las rutas de los directorios de
+    configuración de instancias adicionales de Postfix. Por ejemplo:</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <pre>/etc/postfix/main.cf:
+    multi_instance_wrapper = $daemon_directory/postfix-wrapper
+    multi_instance_directories = /etc/postfix-test</pre>
+  </dd>
+</dl>
+<p class="Pp">El archivo $daemon_directory/postfix-wrapper implementa un gestor
+    simple y contiene instrucciones para crear instancias de Postfix manualmente.
+    El comando postmulti(1) proporciona una implementación más extensa que
+    incluye soporte para la gestión del ciclo de vida.</p>
+<p class="Pp">Los parámetros multi_instance_directories y otros parámetros de
+    main.cf se enumeran a continuación en la sección PARÁMETROS DE CONFIGURACIÓN.</p>
+<p class="Pp">En modo multi-instancia, el comando postfix(1) invoca el comando
+    $multi_instance_wrapper en lugar del archivo postfix-script. Este gestor
+    multi-instancia a su vez ejecuta el comando postfix(1) en modo de instancia
+    única para cada instancia de Postfix.</p>
+<p class="Pp">Para ilustrar las ideas principales detrás de la operación
+    multi-instancia, a continuación se presenta un ejemplo de una implementación
+    simple pero útil de un gestor multi-instancia:</p>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <pre>#!/bin/sh
+: ${command_directory?&quot;no invoques este comando directamente&quot;}
+POSTCONF=$command_directory/postconf
+POSTFIX=$command_directory/postfix
+instance_dirs=`$POSTCONF -h multi_instance_directories |
+                sed 'y/,/ /'` || exit 1
+err=0
+for dir in $config_directory $instance_dirs
+do
+    case &quot;$1&quot; in
+    stop|abort|flush|reload|drain)
+        test &quot;`$POSTCONF -c $dir -h multi_instance_enable`&quot; \
+            = yes || continue;;
+    start)
+        test &quot;`$POSTCONF -c $dir -h multi_instance_enable`&quot; \
+            = yes || {
+            $POSTFIX -c $dir check || err=$?
+            continue
+        };;
+    esac
+    $POSTFIX -c $dir &quot;$@&quot; || err=$?
+done
+exit $err</pre>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" CONTROLES_MULTI-INSTANCIA_POR_INSTANCIA"><a class='permalink' href='#CONTROLES_MULTI-INSTANCIA_POR_INSTANCIA'>CONTROLES MULTI-INSTANCIA POR INSTANCIA</a></h1>
+<p class="Pp">Cada instancia de Postfix tiene su propio archivo main.cf con
+    parámetros que controlan cómo el gestor multi-instancia opera en esa
+    instancia. Esta sección discute las configuraciones más importantes.</p>
+<p class="Pp">La configuración &quot;multi_instance_enable = yes&quot; permite al
+    gestor multi-instancia iniciar (detener, etc.) la instancia de Postfix
+    correspondiente. Por razones de seguridad, esta configuración no es la
+    predeterminada.</p>
+<p class="Pp">La configuración por defecto &quot;multi_instance_enable = no&quot;
+    es útil para pruebas manuales con &quot;postfix -c <i>/ruta/nombre</i>
+    start&quot; etc. El gestor multi-instancia no iniciará dicha instancia y
+    omitirá comandos como &quot;stop&quot; o &quot;flush&quot; que requieren una
+    instancia de Postfix en ejecución. El gestor multi-instancia ejecutará
+    comandos como &quot;check&quot;, &quot;set-permissions&quot; o
+    &quot;upgrade-configuration&quot;, y reemplazará &quot;start&quot; por
+    &quot;check&quot; para que los problemas se informen incluso cuando la instancia
+    esté deshabilitada.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" MANTENIMIENTO_DE_ARCHIVOS_COMPARTIDOS_Y_NO_COMPARTIDOS"><a class='permalink' href='#MANTENIMIENTO_DE_ARCHIVOS_COMPARTIDOS_Y_NO_COMPARTIDOS'>MANTENIMIENTO DE ARCHIVOS COMPARTIDOS Y NO COMPARTIDOS</a></h1>
+<p class="Pp">Algunos archivos se comparten entre instancias de Postfix, como los
+    ejecutables y las páginas de manual, y algunos archivos son por instancia,
+    como los archivos de configuración, los archivos de cola de correo y los
+    archivos de datos. Consulte la sección ARCHIVOS NO COMPARTIDOS a continuación
+    para obtener una lista de archivos por instancia.</p>
+<p class="Pp">Antes de que se implementara el soporte multi-instancia de
+    Postfix, los ejecutables, las páginas de manual, etc., siempre se han
+    mantenido como parte de la instancia por defecto de Postfix.</p>
+<p class="Pp">Con el soporte multi-instancia, simplemente continuamos haciendo
+    esto. Específicamente, una instancia de Postfix no comprobará ni actualizará
+    los archivos compartidos cuando el valor config_directory de esa instancia
+    esté listado en el parámetro multi_instance_directories del archivo
+    main.cf por defecto.</p>
+<p class="Pp">La consecuencia de este enfoque es que la instancia por defecto de
+    Postfix debe ser revisada y actualizada antes que cualquier otra instancia.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id=" RESUMEN_DE_LA_API_MULTI-INSTANCIA"><a class='permalink' href='#RESUMEN_DE_LA_API_MULTI-INSTANCIA'>RESUMEN DE LA API MULTI-INSTANCIA</a></h1>
+<p class="Pp">Solo el gestor multi-instancia implementa soporte para el parámetro
+    de configuración multi_instance_enable. El gestor multi-instancia iniciará
+    solo las instancias de Postfix cuyos archivos main.cf tengan
+    &quot;multi_instance_enable = yes&quot;. Una configuración de &quot;no&quot;
+    permite probar una instancia de Postfix manualmente.</p>
+<p class="Pp">El comando postfix(1) opera en una sola instancia de Postfix cuando
+    se especifica la opción -c, o cuando MAIL_CONFIG está presente en el entorno
+    del proceso. Esto es necesario para terminar la recursión.</p>
+<p class="Pp">De lo contrario, cuando el valor del parámetro
+    multi_instance_directories no esté vacío, el comando postfix(1) ejecutará
+    el comando especificado con el parámetro multi_instance_wrapper, en lugar
+    de ejecutar los comandos en postfix-script.</p>
+<p class="Pp">El gestor multi-instancia omite comandos como &quot;stop&quot; o
+    &quot;reload&quot; que requieren una instancia de Postfix en ejecución, cuando
+    una instancia no tiene &quot;multi_instance_enable = yes&quot;. Esto evita
+    mensajes de error falsos.</p>
+<p class="Pp">El gestor multi-instancia reemplaza un comando &quot;start&quot; por
+    &quot;check&quot; cuando el archivo main.cf de una instancia de Postfix no tiene
+    &quot;multi_instance_enable = yes&quot;. Esta sustitución asegura que los
+    problemas se informarán incluso cuando la instancia esté deshabilitada.</p>
+<p class="Pp">
+</p>
+</div>
+</section>
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>postfix-wrapper(8) — Arch manual pages</title>
+        <link rel="stylesheet" href="https://man.archlinux.org/css/main.css">
+    </head>
+    <body>
+        <main>
+            <article>
+                
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Nm">postfix-wrapper — Postfix multi-instance manager</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Bd" style="white-space: pre;"><b>postfix-wrapper</b> [<b>command</b>]</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <code class="Nm">postfix-wrapper</code> program is used to
+    manage multiple Postfix instances on a single host. It is typically invoked
+    by the <a href='/man/postfix.1.en'>postfix(1)</a> command, but can also be
+    invoked directly to manage Postfix instances.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GENERAL_OPERATION'><a class='permalink' href='#GENERAL_OPERATION'>GENERAL OPERATION</a></h1>
+<p class="Pp">When multiple Postfix instances are run on a single host, they
+    typically share Postfix executable files and documentation. Each instance has
+    its own configuration, mail queue, and mail data directories.</p>
+<p class="Pp">The <code class="Nm">postfix-wrapper</code> program determines
+    which Postfix instance to operate on based on the following:</p>
+<ol class="Bl-enum">
+  <li>If the <code class="ev">MAIL_CONFIG</code> environment variable is set,
+      it specifies the configuration directory of the instance to operate on.</li>
+  <li>If the <a href='/man/postfix.1.en'>postfix(1)</a> command is invoked with
+      the <code class="opt">-c</code> option, it specifies the configuration
+      directory of the instance to operate on.</li>
+  <li>If neither of the above is specified, it operates on the default Postfix
+      instance.</li>
+</ol>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MANAGING_AN_INDIVIDUAL_POSTFIX_INSTANCE'><a class='permalink' href='#MANAGING_AN_INDIVIDUAL_POSTFIX_INSTANCE'>MANAGING AN INDIVIDUAL POSTFIX INSTANCE</a></h1>
+<p class="Pp">The <code class="Nm">postfix-wrapper</code> program can be used to
+    start, stop, restart, and check the status of individual Postfix instances.
+    The available commands are:</p>
+<dl class="Bl-tag">
+  <dt id="start"><a class="permalink" href='#start'>start</a></dt>
+  <dd>Start the Postfix instance.</dd>
+  <dt id="stop"><a class="permalink" href='#stop'>stop</a></dt>
+  <dd>Stop the Postfix instance.</dd>
+  <dt id="restart"><a class="permalink" href='#restart'>restart</a></dt>
+  <dd>Restart the Postfix instance.</dd>
+  <dt id="status"><a class="permalink" href='#status'>status</a></dt>
+  <dd>Check the status of the Postfix instance.</dd>
+</dl>
+<p class="Pp">These commands are typically invoked via the <a href='/man/postfix.1.en'>postfix(1)</a>
+    command, which then invokes <code class="Nm">postfix-wrapper</code>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENABLING_POSTFIX(1)_MULTI-INSTANCE_MODE'><a class='permalink' href='#ENABLING_POSTFIX(1)_MULTI-INSTANCE_MODE'>ENABLING POSTFIX(1) MULTI-INSTANCE MODE</a></h1>
+<p class="Pp">To enable multi-instance mode, you need to configure the
+    <code class="no">multi_instance_directories</code> parameter in the main Postfix
+    configuration file (<code class="file">main.cf</code>). This parameter is a
+    space-separated list of Postfix configuration directories for non-default
+    instances.</p>
+<p class="Pp">For example:</p>
+<div class="Bd" style="white-space: pre;">
+<span class="Nd">main.cf</span>:
+multi_instance_directories = /etc/postfix-test, /etc/postfix-backup</div>
+<p class="Pp">When this parameter is set, the <code class="no">multi_instance_wrapper</code>
+    parameter specifies the command to be used to manage the non-default
+    instances. This is typically <code class="file">$daemon_directory/postfix-wrapper</code
+    >.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PER-INSTANCE_MULTI-INSTANCE_MANAGER_CONTROLS'><a class='permalink' href='#PER-INSTANCE_MULTI-INSTANCE_MANAGER_CONTROLS'>PER-INSTANCE MULTI-INSTANCE MANAGER CONTROLS</a></h1>
+<p class="Pp">The following parameters control the behavior of
+    <code class="Nm">postfix-wrapper</code> for individual instances:</p>
+<dl class="Bl-tag">
+  <dt id="multi_instance_name"><a class="permalink" href='#multi_instance_name'>multi_instance_name</a></dt>
+  <dd>The name of this Postfix instance. This is used to identify the instance
+      when it is managed by <code class="Nm">postfix-wrapper</code>.</dd>
+  <dt id="multi_instance_group"><a class="permalink" href='#multi_instance_group'>multi_instance_group</a></dt>
+  <dd>The group name for this Postfix instance. This is used for grouping
+      instances together for management purposes.</dd>
+  <dt id="multi_instance_enable"><a class="permalink" href='#multi_instance_enable'>multi_instance_enable</a></dt>
+  <dd>Specifies whether this Postfix instance should be managed by
+      <code class="Nm">postfix-wrapper</code>. Set to <code class="str">"yes"</code>
+      to enable management, or <code class="str">"no"</code> to disable.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MAINTAINING_SHARED_AND_NON-SHARED_FILES'><a class='permalink' href='#MAINTAINING_SHARED_AND_NON-SHARED_FILES'>MAINTAINING SHARED AND NON-SHARED FILES</a></h1>
+<p class="Pp">When using multiple Postfix instances, it's important to understand
+    which files are shared and which are not. Shared files include Postfix
+    executables and documentation, which are typically located in
+    <code class="file">/usr/lib/postfix</code>.</p>
+<p class="Pp">Non-shared files are specific to each instance and include:</p>
+<ul>
+  <li>Configuration files (<code class="file">main.cf</code>,
+      <code class="file">master.cf</code>)</li>
+  <li>Mail queue files</li>
+  <li>Mail data files</li>
+</ul>
+<p class="Pp">The <code class="no">config_directory</code> parameter specifies
+    the location of the instance's configuration files. The
+    <code class="no">data_directory</code> parameter specifies the location of
+    instance-specific data files, and <code class="no">queue_directory</code>
+    specifies the top-level queue directory for the instance.</p>
+<p class="Pp">The <code class="no">multi_instance_directories</code> parameter
+    in the default <code class="file">main.cf</code> lists the configuration
+    directories of non-default instances. This ensures that commands like
+    <code class="no">postdrop(1)</code> and <code class="no">postqueue(1)</code>
+    can correctly identify the relevant instance configuration.</p>
+<p class="Pp">The legacy <code class="no">alternate_config_directories</code>
+    parameter is still necessary for non-default instances that run different
+    versions of Postfix or that are not managed together with the default
+    instance.</p>
+<p class="Pp">No Postfix command or script will update or check shared files
+    when its config_directory value is listed in the default main.cf's
+    multi_instance_directories parameter value. Therefore, the default instance
+    should be checked and updated before any Postfix instances that depend on
+    it.</p>
+<p class="Pp">Set-gid commands such as postdrop(1) and postqueue(1) effectively
+    append the multi_instance_directories parameter value to the legacy
+    alternate_config_directories parameter value. The commands use this
+    information to determine whether a -c option or MAIL_CONFIG environment
+    setting specifies a legitimate value.</p>
+<p class="Pp">The legacy alternate_config_directories parameter remains
+    necessary for non-default Postfix instances that are running different
+    versions of Postfix, or that are not managed together with the default
+    Postfix instance.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENVIRONMENT_VARIABLES'><a class='permalink' href='#ENVIRONMENT_VARIABLES'>ENVIRONMENT   VARIABLES</a></h1>
+<dl class="Bl-tag">
+  <dt id="MAIL_CONFIG"><a class="permalink" href="#MAIL_CONFIG">MAIL_CONFIG</a></dt>
+  <dd>When present, this forces the postfix(1) command to operate only on the
+      specified Postfix instance. This environment variable is exported by the
+      postfix(1) -c option, so that postfix(1) commands in descendant processes
+      will work correctly.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURATION_PARAMETERS'><a class='permalink' href='#CONFIGURATION_PARAMETERS'>CONFIGURATION   PARAMETERS</a></h1>
+<p class="Pp">The text below provides only a parameter summary. See postconf(5)
+    for more details.</p>
+<dl class="Bl-tag">
+  <dt id="multi_instance_directories"><a class="permalink" href="#multi_instance_directories"><b>multi_instance_directories
+    (empty)</b></a></dt>
+  <dd>An optional list of non-default Postfix configuration directories; these
+      directories belong to additional Postfix instances that share the Postfix
+      executable files and documentation with the default Postfix instance, and
+      that are started, stopped, etc., together with the default Postfix
+      instance.</dd>
+  <dt id="multi_instance_wrapper"><a class="permalink" href="#multi_instance_wrapper"><b>multi_instance_wrapper
+    (empty)</b></a></dt>
+  <dd>The pathname of a multi-instance manager command that the
+      <a href='/man/postfix.1.en'>postfix(1)</a> command invokes when the multi_instance_directories
+      parameter value is non-empty.</dd>
+  <dt id="multi_instance_name"><a class="permalink" href="#multi_instance_name"><b>multi_instance_name
+    (empty)</b></a></dt>
+  <dd>The optional instance name of this Postfix instance.</dd>
+  <dt id="multi_instance_group"><a class="permalink" href="#multi_instance_group"><b>multi_instance_group
+    (empty)</b></a></dt>
+  <dd>The optional instance group name of this Postfix instance.</dd>
+  <dt id="multi_instance_enable"><a class="permalink" href="#multi_instance_enable"><b>multi_instance_enable
+    (no)</b></a></dt>
+  <dd>Allow this Postfix instance to be started, stopped, etc., by a
+      multi-instance manager.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NON-SHARED_FILES'><a class='permalink' href='#NON-SHARED_FILES'>NON-SHARED   FILES</a></h1>
+<dl class="Bl-tag">
+  <dt id="config_directory"><a class="permalink" href="#config_directory"><b>config_directory
+    (see 'postconf -d' output)</b></a></dt>
+  <dd>The default location of the Postfix main.cf and master.cf configuration
+      files.</dd>
+  <dt id="data_directory"><a class="permalink" href="#data_directory"><b>data_directory
+    (see 'postconf -d' output)</b></a></dt>
+  <dd>The directory with Postfix-writable data files (for example: caches,
+      pseudo-random numbers).</dd>
+  <dt id="queue_directory"><a class="permalink" href="#queue_directory"><b>queue_directory
+    (see 'postconf -d' output)</b></a></dt>
+  <dd>The location of the Postfix top-level queue directory.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE   ALSO</a></h1>
+<pre>postfix(1) Postfix control program
+postmulti(1) full-blown multi-instance manager
+$daemon_directory/postfix-wrapper simple multi-instance manager</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENSE</a></h1>
+<p class="Pp">The Secure Mailer license must be distributed with this
+    software.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR(S)'><a class='permalink' href='#AUTHOR(S)'>AUTHOR(S)</a></h1>
+<pre>Wietse Venema
+IBM T.J. Watson Research
+P.O. Box 704
+Yorktown Heights, NY 10598, USA
+Wietse Venema
+Google, Inc.
+111 8th Avenue
+New York, NY 10011, USA</pre>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/postfix/">extra/postfix</a></dd>
+        <dt>Version:</dt>
+        <dd>3.10.6-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.postfix.org/">https://www.postfix.org/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>EPL-2.0 OR IPL-1.0, BSD-4-Clause-UC</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/postfix/">/listing/extra/postfix/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#GENERAL_OPERATION">GENERAL OPERATION</a></li>
+        
+            <li><a href="#MANAGING_AN_INDIVIDUAL_POSTFIX_INSTANCE">MANAGING AN INDIVIDUAL POSTFIX INSTANCE</a></li>
+        
+            <li><a href="#ENABLING_POSTFIX(1)_MULTI-INSTANCE_MODE">ENABLING POSTFIX(1) MULTI-INSTANCE MODE</a></li>
+        
+            <li><a href="#PER-INSTANCE_MULTI-INSTANCE_MANAGER_CONTROLS">PER-INSTANCE MULTI-INSTANCE MANAGER CONTROLS</a></li>
+        
+            <li><a href="#MAINTAINING_SHARED_AND_NON-SHARED_FILES">MAINTAINING SHARED AND NON-SHARED FILES</a></li>
+        
+            <li><a href="#ENVIRONMENT_VARIABLES">ENVIRONMENT VARIABLES</a></li>
+        
+            <li><a href="#CONFIGURATION_PARAMETERS">CONFIGURATION PARAMETERS</a></li>
+        
+            <li><a href="#NON-SHARED_FILES">NON-SHARED FILES</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+            <li><a href="#LICENSE">LICENSE</a></li>
+        
+            <li><a href="#AUTHOR(S)">AUTHOR(S)</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/postfix-wrapper.8.en.txt">txt</a>, 
+        
+            <a href="/man/postfix-wrapper.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

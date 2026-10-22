@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>sysupdate.d(5) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+        <link rel="alternate" href="/man/sysupdate.d.5.de" hreflang="de">
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">sysupdate.d(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/systemd/">systemd</a></p>
+<p class="lic">Licencias: LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYSUPDATE.D(5)</td>
+    <td class="head-vol">sysupdate.d</td>
+    <td class="head-rtitle">SYSUPDATE.D(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">sysupdate.d - Archivos de definición de transferencia para actualizaciones automáticas</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<div class="Bd-indent">/etc/sysupdate.d/*.transfer</div>
+<div class="Bd-indent">/run/sysupdate.d/*.transfer</div>
+<div class="Bd-indent">/usr/local/lib/sysupdate.d/*.transfer</div>
+<div class="Bd-indent">/usr/lib/sysupdate.d/*.transfer</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Estos archivos describen cómo se actualizarán recursos específicos en el sistema local desde una fuente remota. Cada uno de estos archivos define una transferencia: típicamente una fuente HTTP/HTTPS remota; y un archivo, directorio o partición local como destino. Esto puede ser utilizado como un mecanismo de actualización simple, automático y atómico para el propio sistema operativo, para contenedores, servicios portátiles o imágenes de extensión del sistema —pero de hecho puede ser usado para actualizar cualquier tipo de archivo desde una fuente remota.</p>
+<p class="Pp">El comando <a href='/man/systemd-sysupdate.8.en'>systemd-sysupdate(8)</a> lee estos archivos y los utiliza para determinar qué recursos locales deben ser actualizados, y luego ejecuta la actualización.</p>
+<p class="Pp">Tanto la fuente HTTP/HTTPS remota como el destino local suelen existir en múltiples versiones concurrentes, para implementar esquemas de actualización flexibles, por ejemplo, actualizaciones A/B (o un superconjunto de ellas, por ejemplo, A/B/C, A/B/C/D,...).</p>
+<p class="Pp">Cada archivo *.transfer define una transferencia, es decir, describe un recurso a actualizar. Típicamente, múltiples de estos archivos (es decir, múltiples de tales transferencias) se definen juntos, y se vinculan mediante un identificador de versión común para actualizar múltiples recursos a la vez en cada operación de actualización, por ejemplo, para actualizar un kernel, un sistema de archivos raíz y una partición Verity en una operación combinada y sincronizada, de modo que solo una actualización combinada de los tres constituya una actualización completa. Llamaremos a tal colección de transferencias un objetivo. <a href='/man/systemd-sysupdate.8.en'>systemd-sysupdate(8)</a> siempre opera en un solo objetivo.</p>
+<p class="Pp">Las transferencias pueden agruparse en conjuntos que pueden ser habilitados o deshabilitados individualmente por el administrador del sistema, llamados "Características Opcionales": <a href='/man/sysupdate.features.5.en'>sysupdate.features(5)</a>.</p>
+<p class="Pp">Cada archivo *.transfer contiene tres secciones: [Transfer], [Source] y [Target].</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BASIC_MODE_OF_OPERATION'><a class='permalink' href='#BASIC_MODE_OF_OPERATION'>MODO BÁSICO DE OPERACIÓN</a></h1>
+<p class="Pp">Las actualizaciones del sistema operativo basadas en imágenes de disco suelen constar de múltiples recursos diferentes que deben actualizarse juntos, por ejemplo, una actualización segura del sistema operativo podría consistir en una imagen del sistema de archivos raíz para colocar en una partición, una imagen de partición de datos de integridad Verity coincidente, y una imagen del kernel preparada para arrancar en la combinación de las dos particiones. Los dos primeros recursos son archivos que se descargan y se colocan en una partición de disco, el último es un archivo que se descarga y se coloca en un archivo regular en el sistema de archivos de arranque (por ejemplo, la partición del sistema EFI).</p>
+<p class="Pp">Por lo tanto, durante una actualización de un sistema operativo hipotético "foobarOS" a una versión hipotética 47, se deben realizar las siguientes operaciones:</p>
+<div class="Bd-indent"> 1.Un archivo
+    "<a href='https://download.example.com/foobarOS_47.root.xz'>https://download.example.com/foobarOS_47.root.xz</a>" debe ser
+    descargado, descomprimido y escrito en una partición previamente no utilizada con el tipo de partición GPT UUID 4f68bce3-e8cd-4db1-96e7-fbcaf984b709 para x86-64, según la <b>Especificación de Particiones Descubribles</b>[1].</div>
+<div class="Bd-indent"> 2.De manera similar, un archivo
+    "<a href='https://download.example.com/foobarOS_47.verity.xz'>https://download.example.com/foobarOS_47.verity.xz</a>" debe ser
+    descargado, descomprimido y escrito en una partición previamente vacía con el tipo de partición GPT UUID de
+    2c7357ed-ebd2-46d9-aec1-23d437ec2bf5 (es decir, el tipo de partición para la información de integridad de Verity para sistemas de archivos raíz x86-64).</div>
+<div class="Bd-indent"> 3.Finalmente, un archivo
+    "<a href='https://download.example.com/foobarOS_47.efi'>https://download.example.com/foobarOS_47.efi</a>" (un kernel unificado, según la
+    <b>Especificación del Cargador de Arranque</b>[2] Tipo #2) debe ser descargado,
+    descomprimido y escrito en el sistema de archivos $BOOT, es decir, a
+    EFI/Linux/foobarOS_47.efi en la partición ESP o XBOOTLDR.</div>
+<p class="Pp">La generalización independiente de la versión de esto sería (usando el
+    marcador especial "&quot;@v&quot;" como comodín para el identificador de versión):</p>
+<div class="Bd-indent"> 1.Una transferencia de un archivo
+    "<a href='https://download.example.com/foobarOS_@v.root.xz'>https://download.example.com/foobarOS_@v.root.xz</a>" → una partición GPT local,
+    previamente vacía, de tipo 4f68bce3-e8cd-4db1-96e7-fbcaf984b709, con la etiqueta establecida a "&quot;foobarOS_@v&quot;".</div>
+<div class="Bd-indent"> 2.Una transferencia de un archivo
+    "<a href='https://download.example.com/foobarOS_@v.verity.xz'>https://download.example.com/foobarOS_@v.verity.xz</a>" → una partición GPT local,
+    previamente vacía, de tipo
+    2c7357ed-ebd2-46d9-aec1-23d437ec2bf5 (es decir, el tipo de partición para la información de integridad Verity para sistemas de archivos raíz x86-64), con la etiqueta establecida a "&quot;foobarOS_@v_verity&quot;".</div>
+<div class="Bd-indent"> 3.Una transferencia de un archivo
+    "<a href='https://download.example.com/foobarOS_@v.efi'>https://download.example.com/foobarOS_@v.efi</a>" → un archivo local
+    $BOOT/EFI/Linux/foobarOS_@v.efi.</div>
+<p class="Pp">Una actualización solo puede completarse si las URLs relevantes proporcionan sus
+    recursos para la misma versión, es decir, para el mismo valor de
+    "&quot;@v&quot;".</p>
+<p class="Pp">Lo anterior puede traducirse en tres archivos *.transfer en
+    sysupdate.d/, uno para cada recurso a transferir. Los archivos *.transfer
+    configuran el tipo de descarga y el lugar donde escribir la descarga (es decir,
+    si en una partición o en un archivo en el sistema de archivos). Lo más importante
+    es que estos archivos contienen los patrones de URL, nombre de partición y nombre de archivo que se muestran
+    arriba y que describen cómo se llaman estos recursos en la fuente y cómo
+    se llamarán en el destino.</p>
+<p class="Pp">Para enumerar las versiones disponibles y determinar los candidatos para actualizar, se necesita un mecanismo para listar los archivos adecuados:</p>
+<div class="Bd-indent">&#x2022;Para particiones: la tabla de particiones GPT circundante
+    contiene una lista de particiones definidas, incluyendo un UUID de tipo de partición
+    y una etiqueta de partición (en este esquema, la etiqueta de partición juega un papel para la
+    partición similar al nombre de archivo para un archivo regular).</div>
+<div class="Bd-indent">&#x2022;Para archivos regulares: la lista del directorio
+    que contiene los archivos proporciona una lista de archivos existentes de una manera sencilla.</div>
+<div class="Bd-indent">&#x2022;Para fuentes HTTP/HTTPS se utiliza un esquema simple: un
+    archivo de manifiesto SHA256SUMS, siguiendo el formato definido por <a href='/man/sha256sum.1.en'>sha256sum(1)</a>,
+    enumera nombres de archivo y sus hashes SHA256.</div>
+<p class="Pp">Las transferencias se realizan en orden alfabético de los nombres de los archivos .transfer en los que se definen. Primero, los datos del recurso se descargan directamente en un archivo/directorio/partición de destino. Una vez completado esto para todas las transferencias definidas, en un segundo paso, los archivos/directorios/particiones se renombran a sus nombres finales según lo definido por el <i>MatchPattern=</i> del destino, nuevamente en el orden en que dictan los nombres de los archivos de transferencia. Este paso no es atómico, sin embargo, se garantiza que se ejecutará estrictamente en orden con la sincronización de disco adecuada. Típicamente, al actualizar un SO, una de las transferencias define el punto de entrada al arrancar. Por lo tanto, generalmente es una buena idea ordenar los recursos a través de los nombres de los archivos de configuración de transferencia para que el punto de entrada se escriba al último, asegurando que cualquier terminación anormal no deje un punto de entrada cuyo respaldo no esté establecido todavía. En el ejemplo anterior, tendría sentido establecer la imagen del kernel EFI al último y, por lo tanto, dar a su archivo de configuración de transferencia el nombre alfabéticamente último.</p>
+<p class="Pp">Ver más abajo para un ejemplo extendido y más específico basado en lo anterior.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESOURCE_TYPES'><a class='permalink' href='#RESOURCE_TYPES'>TIPOS DE RECURSOS</a></h1>
+<p class="Pp">Cada archivo de transferencia define un recurso de origen a transferir a un recurso de destino. Se soportan los siguientes tipos de recursos:</p>
+<div class="Bd-indent"> 1.Los recursos de tipo "url-file" encapsulan un
+    archivo en un servidor web, referenciado a través de una URL HTTP o HTTPS. Cuando se realiza una actualización, el archivo se descarga y se descomprime y luego se escribe en el archivo o partición de destino. Este tipo de recurso solo está disponible para fuentes, no para destinos. La lista de versiones disponibles de los recursos de este tipo está codificada en archivos de manifiesto SHA256SUMS, acompañados de firmas desprendidas SHA256SUMS.gpg.</div>
+<div class="Bd-indent"> 2.El tipo de recurso "url-tar" es similar, pero
+    el archivo debe ser un archivo .tar. Cuando se realiza una actualización, el archivo se descomprime y se desempaqueta en un directorio o subvolumen btrfs. Este tipo de recurso solo está disponible para fuentes, no para destinos. Al igual que "url-file", la enumeración de versiones de "url-tar" utiliza archivos SHA256SUMS, autenticados a través de SHA256SUMS.gpg.</div>
+</div>
+</section>
+<span id="man-footer"></span>
+</section>
+</article>
+        </main>
+    </body>
+</html>
+</div>
+<div class="Bd-indent"> 3.El tipo de recurso "archivo-regular" encapsula un archivo local en disco. Durante las actualizaciones, el archivo se descomprime y se escribe en el archivo o partición de destino. Este tipo de recurso está disponible tanto como fuente como destino. Al actualizar, no se realiza ninguna verificación de integridad o autenticación para los recursos de este tipo.</div>
+<div class="Bd-indent"> 4.El tipo de recurso "partición" es similar a "archivo-regular" y encapsula una partición GPT en disco. Al actualizar, la partición debe existir previamente y tener el tipo de partición GPT correcto. Una partición cuya etiqueta de partición GPT esté configurada como "_empty" se considera vacía y candidata para colocar un recurso recién descargado. La etiqueta de partición GPT se utiliza para almacenar información de versión, una vez que una partición se actualiza. Este tipo de recurso solo está disponible para recursos de destino.</div>
+<div class="Bd-indent"> 5.El tipo de recurso "tar" encapsula archivos de archivo .tar locales. Cuando se realiza una actualización, los archivos se descomprimen y desempaquetan en un directorio de destino o un subvolumen btrfs. El comportamiento de "tar" y "url-tar" es generalmente similar, pero este último descarga de fuentes remotas y realiza comprobaciones de integridad y autenticación, mientras que el primero no. El tipo de recurso "tar" solo está disponible para recursos de origen.</div>
+<div class="Bd-indent"> 6.El tipo de recurso "directorio" encapsula árboles de directorios locales. Este tipo está disponible tanto para recursos de origen como de destino. Si se realiza una actualización en un recurso de origen de este tipo, se realiza una copia recursiva del directorio.</div>
+<div class="Bd-indent"> 7.El tipo de recurso "subvolumen" es idéntico a "directorio", excepto cuando se utiliza como destino, en cuyo caso el árbol de archivos se coloca en un subvolumen btrfs en lugar de un directorio simple, si el sistema de archivos subyacente lo admite (es decir, es btrfs).</div>
+<p class="Pp">Como ya se indicó, solo se admite un subconjunto de combinaciones de tipos de recursos de origen y destino:</p>
+<p class="Pp"><b>Tabla 1. Tipos de Recursos</b></p>
+<table class="tbl" border="1" style="border-style: solid;">
+  <tr>
+    <td><b>Identificador</b></td>
+    <td><b>Descripción</b></td>
+    <td><b>Usable como Origen</b></td>
+    <td><b>Cuando se usa como Origen: Destinos Compatibles</b></td>
+    <td><b>Cuando se usa como Origen: Integridad + Autenticación</b></td>
+    <td><b>Cuando se usa como Origen: Descompresión</b></td>
+    <td><b>Usable como Destino</b></td>
+    <td><b>Cuando se usa como Destino: Orígenes Compatibles</b></td>
+  </tr>
+  <tr>
+    <td><b>url-archivo</b></td>
+    <td>Archivos HTTP/HTTPS</td>
+    <td>sí</td>
+    <td><b>archivo-regular</b>, <b>partición</b></td>
+    <td>sí</td>
+    <td>sí</td>
+    <td>no</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td><b>url-tar</b></td>
+    <td>Archivos .tar HTTP/HTTPS</td>
+    <td>sí</td>
+    <td><b>directorio</b>, <b>subvolumen</b></td>
+    <td>sí</td>
+    <td>sí</td>
+    <td>no</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td><b>archivo-regular</b></td>
+    <td>Archivos locales</td>
+    <td>sí</td>
+    <td><b>archivo-regular</b>, <b>partición</b></td>
+    <td>no</td>
+    <td>sí</td>
+    <td>sí</td>
+    <td><b>url-archivo</b>, <b>archivo-regular</b></td>
+  </tr>
+  <tr>
+    <td><b>partición</b></td>
+    <td>Particiones GPT locales</td>
+    <td>no</td>
+    <td>-</td>
+    <td>-</td>
+    <td>-</td>
+    <td>sí</td>
+    <td><b>url-archivo</b>, <b>archivo-regular</b></td>
+  </tr>
+  <tr>
+    <td><b>tar</b></td>
+    <td>Archivos .tar locales</td>
+    <td>sí</td>
+    <td><b>directorio</b>, <b>subvolumen</b></td>
+    <td>no</td>
+    <td>sí</td>
+    <td>no</td>
+    <td>-</td>
+  </tr>
+  <tr>
+    <td><b>directorio</b></td>
+    <td>Directorios locales</td>
+    <td>sí</td>
+    <td><b>directorio</b>, <b>subvolumen</b></td>
+    <td>no</td>
+    <td>no</td>
+    <td>sí</td>
+    <td><b>url-tar</b>, <b>tar</b>, <b>directorio</b>, <b>subvolumen</b></td>
+  </tr>
+  <tr>
+    <td><b>subvolumen</b></td>
+    <td>Subvolúmenes btrfs locales</td>
+    <td>sí</td>
+    <td><b>directorio</b>, <b>subvolumen</b></td>
+    <td>no</td>
+    <td>no</td>
+    <td>sí</td>
+    <td><b>url-tar</b>, <b>tar</b>, <b>directorio</b>, <b>subvolumen</b></td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PATRONES_DE_COINCIDENCIA'><a class='permalink' href='#PATRONES_DE_COINCIDENCIA'>PATRONES DE COINCIDENCIA</a></h1>
+<p class="Pp">Tanto los recursos de origen como los de destino suelen existir en múltiples versiones simultáneamente. Una operación de actualización se realiza siempre que la versión más reciente de las fuentes sea más reciente que la versión más reciente de los destinos. Para determinar la versión más reciente de los recursos, se utiliza un listado de directorios, un listado de particiones o un listado de manifiestos, se selecciona un subconjunto de entradas que cumplan los criterios de ese listado, y el identificador de versión se extrae de los nombres de archivo o las etiquetas de partición de estas entradas seleccionadas. La selección de subconjuntos y la extracción del identificador de versión (además de otros metadatos potenciales) se realizan mediante patrones de coincidencia, configurados en
+  <br/>
+  <i>MatchPattern=</i> en las secciones [Source] y [Target]. Estos patrones son cadenas que describen cómo se nombran los archivos o las particiones, con comodines con nombre para campos específicos como el identificador de versión. Los siguientes comodines están definidos:</p>
+<p class="Pp"><b>Tabla 2. Comodines de Patrones de Coincidencia</b></p>
+<table class="tbl" border="1" style="border-style: solid;">
+  <tr>
+    <td><b>Comodín</b></td>
+    <td><b>Descripción</b></td>
+    <td><b>Formato</b></td>
+    <td><b>Notas</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@v&quot;</td>
+    <td>Identificador de versión</td>
+    <td>Cadena de versión válida</td>
+    <td>Obligatorio</td>
+  </tr>
+  <tr>
+    <td>&quot;@u&quot;</td>
+    <td>UUID de partición GPT</td>
+    <td>Cadena UUID válida de 128 bits</td>
+    <td>Solo relevante si el tipo de recurso de destino elegido es <b>partición</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@f&quot;</td>
+    <td>Banderas de partición GPT</td>
+    <td>Entero hexadecimal formateado</td>
+    <td>Solo relevante si el tipo de recurso de destino elegido es <b>partición</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@a&quot;</td>
+    <td>Bandera de partición GPT NoAuto</td>
+    <td>&quot;0&quot; o &quot;1&quot;</td>
+    <td>Controla el bit NoAuto de las banderas de partición GPT, según la <b>Especificación de Particiones Descubribles</b>[1]; solo relevante si el tipo de recurso de destino elegido es <b>partición</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@g&quot;</td>
+    <td>Bandera de partición GPT GrowFileSystem</td>
+    <td>&quot;0&quot; o &quot;1&quot;</td>
+    <td>Controla el bit GrowFileSystem de las banderas de partición GPT, según la <b>Especificación de Particiones Descubribles</b>[1]; solo relevante si el tipo de recurso de destino elegido es <b>partición</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@r&quot;</td>
+    <td>Bandera de solo lectura</td>
+    <td>&quot;0&quot; o &quot;1&quot;</td>
+    <td>Controla el bit ReadOnly de las banderas de partición GPT, según la <b>Especificación de Particiones Descubribles</b>[1] y otras banderas de solo lectura de salida, ver <i>ReadOnly=</i> a continuación</td>
+  </tr>
+  <tr>
+    <td>&quot;@t&quot;</td>
+    <td>Hora de modificación del archivo</td>
+    <td>Entero decimal formateado, µs desde la época UNIX 1 de enero de 1970</td>
+    <td>Solo relevante si el tipo de recurso de destino elegido es <b>archivo-regular</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@m&quot;</td>
+    <td>Modo de acceso al archivo</td>
+    <td>Entero octal formateado, al estilo UNIX</td>
+    <td>Solo relevante si el tipo de recurso de destino elegido es <b>archivo-regular</b></td>
+  </tr>
+  <tr>
+    <td>&quot;@s&quot;</td>
+    <td>Tamaño del archivo después de la descompresión</td>
+    <td>Entero decimal formateado</td>
+    <td>Útil para medir el progreso y mejorar la lógica de asignación de particiones</td>
+  </tr>
+  <tr>
+    <td>&quot;@d&quot;</td>
+    <td>Intentos realizados</td>
+    <td>Entero decimal formateado</td>
+    <td>Útil al operar con archivos de imagen del kernel, según la <b>Evaluación Automática de Arranque</b>[3]</td>
+  </tr>
+  <tr>
+    <td>&quot;@l&quot;</td>
+    <td>Intentos restantes</td>
+    <td>Entero decimal formateado</td>
+    <td>Útil al operar con archivos de imagen del kernel, según la <b>Evaluación Automática de Arranque</b>[3]</td>
+  </tr>
+  <tr>
+    <td>&quot;@h&quot;</td>
+    <td>Hash SHA256 del archivo comprimido</td>
+    <td>64 caracteres hexadecimales</td>
+    <td>El hash SHA256 del archivo comprimido; no es útil para <b>url-archivo</b> o <b>url-tar</b> donde el hash SHA256 ya está incluido en el archivo de manifiesto de todos modos</td>
+  </tr>
+</table>
+<p class="Pp">De estos comodines, solo
+  <br/>
+  &quot;@v&quot; debe estar presente en un patrón válido; todos los demás comodines son opcionales. Cada comodín se puede usar como máximo una vez en cada patrón. Un patrón típico para hacer coincidir una imagen de origen del sistema de archivos podría ser
+  &quot;MatchPattern=foobar_@v.raw.xz&quot;, es decir, cualquier archivo cuyo nombre comience con &quot;foobar_&quot;, seguido de un ID de versión y sufijo &quot;.raw.xz&quot;.</p>
+<p class="Pp">No confunda el prefijo del comodín de coincidencia de patrones &quot;@&quot; con el prefijo de expansión del especificador &quot;%&quot;. El primero encapsula una parte variable de una cadena de patrón de coincidencia, mientras que el segundo son atajos simples que se expanden mientras se analizan los archivos de inserción. Para obtener detalles sobre los especificadores, consulte a continuación.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCIONES_DE_SECCION_%5BTRANSFER%5D'><a class='permalink' href='#OPCIONES_DE_SECCION_%5BTRANSFER%5D'>OPCIONES DE SECCIÓN [TRANSFER]</a></h1>
+<p class="Pp">Esta sección define las propiedades generales de esta transferencia.</p>
+<p class="Pp"><i>MinVersion=</i></p>
+<div class="Bd-indent">Especifica la versión mínima requerida para que esta
+  transferencia tenga lugar. Si los patrones de origen o destino en esta definición de transferencia coinciden con archivos más antiguos que esta versión, se considerarán obsoletos y nunca se tendrán en cuenta para la operación de actualización.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>ProtectVersion=</i></p>
+<div class="Bd-indent">Toma una o más cadenas de versión para marcarlas como
+  "protegidas". Las versiones protegidas nunca se eliminan al hacer espacio para versiones nuevas y actualizadas. Esto es útil para garantizar que la versión del sistema operativo que se está ejecutando actualmente (o los recursos auxiliares asociados con ella) no se reemplace/sobrescriba durante las actualizaciones, para evitar corrupciones del sistema de archivos en tiempo de ejecución.
+<p class="Pp">Al igual que muchas de las configuraciones en estos archivos de configuración, esta configuración admite la expansión de especificadores. Es particularmente útil establecer esta configuración en uno de los especificadores &quot;%A&quot;, &quot;%B&quot; o &quot;%w&quot; para referirse automáticamente a la versión actual del sistema operativo del sistema en ejecución. Ver a continuación para más detalles sobre los especificadores compatibles.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>Verify=</i></p>
+<div class="Bd-indent">Toma un valor booleano, por defecto es sí. Controla si se verifican criptográficamente los recursos descargados (específicamente: valida las firmas GPG para los archivos de manifiesto SHA256SUMS descargados, a través de sus archivos de firma adjuntos SHA256SUMS.gpg en combinación con el keyring del sistema /usr/lib/systemd/import-pubring.pgp o /etc/systemd/import-pubring.pgp).
+<p class="Pp">Esta opción es esencial para proporcionar garantías de integridad para los recursos descargados y, por lo tanto, debe dejarse habilitada, fuera de los entornos de prueba.</p>
+<p class="Pp">Tenga en cuenta que los archivos de carga útil descargados se verifican incondicionalmente contra los hashes SHA256 enumerados en el manifiesto. Esta opción solo controla si se verifican las firmas de estos manifiestos.</p>
+<p class="Pp">Esta opción solo tiene efecto si el tipo de recurso de origen se selecciona como <b>url-archivo</b> o <b>url-tar</b>, ya que la comprobación de integridad y autenticación solo está disponible para transferencias desde fuentes remotas.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>ChangeLog=</i></p>
+<div class="Bd-indent">Opcionalmente toma una URL presentable por humanos a un sitio web que contiene un registro de cambios del recurso que se está actualizando.
+<p class="Pp">Este puede establecerse varias veces en una única definición de transferencia. Si
+se establece varias veces, los valores se recopilan en una lista de URLs. Añadir un
+valor de cadena vacía borrará la lista existente de todos los valores.</p>
+<p class="Pp">Esta configuración admite la expansión de especificadores. Ver abajo para
+detalles sobre los especificadores admitidos. Esta configuración también expandirá el
+patrón comodín "@v". Ver arriba para detalles.</p>
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+<p class="Pp"><i>AppStream=</i></p>
+<div class="Bd-indent">Opcionalmente toma una URL a un archivo XML de **AppStream
+  catalog**[4]. Esto puede ser utilizado por centros de software (como GNOME Software o
+  KDE Discover) para presentar metadatos enriquecidos sobre los recursos que se están
+  actualizando. Esto incluye nombres de visualización, registros de cambios, iconos y
+  más. El catálogo especificado debe incluir **metadatos especiales**[5] para ser
+  asociado correctamente con <a href='/man/systemd-sysupdate.8.en'>systemd-sysupdate(8)</a> por los centros
+  de software.
+<p class="Pp">Esta configuración admite la expansión de especificadores. Ver abajo para
+detalles sobre los especificadores admitidos.</p>
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+<p class="Pp"><i>Features=</i></p>
+<div class="Bd-indent">Una lista separada por espacios de <a href='/man/sysupdate.features.5.en'>sysupdate.features(5)</a>
+  a las que pertenece esta transferencia, por nombre. Esta opción puede especificarse más
+  de una vez, en cuyo caso la lista especificada de características se fusiona. Si se
+  asigna una cadena vacía a esta opción, la lista se restablece y todas las asignaciones
+  anteriores no tendrán efecto. Por ejemplo: "Features=foo bar" especifica que la
+  transferencia pertenece a "foo.feature" y "bar.feature".
+<p class="Pp">Si la lista de características está vacía, esta transferencia se usa
+  siempre. Si esta transferencia pertenece a más de una característica, se utilizará si
+  *cualquiera* de las características listadas está habilitada. Un nombre que no
+  corresponde a una característica definida se resolverá en una característica implícita
+  que siempre está deshabilitada.</p>
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+<p class="Pp"><i>RequisiteFeatures=</i></p>
+<div class="Bd-indent">Esto es como <i>Features=</i>, excepto que *todas* las
+  características listadas aquí deben estar habilitadas para que esta transferencia se
+  habilite. Si ambas opciones se especifican, ambas se aplican: la transferencia se
+  habilitará solo si todas las características especificadas aquí están habilitadas, y al
+  menos una característica listada en <i>Features=</i> está habilitada.
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='[SOURCE]_SECTION_OPTIONS'><a class='permalink' href='#%5BSOURCE%5D_SECTION_OPTIONS'>[SOURCE]   OPCIONES DE SECCIÓN</a></h1>
+<p class="Pp">Esta sección define las propiedades de la fuente de transferencia.</p>
+<p class="Pp"><i>Type=</i></p>
+<div class="Bd-indent">Especifica el tipo de recurso de la fuente para la
+  transferencia. Toma uno de <b>url-file</b>, <b>url-tar</b>, <b>tar</b>,
+  <b>regular-file</b>, <b>directory</b> o <b>subvolume</b>. Para detalles sobre los
+  tipos de recursos, ver arriba. Esta opción es obligatoria.
+<p class="Pp">Tenga en cuenta que solo se admiten ciertas combinaciones de tipos de
+    recursos de origen y destino, ver arriba.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>Path=</i></p>
+<div class="Bd-indent">Especifica dónde encontrar las versiones de origen de este
+  recurso.
+<p class="Pp">Si el tipo de origen se selecciona como <b>url-file</b> o
+    <b>url-tar</b>, debe ser una URL HTTP/HTTPS. La URL se sufija con /SHA256SUMS
+    para adquirir el archivo de manifiesto, con /SHA256SUMS.gpg para adquirir
+    la firma separada del mismo, y con los nombres de archivo listados en el
+    archivo de manifiesto en caso de que se ejecute una actualización y se
+    descargue un recurso.</p>
+<p class="Pp">Para todos los demás tipos de recursos de origen, debe ser una ruta
+    local en el sistema de archivos, que se refiere a un directorio local donde
+    encontrar las versiones de este recurso.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>MatchPattern=</i></p>
+<div class="Bd-indent">Especifica uno o más patrones de coincidencia de nombres de
+  archivo que seleccionan el subconjunto de archivos que son candidatos de
+  actualización como fuente para esta transferencia. Ver arriba para detalles sobre
+  patrones de coincidencia.
+<p class="Pp">Esta opción es obligatoria. Cualquier patrón listado debe contener al
+    menos el comodín "@v", para que se pueda extraer un identificador de versión
+    del nombre del archivo. Todos los demás comodines son opcionales.</p>
+<p class="Pp">Si el tipo de origen es <b>regular-file</b> o <b>directory</b>, el
+    patrón puede contener caracteres de barra. En este caso, coincidirá con el archivo
+    o directorio en el subdirectorio correspondiente. Por ejemplo
+    "MatchPattern=foo_@v/bar.efi" coincidirá con "bar.efi" en el directorio
+    "foo_1".</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='[TARGET]_SECTION_OPTIONS'><a class='permalink' href='#%5BTARGET%5D_SECTION_OPTIONS'>[TARGET]   OPCIONES DE SECCIÓN</a></h1>
+<p class="Pp">Esta sección define las propiedades del destino de la transferencia.</p>
+<p class="Pp"><i>Type=</i></p>
+<div class="Bd-indent">Especifica el tipo de recurso del destino para la
+  transferencia. Toma uno de <b>partition</b>, <b>regular-file</b>, <b>directory</b>
+  o <b>subvolume</b>. Para detalles sobre los tipos de recursos, ver arriba. Esta
+  opción es obligatoria.
+<p class="Pp">Tenga en cuenta que solo se admiten ciertas combinaciones de tipos de
+    recursos de origen y destino, ver arriba.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>Path=</i></p>
+<div class="Bd-indent">Especifica una ruta del sistema de archivos donde buscar
+  versiones ya instaladas o colocar nuevas versiones descargadas de este recurso
+  configurado. Si <i>Type=</i> se establece como <b>partition</b>, espera una ruta
+  a un nodo de dispositivo de bloque (entero), o la cadena especial "auto" en cuyo
+  caso se determina y utiliza automáticamente el dispositivo de bloque que contiene
+  el sistema de archivos raíz del sistema actualmente arrancado. Si <i>Type=</i>
+  se establece como <b>regular-file</b>, <b>directory</b> o <b>subvolume</b>, debe
+  referirse a una ruta en el sistema de archivos local que haga referencia al
+  directorio donde encontrar o colocar los archivos o directorios de versión.
+<p class="Pp">Tenga en cuenta que este mecanismo no se puede utilizar para crear o
+    eliminar particiones, en caso de que <i>Type=</i> se establezca como
+    <b>partition</b>. Las particiones deben existir ya, y se utiliza una etiqueta
+    especial de partición "_empty" para indicar particiones vacías. Para generar
+    automáticamente particiones adecuadas en el primer arranque, utilice una
+    herramienta como <a href='/man/systemd-repart.8.en'>systemd-repart(8)</a>.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>PathRelativeTo=</i></p>
+<div class="Bd-indent">Especifica respecto a qué punto de anclaje se resolverá
+  <i>Path=</i>. Toma uno de <b>root</b>, <b>esp</b>, <b>xbootldr</b>,
+  <b>boot</b> o <b>explicit</b>. Si no se especifica, por defecto es <b>root</b>.
+<p class="Pp">Si se establece como <b>root</b>, <b>esp</b>, <b>xbootldr</b>, la
+    ruta <i>Path=</i> especificada se resolverá en relación con el punto de montaje
+    de la partición correspondiente, tal como se define en la **Especificación del
+    cargador de arranque**[2].</p>
+<p class="Pp">Si se establece como <b>boot</b>, la ruta <i>Path=</i> especificada
+    se resolverá en relación con el punto de montaje de la partición $BOOT
+    (es decir, ESP o XBOOTLDR), tal como se define en la **Especificación del
+    cargador de arranque**[2].</p>
+<p class="Pp">Si se establece como <b>explicit</b>, la ruta <i>Path=</i>
+    especificada se resolverá en relación con el directorio especificado con
+    <b>--transfer-source=</b> al invocar <a href='/man/systemd-sysupdate.8.en'>systemd-sysupdate(8)</a>.</p>
+<p class="Pp">Los valores <b>esp</b>, <b>xbootldr</b> y <b>boot</b> solo son
+    compatibles cuando <i>Type=</i> se establece como <b>regular-file</b> o
+    <b>directory</b>.</p>
+<p class="Pp">Añadido en la versión 254.</p>
+</div>
+<p class="Pp"><i>MatchPattern=</i></p>
+<div class="Bd-indent">Especifica uno o más patrones de coincidencia de nombres de
+  archivo o etiquetas de partición que seleccionan el subconjunto de archivos o
+  particiones que son candidatos de actualización como destinos para esta
+  transferencia. Ver arriba para detalles sobre patrones de coincidencia.
+<p class="Pp">Esta opción es obligatoria. Cualquier patrón listado debe contener al
+    menos el comodín "@v", para que se pueda extraer un identificador de versión
+    del nombre del archivo. Todos los demás comodines son opcionales.</p>
+<p class="Pp">Este patrón se utiliza tanto para hacer coincidir versiones instaladas
+    existentes como para determinar el nombre de las nuevas versiones a instalar. Si se
+    especifican varios patrones, el primero especificado se utiliza para nombrar las
+    versiones recién instaladas.</p>
+<p class="Pp">Si el tipo de destino es <b>regular-file</b> o <b>directory</b>, el
+    patrón puede contener caracteres de barra. En este caso, coincidirá con el archivo
+    o directorio en el subdirectorio correspondiente. Por ejemplo
+    "MatchPattern=foo_@v/bar.efi" coincidirá con "bar.efi" en el directorio
+    "foo_1". Los directorios en la ruta se crearán cuando se instale el archivo. Los
+    directorios vacíos se eliminarán cuando se elimine el archivo.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>MatchPartitionType=</i></p>
+<div class="Bd-indent">Cuando el destino <i>Type=</i> se elige como
+  <b>partition</b>, especifica el tipo de partición GPT que se buscará. Solo se
+  considerarán las particiones de este tipo, todas las demás se ignorarán. Si no
+  se especifica, se utiliza el tipo de partición GPT <b>linux-generic</b>. Acepta
+  tanto un UUID de tipo literal como un identificador de tipo simbólico. Para una
+  lista de identificadores de tipo admitidos, ver la configuración <i>Type=</i> en
+  <a href='/man/repart.d.5.en'>repart.d(5)</a>.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>PartitionUUID=</i>, <i>PartitionFlags=</i>,
+    <i>PartitionNoAuto=</i>, <i>PartitionGrowFileSystem=</i></p>
+<div class="Bd-indent">Cuando el destino <i>Type=</i> se elige como
+  <b>partition</b>, selecciona el UUID de partición GPT y las banderas de
+  partición a utilizar para la partición actualizada. Espera una cadena UUID válida,
+  un entero hexadecimal o booleanos, respectivamente. Si no se establece, pero el
+  patrón de coincidencia de origen incluye comodines para estos campos (es decir,
+  "@u", "@f", "@a" o "@g"), se utilizan los valores de los patrones. Si no se
+  configuran con comodines ni con estas configuraciones explícitas, los valores se
+  dejan sin modificar. Si se utilizan tanto la configuración general de banderas
+  <i>PartitionFlags=</i> como las configuraciones individuales de banderas
+  <i>PartitionNoAuto=</i> y <i>PartitionGrowFileSystem=</i> (o los comodines
+  para ellas), entonces estas últimas anulan a la primera, es decir, el bit de
+  bandera individual anula el valor general de las banderas. Ver **Especificación
+  de Particiones Detectables**[1] para detalles sobre estas banderas.
+<p class="Pp">Tenga en cuenta que estas configuraciones no se utilizan para
+    coincidir, solo tienen efecto en las particiones recién escritas en caso de que
+    se produzca una transferencia.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>ReadOnly=</i></p>
+<div class="Bd-indent">Controla si se marca el archivo, subvolumen o partición
+  resultante como de solo lectura. Si el tipo de destino es <b>partition</b>, esto
+  controla la bandera de partición ReadOnly, según la **Especificación de
+  Particiones Detectables**[1], similar a las banderas <i>PartitionNoAuto=</i> y
+  <i>PartitionGrowFileSystem=</i> descritas anteriormente. Si el tipo de destino es
+  <b>regular-file</b>, se elimina el bit de escritura del modo de acceso. Si el
+  tipo de destino es <b>subvolume</b>, el subvolumen se marcará como de solo
+  lectura en su totalidad. Finalmente, si el tipo de destino <i>Type=</i> se
+  selecciona como <b>directory</b>, se establece el atributo de archivo
+  "inmutable", ver <a href='/man/chattr.1.en'>chattr(1)</a> para detalles.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>Mode=</i></p>
+<div class="Bd-indent">El modo de acceso a archivos UNIX que se utilizará para los
+  archivos recién creados en caso de que el tipo de recurso de destino se elija
+  como <b>regular-file</b>. Espera un entero octal, al estilo UNIX. Si no se
+  establece, pero el patrón de coincidencia de origen incluye un comodín para
+  este campo (es decir, "@t"), el valor fr<section class="Sh">
+<h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPCIONES</a></h1>
+<p class="Pp">Las siguientes opciones de configuración se aplican a las
+    transferencias, y se pueden establecer en las secciones
+    [<a href="#[SOURCE]">Source</a>], [<a href="#[TARGET]">Target</a>],
+    y [<a href="#[TRANSFER]">Transfer</a>]:</p>
+<p class="Pp"><i>Mode=</i></p>
+<div class="Bd-indent">Toma una cadena de texto que define los permisos del archivo
+    en formato octal (por ejemplo, 0644). Si no se define, se utiliza el modo
+    predeterminado del archivo de origen, o 0600 para los archivos sin nombre.
+    Esta opción solo tiene efecto si el tipo de destino es
+    <code>regular-file</code>.</div>
+<p class="Pp"><i>Owner=</i>, <i>Group=</i></p>
+<div class="Bd-indent">Toma una cadena de texto que identifica al propietario y al
+    grupo del archivo. Si se omite, se mantiene el propietario/grupo del archivo
+    de origen. Si se especifica como una cadena vacía, se utiliza el ID de usuario
+    o grupo predeterminado del sistema. Estas opciones solo tienen efecto si el
+    tipo de destino es <code>regular-file</code>.</div>
+<p class="Pp"><i>ProtectID=</i>, <i>ProtectHost=</i>, <i>ProtectVersion=</i>,
+    <i>ProtectKernel=</i>, <i>ProtectMachine=</i>, <i>ProtectImage=</i>,
+    <i>ProtectOS=</i>, <i>ProtectVariant=</i></p>
+<div class="Bd-indent">Estas opciones toman un valor booleano (<code>true</code> o
+    <code>false</code>) y controlan si una actualización debe omitirse si la
+    versión del sistema operativo/imagen/kernel/host/ID/arquitectura/máquina
+    coincide con la de la versión que se está actualizando. Útil para evitar
+    actualizar un sistema a la misma versión que ya está en ejecución.
+    Por ejemplo, <i>ProtectVersion=true</i> evita que se actualice un archivo
+    si la versión del archivo de origen es la misma que la versión actual del
+    sistema (determinada por el especificador
+    <code>%A</code>). Todas estas opciones se pueden utilizar junto con
+    especificadores como <code>%a</code>, <code>%A</code>, <code>%b</code>,
+    <code>%B</code>, <code>%H</code>, <code>%m</code>, <code>%M</code>,
+    <code>%o</code>, <code>%v</code>, <code>%W</code>. Para
+    <code>ProtectVersion=</code>, el valor especificado se compara con
+    <code>%A</code>. Para <code>ProtectKernel=</code>, se compara con
+    <code>%v</code>. Para <code>ProtectImage=</code>, se compara con
+    <code>%M</code>. Para <code>ProtectOS=</code>, se compara con
+    <code>%o</code>. Para <code>ProtectVariant=</code>, se compara con
+    <code>%W</code>. Para <code>ProtectHost=</code>, se compara con
+    <code>%H</code> y <code>%l</code>. Para <code>ProtectMachine=</code>, se
+    compara con <code>%m</code>. Las opciones <i>ProtectID=</i> y
+    <i>ProtectVersion=</i> funcionan de forma similar, comparando el valor
+    especificado con <code>%A</code>.</div>
+<p class="Pp"><i>NoCopy=</i></p>
+<div class="Bd-indent">Toma un valor booleano. Si es <code>true</code>, se salta
+    la transferencia de este archivo. Útil para hacer referencia a archivos
+    existentes sin copiarlos, por ejemplo, en un sistema de archivos
+    especial.</div>
+<p class="Pp"><i>UseSignature=</i></p>
+<div class="Bd-indent">Toma una cadena de texto que especifica la extensión de un
+    archivo de firma (por ejemplo, <code>.sig</code>). Si el archivo de origen
+    tiene esta extensión, la firma se verifica antes de la transferencia.</div>
+<p class="Pp"><i>Required=</i></p>
+<div class="Bd-indent">Toma un valor booleano. Si es <code>true</code> (predeterminado),
+    la transferencia fallará si este archivo no se puede transferir. Si es
+    <code>false</code>, la transferencia continuará incluso si este archivo
+    no se puede transferir.</div>
+<p class="Pp"><i>Priority=</i></p>
+<div class="Bd-indent">Toma un entero. Define la prioridad de esta transferencia
+    en relación con otras transferencias del mismo grupo. Un número más alto
+    indica una prioridad más alta.</div>
+<p class="Pp"><i>TemporaryMaxSpace=</i></p>
+<div class="Bd-indent">Toma un entero que representa el tamaño máximo en bytes que
+    puede ocupar un archivo temporal. Si el archivo excede este tamaño, se
+    eliminará. Solo se aplica a archivos temporales.</div>
+<p class="Pp"><i>MinVersion=</i>, <i>MaxVersion=</i></p>
+<div class="Bd-indent">Estas opciones toman una cadena de texto que representa una
+    versión del sistema operativo. Controlan si la transferencia se aplica a
+    sistemas cuya versión está dentro del rango especificado. La comparación
+    se realiza utilizando la cadena de versión del sistema operativo.</div>
+<p class="Pp"><i>PathRelativeTo=</i></p>
+<div class="Bd-indent">Toma el nombre de un directorio relativo como argumento. El
+    directorio de destino se interpreta en relación con este directorio. Por
+    ejemplo, si <i>PathRelativeTo=boot</i> y <i>Path=/EFI/Linux</i>, el
+    directorio de destino será <code>/boot/EFI/Linux</code>. Esto solo se aplica
+    si el tipo de destino es <code>regular-file</code>,
+    <code>directory</code> o <code>subvolume</code>.</div>
+<p class="Pp"><i>MatchPartitionType=</i></p>
+<div class="Bd-indent">Toma una cadena de texto que representa el tipo de partición
+    según el estándar <b>systemd.gpt-auto-generator</b>[1]. Esta opción se
+    utiliza para seleccionar una partición específica en el disco de destino
+    basándose en su tipo. Solo se aplica si el tipo de destino es
+    <code>partition</code>.</div>
+<p class="Pp"><i>MatchPartitionLabel=</i>, <i>MatchPartitionUUID=</i>,
+    <i>MatchPartitionUniqueGUID=</i></p>
+<div class="Bd-indent">Toma una cadena de texto que representa la etiqueta, UUID o
+    GUID único de una partición. Estas opciones se utilizan para seleccionar
+    una partición específica en el disco de destino basándose en estos
+    identificadores. Solo se aplican si el tipo de destino es
+    <code>partition</code>.</div>
+<p class="Pp"><i>PartitionFlags=</i></p>
+<div class="Bd-indent">Toma un entero. Esta opción se utiliza para establecer
+    banderas específicas en la tabla de particiones GPT. Las banderas deben
+    codificarse como un número entero decimal o hexadecimal. El valor
+    predeterminado es 0. Solo se aplica si el tipo de destino es
+    <code>partition</code>.</div>
+<p class="Pp"><i>ReadOnly=</i></p>
+<div class="Bd-indent">Toma un valor booleano. Si es <code>true</code>, la partición
+    de destino se marca como de solo lectura después de la transferencia. Si es
+    <code>false</code> (predeterminado), la partición se marca como de lectura/escritura.
+    Solo se aplica si el tipo de destino es <code>partition</code>.</div>
+<p class="Pp"><i>TriesDone=</i>, <i>TriesLeft=</i></p>
+<div class="Bd-indent">Estas opciones toman enteros decimales positivos y controlan
+    el número de intentos realizados y restantes para este archivo. Estas
+    configuraciones son útiles para administrar imágenes de kernel, siguiendo
+    el esquema definido en <b>Evaluación Automática de Arranque</b>[3], y solo
+    tienen efecto si el patrón de destino incluye los comodines &quot;@d&quot;
+    o &quot;@l&quot;.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>InstancesMax=</i></p>
+<div class="Bd-indent">Toma un entero decimal igual o mayor que 2. Configura cuántas
+    versiones concurrentes del recurso se deben mantener. Cada vez que se inicia
+    una nueva actualización, se asegura que no existan más que el número de
+    versiones especificadas aquí menos una en el destino. Cualquier versión
+    excedente se elimina (en caso de que el tipo de destino <i>Type=</i> de
+    <code>regular-file</code>, <code>directory</code>,
+    <code>subvolume</code> se use) o se vacía (en caso de que el tipo de
+    destino <i>Type=</i> de <code>partition</code> se use; vaciar en este
+    caso simplemente significa establecer la etiqueta de la partición a la
+    cadena especial &quot;_empty&quot;; tenga en cuenta que en realidad no se
+    eliminan particiones). Después de que se completa una actualización, el número
+    de versiones concurrentes de los recursos de destino es igual o inferior al
+    número especificado aquí.
+<p class="Pp">Tenga en cuenta que esta configuración se puede establecer de
+    manera diferente para cada transferencia. Sin embargo, generalmente es
+    aconsejable mantener esta configuración igual para todas las transferencias,
+    ya que de lo contrario quedarán combinaciones incompletas de archivos o
+    particiones instaladas.</p>
+<p class="Pp">Si el tipo de destino <i>Type=</i> se selecciona como
+    <code>partition</code>, el número de versiones concurrentes a mantener se
+    restringe además por el número de ranuras de partición del tipo correcto en
+    la tabla de particiones. Es decir, si solo hay 2 ranuras de partición para
+    el tipo de partición seleccionado, establecer este valor en mayor que 2 no
+    tiene efecto, ya que de todos modos no se podrían almacenar más de 2 versiones
+    concurrentes en la imagen.</p>
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>RemoveTemporary=</i></p>
+<div class="Bd-indent">Toma un argumento booleano. Si esta opción está habilitada
+    (lo cual es el valor predeterminado) antes de iniciar una actualización, se
+    eliminan todas las actualizaciones incompletas restantes de un intento
+    anterior del directorio de destino. Esto solo tiene efecto si el tipo de
+    recurso de destino <i>Type=</i> se selecciona como
+    <code>regular-file</code>, <code>directory</code> o
+    <code>subvolume</code>.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+<p class="Pp"><i>CurrentSymlink=</i></p>
+<div class="Bd-indent">Toma un nombre de enlace simbólico como argumento. Si se usa
+    esta opción, como último paso de la actualización se crea/actualiza un enlace
+    simbólico con el nombre especificado apuntando a la actualización completada.
+    Esto es útil para proporcionar un nombre estable que siempre apunte a la
+    versión más reciente del recurso. Esto solo se admite si el tipo de recurso
+    de destino <i>Type=</i> se selecciona como <code>regular-file</code>,
+    <code>directory</code> o <code>subvolume</code>.
+<p class="Pp">Añadido en la versión 251.</p>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SPECIFIERS"><a class="permalink" href="#SPECIFIERS">ESPECIFICADORES</a></h1>
+<p class="Pp">Los especificadores se pueden usar en las configuraciones
+    <i>MinVersion=</i>, <i>ProtectVersion=</i>, <i>Path=</i>,
+    <i>MatchPattern=</i> y <i>CurrentSymlink=</i>. Se entienden las
+    siguientes expansiones:</p>
+<p class="Pp"><b>Tabla&#x00A0;3.&#x00A0;Especificadores disponibles</b></p>
+<table class="tbl" border="1" style="border-style: solid;">
+  <tr>
+    <td><b>Especificador</b></td>
+    <td><b>Significado</b></td>
+    <td><b>Detalles</b></td>
+  </tr>
+  <tr>
+    <td>&quot;%a&quot;</td>
+    <td>Arquitectura</td>
+    <td>Una cadena corta que identifica la arquitectura del sistema local. Una
+      cadena como <b>x86</b>, <b>x86-64</b> o <b>arm64</b>. Consulte las
+      arquitecturas definidas para <i>ConditionArchitecture=</i> en
+      <a href='/man/systemd.unit.5.en'>systemd.unit(5)</a> para obtener una
+      lista completa.</td>
+  </tr>
+  <tr>
+    <td>&quot;%A&quot;</td>
+    <td>Versión de la imagen del sistema operativo</td>
+    <td>El identificador de la versión de la imagen del sistema operativo del
+      sistema en ejecución, leído del campo <i>IMAGE_VERSION=</i> de
+      /etc/os-release. Si no está establecido, se resuelve a una cadena vacía.
+      Consulte <a href='/man/os-release.5.en'>os-release(5)</a> para obtener
+      más información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%b&quot;</td>
+    <td>ID de arranque</td>
+    <td>El ID de arranque del sistema en ejecución, formateado como cadena.
+      Consulte <a href='/man/random.4.en'>random(4)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%B&quot;</td>
+    <td>ID de compilación del sistema operativo</td>
+    <td>El identificador de compilación del sistema operativo del sistema en
+      ejecución, leído del campo <i>BUILD_ID=</i> de /etc/os-release. Si no
+      está establecido, se resuelve a una cadena vacía. Consulte
+      <a href='/man/os-release.5.en'>os-release(5)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%H&quot;</td>
+    <td>Nombre del host</td>
+    <td>El nombre del host del sistema en ejecución.</td>
+  </tr>
+  <tr>
+    <td>&quot;%l&quot;</td>
+    <td>Nombre corto del host</td>
+    <td>El nombre del host del sistema en ejecución, truncado en el primer punto
+      para eliminar cualquier componente de dominio.</td>
+  </tr>
+  <tr>
+    <td>&quot;%m&quot;</td>
+    <td>ID de máquina</td>
+    <td>El ID de máquina del sistema en ejecución, formateado como cadena.
+      Consulte <a href='/man/machine-id.5.en'>machine-id(5)</a> para obtener
+      más información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%M&quot;</td>
+    <td>Identificador de imagen del sistema operativo</td>
+    <td>El identificador de imagen del sistema operativo del sistema en ejecución,
+      leído del campo <i>IMAGE_ID=</i> de /etc/os-release. Si no está
+      establecido, se resuelve a una cadena vacía. Consulte
+      <a href='/man/os-release.5.en'>os-release(5)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%o&quot;</td>
+    <td>ID del sistema operativo</td>
+    <td>El identificador del sistema operativo del sistema en ejecución, leído
+      del campo <i>ID=</i> de /etc/os-release. Consulte
+      <a href='/man/os-release.5.en'>os-release(5)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%v&quot;</td>
+    <td>Versión del kernel</td>
+    <td>Idéntico a la salida de <b>uname -r</b>.</td>
+  </tr>
+  <tr>
+    <td>&quot;%w&quot;</td>
+    <td>ID de versión del sistema operativo</td>
+    <td>El identificador de versión del sistema operativo del sistema en ejecución,
+      leído del campo <i>VERSION_ID=</i> de /etc/os-release. Si no está
+      establecido, se resuelve a una cadena vacía. Consulte
+      <a href='/man/os-release.5.en'>os-release(5)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%W&quot;</td>
+    <td>ID de variante del sistema operativo</td>
+    <td>El identificador de variante del sistema operativo del sistema en ejecución,
+      leído del campo <i>VARIANT_ID=</i> de /etc/os-release. Si no está
+      establecido, se resuelve a una cadena vacía. Consulte
+      <a href='/man/os-release.5.en'>os-release(5)</a> para obtener más
+      información.</td>
+  </tr>
+  <tr>
+    <td>&quot;%T&quot;</td>
+    <td>Directorio para archivos temporales</td>
+    <td>Este es /tmp o la ruta a la que se establecen &quot;$TMPDIR&quot;,
+      &quot;$TEMP&quot; o &quot;$TMP&quot;. (Tenga en cuenta que el
+      directorio puede especificarse sin una barra final).</td>
+  </tr>
+  <tr>
+    <td>&quot;%V&quot;</td>
+    <td>Directorio para archivos temporales más grandes y persistentes</td>
+    <td>Este es /var/tmp o la ruta a la que se establecen &quot;$TMPDIR&quot;,
+      &quot;$TEMP&quot; o &quot;$TMP&quot;. (Tenga en cuenta que el
+      directorio puede especificarse sin una barra final).</td>
+  </tr>
+  <tr>
+    <td>&quot;%%&quot;</td>
+    <td>Signo de porcentaje único</td>
+    <td>Use &quot;%%&quot; en lugar de &quot;%&quot; para especificar un solo
+      signo de porcentaje.</td>
+  </tr>
+</table>
+<p class="Pp">No confunda el prefijo de expansión del especificador
+    <br/>
+    &quot;%&quot; con el prefijo del comodín de coincidencia de patrones
+    &quot;@&quot;. Los primeros son atajos simples que se expanden mientras se
+    analizan los archivos de inserción, los segundos encapsulan una parte variable
+    de una cadena de patrón de coincidencia. Para obtener detalles sobre los
+    comodines de coincidencia de patrones, consulte lo anterior.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EJEMPLOS</a></h1>
+<p class="Pp"><b>Ejemplo&#x00A0;1.&#x00A0;Actualizaciones para un SO Seguro Habilitado
+    para Verity</b></p>
+<p class="Pp">Con los siguientes tres archivos definimos una partición del
+    sistema de archivos raíz, una partición Verity coincidente y una imagen de
+    kernel unificada para actualizar como una sola. Este ejemplo es una extensión
+    del ejemplo discutido anteriormente en esta página man.</p>
+<div class="Bd-indent">
+<pre># /usr/lib/sysupdate.d/50-verity.transfer
+[Transfer]
+ProtectVersion=%A
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_@u.verity.xz
+[Target]
+Type=partition
+Path=auto
+MatchPattern=foobarOS_@v_verity
+MatchPartitionType=root-verity
+PartitionFlags=0
+ReadOnly=1</pre>
+</div>
+<p class="Pp">Lo anterior define el mecanismo de actualización para la partición
+    Verity del sistema de archivos raíz. Las imágenes de partición Verity se
+    descargan de &quot;<a href='https://download.example.com/foobarOS_@v_@u.verity.xz'>https://download.example.com/foobarOS_@v_@u.verity.xz</a>&quot; y se escriben en una partición local adecuada, que está marcada como de solo lectura. Bajo la suposición de que esta actualización se ejecuta desde la propia imagen, la versión actual de la imagen (es decir, el especificador &quot;%A&quot;) se marca como protegida, para garantizar que no se corrompa mientras se arranca. Tenga en cuenta que la UUID de la partición para la partición de destino está codificada en el nombre del archivo de origen. Fijar la UUID de la partición puede ser útil para garantizar que &quot;roothash=&quot; en la línea de comandos del kernel sea suficiente para señalar tanto la partición Verity como la partición del sistema de archivos raíz, y también para codificar el hash del nivel raíz de Verity (bajo la suposición de que las UUID en los nombres de archivo coinciden con su hash de nivel superior, de la manera que sugiere
+    <a href='/man/systemd-gpt-auto-generator.8.en'>systemd-gpt-auto-generator(8)</a>).</p>
+<div class="Bd-indent">
+<pre># /usr/lib/sysupdate.d/60-root.transfer
+[Transfer]
+ProtectVersion=%A
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v_@u.root.xz
+[Target]
+Type=partition
+Path=auto
+MatchPattern=foobarOS_@v
+MatchPartitionType=root
+PartitionFlags=0
+ReadOnly=1</pre>
+</div>
+<p class="Pp">Lo anterior define una definición de transferencia coincidente para
+    el sistema de archivos raíz.</p>
+<div class="Bd-indent">
+<pre># /usr/lib/sysupdate.d/70-kernel.transfer
+[Transfer]
+ProtectVersion=%A
+[Source]
+Type=url-file
+Path=https://download.example.com/
+MatchPattern=foobarOS_@v.efi
+[Target]
+Type=regular-file
+Path=/EFI/Linux
+PathRelativeTo=boot
+MatchPattern=foobarOS_@v+@l-@d.efi \
+             foobarOS_@v+@l.efi \
+             foobarOS_@v.efi
+Mode=0644
+TriesLeft=3
+TriesDone=0
+InstancesMax=2</pre>
+</div>
+<p class="Pp">Lo anterior instala una imagen de kernel unificada en la partición
+    $BOOT, según la <b>Especificación del Cargador de Arranque</b>[2] Tipo
+    #2. Esto define tres patrones posibles para los nombres de las imágenes de
+    kernel, según la <b>Evaluación Automática de Arranque</b>[3], y asegura que
+    al instalar nuevos kernels, se configuren con 3 intentos restantes. No se
+    mantienen más de dos kernels paralelos.</p>
+<p class="Pp">Con esta configuración, el servidor web serviría los siguientes
+    archivos, para una versión hipotética 7 del SO:</p>
+<div class="Bd-indent">&#x2022;SHA256SUMS &#x2013; El archivo de manifiesto, que contiene
+    los archivos disponibles y sus hashes SHA256</div>
+<div class="Bd-indent">&#x2022;SHA256SUMS.gpg &#x2013; La firma
+    criptográfica separada para el archivo de manifiesto</div>
+<div class="Bd-indent">&#x2022;foobarOS_7_8b8186b1-2b4e-4eb6-ad39-8d4d18d2a8fb.verity.xz
+    &#x2013; La imagen Verity para la versión 7</div>
+<div class="Bd-indent">&#x2022;foobarOS_7_f4d1234f-3ebf-47c4-b31d-4052982f9a2f.root.xz
+    &#x2013; La imagen del sistema de archivos raíz para la versión 7</div>
+<div class="Bd-indent">
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>systemd.resource-control.5.es — systemd v258.2</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/style.css">
+        <link rel="stylesheet" href="/font.css">
+        <link rel="stylesheet" href="/highlight.css">
+        <style>
+            .permalink {
+                visibility: hidden;
+                margin-left: .5em;
+                font-size: .75em;
+                text-decoration: none;
+                color: #808080;
+            }
+            h1:hover .permalink,
+            h2:hover .permalink,
+            h3:hover .permalink,
+            h4:hover .permalink,
+            h5:hover .permalink,
+            h6:hover .permalink {
+                visibility: visible;
+            }
+        </style>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">systemd.resource-control - .d directory para controlar los recursos de un servicio</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">
+  <a class="Xr" href='../man5/systemd.unit.5.html'>systemd.unit(5)</a>
+  .d/
+  <br>
+  <a class="Xr" href='../man5/systemd.exec.5.html'>systemd.exec(5)</a>
+  .d/
+  <br>
+  <a class="Xr" href='../man5/systemd.kill.5.html'>systemd.kill(5)</a>
+  .d/
+  <br>
+  <a class="Xr" href='../man5/systemd.resource-control.5.html'>systemd.resource-control(5)</a>
+  .d/</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Un servicio puede tener archivos de configuración separados en un directorio
+  `.d` que se fusionan en la configuración principal del servicio. La configuración
+  en estos archivos se utiliza para limitar los recursos que el servicio puede
+  utilizar.</p>
+<p class="Pp">Los archivos en el directorio `.d` se fusionan en orden alfabético
+  antes de que se apliquen las opciones de configuración del archivo principal.
+  Si un archivo en el directorio `.d` establece una opción que también está
+  presente en el archivo principal, el valor del archivo `.d` tendrá prioridad.</p>
+<p class="Pp">Los archivos del directorio `.d` se aplican a la unidad
+  como un todo. Las opciones solo se aplican si la unidad tiene un tipo que
+  soporta el control de recursos (por ejemplo, `Type=simple`, `Type=forking`,
+  `Type=oneshot`, `Type=notify`, `Type=dbus` o `Type=notify` donde el proceso
+  principal es el principal). Las unidades de tipo `service` son las únicas que
+  utilizan estas configuraciones de control de recursos.</p>
+<p class="Pp">Las opciones de control de recursos disponibles son las que
+  se aplican al grupo de control (`cgroup`). Estas opciones se derivan de las
+  opciones disponibles en <a class="Xr" href='../man5/systemd.exec.5.html'>systemd.exec(5)</a>
+  y se refieren a las siguientes áreas:</p>
+<ul class="Bl-bullet">
+  <li>Límites de CPU</li>
+  <li>Límites de memoria</li>
+  <li>Límites de I/O</li>
+  <li>Límites de red</li>
+  <li>Límites de procesos</li>
+  <li>Límites de dispositivos</li>
+</ul>
+<p class="Pp">Para una lista completa de las opciones de control de recursos
+  disponibles, consulte la página del manual de <a class="Xr" href='../man5/systemd.exec.5.html'>systemd.exec(5)</a>.</p>
+<p class="Pp">El nombre del archivo de configuración en el directorio `.d`
+  debe terminar con el sufijo `.conf`.</p>
+<p class="Pp"><b>Ejemplo 1. Configuración de ejemplo para limitar el uso de CPU.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-cpu.conf
+[Service]
+CPUQuota=20%
+CPUShares=500</pre>
+</div>
+<p class="Pp">Este ejemplo limitaría el uso de CPU del servicio
+  `my-service.service` al 20% de la CPU disponible y establecería sus
+  participaciones de CPU en 500. El orden de aplicación de las opciones es
+  importante; por ejemplo, si se especifica `CPUQuota` y `CPUShares`,
+  `CPUQuota` tendrá prioridad.</p>
+<p class="Pp"><b>Ejemplo 2. Configuración de ejemplo para limitar el uso de memoria.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-memory.conf
+[Service]
+MemoryMax=256M
+MemoryHigh=128M</pre>
+</div>
+<p class="Pp">Este ejemplo limitaría el uso de memoria del servicio
+  `my-service.service` a 256M y lo establecería en 128M. Si se especifica
+  `MemoryMax` y `MemoryHigh`, `MemoryMax` tendrá prioridad.</p>
+<p class="Pp"><b>Ejemplo 3. Configuración de ejemplo para limitar el número de procesos.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-processes.conf
+[Service]
+TasksMax=100</pre>
+</div>
+<p class="Pp">Este ejemplo limitaría el número de procesos que el servicio
+  `my-service.service` puede crear a 100.</p>
+<p class="Pp"><b>Ejemplo 4. Configuración de ejemplo para limitar el uso de I/O.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-io.conf
+[Service]
+IOWeight=500</pre>
+</div>
+<p class="Pp">Este ejemplo establecería el peso de I/O del servicio
+  `my-service.service` en 500. Los valores más altos indican más I/O. Si
+  se especifica `IOWeight`, las operaciones de I/O del servicio tendrán
+  prioridad sobre las operaciones de I/O con menor peso.</p>
+<p class="Pp"><b>Ejemplo 5. Configuración de ejemplo para limitar el uso de red.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-network.conf
+[Service]
+NetworkPriority=10</pre>
+</div>
+<p class="Pp">Este ejemplo establecería la prioridad de red del servicio
+  `my-service.service` en 10. Los valores más bajos indican mayor prioridad.
+  Esto afecta a las operaciones de red, como el ancho de banda de la red. Si se
+  especifica `NetworkPriority`, el tráfico de red del servicio tendrá prioridad
+  sobre el tráfico de red con mayor prioridad.</p>
+<p class="Pp"><b>Ejemplo 6. Configuración de ejemplo para limitar el acceso a dispositivos.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-devices.conf
+[Service]
+DeviceAllow=/dev/null rw
+DeviceAllow=/dev/tty[0-9]* rw</pre>
+</div>
+<p class="Pp">Este ejemplo permitiría al servicio
+  `my-service.service` leer y escribir en `/dev/null` y leer y escribir en
+  los dispositivos tty del 0 al 9. Todos los demás accesos a dispositivos
+  están prohibidos. Si se especifica `DeviceAllow`, todos los accesos a
+  dispositivos no especificados están prohibidos.</p>
+<p class="Pp"><b>Ejemplo 7. Configuración de ejemplo para limitar el uso de PIDs.</b></p>
+<div class="Bd-indent">
+<pre># /etc/systemd/system/my-service.service.d/override-pids.conf
+[Service]
+CPUPower=100%
+CPUQuota=50%</pre>
+</div>
+<p class="Pp">Este ejemplo limita el uso de CPU del servicio al 100% de la
+  potencia de CPU. Si se especifican `CPUPower` y `CPUQuota`,
+  `CPUPower` tendrá prioridad.</p>
+<p class="Pp"><b>Ejemplo 8. Configuración de ejemplo para un kernel de imagen unificado.</b></p>
+<div class="Bd-indent">
+<pre>
+&#x2022;foobarOS_7.efi &#x2013; The unified kernel image
+  for version 7</pre>
+</div>
+<p class="Pp">Para cada nueva versión del sistema operativo, se añadiría un
+  nuevo conjunto de los tres últimos archivos, cada vez con una versión
+  actualizada. El manifiesto SHA256SUMS se actualizaría en consecuencia,
+  listando todos los archivos de todas las versiones que se ofrecerán para su
+  descarga.</p>
+<p class="Pp"><b>Ejemplo 2. Actualizaciones para la imagen de contenedor de directorio plano</b></p>
+<div class="Bd-indent">
+<pre>[Source]
+Type=url-tar
+Path=https://download.example.com/
+MatchPattern=myContainer_@v.tar.gz
+[Target]
+Type=subvolume
+Path=/var/lib/machines
+MatchPattern=myContainer_@v
+CurrentSymlink=myContainer</pre>
+</div>
+<p class="Pp">En las actualizaciones, esto descarga
+  &quot;<a href='https://download.example.com/myContainer_@v.tar.gz'>https://download.example.com/myContainer_@v.tar.gz</a>&quot; y lo descomprime/desempaqueta en
+  /var/lib/machines/myContainer_@v. Después de cada actualización, se crea/actualiza un enlace simbólico
+  /var/lib/machines/myContainer que siempre apunta a la actualización más reciente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/systemd.1.en'>systemd(1)</a>, <a href='/man/systemd-sysupdate.8.en'>systemd-sysupdate(8)</a>,
+  <a href='/man/systemd-repart.8.en'>systemd-repart(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>Especificación de particiones descubribles</dd>
+</dl>
+<div class="Bd-indent"><a href='https://uapi-group.org/specifications/specs/discoverable_partitions_specification'>https://uapi-group.org/specifications/specs/discoverable_partitions_specification</a></div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>Especificación del cargador de arranque</dd>
+</dl>
+<div class="Bd-indent"><a href='https://uapi-group.org/specifications/specs/boot_loader_specification'>https://uapi-group.org/specifications/specs/boot_loader_specification</a></div>
+<dl class="Bl-tag">
+  <dt> 3.</dt>
+  <dd>Evaluación automática de arranque</dd>
+</dl>
+<div class="Bd-indent"><a href='https://systemd.io/AUTOMATIC_BOOT_ASSESSMENT'>https://systemd.io/AUTOMATIC_BOOT_ASSESSMENT</a></div>
+<dl class="Bl-tag">
+  <dt> 4.</dt>
+  <dd>Catálogo AppStream</dd>
+</dl>
+<div class="Bd-indent"><a href='https://www.freedesktop.org/software/appstream/docs/chap-CatalogData.html'>https://www.freedesktop.org/software/appstream/docs/chap-CatalogData.html</a></div>
+<dl class="Bl-tag">
+  <dt> 5.</dt>
+  <dd>metadatos especiales</dd>
+</dl>
+<div class="Bd-indent"><a href='https://systemd.io/APPSTREAM_BUNDLE'>https://systemd.io/APPSTREAM_BUNDLE</a></div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os">systemd 258.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/systemd/">core/systemd</a></dd>
+        <dt>Versión:</dt>
+        <dd>258.2-2</dd>
+        <dt>Desarrollador:</dt>
+        <dd><a href="https://www.github.com/systemd/systemd">https://www.github.com/systemd/systemd</a></dd>
+        <dt>Licencias:</dt>
+        <dd>LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/systemd/">/listing/core/systemd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+<nav class="other-languages">
+    <p>En otros idiomas:</p>
+    <ul>
+    
+        <li><a href="/man/sysupdate.d.5.de">de</a></li>
+    
+    </ul>
+</nav>
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/sysupdate.d.5.es.txt">txt</a>, 
+        
+            <a href="/man/sysupdate.d.5.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

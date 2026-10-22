@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>guestfs-security(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">guestfs-security(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libguestfs/">libguestfs</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later, LGPL-2.1-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">guestfs-security(1)</td>
+    <td class="head-vol">Soporte de Virtualización</td>
+    <td class="head-rtitle">guestfs-security(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">guestfs-security - seguridad de libguestfs</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Esta página del manual discute las implicaciones de seguridad de usar
+    libguestfs, particularmente con huéspedes o imágenes de disco no confiables o maliciosas.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTE_DE_PROBLEMAS_DE_SEGURIDAD'><a class='permalink' href='#REPORTE_DE_PROBLEMAS_DE_SEGURIDAD'>REPORTE DE PROBLEMAS DE SEGURIDAD</a></h1>
+<p class="Pp">Si desea informar privadamente de un problema de seguridad, por favor siga el
+    procedimiento de seguridad de Red Hat en
+    <a href='https://access.redhat.com/security/team/contact'>https://access.redhat.com/security/team/contact</a></p>
+<p class="Pp">Si el problema de seguridad no es tan grave, simplemente puede
+    registrar un error (ver &quot;ERRORES&quot; más abajo), o enviar un correo electrónico
+    a nuestra lista de correo (<a href='https://lists.libguestfs.org'>https://lists.libguestfs.org</a>). No es necesario
+    suscribirse a la lista de correo para enviar un correo electrónico, pero habrá un
+    retraso mientras el mensaje es moderado.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PROBLEMAS_GENERALES'><a class='permalink' href='#PROBLEMAS_GENERALES'>PROBLEMAS GENERALES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Seguridad_al_montar_sistemas_de_archivos'><a class='permalink' href='#Seguridad_al_montar_sistemas_de_archivos'>Seguridad al montar sistemas de archivos</a></h2>
+<p class="Pp">Nunca debe montar un sistema de archivos de invitado no confiable directamente
+    en su kernel anfitrión (por ejemplo, usando loopback o kpartx).</p>
+<p class="Pp">Cuando monta un sistema de archivos, los errores en el sistema de
+    archivos del kernel (VFS) pueden ser escalados a exploits por atacantes que crean
+    un sistema de archivos malicioso. Estos exploits son muy graves por dos razones.
+    Primero, hay muchísimos drivers de sistemas de archivos en el kernel, y muchos de
+    ellos se usan con poca frecuencia y no se les ha prestado mucha atención por parte
+    de los desarrolladores. El espacio de usuario de Linux ayuda a los posibles atacantes
+    detectando el tipo de sistema de archivos y eligiendo automáticamente el driver VFS
+    correcto, incluso si ese tipo de sistema de archivos es inesperado. Segundo, un exploit
+    a nivel de kernel es como un exploit de root local (peor en algunos aspectos), dando acceso
+    inmediato y total al sistema hasta el nivel de hardware.</p>
+<p class="Pp">Estos exploits pueden estar presentes en el kernel durante mucho
+    tiempo (<a href='https://lwn.net/Articles/538898/'>https://lwn.net/Articles/538898/</a>).</p>
+<p class="Pp">Libguestfs proporciona un enfoque en capas para protegerlo de
+    exploits:</p>
+<pre>  sistema de archivos no confiable
+--------------------------------------
+  kernel del appliance
+--------------------------------------
+  proceso qemu ejecutándose como no root
+--------------------------------------
+  sVirt [si usa libvirt + SELinux]
+--------------------------------------
+  kernel anfitrión</pre>
+<p class="Pp">Ejecutamos un kernel de Linux dentro de una máquina virtual qemu,
+    generalmente ejecutándose como un usuario no root. El atacante tendría que escribir
+    un sistema de archivos que primero explotara el kernel, y luego explotara la
+    virtualización qemu (por ejemplo, un driver qemu defectuoso) o el protocolo
+    libguestfs, y finalmente, para ser tan grave como el exploit del kernel anfitrión,
+    tendría que escalar sus privilegios a root. Adicionalmente, si usa el backend
+    libvirt y SELinux, sVirt se usa para confinar el proceso qemu. Esta escalada
+    múltiple, realizada por una pieza estática de datos, se considera extremadamente
+    difícil de lograr, aunque nunca decimos 'nunca' sobre problemas de seguridad.</p>
+<p class="Pp">Los llamadores también pueden reducir la superficie de ataque forzando
+    el tipo de sistema de archivos al montar (use &quot;guestfs_mount_vfs&quot; en
+    <a href='/man/guestfs.3.en'>guestfs(3)</a>).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Consideraciones_generales_de_seguridad'><a class='permalink' href='#Consideraciones_generales_de_seguridad'>Consideraciones generales de seguridad</a></h2>
+<p class="Pp">Tenga cuidado con cualquier archivo o dato que descargue de un invitado
+    (por &quot;descargar&quot; nos referimos no solo al comando &quot;guestfs_download&quot;
+    en <a href='/man/guestfs.3.en'>guestfs(3)</a> sino a cualquier comando que lea archivos, nombres de archivo,
+    directorios o cualquier otra cosa de una imagen de disco). Un atacante podría
+    manipular los datos para engañar a su programa para que haga algo incorrecto.
+    Considere casos como:</p>
+<ul class="Bl-bullet">
+  <li>que los datos (archivo, etc.) no estén presentes</li>
+  <li>que estén presentes pero vacíos</li>
+  <li>que sean mucho más grandes de lo normal</li>
+  <li>que contengan datos arbitrarios de 8 bits</li>
+  <li>que estén en una codificación de caracteres inesperada</li>
+  <li>que contengan homóglifos.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Seguridad_del_protocolo'><a class='permalink' href='#Seguridad_del_protocolo'>Seguridad del protocolo</a></h2>
+<p class="Pp">El protocolo está diseñado para ser seguro, basándose en RFC 4506
+    (XDR) con un tamaño de mensaje superior definido. Sin embargo, un programa que
+    usa libguestfs también debe tener cuidado; por ejemplo, puede escribir un programa
+    que descargue un binario de una imagen de disco y lo ejecute localmente, y ninguna
+    cantidad de seguridad de protocolo lo salvará de las consecuencias.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Seguridad_de_la_inspección'><a class='permalink' href='#Seguridad_de_la_inspección'>Seguridad de la inspección</a></h2>
+<p class="Pp">Partes de la API de inspección (ver &quot;INSPECCIÓN&quot; en
+    <a href='/man/guestfs.3.en'>guestfs(3)</a>) devuelven cadenas no confiables directamente del invitado,
+    y estas podrían contener cualquier dato de 8 bits. Los llamadores deben tener cuidado
+    de escaparlas antes de imprimirlas en un archivo estructurado (por ejemplo, use
+    escapado HTML si crea una página web).</p>
+<p class="Pp">La configuración del invitado puede ser alterada de maneras inusuales por
+    el administrador de la máquina virtual, y puede no reflejar la realidad (particularmente
+    para invitados no confiables o activamente maliciosos). Por ejemplo, analizamos el
+    nombre de host a partir de archivos de configuración como
+    <i>/etc/sysconfig/network</i> que encontramos en el invitado, pero el administrador
+    del invitado puede manipular fácilmente estos archivos para proporcionar el nombre de
+    host incorrecto.</p>
+<p class="Pp">La API de inspección analiza la configuración del invitado utilizando dos
+    bibliotecas externas: Augeas (configuración de Linux) y hivex (Registro de Windows).
+    Ambas están diseñadas para ser robustas frente a datos maliciosos, aunque los ataques
+    de denegación de servicio todavía son posibles, por ejemplo, con archivos de configuración
+    excesivamente grandes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ejecución_de_comandos_de_invitado_no_confiables'><a class='permalink' href='#Ejecución_de_comandos_de_invitado_no_confiables'>Ejecución de comandos de invitado no confiables</a></h2>
+<p class="Pp">Sea muy cauteloso al ejecutar comandos del invitado. Al ejecutar un comando
+    en el invitado, está dando tiempo de CPU a un binario que no controla, bajo la misma
+    cuenta de usuario que la biblioteca, aunque envuelto en la virtualización qemu. Puede
+    encontrar más información y alternativas en &quot;EJECUCIÓN DE COMANDOS&quot; en
+    <a href='/man/guestfs.3.en'>guestfs(3)</a>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PROBLEMAS_HISTÓRICOS_DE_SEGURIDAD_EN_LIBGUESTFS'><a class='permalink' href='#PROBLEMAS_HISTÓRICOS_DE_SEGURIDAD_EN_LIBGUESTFS'>PROBLEMAS HISTÓRICOS DE SEGURIDAD EN LIBGUESTFS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2010-3851'><a class='permalink' href='#CVE-2010-3851'>CVE-2010-3851</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/642934'>https://bugzilla.redhat.com/642934</a></p>
+<p class="Pp">Este error de seguridad concierne a la detección automática del formato
+    de disco que qemu realiza en las imágenes de disco.</p>
+<p class="Pp">Una imagen de disco raw son solo los bytes crudos, no hay cabecera. Otras
+    imágenes de disco como qcow2 contienen una cabecera especial. Qemu maneja esto
+    buscando una de las cabeceras conocidas, y si no encuentra ninguna, asume que la imagen
+    de disco debe ser raw.</p>
+<p class="Pp">Esto permite que un invitado al que se le ha dado una imagen de disco raw
+    escriba alguna otra cabecera. En el próximo arranque (o cuando la imagen de disco es
+    accedida por libguestfs), qemu haría la autodetección y pensaría que el formato de
+    la imagen de disco era, por ejemplo, qcow2 basándose en la cabecera escrita por el
+    invitado.</p>
+<p class="Pp">Esto en sí mismo no sería un problema, pero qcow2 ofrece muchas características,
+    una de las cuales es permitir que una imagen de disco se refiera a otra imagen (llamada
+    &quot;imagen de disco de respaldo&quot;). Lo hace colocando la ruta a la imagen de
+    respaldo en la cabecera qcow2. Esta ruta no se valida y podría apuntar a cualquier
+    archivo del anfitrión (por ejemplo, &quot;/etc/passwd&quot;). La imagen de
+    respaldo se expone a través de &quot;agujeros&quot; en la imagen de disco qcow2, que
+    por supuesto está completamente bajo el control del atacante.</p>
+<p class="Pp">En libguestfs esto es bastante difícil de explotar excepto bajo dos
+    circunstancias:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Ha habilitado la red o ha abierto el disco en modo de escritura.</dd>
+  <dt>2.</dt>
+  <dd>También está ejecutando código no confiable desde el invitado (ver &quot;EJECUCIÓN
+      DE COMANDOS&quot; en <a href='/man/guestfs.3.en'>guestfs(3)</a>).</dd>
+</dl>
+<p class="Pp">La forma de evitar esto es especificar el formato de disco esperado al
+    agregar discos (la opción opcional <span class="Li">&quot;format&quot;</span> a
+    &quot;guestfs_add_drive_opts&quot; en <a href='/man/guestfs.3.en'>guestfs(3)</a>). Siempre
+    debería hacer esto si el disco es de formato raw, y también es una buena idea para
+    otros casos. (Ver también &quot;FORMATOS DE IMAGEN DE DISCO&quot; en
+    <a href='/man/guestfs.3.en'>guestfs(3)</a>).</p>
+<p class="Pp">Para discos agregados desde libvirt usando llamadas como
+    &quot;guestfs_add_domain&quot; en <a href='/man/guestfs.3.en'>guestfs(3)</a>, el formato se obtiene
+    de libvirt y se pasa a través</p>
+</div>
+</section>
+
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+h.</p>
+<p class="Pp">Para las herramientas de libguestfs, use el <i>--format</i> parámetro de línea de
+    comandos según corresponda.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2011-4127'><a class='permalink' href='#CVE-2011-4127'>CVE-2011-4127</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/752375'>https://bugzilla.redhat.com/752375</a></p>
+<p class="Pp">Este es un error en el kernel que permitía a los huéspedes sobrescribir
+    partes de los discos del host a las que normalmente no deberían tener acceso.</p>
+<p class="Pp">Es suficiente con actualizar libguestfs a cualquier versión ≥ 1.16
+    que contenga un cambio que mitigue el problema.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2012-2690'><a class='permalink' href='#CVE-2012-2690'>CVE-2012-2690</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/831117'>https://bugzilla.redhat.com/831117</a></p>
+<p class="Pp">Versiones antiguas tanto de virt-edit como del
+    <span class="Li">"edit"</span> comando de guestfish creaban un archivo nuevo
+    que contenía los cambios pero no establecían los permisos, etc. del archivo nuevo
+    para que coincidieran con los del antiguo. El resultado de esto era que si editaba un archivo
+    sensible desde el punto de vista de la seguridad como <i>/etc/shadow</i> entonces quedaría
+    legible por todos después de la edición.</p>
+<p class="Pp">Es suficiente con actualizar libguestfs a cualquier versión ≥
+    1.16.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2013-2124'><a class='permalink' href='#CVE-2013-2124'>CVE-2013-2124</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/968306'>https://bugzilla.redhat.com/968306</a></p>
+<p class="Pp">Este error de seguridad era una falla en la inspección donde un huésped
+    no confiable usando un archivo especialmente manipulado en el sistema operativo del huésped podía causar una
+    doble liberación (double-free) en la biblioteca C (denegación de servicio).</p>
+<p class="Pp">Es suficiente con actualizar libguestfs a una versión que no sea
+    vulnerable: libguestfs ≥ 1.20.8, ≥ 1.22.2 o ≥
+  1.23.2.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2013-4419'><a class='permalink' href='#CVE-2013-4419'>CVE-2013-4419</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/1016960'>https://bugzilla.redhat.com/1016960</a></p>
+<p class="Pp">Al usar las opciones <a href='/man/guestfish.1.en'>guestfish(1)</a> <i>--remote</i> o guestfish
+    <i>--listen</i> , guestfish creaba un socket en una ubicación conocida
+    (<i>/tmp/.guestfish-$UID/socket-$PID</i>).</p>
+<p class="Pp">La ubicación tiene que ser conocida para que ambos extremos puedan
+    comunicarse. Sin embargo, no se realizaba ninguna comprobación de que el directorio contenedor
+    (<i>/tmp/.guestfish-$UID</i>) fuera propiedad del usuario. Así, otro usuario podía
+    crear este directorio y potencialmente secuestrar sockets propiedad del cliente o servidor
+    guestfish de otro usuario.</p>
+<p class="Pp">Es suficiente con actualizar libguestfs a una versión que no sea
+    vulnerable: libguestfs ≥ 1.20.12, ≥ 1.22.7 o ≥
+  1.24.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Denial_of_service_when_inspecting_disk_images_with_corrupt_btrfs_volumes'><a class='permalink' href='#Denial_of_service_when_inspecting_disk_images_with_corrupt_btrfs_volumes'>Denegación de servicio al inspeccionar imágenes de disco con volúmenes btrfs corruptos</a></h2>
+<p class="Pp">Era posible hacer fallar a libguestfs (y a los programas que usan
+    libguestfs como biblioteca) presentando una imagen de disco que contuviera un volumen btrfs
+    corrupto.</p>
+<p class="Pp">Esto fue causado por una desreferencia de puntero NULL que causaba una denegación de
+    servicio, y no se cree que sea explotable en mayor medida.</p>
+<p class="Pp">Vea el commit d70ceb4cbea165c960710576efac5a5716055486 para la corrección.
+    Esta corrección está incluida en las ramas estables de libguestfs ≥ 1.26.0,
+    ≥ 1.24.6 y ≥ 1.22.8, y también en RHEL
+    ≥ 7.0. Las versiones anteriores de libguestfs no son vulnerables.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2014-0191'><a class='permalink' href='#CVE-2014-0191'>CVE-2014-0191</a></h2>
+<p class="Pp">Libguestfs usaba previamente APIs inseguras de libxml2 para analizar XML de libvirt.
+    Estas APIs permitían por defecto que se realizaran conexiones de red cuando
+    se presentaban ciertos documentos XML. Usando un documento XML malformado también era
+    posible agotar toda la CPU, la memoria o los descriptores de archivo en la
+    máquina.</p>
+<p class="Pp">Dado que el XML de libvirt proviene de una fuente confiable ( el demonio de libvirt)
+    no se cree que esto haya podido ser explotable.</p>
+<p class="Pp">Esto fue corregido en libguestfs ≥ 1.27.9 y la corrección fue
+    trasladada a versiones estables ≥ 1.26.2, ≥ 1.24.9, ≥
+    1.22.10 y ≥ 1.20.13.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Shellshock_(bash_CVE-2014-6271)'><a class='permalink' href='#Shellshock_(bash_CVE-2014-6271)'>Shellshock (bash CVE-2014-6271)</a></h2>
+<p class="Pp">Este error de bash afecta indirectamente a libguestfs. Para más información
+    vea:
+  <a href='https://www.redhat.com/archives/libguestfs/2014-September/msg00252.html'>https://www.redhat.com/archives/libguestfs/2014-September/msg00252.html</a></p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2014-8484'><a class='permalink' href='#CVE-2014-8484'>CVE-2014-8484</a></h2>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2014-8485'><a class='permalink' href='#CVE-2014-8485'>CVE-2014-8485</a></h2>
+<p class="Pp">Estos dos errores en binutils afectan al programa GNU <a href='/man/strings.1.en'>strings(1)</a>
+    , y por lo tanto a "guestfs_strings" en <a href='/man/guestfs.3.en'>guestfs(3)</a> y
+    "guestfs_strings_e" en <a href='/man/guestfs.3.en'>guestfs(3)</a> APIs en libguestfs.
+    Ejecutar strings sobre un archivo no confiable podría causar la ejecución de código arbitrario
+    (confinado al appliance de libguestfs).</p>
+<p class="Pp">En libguestfs ≥ 1.29.5 y ≥ 1.28.3, libguestfs usa
+    la opción <span class="Li">"strings"</span> <i>-a</i> para evitar
+    el análisis BFD del archivo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2015-5745'><a class='permalink' href='#CVE-2015-5745'>CVE-2015-5745</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/show_bug.cgi?id=1251157'>https://bugzilla.redhat.com/show_bug.cgi?id=1251157</a></p>
+<p class="Pp">Esta no es una vulnerabilidad en libguestfs, pero como siempre
+    le damos un puerto virtio-serial a cada huésped (ya que así es como ocurre la comunicación huésped-host),
+    es posible una escalada desde el appliance al proceso qemu del host. Esto podría afectarle si:</p>
+<ul class="Bl-bullet">
+  <li>su programa libguestfs ejecuta programas no confiables fuera del huésped (usando
+      "guestfs_sh" en <a href='/man/guestfs.3.en'>guestfs(3)</a> etc.), o</li>
+  <li>se encontró otra vulnerabilidad en (por ejemplo) el código del sistema de archivos del kernel que
+      permitiera a un sistema de archivos malformado tomar el control del appliance.</li>
+</ul>
+<p class="Pp">Si usa sVirt para confinar a qemu, eso frustraría algunos
+  ataques.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Permissions_of_&lt;i&gt;.ssh&lt;/i&gt;_and_&lt;i&gt;.ssh/authorized_keys&lt;/i&gt;'><a class='permalink' href='#Permissions_of_&lt;i&gt;.ssh&lt;/i&gt;_and_&lt;i&gt;.ssh/authorized_keys&lt;/i&gt;'>Permisos de <i>.ssh</i> y <i>.ssh/authorized_keys</i></a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/1260778'>https://bugzilla.redhat.com/1260778</a></p>
+<p class="Pp">Las herramientas <a href='/man/virt-customize.1.en'>virt-customize(1)</a>, <a href='/man/virt-sysprep.1.en'>virt-sysprep(1)</a> y
+    <a href='/man/virt-builder.1.en'>virt-builder(1)</a> tienen una opción <i>--ssh-inject</i> para inyectar una
+    clave SSH en imágenes de disco de máquinas virtuales. Pueden crear un
+    directorio
+    <i>~user/.ssh</i> y un archivo <i>~user/.ssh/authorized_keys</i> en
+    el huésped para hacer esto.</p>
+<p class="Pp">En libguestfs &lt; 1.31.5 y libguestfs &lt; 1.30.2, el nuevo
+    directorio y archivo obtendrían el modo <span class="Li">0755</span> y el modo
+    <span class="Li">0644</span> respectivamente. Sin embargo, estos permisos
+    (especialmente para <i>~user/.ssh</i>) son más amplios que los permisos que
+    usa OpenSSH. En la libguestfs actual, el directorio y el archivo se crean con
+    el modo <span class="Li">0700</span> y el modo <span class="Li">0600</span>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2015-8869'><a class='permalink' href='#CVE-2015-8869'>CVE-2015-8869</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/CVE-2015-8869'>https://bugzilla.redhat.com/CVE-2015-8869</a></p>
+<p class="Pp">Esta vulnerabilidad en OCaml podría afectar a las herramientas virt escritas en el
+    lenguaje de programación OCaml. Afecta solo a plataformas de 64 bits. Debido a que este
+    error afecta a la generación de código, es difícil predecir qué software
+    específico podría verse afectado, y por lo tanto nuestra recomendación es que
+    recompile libguestfs usando una versión del compilador de OCaml donde este error
+    haya sido corregido (o pida a su distribución de Linux que haga lo mismo).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">CVE-2017-5208, CVE-2017-5331, CVE-2017-5332, CVE-2017-5333,
+  CVE-2017-6009, CVE-2017-6010, CVE-2017-6011</h2>
+<p class="Pp">Múltiples vulnerabilidades en el <a href='/man/wrestool.1.en'>wrestool(1)</a> programa en el paquete
+    <span class="Li">"icoutils"</span> pueden ser explotadas para
+    la ejecución de código local en el host.</p>
+<p class="Pp">Cuando la inspección de libguestfs (vea "Inspección de seguridad"
+    arriba) detecta un huésped Windows XP o Windows 7 y se le pide encontrar un
+    icono asociado para el huésped, descargará un archivo no confiable del
+    huésped y ejecutará <span class="Li">"wrestool -x"</span> sobre ese archivo.
+    Esto puede llevar a la ejecución de código local en el host. Cualquier imagen de disco o huésped
+    puede ser manipulado para parecer un huésped Windows a la inspección de libguestfs, así
+    que el hecho de que no tenga huéspedes Windows no le ayuda.</p>
+<p class="Pp">Cualquier programa que llame a la API de libguestfs
+    <span class="Li">"guestfs_inspect_get_icon"</span> podría ser
+    vulnerable. Esto incluye a <a href='/man/virt-inspector.1.en'>virt-inspector(1)</a> y
+    <a href='/man/virt-manager.1.en'>virt-manager(1)</a>.</p>
+<p class="Pp">La solución es actualizar a la versión no vulnerable de
+    icoutils (al menos 0.31.1).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">CVE-2017-7244, CVE-2017-7245, CVE-2017-7246</h2>
+<p class="Pp">Múltiples vulnerabilidades en PCRE podrían ser explotadas para hacer fallar
+    libguestfs (es decir, causar una denegación de servicio) al realizar la inspección de una
+    máquina virtual no confiable.</p>
+<p class="Pp">La solución es actualizar a una versión de PCRE con estos errores
+    corregidos (versión upstream ≥ 8.41).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2018-11806'><a class='permalink' href='#CVE-2018-11806'>CVE-2018-11806</a></h2>
+<p class="Pp">Vulnerabilidades que afectan al networking de usuario de qemu (SLIRP) permiten que
+    una imagen de sistema de archivos maliciosa tome el control de qemu y desde allí ataque al
+    host.</p>
+<p class="Pp">Esto afecta a libguestfs cuando el backend está configurado en
+    <span class="Li">"direct"</span> <i>y</i> el networking está
+  habilitado.</p>
+<p class="Pp">El backend direct es el predeterminado upstream, pero no en algunas
+    distribuciones downstream de Linux incluyendo Fedora, Red Hat Enterprise Linux
+    y CentOS. También podría haber sido seleccionado si usted configuró la
+    variable de entorno
+    <span class="Li">"LIBGUESTFS_BACKEND=direct"</span> o llamó a
+    <span class="Li">"guestfs_set_backend (g, "direct")"</span>.</p>
+<p class="Pp">El networking es habilitado automáticamente por algunas herramientas (por ejemplo
+    <a href='/man/virt-builder.1.en'>virt-builder(1)</a>), o se habilita si su código llamó a
+    <span class="Li">"guestfs_set_network (g, 1)"</span>
+    (lo cual no es el predeterminado).</p>
+<p class="Pp">El backend libvirt no está afectado.</p>
+<p class="Pp">La solución es actualizar qemu a una versión que contenga la corrección
+    (vea
+  <!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8"/>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+        <link rel="stylesheet" href="/css/style.css"/>
+        <link rel="stylesheet" href="/css/header.css"/>
+        <link rel="stylesheet" href="/css/footer.css"/>
+        <link rel="stylesheet" href="/css/sidebar.css"/>
+        <link rel="stylesheet" href="/css/article.css"/>
+        <link rel="stylesheet" href="/css/paginator.css"/>
+        <title>guestfs-security(1) — libguestfs</title>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<div class="title">
+  guestfs-security(1)
+  <span class="subtitle">libguestfs manual</span>
+</div>
+<div class="manual-content">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Nm">guestfs-security</p>
+<p class="Nd">reporting security problems with libguestfs</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">This page explains how to report security problems found in the
+    libguestfs library. It also lists historical security issues that have
+    affected libguestfs.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTING_SECURITY_PROBLEMS'><a class='permalink' href='#REPORTING_SECURITY_PROBLEMS'>REPORTING SECURITY PROBLEMS</a></h1>
+<p class="Pp">To report a security problem, please use the private security
+    mailing list: <span class="Li">&quot;security at libguestfs.org&quot;</span>.
+    Do NOT report security problems on the public mailing list or bug tracker.</p>
+<p class="Pp">When reporting a security problem, please include the following
+    information:</p>
+<ul class="Bl-bullet">
+  <li>The version of libguestfs affected.</li>
+  <li>The operating system and version you are using.</li>
+  <li>A clear and concise description of the vulnerability.</li>
+  <li>Steps to reproduce the vulnerability.</li>
+  <li>Any relevant logs or error messages.</li>
+  <li>A proof of concept (if available).</li>
+</ul>
+<p class="Pp">We will acknowledge your report within 2 business days and will
+    work with you to address the issue.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='GENERAL_ISSUES'><a class='permalink' href='#GENERAL_ISSUES'>GENERAL ISSUES</a></h1>
+<p class="Pp">If you have a question or find a bug that is not security-related,
+    please use the public mailing list:</p>
+<p class="Pp"><a href="https://lists.nongnu.org/mailman/listinfo/libguestfs">https://lists.nongnu.org/mailman/listinfo/libguestfs</a></p>
+<p class="Pp">You can also check the bug tracker:</p>
+<p class="Pp"><a href="https://bugzilla.redhat.com/buglist.cgi?component=libguestfs&amp;product=Virtualization+Tools">https://bugzilla.redhat.com/buglist.cgi?component=libguestfs&amp;product=Virtualization+Tools</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORICAL_SECURITY_ISSUES_IN_LIBGUESTFS'><a class='permalink' href='#HISTORICAL_SECURITY_ISSUES_IN_LIBGUESTFS'>HISTORICAL SECURITY ISSUES IN LIBGUESTFS</a></h1>
+<p class="Pp">This section lists some historical security issues that have affected
+    libguestfs.</p>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2018-10701'><a class='permalink' href='#CVE-2018-10701'>CVE-2018-10701</a></h2>
+<p class="Pp"><a href='https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-10701'>https://cve.mitre.org/cgi-bin/cvename.cgi?name=CVE-2018-10701</a>
+    <a href='https://lists.gnu.org/archive/html/qemu-devel/2018-05/msg01012.html'>https://lists.gnu.org/archive/html/qemu-devel/2018-05/msg01012.html</a>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='CVE-2022-2211'><a class='permalink' href='#CVE-2022-2211'>CVE-2022-2211</a></h2>
+<p class="Pp"><a href='https://bugzilla.redhat.com/CVE-2022-2211'>https://bugzilla.redhat.com/CVE-2022-2211</a></p>
+<p class="Pp">La función <span class="Li">&quot;get_keys&quot;</span> en
+    <i>libguestfs-common/options/keys.c</i> recopila esas opciones de
+    <i>--key</i> de la línea de comandos en un nuevo array que coinciden con un
+    dispositivo de bloque particular que se está descifrando para inspección.
+    La función tiene la intención de dimensionar el array de resultados de tal
+    manera que potencialmente todas las opciones de <i>--key</i>, más un
+    elemento terminador <span class="Li">&quot;NULL&quot;</span>, quepan en
+    él. El código utiliza erróneamente la macro <span class="Li">&quot;MIN&quot;</span>
+    en lugar de <span class="Li">&quot;MAX&quot;</span> y, por lo tanto, solo se
+    asigna un elemento antes del terminador <span class="Li">&quot;NULL&quot;</span>.</p>
+<p class="Pp">Pasar exactamente dos opciones de <i>--key ID:...</i> en la
+    línea de comandos para el dispositivo de bloque cifrado <span class="Li">&quot;ID&quot;</span>
+    hace que <span class="Li">&quot;get_keys&quot;</span> sobrescriba el
+    terminador <span class="Li">&quot;NULL&quot;</span>, lo que lleva a una
+    lectura fuera de límites en
+    <span class="Li">&quot;decrypt_mountables&quot;</span>, archivo
+    <i>libguestfs-common/options/decrypt.c</i>.</p>
+<p class="Pp">Pasar más de dos opciones de <i>--key ID:...</i> en la línea de
+    comandos para el dispositivo de bloque cifrado <span class="Li">&quot;ID&quot;</span>
+    hace que la propia función <span class="Li">&quot;get_keys&quot;</span>
+    realice escrituras fuera de límites. El síntoma más común es un bloqueo con
+    <span class="Li">&quot;SIGSEGV&quot;</span> más adelante.</p>
+<p class="Pp">Este problema afecta, en términos generales, a todas las
+    utilidades basadas en libguestfs que aceptan <i>--key</i>, a saber:
+    <span class="Li">&quot;guestfish&quot;</span>,
+    <span class="Li">&quot;guestmount&quot;</span>,
+    <span class="Li">&quot;virt-cat&quot;</span>,
+    <span class="Li">&quot;virt-customize&quot;</span>,
+    <span class="Li">&quot;virt-diff&quot;</span>,
+    <span class="Li">&quot;virt-edit&quot;</span>,
+    <span class="Li">&quot;virt-get-kernel&quot;</span>,
+    <span class="Li">&quot;virt-inspector&quot;</span>,
+    <span class="Li">&quot;virt-log&quot;</span>,
+    <span class="Li">&quot;virt-ls&quot;</span>,
+    <span class="Li">&quot;virt-sparsify&quot;</span>,
+    <span class="Li">&quot;virt-sysprep&quot;</span>,
+    <span class="Li">&quot;virt-tail&quot;</span>,
+    <span class="Li">&quot;virt-v2v&quot;</span>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE   ALSO</a></h1>
+<p class="Pp"><a href='/man/guestfs.3.en'>guestfs(3)</a>, <a href='/man/guestfs-internals.1.en'>guestfs-internals(1)</a>,
+    <a href='/man/guestfs-release-notes.1.en'>guestfs-release-notes(1)</a>, <a href='/man/guestfs-testing.1.en'>guestfs-testing(1)</a>,
+    <a href='http://libguestfs.org/'>http://libguestfs.org/</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTHORS</a></h1>
+<p class="Pp">Richard W.M. Jones (<span class="Li">&quot;rjones at redhat dot
+    com&quot;</span>)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright (C) 2009-2025 Red Hat Inc.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENSE</a></h1>
+<p class="Pp">Este es software libre; puede redistribuirlo y/o modificarlo bajo
+    los términos de la GNU Lesser General Public License, tal como está publicada
+    por la Free Software Foundation; ya sea la versión 2 de la Licencia, o
+    (a su elección) cualquier versión posterior.</p>
+<p class="Pp">Este programa se distribuye con la esperanza de que sea útil,
+    pero SIN NINGUNA GARANTÍA; incluso sin la garantía implícita de
+    COMERCIABILIDAD o ADECUACIÓN PARA UN PROPÓSITO PARTICULAR. Consulte la
+    GNU Lesser General Public License para más detalles.</p>
+<p class="Pp">Debería haber recibido una copia de la GNU Lesser General Public
+    License junto con este programa; si no es así, escriba a la Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301
+  USA</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">Para obtener una lista de errores en libguestfs, utilice este enlace:
+    <a href='https://bugzilla.redhat.com/buglist.cgi?component=libguestfs'>https://bugzilla.redhat.com/buglist.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">Para informar de un nuevo error en libguestfs, utilice este enlace:
+    <a href='https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs'>https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">Al informar de un error, por favor proporcione:</p>
+<ul class="Bl-bullet">
+  <li>La versión de libguestfs.</li>
+  <li>Dónde obtuvo libguestfs (por ejemplo, qué distribución de Linux, compilado
+      desde el código fuente, etc.).</li>
+  <li>Describa el error con precisión y proporcione una forma de reproducirlo.</li>
+  <li>Ejecute <a href='/man/libguestfs-test-tool.1.en'>libguestfs-test-tool(1)</a> y pegue la salida
+      <b>completa y sin editar</b> en el informe de error.</li>
+</ul>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-08-13</td>
+    <td class="foot-os">libguestfs-1.56.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libguestfs/">extra/libguestfs</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.56.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://libguestfs.org/">https://libguestfs.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later, LGPL-2.1-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libguestfs/">/listing/extra/libguestfs/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#REPORTING_SECURITY_PROBLEMS">REPORTAR PROBLEMAS DE SEGURIDAD</a></li>
+        
+            <li><a href="#GENERAL_ISSUES">PROBLEMAS GENERALES</a></li>
+        
+            <li><a href="#HISTORICAL_SECURITY_ISSUES_IN_LIBGUESTFS">PROBLEMAS DE SEGURIDAD HISTÓRICOS EN LIBGUESTFS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#BUGS">ERRORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/guestfs-security.1.es.txt">txt</a>, 
+        
+            <a href="/man/guestfs-security.1.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

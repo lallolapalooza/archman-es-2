@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>xcb-requests(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">xcb-requests(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libxcb/">libxcb</a></p>
+<p class="lic">Licencias: X11</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">xcb-requests(3)</td>
+    <td class="head-vol">Ejemplos de XCB</td>
+    <td class="head-rtitle">xcb-requests(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">xcb-requests - sobre las páginas del manual de solicitudes</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Cada solicitud en X11, como <i>MapWindow</i>, corresponde a un número
+    de funciones y estructuras de datos en XCB. Para <i>MapWindow</i>, XCB
+    proporciona la función <i>xcb_map_window</i>, que rellena la estructura de
+    datos <i>xcb_map_window_request_t</i> y la escribe en la conexión X11. Dado
+    que la solicitud <i>MapWindow</i> no tiene respuesta, este es el caso más
+    sencillo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESPUESTAS'><a class='permalink' href='#RESPUESTAS'>RESPUESTAS</a></h1>
+<p class="Pp">Muchas solicitudes tienen respuestas. Para cada respuesta, XCB
+    proporciona al menos una estructura de datos correspondiente y una función para
+    devolver un puntero a una estructura de datos rellenada. Tomemos la solicitud
+    <i>InternAtom</i> como ejemplo: XCB proporciona la estructura de datos
+    <i>xcb_intern_atom_reply_t</i> y la función <i>xcb_intern_atom_reply</i>.
+    Para respuestas más complejas (por ejemplo, listas, como en
+    <i>xcb_list_fonts</i>), se proporcionan funciones accesoras.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COOKIES'><a class='permalink' href='#COOKIES'>COOKIES</a></h1>
+<p class="Pp">XCB devuelve una cookie para cada solicitud que envías. Esta es una
+    estructura de datos específica de XCB que contiene el número de secuencia con
+    el que se envió la solicitud al servidor X11. Para obtener cualquier respuesta,
+    debes proporcionar esa cookie (para que XCB sepa cuál de las respuestas en espera
+    quieres). Aquí tienes un ejemplo para ilustrar el uso de las cookies:</p>
+<pre>void my_example(xcb_connection *conn) {
+    xcb_intern_atom_cookie_t cookie;
+    xcb_intern_atom_reply_t *reply;
+    cookie = xcb_intern_atom(conn, 0, strlen(&quot;_NET_WM_NAME&quot;), &quot;_NET_WM_NAME&quot;);
+    /* ... haz otro trabajo aquí si es posible ... */
+    if ((reply = xcb_intern_atom_reply(conn, cookie, NULL))) {
+        printf(&quot;El átomo _NET_WM_NAME tiene el ID %u\n&quot;, reply-&gt;atom);
+    }
+    free(reply);
+}</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERIFICADO_VS._NO_VERIFICADO'><a class='permalink' href='#VERIFICADO_VS._NO_VERIFICADO'>VERIFICADO
+    VS. NO VERIFICADO</a></h1>
+<p class="Pp">Los sufijos checked (verificado) y unchecked (no verificado) para las
+    funciones determinan qué tipo de manejo de errores se utiliza para esta solicitud
+    específica.</p>
+<p class="Pp">Para solicitudes que no tienen respuesta (por ejemplo,
+    <i>xcb_map_window</i>), los errores se entregarán al bucle de eventos (recibirás
+    un evento X11 de tipo 0 al llamar a <i>xcb_poll_for_event</i>). Si deseas
+    verificar explícitamente los errores de forma bloqueante, llama a la versión
+    _checked de la función (por ejemplo, <i>xcb_map_window_checked</i>) y utiliza
+    <i>xcb_request_check</i>.</p>
+<p class="Pp">Para solicitudes que tienen respuesta (por ejemplo,
+    <i>xcb_intern_atom</i>), los errores se verificarán al llamar a la función de
+    respuesta. Para obtener los errores en el bucle de eventos en su lugar, utiliza
+    la versión _unchecked de la función (por ejemplo,
+    <i>xcb_intern_atom_unchecked</i>).</p>
+<p class="Pp">Aquí tienes un ejemplo que ilustra las cuatro formas diferentes de
+    manejar los errores:</p>
+<pre>/*
+ * Solicitud sin respuesta, manejando errores en el bucle de eventos (por defecto)
+ *
+ */
+void my_example(xcb_connection *conn, xcb_window_t window) {
+    /* Esta es una solicitud sin respuesta. Los errores se entregarán al bucle de
+     * eventos. Recibir un error en xcb_map_window probablemente sea un error en
+     * nuestro programa, por lo que no necesitamos verificarlo de forma bloqueante. */
+    xcb_map_window(conn, window);
+    /* ... por supuesto, tu bucle de eventos no estaría en la misma función ... */
+    while ((event = xcb_wait_for_event(conn)) != NULL) {
+        if (event-&gt;response_type == 0) {
+            fprintf(&quot;Recibido error X11 %d\n&quot;, error-&gt;error_code);
+            free(event);
+            continue;
+        }
+        /* ... maneja un evento normal ... */
+    }
+}
+/*
+ * Solicitud sin respuesta, manejando errores directamente
+ *
+ */
+void my_example(xcb_connection *conn, xcb_window_t deco, xcb_window_t window) {
+    /* Un gestor de ventanas que reparenta quiere saber si una nueva ventana fue
+     * reparentada con éxito. Si no (porque la ventana ya se destruyó, por ejemplo),
+     * no tiene sentido mapear una decoración de ventana vacía en absoluto, así que
+     * necesitamos saber esto ahora mismo. */
+    xcb_void_cookie_t cookie = xcb_reparent_window_checked(conn, window,
+                                                           deco, 0, 0);
+    xcb_generic_error_t *error;
+    if ((error = xcb_request_check(conn, cookie))) {
+        fprintf(stderr, &quot;No se pudo reparentar la ventana\n&quot;);
+        free(error);
+        return;
+    }
+    /* ... haz cosas de gestor de ventanas aquí ... */
+}
+/*
+ * Solicitud con respuesta, manejando errores directamente (por defecto)
+ *
+ */
+void my_example(xcb_connection *conn, xcb_window_t window) {
+    xcb_intern_atom_cookie_t cookie;
+    xcb_intern_atom_reply_t *reply;
+    xcb_generic_error_t *error;
+    cookie = xcb_intern_atom(c, 0, strlen(&quot;_NET_WM_NAME&quot;), &quot;_NET_WM_NAME&quot;);
+    /* ... haz otro trabajo aquí si es posible ... */
+    if ((reply = xcb_intern_atom_reply(c, cookie, &amp;error))) {
+        printf(&quot;El átomo _NET_WM_NAME tiene el ID %u\n&quot;, reply-&gt;atom);
+        free(reply);
+    } else {
+        fprintf(stderr, &quot;Error X11 %d\n&quot;, error-&gt;error_code);
+        free(error);
+    }
+}
+/*
+ * Solicitud con respuesta, manejando errores en el bucle de eventos
+ *
+ */
+void my_example(xcb_connection *conn, xcb_window_t window) {
+    xcb_intern_atom_cookie_t cookie;
+    xcb_intern_atom_reply_t *reply;
+    cookie = xcb_intern_atom_unchecked(c, 0, strlen(&quot;_NET_WM_NAME&quot;),
+                                       &quot;_NET_WM_NAME&quot;);
+    /* ... haz otro trabajo aquí si es posible ... */
+    if ((reply = xcb_intern_atom_reply(c, cookie, NULL))) {
+        printf(&quot;El átomo _NET_WM_NAME tiene el ID %u\n&quot;, reply-&gt;atom);
+        free(reply);
+    }
+    /* ... por supuesto, tu bucle de eventos no estaría en la misma función ... */
+    while ((event = xcb_wait_for_event(conn)) != NULL) {
+        if (event-&gt;response_type == 0) {
+            fprintf(&quot;Recibido error X11 %d\n&quot;, error-&gt;error_code);
+            free(event);
+            continue;
+        }
+        /* ... maneja un evento normal ... */
+    }
+}</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER
+    TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/xcb_map_window.3.en'>xcb_map_window(3)</a>, <a href='/man/xcb_intern_atom.3.en'>xcb_intern_atom(3)</a>,
+    <a href='/man/xcb_list_fonts.3.en'>xcb_list_fonts(3)</a>, <a href='/man/xcb_poll_for_event.3.en'>xcb_poll_for_event(3)</a>,
+    <a href='/man/xcb_request_check.3.en'>xcb_request_check(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Michael Stapelberg &lt;michael+xcb at stapelberg dot de&gt;</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">libxcb 1.17.0</td>
+    <td class="foot-os">X Version 11</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libxcb/">extra/libxcb</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.17.0-1</dd>
+        <dt>Anterior:</dt>
+        <dd><a href="https://gitlab.freedesktop.org/xorg/lib/libxcb">https://gitlab.freedesktop.org/xorg/lib/libxcb</a></dd>
+        <dt>Licencias:</dt>
+        <dd>X11</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libxcb/">/listing/extra/libxcb/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RESPUESTAS">RESPUESTAS</a></li>
+        
+            <li><a href="#COOKIES">COOKIES</a></li>
+        
+            <li><a href="#VERIFICADO_VS._NO_VERIFICADO">VERIFICADO VS. NO VERIFICADO</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/xcb-requests.3.en.txt">txt</a>, 
+        
+            <a href="/man/xcb-requests.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

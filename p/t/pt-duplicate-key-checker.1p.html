@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-duplicate-key-checker(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-duplicate-key-checker(1p)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-DUPLICATE-KEY-CHECKER(1)</td>
+    <td class="head-vol">Documentación de Perl contribuida por el usuario</td>
+    <td class="head-rtitle">PT-DUPLICATE-KEY-CHECKER(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">pt-duplicate-key-checker - Encuentra índices y claves foráneas duplicadas en tablas MySQL.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-duplicate-key-checker [OPCIONES] [DSN]</p>
+<p class="Pp">pt-duplicate-key-checker examina tablas MySQL en busca de índices y claves foráneas duplicadas o redundantes. Las opciones de conexión se leen de archivos de opciones de MySQL.</p>
+<pre>pt-duplicate-key-checker --host host1</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RISKS'><a class='permalink' href='#RISKS'>RIESGOS</a></h1>
+<p class="Pp">Percona Toolkit es maduro, probado en el mundo real y bien verificado, pero todas las herramientas de bases de datos pueden representar un riesgo para el sistema y el servidor de la base de datos. Antes de usar esta herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lea la documentación de la herramienta</li>
+  <li>Revise los &quot;BUGS&quot; conocidos de la herramienta</li>
+  <li>Pruebe la herramienta en un servidor no productivo</li>
+  <li>Haga una copia de seguridad de su servidor de producción y verifique las copias de seguridad</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este programa examina la salida de SHOW CREATE TABLE en tablas MySQL, y si encuentra índices que cubren las mismas columnas que otro índice en el mismo orden, o cubren un prefijo izquierdo exacto de otro índice, imprime los índices sospechosos. Por defecto, los índices deben ser del mismo tipo, por lo que un índice BTREE no es un duplicado de un índice FULLTEXT, incluso si tienen las mismas columnas. Puede anular esto.</p>
+<p class="Pp">También busca claves foráneas duplicadas. Una clave foránea duplicada cubre las mismas columnas que otra en la misma tabla y referencia la misma tabla padre.</p>
+<p class="Pp">La salida termina con un breve resumen que incluye una estimación del tamaño total, en bytes, que utilizan los índices duplicados. Esto se calcula multiplicando la longitud del índice por el número de filas en sus respectivas tablas.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPCIONES</a></h1>
+<p class="Pp">Esta herramienta acepta argumentos adicionales en la línea de comandos. Consulte la &quot;SINOPSIS&quot; y la información de uso para obtener detalles.</p>
+<dl class="Bl-tag">
+  <dt id="all"><a class="permalink" href="#all">--all-structs</a></dt>
+  <dd>Compara índices con diferentes estructuras (BTREE, HASH, etc.).
+    <p class="Pp">Por defecto, esto está deshabilitado, porque un índice BTREE que cubre las mismas columnas que un índice FULLTEXT no es realmente un duplicado, por ejemplo.</p>
+  </dd>
+  <dt id="ask"><a class="permalink" href="#ask">--ask-pass</a></dt>
+  <dd>Solicita una contraseña al conectarse a MySQL.</dd>
+  <dt id="charset"><a class="permalink" href="#charset">--charset</a></dt>
+  <dd>forma corta: -A; tipo: string
+    <p class="Pp">Juego de caracteres por defecto. Si el valor es utf8, activa el binmode de Perl en STDOUT a utf8, pasa la opción mysql_enable_utf8 a DBD::mysql y ejecuta SET NAMES UTF8 después de conectarse a MySQL. Cualquier otro valor activa el binmode en STDOUT sin la capa utf8, y ejecuta SET NAMES después de conectarse a MySQL.</p>
+  </dd>
+  <dt>--[no]clustered</dt>
+  <dd>por defecto: yes
+    <p class="Pp">Las columnas PK añadidas a claves secundarias son duplicadas.</p>
+    <p class="Pp">Detecta cuándo un sufijo de una clave secundaria es un prefijo izquierdo de la clave primaria y lo trata como una clave duplicada. Solo detecta esta condición en motores de almacenamiento cuyas claves primarias están agrupadas (actualmente InnoDB, TokuDB y MyRocks).</p>
+    <p class="Pp">Los motores de almacenamiento agrupados añaden de todos modos las columnas de la clave primaria a los nodos hoja de todas las claves secundarias, por lo que podría considerar redundante que aparezcan también en los nodos internos. Por supuesto, también puede quererlas en los nodos internos, ya que solo tenerlas en los nodos hoja no ayuda para algunas consultas. Sin embargo, sí ayuda para las consultas con índice de cobertura.</p>
+    <p class="Pp">Aquí hay un ejemplo de una clave que se considera redundante con esta opción:</p>
+        <pre>PRIMARY KEY  (`a`)
+KEY `b` (`b`,`a`)
+</pre>
+    <p class="Pp">El uso de tales índices es bastante sutil. Por ejemplo, suponga que tiene la siguiente consulta:</p>
+        <pre>SELECT ... WHERE b=1 ORDER BY a;
+</pre>
+    <p class="Pp">Esta consulta realizará un filesort si eliminamos el índice en
+        <span class="Li">&quot;b,a&quot;</span>. Pero si acortamos el índice en
+        <span class="Li">&quot;b,a&quot;</span> a solo
+        <span class="Li">&quot;b&quot;</span> y también eliminamos el ORDER BY, la
+        consulta debería devolver los mismos resultados.</p>
+    <p class="Pp">La herramienta sugiere acortar las claves agrupadas duplicadas eliminando la clave y volviéndola a añadir sin el prefijo de clave primaria. La clave agrupada acortada puede seguir duplicando otra clave, pero la herramienta actualmente no puede detectar cuándo ocurre esto sin ser ejecutada una segunda vez para volver a comprobar las claves agrupadas recién acortadas. Por lo tanto, si acorta alguna clave agrupada duplicada, debe volver a ejecutar la herramienta.</p>
+  </dd>
+  <dt id="config"><a class="permalink" href="#config">--config</a></dt>
+  <dd>tipo: Array
+    <p class="Pp">Lee esta lista de archivos de configuración separados por comas; si se especifica, esta debe ser la primera opción en la línea de comandos.</p>
+  </dd>
+  <dt id="databases"><a class="permalink" href="#databases">--databases</a></dt>
+  <dd>forma corta: -d; tipo: hash
+    <p class="Pp">Comprueba solo esta lista de bases de datos separadas por comas.</p>
+  </dd>
+  <dt id="defaults"><a class="permalink" href="#defaults">--defaults-file</a></dt>
+  <dd>forma corta: -F; tipo: string
+    <p class="Pp">Lee solo las opciones de mysql del archivo dado. Debes proporcionar una ruta de archivo absoluta.</p>
+  </dd>
+  <dt id="engines"><a class="permalink" href="#engines">--engines</a></dt>
+  <dd>forma corta: -e; tipo: hash
+    <p class="Pp">Comprueba solo las tablas cuyos motores de almacenamiento estén en esta lista separada por comas.</p>
+  </dd>
+  <dt id="help"><a class="permalink" href="#help">--help</a></dt>
+  <dd>Muestra la ayuda y sale.</dd>
+  <dt id="host"><a class="permalink" href="#host">--host</a></dt>
+  <dd>forma corta: -h; tipo: string
+    <p class="Pp">Conectar al host.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore-databases</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de bases de datos separadas por comas.</p>
+  </dd>
+  <dt id="ignore~2"><a class="permalink" href="#ignore~2">--ignore-engines</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de motores de almacenamiento separados por comas.</p>
+  </dd>
+  <dt id="ignore~3"><a class="permalink" href="#ignore~3">--ignore-order</a></dt>
+  <dd>Ignora el orden de los índices, de modo que KEY(a,b) duplique a KEY(b,a).</dd>
+  <dt id="ignore~4"><a class="permalink" href="#ignore~4">--ignore-tables</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de tablas separadas por comas. Los nombres de tabla pueden ir calificados con el nombre de la base de datos.</p>
+  </dd>
+  <dt id="key"><a class="permalink" href="#key">--key-types</a></dt>
+  <dd>tipo: string; por defecto: fk
+    <p class="Pp">Comprueba duplicados de f=claves foráneas, k=claves o fk=ambos.</p>
+  </dd>
+  <dt id="password"><a class="permalink" href="#password">--password</a></dt>
+  <dd>forma corta: -p; tipo: string
+    <p class="Pp">Contraseña a usar al conectarse. Si la contraseña contiene comas, deben escaparse con una barra invertida: &quot;exam\,ple&quot;</p>
+  </dd>
+  <dt id="pid"><a class="permalink" href="#pid">--pid</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Crea el archivo PID dado. La herramienta no se iniciará si el archivo PID ya existe y el PID que contiene es diferente del PID actual. Sin embargo, si el archivo PID existe y el PID que contiene ya no se está ejecutando, la herramienta sobrescribirá el archivo PID con el PID actual. El archivo PID se elimina automáticamente cuando la herramienta finaliza.</p>
+  </dd>
+  <dt id="port"><a class="permalink" href="#port">--port</a></dt>
+  <dd>forma corta: -P; tipo: int
+    <p class="Pp">Número de puerto a usar para la conexión.</p>
+  </dd>
+  <dt id="set"><a class="permalink" href="#set">--set-vars</a></dt>
+  <dd>tipo: Array
+    <p class="Pp">Establece las variables de MySQL en esta lista separada por comas de pares
+        <span class="Li">&quot;variable=valor&quot;</span>.</p>
+    <p class="Pp">Por defecto, la herramienta establece:</p>
+        <pre>wait_timeout=10000
+</pre>
+    <p class="Pp">Las variables especificadas en la línea de comandos anulan estos valores predeterminados. Por ejemplo, especificar <span class="Li">&quot;--set-vars
+        wait_timeout=500&quot;</span> anula el valor predeterminado de
+        <span class="Li">10000</span>.</p>
+    <p class="Pp">La herramienta muestra una advertencia y continúa si una variable no se puede establecer.</p>
+  </dd>
+  <dt id="socket"><a class="permalink" href="#socket">--socket</a></dt>
+  <dd>forma corta: -S; tipo: string
+    <p class="Pp">Archivo de socket a usar para la conexión.</p>
+  </dd>
+  <dt>--[no]sql</dt>
+  <dd>por defecto: yes
+    <p class="Pp">Imprime la sentencia DROP KEY para cada clave duplicada. Por defecto se imprime una sentencia ALTER TABLE DROP KEY debajo de cada clave duplicada para que, si deseas eliminar la clave duplicada, puedas copiar y pegar la sentencia en MySQL.</p>
+    <p class="Pp">Para deshabilitar la impresión de estas sentencias, especifica
+        <span class="Li">&quot;--no-sql&quot;</span>.</p>
+  </dd>
+  <dt>--[no]summary</dt>
+  <dd>por defecto: yes
+    <p class="Pp">Imprime un resumen de los índices al final de la salida.</p>
+  </dd>
+  <dt id="tables"><a class="permalink" href="#tables">--
+{
+  "title": "pt-duplicate-key-checker(1p)",
+  "sections": [
+    {
+      "title": "NAME",
+      "content": "pt-duplicate-key-checker - find duplicate and redundant indexes in MySQL tables"
+    },
+    {
+      "title": "SYNOPSIS",
+      "content": "pt-duplicate-key-checker [OPTIONS] [DSN]\n"
+    },
+    {
+      "title": "RISKS",
+      "content": "This tool does not change anything on your system. It only reports information.\n"
+    },
+    {
+      "title": "DESCRIPTION",
+      "content": "This tool finds duplicate and redundant indexes and unique constraints. It then prints statements that you can use to drop them. Duplicate indexes are indexes that contain the exact same set of columns in the exact same order. Redundant indexes are indexes that are prefixes of other indexes. For example, on table T with columns (A, B, C), the index (A, B) is redundant if there is also an index (A, B, C).\n\nWhen it finds a redundant index, it prints a SHOW CREATE TABLE statement for the table and a DROP INDEX statement for the redundant index. When it finds a duplicate index, it prints the same two statements. In both cases, it prints the full list of indexes for the table. It also finds duplicate unique constraints, and prints SHOW CREATE TABLE and ALTER TABLE DROP PRIMARY KEY statements for them.\n\nThis tool connects to MySQL and examines the schema, but it does not use any SQL or DML statements. You can run it against MySQL servers that are not in the production environment. You can also run it against a dump of your schema (see the --print option).\n\nIt is recommended that you back up your database before running any DDL statements, especially DROP INDEX statements. It is also recommended that you run this tool when the server is not under heavy load.\n"
+    },
+    {
+      "title": "OPTIONS",
+      "sections": [
+        {
+          "title": "tables",
+          "content": "short form: -t; type: hash\nCheck only this comma-separated list of tables.\nTable names may be qualified with the database name.\n"
+        },
+        {
+          "title": "--user",
+          "content": "short form: -u; type: string\nUser for login if not current user.\n"
+        },
+        {
+          "title": "--verbose",
+          "content": "short form: -v\nOutput all keys and/or foreign keys found, not just redundant\nones.\n"
+        },
+        {
+          "title": "--version",
+          "content": "Show version and exit.\n"
+        },
+        {
+          "title": "--[no]version-check",
+          "content": "default: yes\nCheck for the latest version of Percona Toolkit, MySQL, and\nother programs.\nThis is a standard \"check for updates automatically\" feature, with two additional features. First, the tool checks its own version and also the versions of the following software: operating system, Percona Monitoring and Management (PMM), MySQL, Perl, MySQL driver for Perl (DBD::mysql), and Percona Toolkit. Second, it checks for and warns about versions with known problems. For example, MySQL 5.5.25 had a critical bug and was re-released as 5.5.25a.\nA secure connection to Percona&#x2019;s Version Check database server is done to perform these checks. Each request is logged by the server, including software version numbers and unique ID of the checked system. The ID is generated by the Percona Toolkit installation script or when the Version Check database call is done for the first time.\nAny updates or known problems are printed to STDOUT before the tool's normal output. This feature should never interfere with the normal operation of the tool.\nFor more information, visit\nhttps://www.percona.com/doc/percona-toolkit/LATEST/version-check.html\n"
+        }
+      ]
+    },
+    {
+      "title": "DSN OPTIONS",
+      "content": "These DSN options are used to create a DSN. Each option is given\nlike \"option=value\". The options are case-sensitive, so P and p are not the same option. There cannot be whitespace before or after the \"=\" and if the value contains whitespace it must be quoted. DSN options are comma-separated. See the percona-toolkit manpage for full details.\n",
+      "sections": [
+        {
+          "title": "A",
+          "content": "dsn: charset; copy: yes\nDefault character set.\n"
+        },
+        {
+          "title": "D",
+          "content": "dsn: database; copy: yes\nDefault database.\n"
+        },
+        {
+          "title": "F",
+          "content": "dsn: mysql_read_default_file; copy: yes\nOnly read default options from the given file\n"
+        },
+        {
+          "title": "h",
+          "content": "dsn: host; copy: yes\nConnect to host.\n"
+        },
+        {
+          "title": "p",
+          "content": "dsn: password; copy: yes\nPassword to use when connecting. If password contains commas\nthey must be escaped with a backslash: \"exam\\,ple\"\n"
+        },
+        {
+          "title": "P",
+          "content": "dsn: port; copy: yes\nPort number to use for connection.\n"
+        },
+        {
+          "title": "S",
+          "content": "dsn: mysql_socket; copy: yes\nSocket file to use for connection.\n"
+        },
+        {
+          "title": "u",
+          "content": "dsn: user; copy: yes\nUser for login if not current user.\n"
+        },
+        {
+          "title": "s",
+          "content": "dsn: mysql_ssl; copy: yes\nCreate SSL connection\n"
+        }
+      ]
+    },
+    {
+      "title": "ENVIRONMENT",
+      "content": "The environment variable \"PTDEBUG\" enables verbose debugging output to STDERR. To enable debugging and capture all output to a file, run the tool like:\nPTDEBUG=1 pt-duplicate-key-checker ... > FILE 2>&1\nBe careful: debugging output is voluminous and can generate several megabytes of output.\n"
+    },
+    {
+      "title": "ATTENTION",
+      "content": "Using <PTDEBUG> might expose passwords. When debug is enabled, all command line parameters are shown in the output.\n"
+    },
+    {
+      "title": "SYSTEM REQUIREMENTS",
+      "content": "You need Perl, DBI, DBD::mysql, and some core packages that ought to be installed in any reasonably new version of Perl.\n"
+    },
+    {
+      "title": "BUGS",
+      "content": "For a list of known bugs, see\nhttps://jira.percona.com/projects/PT/issues\nPlease report bugs at\nhttps://jira.percona.com/projects/PT. Include the following information in your bug report:\nComplete command-line used to run the tool\nTool \"--version\"\nMySQL version of all servers involved\nOutput from the tool including STDERR\nInput files (log/dump/config files, etc.)\nIf possible, include debugging output by running the tool with \"PTDEBUG\"; see \"ENVIRONMENT\".\n"
+    },
+    {
+      "title": "DOWNLOADING",
+      "content": "Visit http://www.percona.com/software/percona-toolkit/ to download the latest release of Percona Toolkit. Or, get the latest release from the command line:\nwget percona.com/get/percona-toolkit.tar.gz\nwget percona.com/get/percona-toolkit.rpm\nwget percona.com/get/percona-toolkit.deb\nYou can also get individual tools from the latest release:\nwget percona.com/get/TOOL\nReplace \"TOOL\" with the name of any tool.\n"
+    },
+    {
+      "title": "AUTHORS",
+      "content": "Baron Schwartz and Daniel Nichter\n"
+    },
+    {
+      "title": "ABOUT PERCONA TOOLKIT",
+      "content": "This tool is part of Percona Toolkit, a collection of advanced command-line tools for MySQL developed by Percona. Percona Toolkit was forked from two projects in June, 2011: Maatkit and Aspersa. Those projects were created by Baron Schwartz and primarily developed by him and Daniel Nichter. Visit http://www.percona.com/software/ to learn about other free, open-source software from Percona.\n"
+    },
+    {
+      "title": "COPYRIGHT, LICENSE, AND WARRANTY",
+      "content": "This program is copyright 2011-2024 Percona LLC and/or its affiliates, 2007-2011 Baron Schwartz.\nTHIS PROGRAM IS PROVIDED \"AS IS\" AND WITHOUT ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.\nThis program is free software; you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, version 2; OR the Perl Artistic License. On UNIX and similar systems, you can issue `man perlgpl' or `man perlartistic' to read these licenses.\nYou should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.\n"
+    },
+    {
+      "title": "VERSION",
+      "content": "pt-duplicate-key-checker 3.7.0\n"
+    },
+    {
+      "title": "POD ERRORS",
+      "content": "Hey! The above document had some coding errors, which are explained below:\n",
+      "sections": [
+        {
+          "title": "Around line 5660:",
+          "content": "Non-ASCII character seen before =encoding in 'Percona&#x2019;s'. Assuming UTF-8\n"
+        }
+      ]
+    }
+  ],
+  "footer": {
+    "date": "2025-01-01",
+    "os": "perl v5.40.0"
+  }
+}
+páginas.
+            </p>
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

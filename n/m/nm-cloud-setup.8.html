@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>nm-cloud-setup(8) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">nm-cloud-setup(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/nm-cloud-setup/">nm-cloud-setup</a></p>
+<p class="lic">Licencias: LGPL-2.1-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">NM-CLOUD-SETUP(8)</td>
+    <td class="head-vol">Configuración de Red Automática</td>
+    <td class="head-rtitle">NM-CLOUD-SETUP(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">nm-cloud-setup - Descripción general de la configuración de red automática en la nube</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN_GENERAL'><a class='permalink' href='#DESCRIPCIÓN_GENERAL'>DESCRIPCIÓN GENERAL</a></h1>
+<p class="Pp">Al ejecutar una máquina virtual en un entorno de nube pública, es deseable configurar automáticamente la red de esa VM. En configuraciones simples, la VM solo tiene una interfaz de red y la nube pública admite la configuración automática a través de DHCP, DHCP6 o autoconfiguración IPv6. Sin embargo, la máquina virtual podría tener múltiples interfaces de red, o múltiples direcciones IP y subredes IP en una sola interfaz que no se pueden configurar a través de DHCP. Además, el administrador puede reconfigurar la red mientras la máquina está en funcionamiento. nm-cloud-setup de NetworkManager es una herramienta que recopila automáticamente dicha configuración en entornos de nube y actualiza la configuración de red del host.</p>
+<p class="Pp">Se admiten múltiples proveedores de nube. Consulte la sección llamada &#x201C;PROVEEDORES DE NUBE COMPATIBLES&#x201D;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USO'><a class='permalink' href='#USO'>USO</a></h1>
+<p class="Pp">El objetivo de nm-cloud-setup es no requerir configuración y funcionar automáticamente. Todo lo que necesita es optar por los proveedores de nube deseados (consulte la sección llamada &#x201C;VARIABLES_DE_ENTORNO&#x201D;) y ejecutar <b>/usr/libexec/nm-cloud-setup</b>.</p>
+<p class="Pp">Por lo general, esto se hace habilitando el servicio systemd nm-cloud-setup.service y dejándolo ejecutarse periódicamente. Para ello, existe tanto un temporizador systemd nm-cloud-setup.timer como un script de dispatcher de NetworkManager.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETALLES'><a class='permalink' href='#DETALLES'>DETALLES</a></h1>
+<p class="Pp">nm-cloud-setup configura la red obteniendo la configuración del servidor de metadatos conocido del proveedor de la nube. Esto significa que ya necesita que la red esté configurada hasta el punto en que pueda alcanzar el servidor de metadatos. Comúnmente, esto significa que se activa un perfil de conexión simple que posiblemente utiliza DHCP para obtener la dirección IP principal. NetworkManager creará dicho perfil para los dispositivos Ethernet automáticamente si no se configura de otra manera mediante la configuración "no-auto-default" en NetworkManager.conf. Una posible alternativa puede ser crear dicho perfil inicial con <b>nmcli device connect &quot;$DEVICE&quot;</b> o <b>nmcli connection add type ethernet ...</b>.</p>
+<p class="Pp">Al establecer la propiedad user-data org.freedesktop.nm-cloud-setup.skip=yes en el perfil, nm-cloud-setup omitirá el dispositivo.</p>
+<p class="Pp">nm-cloud-setup modifica la configuración en tiempo de ejecución de forma similar a <b>nmcli device modify</b>. Con este enfoque, la configuración no se guarda y solo se conserva hasta que el dispositivo se desconecta.</p>
+<section class="Ss">
+<h2 class="Ss" id='/usr/libexec/nm-cloud-setup'><a class='permalink' href='#/usr/libexec/nm-cloud-setup'>/usr/libexec/nm-cloud-setup</a></h2>
+<p class="Pp">El binario <b>/usr/libexec/nm-cloud-setup</b> hace la mayor parte del trabajo. No admite argumentos de línea de comandos, pero se puede configurar a través de variables de entorno. Consulte la sección llamada &#x201C;VARIABLES_DE_ENTORNO&#x201D; para conocer las variables de entorno compatibles.</p>
+<p class="Pp">Por defecto, todos los proveedores de nube están deshabilitados a menos que opte por habilitar uno o varios proveedores. Si los proveedores de nube están habilitados, el programa intenta obtener la configuración del host de un servidor de metadatos de la nube a través de HTTP. Si no se pudo obtener la configuración, no se detectan proveedores de nube y el programa finaliza. Si se obtiene la configuración del host, se detecta correctamente el proveedor de nube correspondiente. Luego se configurará la red del host.</p>
+<p class="Pp">Está previsto volver a ejecutar nm-cloud-setup cada vez que la configuración (quizás) cambie. La herramienta es idempotente, por lo que debería estar bien ejecutarla más veces de las necesarias. Podría ejecutar <b>/usr/libexec/nm-cloud-setup</b> directamente. Sin embargo, puede ser preferible reiniciar el servicio systemd nm-cloud-setup en su lugar o utilizar el temporizador o el script de dispatcher para ejecutarlo periódicamente (ver más abajo).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Unidad systemd nm-cloud-setup.service</h2>
+<p class="Pp">Por lo general, <b>/usr/libexec/nm-cloud-setup</b> no se ejecuta directamente, sino solo con <b>systemctl restart nm-cloud-setup.service</b>. Esto garantiza que la herramienta solo se ejecute una vez en cualquier momento. La unidad también es utilizada por el temporizador systemd nm-cloud-setup y permite habilitar/deshabilitar el servicio a través de systemd.</p>
+<p class="Pp">Dado que necesita configurar variables de entorno para el binario nm-cloud-setup, puede hacerlo a través de archivos de anulación de systemd. Pruebe con <b>systemctl edit nm-cloud-setup.service</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Temporizador systemd nm-cloud-setup.timer</h2>
+<p class="Pp"><b>/usr/libexec/nm-cloud-setup</b> está diseñado para ejecutarse cada vez que sea necesaria una actualización. Por ejemplo, durante el arranque o cuando se cambia la configuración de red de la máquina virtual a través del proveedor de la nube.</p>
+<p class="Pp">Una forma de hacerlo es habilitando el temporizador systemd nm-cloud-setup.timer con <b>systemctl enable --now nm-cloud-setup.timer</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='/usr/lib/NetworkManager/dispatcher.d/90-nm-cloud-setup.sh'><a class='permalink' href='#/usr/lib/NetworkManager/dispatcher.d/90-nm-cloud-setup.sh'>/usr/lib/NetworkManager/dispatcher.d/90-nm-cloud-setup.sh</a></h2>
+<p class="Pp">También hay un script de dispatcher de NetworkManager que se ejecutará, por ejemplo, cuando NetworkManager active una interfaz. Junto con el temporizador systemd nm-cloud-setup.timer, este script está destinado a detectar automáticamente los cambios en la red.</p>
+<p class="Pp">El script de dispatcher no hará nada, a menos que el servicio systemd esté habilitado. Para usar el script de dispatcher, por lo tanto, debe ejecutar <b>systemctl enable nm-cloud-setup.service</b> una vez.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VARIABLES_DE_ENTORNO'><a class='permalink' href='#VARIABLES_DE_ENTORNO'>VARIABLES DE ENTORNO</a></h1>
+<p class="Pp">Las siguientes variables de entorno se utilizan para configurar <b>/usr/libexec/nm-cloud-setup</b>. Es posible que desee configurarlas con un archivo de anulación para el servicio systemd. Por ejemplo, llamando a <b>systemctl edit nm-cloud-setup.service</b> y configurando [Service] Environment=, como se describe en el manual de <a href='/man/systemd.exec.5.en'>systemd.exec(5)</a>.</p>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_LOG: controla la verbosidad del registro.
+  Establézcala en uno de TRACE, DEBUG, INFO, WARN, ERR o OFF. El programa
+  imprimirá mensajes en la salida estándar y el nivel predeterminado es WARN.
+  Cuando se ejecuta como un servicio systemd, el registro será recopilado por
+  journald y se puede ver con <b>journalctl</b>.</div>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_AZURE: booleano, si el soporte de
+  Microsoft Azure está habilitado. Por defecto es no.</div>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_EC2: booleano, si el soporte de
+  Amazon EC2 (AWS) está habilitado. Por defecto es no.</div>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_GCP: booleano, si el soporte de
+  Google GCP está habilitado. Por defecto es no.</div>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_ALIYUN: booleano, si el soporte de
+  Alibaba Cloud (Aliyun) está habilitado. Por defecto es no.</div>
+<div class="Bd-indent">&#x2022;NM_CLOUD_SETUP_OCI: booleano, si el soporte de
+  Oracle Cloud (OCI) está habilitado. Por defecto es no.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DEPURACIÓN'><a class='permalink' href='#DEPURACIÓN'>DEPURACIÓN</a></h1>
+<p class="Pp">Habilite el registro de depuración estableciendo la variable de
+    entorno NM_CLOUD_SETUP_LOG en TRACE.</p>
+<p class="Pp">En el caso común donde nm-cloud-setup se ejecuta como un servicio
+    systemd, esto se puede hacer editando <b>systemctl edit
+    nm-cloud-setup.service</b> y agregando Environment=NM_CLOUD_SETUP_LOG=TRACE
+    a la sección [Service]. Posteriormente, el registro se puede encontrar en
+    syslog a través de journalctl. También puede que desee habilitar el registro
+    de depuración en NetworkManager como se describe en la sección DEBUGGING del
+    manual de <a href='/man/NetworkManager.5.en'>NetworkManager(5)</a>. Al compartir registros, es mejor compartir
+    registros completos y no filtrar preventivamente para los registros de
+    NetworkManager o nm-cloud-setup.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO_DE_CONFIGURACIÓN_PARA_CONFIGURAR_Y_PREDEPLOYIR_NM-CLOUD-SETUP'><a class='permalink' href='#EJEMPLO_DE_CONFIGURACIÓN_PARA_CONFIGURAR_Y_PREDEPLOYIR_NM-CLOUD-SETUP'>EJEMPLO DE CONFIGURACIÓN PARA CONFIGURAR Y PREDEPLOYIR NM-CLOUD-SETUP</a></h1>
+<p class="Pp">Como se detalló anteriormente, nm-cloud-setup debe habilitarse
+    explícitamente. Como se ejecuta como un servicio y temporizador systemd, eso
+    básicamente significa habilitar y configurar esos. Esto se puede hacer
+    colocando los archivos y enlaces simbólicos correctos en el disco.</p>
+<p class="Pp">El siguiente ejemplo habilita nm-cloud-setup para la nube de Amazon
+    EC2:</p>
+<div class="Bd-indent">
+<pre>dnf install -y NetworkManager-cloud-setup
+mkdir -p /etc/systemd/system/nm-cloud-setup.service.d
+cat &gt; /etc/systemd/system/nm-cloud-setup.service.d/10-enable-ec2.conf &lt;&lt; EOF
+[Service]
+Environment=NM_CLOUD_SETUP_EC2=yes
+EOF
+# systemctl enable nm-cloud-setup.service
+mkdir -p /etc/systemd/system/NetworkManager.service.wants/
+ln -s /usr/lib/systemd/system/nm-cloud-setup.service /etc/systemd/system/NetworkManager.service.wants/nm-cloud-setup.service
+# systemctl enable nm-cloud-setup.timer
+mkdir -p /etc/systemd/system/timers.target.wants/
+ln -s /etc/systemd/system/timers.target.wants/nm-cloud-setup.timer /usr/lib/systemd/system/nm-cloud-setup.t</pre>
+</div>
+</section>
+</div>
+</section>
+                
+            </article>
+            
+        </main>
+        
+        <footer>
+        </footer>
+    </body>
+</html>
+<sentence>
+<word>imer</word>
+<word>systemctl</word>
+<word>daemon-reload</word>
+</sentence>
+<sentence>
+<section class='Sh' id='SUPPORTED_CLOUD_PROVIDERS'>
+<title>PROVEEDORES DE NUBE SOPORTADOS</title>
+<section class='Ss' id='Amazon_EC2_(AWS)'>
+<title>Amazon EC2 (AWS)</title>
+<sentence>
+<word>Para</word>
+<word>AWS,</word>
+<word>las</word>
+<word>herramientas</word>
+<word>intentan</word>
+<word>obtener</word>
+<word>la</word>
+<word>configuración</word>
+<word>de</word>
+<word>http://169.254.169.254/</word>
+<word>Actualmente,</word>
+<word>solo</word>
+<word>configura</word>
+<word>IPv4</word>
+<word>y</word>
+<word>no</word>
+<word>hace</word>
+<word>nada</word>
+<word>con</word>
+<word>respecto</word>
+<word>a</word>
+<word>IPv6.</word>
+<word>Hará</word>
+<word>lo</word>
+<word>siguiente.</word>
+</sentence>
+<sentence>
+<word>Primero</word>
+<word>obtiene</word>
+<word>http://169.254.169.254/latest/meta-data/</word>
+<word>para</word>
+<word>determinar</word>
+<word>si</word>
+<word>la</word>
+<word>API</word>
+<word>esperada</word>
+<word>está</word>
+<word>presente.</word>
+<word>Esto</word>
+<word>determina</word>
+<word>si</word>
+<word>el</word>
+<word>entorno</word>
+<word>EC2</word>
+<word>se</word>
+<word>detecta</word>
+<word>y</word>
+<word>si</word>
+<word>se</word>
+<word>procede</word>
+<word>a</word>
+<word>configurar</word>
+<word>el</word>
+<word>host</word>
+<word>utilizando</word>
+<word>los</word>
+<word>metadatos</word>
+<word>de</word>
+<word>EC2.</word>
+</sentence>
+<sentence>
+<word>Obtiene</word>
+<word>http://169.254.169.254/2018-09-24/meta-data/network/interfaces/macs/</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>lista</word>
+<word>de</word>
+<word>interfaces</word>
+<word>disponibles.</word>
+<word>Las</word>
+<word>interfaces</word>
+<word>se</word>
+<word>identifican</word>
+<word>por</word>
+<word>su</word>
+<word>dirección</word>
+<word>MAC.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz,</word>
+<word>obtiene</word>
+<word>http://169.254.169.254/2018-09-24/meta-data/network/interfaces/macs/$MAC/subnet-ipv4-cidr-block</word>
+<word>y</word>
+<word>http://169.254.169.254/2018-09-24/meta-data/network/interfaces/macs/$MAC/local-ipv4s</word>
+<word>De</word>
+<word>esta</word>
+<word>manera,</word>
+<word>obtenemos</word>
+<word>una</word>
+<word>lista</word>
+<word>de</word>
+<word>direcciones</word>
+<word>IPv4</word>
+<word>locales</word>
+<word>y</word>
+<word>un</word>
+<word>bloque</word>
+<word>de</word>
+<word>subred</word>
+<word>CIDR.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>nm-cloud-setup</word>
+<word>itera</word>
+<word>sobre</word>
+<word>todas</word>
+<word>las</word>
+<word>interfaces</word>
+<word>para</word>
+<word>las</word>
+<word>cuales</word>
+<word>pudo</word>
+<word>obtener</word>
+<word>la</word>
+<word>configuración</word>
+<word>IP.</word>
+<word>Si</word>
+<word>no</word>
+<word>se</word>
+<word>encuentra</word>
+<word>un</word>
+<word>dispositivo</word>
+<word>ethernet</word>
+<word>para</word>
+<word>la</word>
+<word>dirección</word>
+<word>MAC</word>
+<word>respectiva,</word>
+<word>se</word>
+<word>omite.</word>
+<word>Además,</word>
+<word>si</word>
+<word>el</word>
+<word>dispositivo</word>
+<word>no</word>
+<word>está</word>
+<word>activado</word>
+<word>actualmente</word>
+<word>en</word>
+<word>NetworkManager</word>
+<word>o</word>
+<word>si</word>
+<word>el</word>
+<word>perfil</word>
+<word>activado</word>
+<word>actualmente</word>
+<word>tiene</word>
+<word>datos</word>
+<word>de</word>
+<word>usuario</word>
+<word>org.freedesktop.nm-cloud-setup.skip=yes,</word>
+<word>se</word>
+<word>omite.</word>
+</sentence>
+<sentence>
+<word>Si</word>
+<word>solo</word>
+<word>se</word>
+<word>configura</word>
+<word>una</word>
+<word>interfaz</word>
+<word>y</word>
+<word>una</word>
+<word>dirección,</word>
+<word>la</word>
+<word>herramienta</word>
+<word>no</word>
+<word>hace</word>
+<word>nada</word>
+<word>y</word>
+<word>deja</word>
+<word>la</word>
+<word>configuración</word>
+<word>automática</word>
+<word>obtenida</word>
+<word>vía</word>
+<word>DHCP.</word>
+</sentence>
+<sentence>
+<word>De</word>
+<word>lo</word>
+<word>contrario,</word>
+<word>la</word>
+<word>herramienta</word>
+<word>cambiará</word>
+<word>la</word>
+<word>configuración</word>
+<word>en</word>
+<word>tiempo</word>
+<word>de</word>
+<word>ejecución</word>
+<word>del</word>
+<word>dispositivo.</word>
+</sentence>
+<sentence>
+<word>Añade</word>
+<word>direcciones</word>
+<word>IPv4</word>
+<word>estáticas</word>
+<word>para</word>
+<word>todas</word>
+<word>las</word>
+<word>direcciones</word>
+<word>configuradas</word>
+<word>de</word>
+<word>local-ipv4s</word>
+<word>con</word>
+<word>longitud</word>
+<word>de</word>
+<word>prefijo</word>
+<word>según</word>
+<word>subnet-ipv4-cidr-block.</word>
+<word>Por</word>
+<word>ejemplo,</word>
+<word>podríamos</word>
+<word>tener</word>
+<word>aquí</word>
+<word>2</word>
+<word>direcciones</word>
+<word>IP</word>
+<word>como</word>
+<word>&quot;172.16.5.3/24,172.16.5.4/24&quot;.</word>
+</sentence>
+<sentence>
+<word>Elige</word>
+<word>una</word>
+<word>tabla</word>
+<word>de</word>
+<word>rutas</word>
+<word>30400</word>
+<word>+</word>
+<word>el</word>
+<word>índice</word>
+<word>de</word>
+<word>la</word>
+<word>interfaz</word>
+<word>y</word>
+<word>añade</word>
+<word>una</word>
+<word>ruta</word>
+<word>por</word>
+<word>defecto</word>
+<word>0.0.0.0/0.</word>
+<word>El</word>
+<word>gateway</word>
+<word>es</word>
+<word>la</word>
+<word>primera</word>
+<word>dirección</word>
+<word>IP</word>
+<word>en</word>
+<word>el</word>
+<word>bloque</word>
+<word>de</word>
+<word>subred</word>
+<word>CIDR.</word>
+<word>Por</word>
+<word>ejemplo,</word>
+<word>podríamos</word>
+<word>obtener</word>
+<word>una</word>
+<word>ruta</word>
+<word>&quot;0.0.0.0/0</word>
+<word>172.16.5.1</word>
+<word>10</word>
+<word>table=30400&quot;.</word>
+</sentence>
+<sentence>
+<word>También</word>
+<word>elige</word>
+<word>una</word>
+<word>tabla</word>
+<word>de</word>
+<word>rutas</word>
+<word>30200</word>
+<word>+</word>
+<word>el</word>
+<word>índice</word>
+<word>de</word>
+<word>la</word>
+<word>interfaz.</word>
+<word>Esto</word>
+<word>contiene</word>
+<word>rutas</word>
+<word>directas</word>
+<word>a</word>
+<word>las</word>
+<word>subredes</word>
+<word>de</word>
+<word>esta</word>
+<word>interfaz.</word>
+</sentence>
+<sentence>
+<word>Finalmente,</word>
+<word>añade</word>
+<word>una</word>
+<word>regla</word>
+<word>de</word>
+<word>enrutamiento</word>
+<word>por</word>
+<word>política</word>
+<word>para</word>
+<word>cada</word>
+<word>dirección.</word>
+<word>Por</word>
+<word>ejemplo</word>
+<word>&quot;priority</word>
+<word>30200</word>
+<word>from</word>
+<word>172.16.5.3/32</word>
+<word>table</word>
+<word>30200,</word>
+<word>priority</word>
+<word>30200</word>
+<word>from</word>
+<word>172.16.5.4/32</word>
+<word>table</word>
+<word>30200&quot;.</word>
+<word>y</word>
+<word>&quot;priority</word>
+<word>30400</word>
+<word>from</word>
+<word>172.16.5.3/32</word>
+<word>table</word>
+<word>30400,</word>
+<word>priority</word>
+<word>30400</word>
+<word>from</word>
+<word>172.16.5.4/32</word>
+<word>table</word>
+<word>30400&quot;</word>
+<word>Las</word>
+<word>reglas</word>
+<word>30200+</word>
+<word>seleccionan</word>
+<word>la</word>
+<word>tabla</word>
+<word>para</word>
+<word>alcanzar</word>
+<word>la</word>
+<word>subred</word>
+<word>directamente,</word>
+<word>mientras</word>
+<word>que</word>
+<word>las</word>
+<word>reglas</word>
+<word>30400+</word>
+<word>usan</word>
+<word>la</word>
+<word>ruta</word>
+<word>por</word>
+<word>defecto.</word>
+<word>También</word>
+<word>añade</word>
+<word>una</word>
+<word>regla</word>
+<word>&quot;priority</word>
+<word>30350</word>
+<word>table</word>
+<word>main</word>
+<word>suppress_prefixlength</word>
+<word>0&quot;.</word>
+<word>Esto</word>
+<word>tiene</word>
+<word>una</word>
+<word>prioridad</word>
+<word>entre</word>
+<word>las</word>
+<word>dos</word>
+<word>reglas</word>
+<word>anteriores</word>
+<word>y</word>
+<word>causa</word>
+<word>una</word>
+<word>búsqueda</word>
+<word>de</word>
+<word>rutas</word>
+<word>en</word>
+<word>la</word>
+<word>tabla</word>
+<word>principal</word>
+<word>mientras</word>
+<word>ignora</word>
+<word>la</word>
+<word>ruta</word>
+<word>por</word>
+<word>defecto.</word>
+<word>El</word>
+<word>propósito</word>
+<word>de</word>
+<word>esto</word>
+<word>es</word>
+<word>que</word>
+<word>otras</word>
+<word>rutas</word>
+<word>específicas</word>
+<word>en</word>
+<word>la</word>
+<word>tabla</word>
+<word>principal</word>
+<word>se</word>
+<word>honren</word>
+<word>sobre</word>
+<word>la</word>
+<word>ruta</word>
+<word>por</word>
+<word>defecto</word>
+<word>en</word>
+<word>la</word>
+<word>tabla</word>
+<word>30400+.</word>
+</sentence>
+<sentence>
+<word>Con</word>
+<word>el</word>
+<word>ejemplo</word>
+<word>anterior,</word>
+<word>esto</word>
+<word>corresponde</word>
+<word>aproximadamente</word>
+<word>para</word>
+<word>la</word>
+<word>interfaz</word>
+<word>eth0</word>
+<word>a</word>
+<word>nmcli</word>
+<word>device</word>
+<word>modify</word>
+<word>&quot;eth0&quot;</word>
+<word>ipv4.addresses</word>
+<word>&quot;172.16.5.3/24,172.16.5.4/24&quot;</word>
+<word>ipv4.routes</word>
+<word>&quot;172.16.5.0/24</word>
+<word>0.0.0.0</word>
+<word>10</word>
+<word>table=30200,</word>
+<word>0.0.0.0/0</word>
+<word>172.16.5.1</word>
+<word>10</word>
+<word>table=30400&quot;</word>
+<word>ipv4.routing-rules</word>
+<word>&quot;priority</word>
+<word>30200</word>
+<word>from</word>
+<word>172.16.5.3/32</word>
+<word>table</word>
+<word>30200,</word>
+<word>priority</word>
+<word>30200</word>
+<word>from</word>
+<word>172.16.5.4/32</word>
+<word>table</word>
+<word>30200,</word>
+<word>priority</word>
+<word>20350</word>
+<word>table</word>
+<word>main</word>
+<word>suppress_prefixlength</word>
+<word>0,</word>
+<word>priority</word>
+<word>30400</word>
+<word>from</word>
+<word>172.16.5.3/32</word>
+<word>table</word>
+<word>30400,</word>
+<word>priority</word>
+<word>30400</word>
+<word>from</word>
+<word>172.16.5.4/32</word>
+<word>table</word>
+<word>30400&quot;.</word>
+<word>Tenga</word>
+<word>en</word>
+<word>cuenta</word>
+<word>que</word>
+<word>esto</word>
+<word>reemplaza</word>
+<word>las</word>
+<word>direcciones,</word>
+<word>rutas</word>
+<word>y</word>
+<word>reglas</word>
+<word>anteriores</word>
+<word>con</word>
+<word>la</word>
+<word>nueva</word>
+<word>información.</word>
+<word>Pero</word>
+<word>también</word>
+<word>tenga</word>
+<word>en</word>
+<word>cuenta</word>
+<word>que</word>
+<word>esto</word>
+<word>solo</word>
+<word>cambia</word>
+<word>la</word>
+<word>configuración</word>
+<word>en</word>
+<word>tiempo</word>
+<word>de</word>
+<word>ejecución</word>
+<word>del</word>
+<word>dispositivo.</word>
+<word>El</word>
+<word>perfil</word>
+<word>de</word>
+<word>conexión</word>
+<word>en</word>
+<word>disco</word>
+<word>no</word>
+<word>se</word>
+<word>ve</word>
+<word>afectado.</word>
+</sentence>
+</section>
+<section class='Ss' id='Google_Cloud_Platform_(GCP)'>
+<title>Google Cloud Platform (GCP)</title>
+<sentence>
+<word>Para</word>
+<word>GCP,</word>
+<word>los</word>
+<word>metadatos</word>
+<word>se</word>
+<word>obtienen</word>
+<word>de</word>
+<word>URIs</word>
+<word>que</word>
+<word>comienzan</word>
+<word>con</word>
+<word>http://metadata.google.internal/computeMetadata/v1/</word>
+<word>con</word>
+<word>una</word>
+<word>cabecera</word>
+<word>HTTP</word>
+<word>&quot;Metadata-Flavor:</word>
+<word>Google&quot;.</word>
+<word>Actualmente,</word>
+<word>la</word>
+<word>herramienta</word>
+<word>solo</word>
+<word>configura</word>
+<word>IPv4</word>
+<word>y</word>
+<word>no</word>
+<word>hace</word>
+<word>nada</word>
+<word>con</word>
+<word>respecto</word>
+<word>a</word>
+<word>IPv6.</word>
+<word>Hará</word>
+<word>lo</word>
+<word>siguiente.</word>
+</sentence>
+<sentence>
+<word>Primero</word>
+<word>obtiene</word>
+<word>http://metadata.google.internal/computeMetadata/v1/instance/id</word>
+<word>para</word>
+<word>detectar</word>
+<word>si</word>
+<word>la</word>
+<word>herramienta</word>
+<word>se</word>
+<word>ejecuta</word>
+<word>en</word>
+<word>Google</word>
+<word>Cloud</word>
+<word>Platform.</word>
+<word>Solo</word>
+<word>si</word>
+<word>se</word>
+<word>detecta</word>
+<word>la</word>
+<word>plataforma,</word>
+<word>continuará</word>
+<word>obteniendo</word>
+<word>la</word>
+<word>configuración.</word>
+</sentence>
+<sentence>
+<word>Obtiene</word>
+<word>http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>lista</word>
+<word>de</word>
+<word>índices</word>
+<word>de</word>
+<word>interfaz</word>
+<word>disponibles.</word>
+<word>Estos</word>
+<word>índices</word>
+<word>se</word>
+<word>pueden</word>
+<word>utilizar</word>
+<word>para</word>
+<word>búsquedas</word>
+<word>posteriores.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz,</word>
+<word>obtiene</word>
+<word>http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/$IFACE_INDEX/mac</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>dirección</word>
+<word>MAC</word>
+<word>correspondiente</word>
+<word>de</word>
+<word>las</word>
+<word>interfaces</word>
+<word>encontradas.</word>
+<word>La</word>
+<word>dirección</word>
+<word>MAC</word>
+<word>se</word>
+<word>utiliza</word>
+<word>para</word>
+<word>identificar</word>
+<word>el</word>
+<word>dispositivo</word>
+<word>más</word>
+<word>tarde.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz</word>
+<word>con</word>
+<word>una</word>
+<word>dirección</word>
+<word>MAC,</word>
+<word>obtiene</word>
+<word>http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/$IFACE_INDEX/forwarded-ips/</word>
+<word>y</word>
+<word>luego</word>
+<word>todas</word>
+<word>las</word>
+<word>direcciones</word>
+<word>IP</word>
+<word>encontradas</word>
+<word>en</word>
+<word>http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/$IFACE_INDEX/forwarded-ips/$FIPS_INDEX.</word>
+</sentence>
+<sentence>
+<word>En</word>
+<word>este</word>
+<word>punto,</word>
+<word>tenemos</word>
+<word>una</word>
+<word>lista</word>
+<word>de</word>
+<word>todas</word>
+<word>las</word>
+<word>interfaces</word>
+<word>(por</word>
+<word>dirección</word>
+<word>MAC)</word>
+<word>y</word>
+<word>sus</word>
+<word>direcciones</word>
+<word>IPv4</word>
+<word>configuradas.</word>
+</sentence>
+<sentence>
+<word>Para</word>
+<word>cada</word>
+<word>dispositivo,</word>
+<word>buscamos</word>
+<word>la</word>
+<word>conexión</word>
+<word>actualmente</word>
+<word>aplicada</word>
+<word>en</word>
+<word>NetworkManager.</word>
+<word>Esto</word>
+<word>implica</word>
+<word>que</word>
+<word>el</word>
+<word>dispositivo</word>
+<word>está</word>
+<word>activado</word>
+<word>actualmente</word>
+<word>en</word>
+<word>NetworkManager.</word>
+<word>Si</word>
+<word>no</word>
+<word>se</word>
+<word>encontró</word>
+<word>dicho</word>
+<word>dispositivo</word>
+<word>en</word>
+<word>NetworkManager,</word>
+<word>o</word>
+<word>si</word>
+<word>el</word>
+<word>perfil</word>
+<word>tiene</word>
+<word>datos</word>
+<word>de</word>
+<word>usuario</word>
+<word>org.freedesktop.nm-cloud-setup.skip=yes,</word>
+<word>omitimos</word>
+<word>el</word>
+<word>dispositivo.</word>
+<word>Ahora,</word>
+<word>para</word>
+<word>cada</word>
+<word>dirección</word>
+<word>IP</word>
+<word>encontrada,</word>
+<word>añadimos</word>
+<word>una</word>
+<word>ruta</word>
+<word>estática</word>
+<word>&quot;$FIPS_ADDR/32</word>
+<word>0.0.0.0</word>
+<word>100</word>
+<word>type=local&quot;</word>
+<word>y</word>
+<word>reaplicamos</word>
+<word>el</word>
+<word>cambio.</word>
+</sentence>
+<sentence>
+<word>El</word>
+<word>efecto</word>
+<word>no</word>
+<word>es</word>
+<word>diferente</word>
+<word>a</word>
+<word>llamar</word>
+<word>nmcli</word>
+<word>device</word>
+<word>modify</word>
+<word>&quot;$DEVICE&quot;</word>
+<word>ipv4.routes</word>
+<word>&quot;$FIPS_ADDR/32</word>
+<word>0.0.0.0</word>
+<word>100</word>
+<word>type=local</word>
+<word>[,...]&quot;</word>
+<word>para</word>
+<word>todos</word>
+<word>los</word>
+<word>dispositivos</word>
+<word>relevantes</word>
+<word>y</word>
+<word>todas</word>
+<word>las</word>
+<word>direcciones</word>
+<word>encontradas.</word>
+</sentence>
+</section>
+<section class='Ss' id='Microsoft_Azure'>
+<title>Microsoft Azure</title>
+<sentence>
+<word>Para</word>
+<word>Azure,</word>
+<word>los</word>
+<word>metadatos</word>
+<word>se</word>
+<word>obtienen</word>
+<word>de</word>
+<word>URIs</word>
+<word>que</word>
+<word>comienzan</word>
+<word>con</word>
+<word>http://169.254.169.254/metadata/instance</word>
+<word>con</word>
+<word>un</word>
+<word>parámetro</word>
+<word>de</word>
+<word>URL</word>
+<word>&quot;?format=text&amp;api-version=2017-04-02&quot;</word>
+<word>y</word>
+<word>una</word>
+<word>cabecera</word>
+<word>HTTP</word>
+<word>&quot;Metadata:true&quot;.</word>
+<word>Actualmente,</word>
+<word>la</word>
+<word>herramienta</word>
+<word>solo</word>
+<word>configura</word>
+<word>IPv4</word>
+<word>y</word>
+<word>no</word>
+<word>hace</word>
+<word>nada</word>
+<word>con</word>
+<word>respecto</word>
+<word>a</word>
+<word>IPv6.</word>
+<word>Hará</word>
+<word>lo</word>
+<word>siguiente.</word>
+</sentence>
+<sentence>
+<word>Primero</word>
+<word>obtiene</word>
+<word>http://169.254.169.254/metadata/instance?format=text&amp;api-version=2017-04-02</word>
+<word>para</word>
+<word>detectar</word>
+<word>si</word>
+<word>la</word>
+<word>herramienta</word>
+<word>se</word>
+<word>ejecuta</word>
+<word>en</word>
+<word>Azure</word>
+<word>Cloud.</word>
+<word>Solo</word>
+<word>si</word>
+<word>se</word>
+<word>detecta</word>
+<word>la</word>
+<word>plataforma,</word>
+<word>continuará</word>
+<word>obteniendo</word>
+<word>la</word>
+<word>configuración.</word>
+</sentence>
+<sentence>
+<word>Obtiene</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/?format=text&amp;api-version=2017-04-02</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>lista</word>
+<word>de</word>
+<word>índices</word>
+<word>de</word>
+<word>interfaz</word>
+<word>disponibles.</word>
+<word>Estos</word>
+<word>índices</word>
+<word>se</word>
+<word>pueden</word>
+<word>utilizar</word>
+<word>para</word>
+<word>búsquedas</word>
+<word>posteriores.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz,</word>
+<word>obtiene</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/$IFACE_INDEX/macAddress?format=text&amp;api-version=2017-04-02</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>dirección</word>
+<word>MAC</word>
+<word>correspondiente</word>
+<word>de</word>
+<word>las</word>
+<word>interfaces</word>
+<word>encontradas.</word>
+<word>La</word>
+<word>dirección</word>
+<word>MAC</word>
+<word>se</word>
+<word>utiliza</word>
+<word>para</word>
+<word>identificar</word>
+<word>el</word>
+<word>dispositivo</word>
+<word>más</word>
+<word>tarde.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz</word>
+<word>con</word>
+<word>una</word>
+<word>dirección</word>
+<word>MAC,</word>
+<word>obtiene</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/$IFACE_INDEX/ipv4/ipAddress/?format=text&amp;api-version=2017-04-02</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>lista</word>
+<word>de</word>
+<word>(índices</word>
+<word>de)</word>
+<word>direcciones</word>
+<word>IP</word>
+<word>en</word>
+<word>esa</word>
+<word>interfaz.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>índice</word>
+<word>de</word>
+<word>dirección</word>
+<word>IP,</word>
+<word>obtiene</word>
+<word>la</word>
+<word>dirección</word>
+<word>en</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/$IFACE_INDEX/ipv4/ipAddress/$ADDR_INDEX/privateIpAddress?format=text&amp;api-version=2017-04-02.</word>
+<word>También</word>
+<word>obtiene</word>
+<word>el</word>
+<word>tamaño</word>
+<word>de</word>
+<word>la</word>
+<word>subred</word>
+<word>y</word>
+<word>el</word>
+<word>prefijo</word>
+<word>para</word>
+<word>la</word>
+<word>interfaz</word>
+<word>de</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/$IFACE_INDEX/ipv4/subnet/0/address/?format=text&amp;api-version=2017-04-02</word>
+<word>y</word>
+<word>http://169.254.169.254/metadata/instance/network/interface/$IFACE_INDEX/ipv4/subnet/0/prefix/?format=text&amp;api-version=2017-04-02.</word>
+</sentence>
+<sentence>
+<word>En</word>
+<word>este</word>
+<word>punto,</word>
+<word>tenemos</word>
+<word>una</word>
+<word>lista</word>
+<word>de</word>
+<word>todas</word>
+<word>las</word>
+<word>interfaces</word>
+<word>(por</word>
+<word>dirección</word>
+<word>MAC)</word>
+<word>y</word>
+<word>sus</word>
+<word>direcciones</word>
+<word>IPv4</word>
+<word>configuradas.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>la</word>
+<word>herramienta</word>
+<word>configura</word>
+<word>el</word>
+<word>sistema</word>
+<word>como</word>
+<word>lo</word>
+<word>haría</word>
+<word>para</word>
+<word>el</word>
+<word>entorno</word>
+<word>AWS.</word>
+<word>Es</word>
+<word>decir,</word>
+<word>utilizando</word>
+<word>enrutamiento</word>
+<word>por</word>
+<word>política</word>
+<word>basado</word>
+<word>en</word>
+<word>fuente</word>
+<word>con</word>
+<word>las</word>
+<word>tablas/reglas</word>
+<word>30200/30400.</word>
+</sentence>
+</section>
+<section class='Ss' id='Alibaba_Cloud_(Aliyun)'>
+<title>Alibaba Cloud (Aliyun)</title>
+<sentence>
+<word>Para</word>
+<word>Aliyun,</word>
+<word>las</word>
+<word>herramientas</word>
+<word>intentan</word>
+<word>obtener</word>
+<word>la</word>
+<word>configuración</word>
+<word>de</word>
+<word>http://100.100.100.200/</word>
+<word>Actualmente,</word>
+<word>solo</word>
+<word>configura</word>
+<word>IPv4</word>
+<word>y</word>
+<word>no</word>
+<word>hace</word>
+<word>nada</word>
+<word>con</word>
+<word>respecto</word>
+<word>a</word>
+<word>IPv6.</word>
+<word>Hará</word>
+<word>lo</word>
+<word>siguiente.</word>
+</sentence>
+<sentence>
+<word>Primero</word>
+<word>obtiene</word>
+<word>http://100.100.100.200/2016-01-01/meta-data/</word>
+<word>para</word>
+<word>determinar</word>
+<word>si</word>
+<word>la</word>
+<word>API</word>
+<word>esperada</word>
+<word>está</word>
+<word>presente.</word>
+<word>Esto</word>
+<word>determina</word>
+<word>si</word>
+<word>el</word>
+<word>entorno</word>
+<word>Aliyun</word>
+<word>se</word>
+<word>detecta</word>
+<word>y</word>
+<word>si</word>
+<word>se</word>
+<word>procede</word>
+<word>a</word>
+<word>configurar</word>
+<word>el</word>
+<word>host</word>
+<word>utilizando</word>
+<word>los</word>
+<word>metadatos</word>
+<word>de</word>
+<word>Aliyun.</word>
+</sentence>
+<sentence>
+<word>Obtiene</word>
+<word>http://100.100.100.200/2016-01-01/meta-data/network/interfaces/macs/</word>
+<word>para</word>
+<word>obtener</word>
+<word>la</word>
+<word>lista</word>
+<word>de</word>
+<word>interfaces</word>
+<word>disponibles.</word>
+<word>Las</word>
+<word>interfaces</word>
+<word>se</word>
+<word>identifican</word>
+<word>por</word>
+<word>su</word>
+<word>dirección</word>
+<word>MAC.</word>
+</sentence>
+<sentence>
+<word>Luego,</word>
+<word>para</word>
+<word>cada</word>
+<word>interfaz,</word>
+<word>obtiene</word>
+<word>http://100.100.100.200/2016-01-01/meta-data/</word>
+</sentence>
+</section>
+</section>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>nm-cloud-setup(8) — archlinux</title>
+        <link rel="stylesheet" href="/style.css">
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Nm">nm-cloud-setup - Cloud instance network setup utility</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OVERVIEW'><a class='permalink' href='#OVERVIEW'>OVERVIEW</a></h1>
+<p class="Pp">nm-cloud-setup is a daemon that is started by NetworkManager. It detects
+  whether the host is running in a cloud environment and configures the network
+  according to the cloud provider's specifications. It is primarily used for
+  configuring cloud-init enabled cloud instances.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USE'><a class='permalink' href='#USE'>USE</a></h1>
+<p class="Pp">This utility is usually not invoked directly. It is automatically
+  started by NetworkManager when a network interface is brought up. It checks
+  for cloud provider metadata and configures the network accordingly.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETAILS'><a class='permalink' href='#DETAILS'>DETAILS</a></h1>
+<p class="Pp">The utility runs when NetworkManager brings up a network interface. It
+  tries to detect the cloud provider by querying specific metadata URIs. Based on
+  the detected provider, it fetches network configuration details and applies
+  them to the system.</p>
+<p class="Pp">The following cloud providers are currently supported:</p>
+<section class="Ss">
+<h2 class="Ss" id='Amazon_Web_Services_(AWS)'><a class='permalink' href='#Amazon_Web_Services_(AWS)'>Amazon Web Services (AWS)</a></h2>
+<p class="Pp">For AWS, the tool tries to fetch configuration from
+  <a href='http://169.254.169.254/'>http://169.254.169.254/</a>. It currently only configures IPv4 and does nothing
+  about IPv6. It will do the following.</p>
+<div class="Bd-indent">&#x2022;First fetch
+  <a href='http://169.254.169.254/latest/meta-data/instance-id'>http://169.254.169.254/latest/meta-data/instance-id</a> to determine whether the AWS environment is detected and
+  whether to proceed to configure the host using AWS metadata.</p>
+</div>
+<div class="Bd-indent">&#x2022;Fetch network configuration for all interfaces
+  from
+  <a href='http://100.100.100.200/latest/meta-data/network/interfaces/macs/$MAC/vpc-cidr-block'>http://100.100.100.200/2016-01-01/meta-data/network/interfaces/macs/$MAC/vpc-cidr-block</a>,
+  <a href='http://100.100.100.200/latest/meta-data/network/interfaces/macs/$MAC/private-ipv4s'>http://100.100.100.200/2016-01-01/meta-data/network/interfaces/macs/$MAC/private-ipv4s</a>,
+  <a href='http://100.100.100.200/latest/meta-data/network/interfaces/macs/$MAC/netmask'>http://100.100.100.200/2016-01-01/meta-data/network/interfaces/macs/$MAC/netmask</a>
+  and
+  <a href='http://100.100.100.200/latest/meta-data/network/interfaces/macs/$MAC/gateway'>http://100.100.100.200/2016-01-01/meta-data/network/interfaces/macs/$MAC/gateway</a>.
+  Thereby we get a list of private IPv4 addresses, one CIDR subnet block and
+  private IPv4 addresses prefix.</div>
+<div class="Bd-indent">&#x2022;Then nm-cloud-setup iterates over all interfaces
+  for which it could fetch IP configuration. If no ethernet device for the
+  respective MAC address is found, it is skipped. Also, if the device is
+  currently not activated in NetworkManager or if the currently activated
+  profile has a user-data org.freedesktop.nm-cloud-setup.skip=yes, it is
+  skipped. Also, there is only one interface and one IP address, the tool does
+  nothing.
+<p class="Pp">Then the tool configures the system like doing for AWS
+    environment. That is, using source based policy routing with the
+    tables/rules 30200/30400. One difference to AWS is that the gateway is also
+    fetched via metadata instead of using the first IP address in the
+  subnet.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Oracle_Cloud_(OCI)'><a class='permalink' href='#Oracle_Cloud_(OCI)'>Oracle   Cloud (OCI)</a></h2>
+<p class="Pp">For OCI, the tools tries to fetch configuration from
+    <a href='http://169.254.169.254/'>http://169.254.169.254/</a>. Currently, it only configures IPv4 and does nothing
+    about IPv6. It will do the following.</p>
+<div class="Bd-indent">&#x2022;First fetch
+  <a href='http://169.254.169.254/opc/v2/instance'>http://169.254.169.254/opc/v2/instance</a> to determine whether the expected API
+  is present. This determines whether OCI environment is detected and whether to
+  proceed to configure the host using OCI meta data.</div>
+<div class="Bd-indent">&#x2022;Fetch <a href='http://169.254.169.254/opc/v2/vnics'>http://169.254.169.254/opc/v2/vnics</a> to get
+  the configuration for all the VNICs, getting their MAC address, private IP
+  address, gateway and subnet block.</div>
+<div class="Bd-indent">&#x2022;Then nm-cloud-setup iterates over all interfaces
+  for which it could fetch a configuration. If no ethernet device for the
+  respective MAC address is found, it is skipped. Also, if the device is
+  currently not activated in NetworkManager or if the currently activated
+  profile has a user-data org.freedesktop.nm-cloud-setup.skip=yes, it is
+  skipped. Also, there is only one interface and one IP address, the tool does
+  nothing.
+<p class="Pp">Then the tool configures the system like doing for AWS
+    environment. That is, using source based policy routing with the
+    tables/rules 30200/30400.</p>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE   ALSO</a></h1>
+<p class="Pp"><a href='/man/NetworkManager.8.en'>NetworkManager(8)</a> <a href='/man/nmcli.1.en'>nmcli(1)</a></p>
+</section>
+</section>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os">NetworkManager 1.54.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/nm-cloud-setup/">extra/nm-cloud-setup</a></dd>
+        <dt>Version:</dt>
+        <dd>1.54.2-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://networkmanager.dev/">https://networkmanager.dev/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>LGPL-2.1-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/nm-cloud-setup/">/listing/extra/nm-cloud-setup/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#OVERVIEW">OVERVIEW</a></li>
+        
+            <li><a href="#USE">USE</a></li>
+        
+            <li><a href="#DETAILS">DETAILS</a></li>
+        
+            <li><a href="#ENVIRONMENT_VARIABLES">ENVIRONMENT VARIABLES</a></li>
+        
+            <li><a href="#DEBUGGING">DEBUGGING</a></li>
+        
+            <li><a href="#EXAMPLE_SETUP_FOR_CONFIGURING_AND_PREDEPLOYING_NM-CLOUD-SETUP">EXAMPLE SETUP FOR CONFIGURING AND PREDEPLOYING NM-CLOUD-SETUP</a></li>
+        
+            <li><a href="#SUPPORTED_CLOUD_PROVIDERS">SUPPORTED CLOUD PROVIDERS</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/nm-cloud-setup.8.en.txt">txt</a>, 
+        
+            <a href="/man/nm-cloud-setup.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

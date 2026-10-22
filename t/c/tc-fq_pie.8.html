@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tc-fq_pie(8) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tc-fq_pie(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/iproute2/">iproute2</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">FQ-PIE(8)</td>
+    <td class="head-vol">Linux</td>
+    <td class="head-rtitle">FQ-PIE(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">FQ-PIE - Flow Queue Proportional Integral controller Enhanced (Cola de Flujo Controlada Proporcional Integral Mejorada)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>tc qdisc ... fq_pie</b> [ <b>limit</b> PAQUETES ] [ <b>flows</b>
+    NUMERO ]
+  <br/>
+   [ <b>target</b> TIEMPO ] [ <b>tupdate</b> TIEMPO ]
+  <br/>
+   [ <b>alpha</b> NUMERO ] [ <b>beta</b> NUMERO ]
+  <br/>
+   [ <b>quantum</b> BYTES ] [ <b>memory_limit</b> BYTES ]
+  <br/>
+   [ <b>ecn_prob</b> PORCENTAJE ] [ [<b>no</b>]<b>ecn</b> ]
+  <br/>
+   [ [<b>no</b>]<b>bytemode</b> ] [ [<b>no_</b>]<b>dq_rate_estimator</b> ]</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCION'><a class='permalink' href='#DESCRIPCION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">FQ-PIE (Flow Queuing with Proportional Integral controller
+    Enhanced) es una disciplina de cola que combina la Cola de Flujo (Flow Queuing)
+    con el esquema AQM (Active Queue Management) PIE. FQ-PIE utiliza una función
+    hash de Jenkins para clasificar los paquetes entrantes en diferentes flujos y
+    se usa para proporcionar una parte justa del ancho de banda a todos los
+    flujos que utilizan la qdisc. Cada uno de estos flujos es gestionado por el
+    algoritmo PIE.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ALGORITMO'><a class='permalink' href='#ALGORITMO'>ALGORITMO</a></h1>
+<p class="Pp">El algoritmo FQ-PIE consta de dos partes lógicas: el planificador (scheduler)
+    que selecciona de qué cola extraer un paquete, y el AQM PIE que opera en
+    cada una de las colas. La mayor parte del trabajo de FQ-PIE se encuentra en
+    la parte de planificación. La interacción entre el planificador y el algoritmo
+    PIE es directa.</p>
+<p class="Pp">Durante la etapa de encolamiento (enqueue), se utiliza un esquema
+    basado en hashing, donde los flujos se clasifican en un número de "cubetas"
+    (buckets), cada cubeta con su propia cola. El número de cubetas es
+    configurable y actualmente, en la implementación, tiene un valor predeterminado
+    de 1024. La clasificación de flujos se realiza sobre la tupla de 5 elementos
+    de las direcciones IP de origen y destino, los números de puerto y el número
+    de protocolo IP. Una vez que el paquete ha sido clasificado
+    correctamente en una cola, se entrega al algoritmo PIE para su encolamiento.
+    Luego se añade al final de la cola seleccionada, y el contador de bytes de
+    la cola se actualiza con el tamaño del paquete. Si la cola no está activa
+    actualmente (es decir, si no está ni en la lista de colas nuevas ni en la de
+    colas antiguas), se añade al final de la lista de colas nuevas, y su número
+    de créditos se inicia con el valor configurado de quantum. De lo contrario,
+    la cola permanece en su lista de colas actual.</p>
+<p class="Pp">Durante la etapa de desenacolamiento (dequeue), el planificador primero
+    examina la lista de colas nuevas; para la cola al principio de esa lista, si
+    esa cola tiene un número negativo de créditos (es decir, ya ha extraído al
+    menos un quantum de bytes), se le otorga un quantum adicional de créditos, la
+    cola se coloca al final de la lista de colas antiguas, y la rutina selecciona
+    la siguiente cola y comienza de nuevo. De lo contrario, esa cola se selecciona
+    nuevamente para su extracción. Si la lista de colas nuevas está vacía, el
+    planificador procede por la lista de colas antiguas de la misma manera
+    (comprobando los créditos, y ya sea seleccionando la cola para la extracción,
+    o añadiendo créditos y devolviendo la cola al final de la lista). Después de
+    haber seleccionado una cola de la que extraer un paquete, se invoca el
+    algoritmo PIE sobre esa cola.</p>
+<p class="Pp">Finalmente, si el algoritmo PIE no devuelve un paquete, entonces la
+    cola debe estar vacía y el planificador realiza una de dos cosas:</p>
+<p class="Pp">Si la cola seleccionada para la extracción provino de la lista de
+    colas nuevas, se mueve al final de la lista de colas antiguas. Si en cambio
+    provino de la lista de colas antiguas, esa cola se elimina de la lista, para
+    ser añadida de nuevo (como una cola nueva) la próxima vez que llegue un paquete
+    que se clasifique en esa cola. Luego (como no hubo un paquete disponible para
+    extraer), todo el proceso de extracción se reinicia desde el principio.</p>
+<p class="Pp">Si, en cambio, el planificador obtuvo un paquete del algoritmo PIE,
+    resta el tamaño del paquete de los créditos de bytes de la cola seleccionada y
+    devuelve el paquete como resultado de la operación de extracción.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PARAMETROS'><a class='permalink' href='#PARAMETROS'>PARÁMETROS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='limit'><a class='permalink' href='#limit'>limit</a></h2>
+<p class="Pp">Es el límite del tamaño de la cola en paquetes. Los paquetes entrantes
+    se descartan cuando se alcanza el límite. El valor predeterminado es 10240
+    paquetes.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='flows'><a class='permalink' href='#flows'>flows</a></h2>
+<p class="Pp">Es el número de flujos en los que se clasifican los paquetes entrantes.
+    Debido a la naturaleza estocástica del hashing, múltiples flujos pueden
+    terminar clasificándose en el mismo "slot". Los flujos más nuevos tienen
+    prioridad sobre los más antiguos. Este parámetro solo se puede establecer en
+    tiempo de carga, ya que se debe asignar memoria para la tabla hash. El valor
+    predeterminado es 1024.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='target'><a class='permalink' href='#target'>target</a></h2>
+<p class="Pp">Es el retardo de cola que el algoritmo PIE intenta mantener. El retardo
+    objetivo predeterminado es 15ms.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='tupdate'><a class='permalink' href='#tupdate'>tupdate</a></h2>
+<p class="Pp">Es el intervalo de tiempo en el que se calcula la probabilidad de
+    descarte del sistema. El valor predeterminado es 15ms.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='alpha'><a class='permalink' href='#alpha'>alpha</a></h2>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='beta'><a class='permalink' href='#beta'>beta</a></h2>
+<p class="Pp">alpha y beta son parámetros elegidos para controlar la probabilidad
+    de descarte. Deben estar en el rango entre 0 y 32.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='quantum'><a class='permalink' href='#quantum'>quantum</a></h2>
+<p class="Pp">quantum significa el número de bytes que pueden ser extraídos de una
+    cola antes de pasar a la siguiente cola en el esquema deficit round robin.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='memory_limit'><a class='permalink' href='#memory_limit'>memory_limit</a></h2>
+<p class="Pp">Es la memoria total máxima permitida para los paquetes de todos los
+    flujos. El valor predeterminado es 32Mb.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='ecn_prob'><a class='permalink' href='#ecn_prob'>ecn_prob</a></h2>
+<p class="Pp">Es el umbral de probabilidad de descarte por debajo del cual los
+    paquetes serán marcados con ECN en lugar de ser descartados. El valor
+    predeterminado es 10%. Configurar este parámetro requiere que <b>ecn</b> esté
+    habilitado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='[no]ecn'>[<b>no</b>]<b>ecn</b></h2>
+<p class="Pp">Tiene la misma semántica que <b>pie</b> y se puede usar para marcar
+    paquetes en lugar de descartarlos. Si <b>ecn</b> ha sido habilitado,
+    <b>noecn</b> se puede usar para desactivarlo y viceversa.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='[no]bytemode'>[<b>no</b>]<b>bytemode</b></h2>
+<p class="Pp">Se usa para escalar la probabilidad de descarte proporcionalmente al
+    tamaño del paquete. <b>bytemode</b> para activar el modo de bytes,
+    <b>nobytemode</b> para desactivarlo. Por defecto, <b>bytemode</b> está
+    desactivado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='[no_]dq_rate_estimator'>[<b>no_</b>]<b>dq_rate_estimator</b></h2>
+<p class="Pp"><b>dq_rate_estimator</b> se puede usar para calcular el retardo de
+    cola usando la Ley de Little, <b>no_dq_rate_estimator</b> se puede usar para
+    calcular el retardo de cola usando una marca de tiempo. Por defecto,
+    <b>dq_rate_estimator</b> está desactivado.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp"># tc qdisc add dev eth0 root fq_pie
+  <br/>
+  # tc -s qdisc show dev eth0
+  <br/>
+  qdisc fq_pie 8001: root refcnt 2 limit 10240p flows 1024 target 15.0ms tupdate
+    16.0ms alpha 2 beta 20 quantum 1514b memory_limit 32Mb ecn_prob 10
+  <br/>
+   Sent 159173586 bytes 105261 pkt (dropped 24, overlimits 0 requeues 0)
+  <br/>
+   backlog 75700b 50p requeues 0
+  <br/>
+   pkts_in 105311 overlimit 0 overmemory 0 dropped 24 ecn_mark 0
+  <br/>
+   new_flow_count 7332 new_flows_len 0 old_flows_len 4 memory_used 108800</p>
+<p class="Pp"># tc qdisc add dev eth0 root fq_pie dq_rate_estimator
+  <br/>
+  # tc -s qdisc show dev eth0
+  <br/>
+  qdisc fq_pie 8001: root refcnt 2 limit 10240p flows 1024 target 15.0ms tupdate
+    16.0ms alpha 2 beta 20 quantum 1514b memory_limit 32Mb ecn_prob 10
+    dq_rate_estimator
+  <br/>
+   Sent 8263620 bytes 5550 pkt (dropped 4, overlimits 0 requeues 0)
+  <br/>
+   backlog 805448b 532p requeues 0
+  <br/>
+   pkts_in 6082 overlimit 0 overmemory 0 dropped 4 ecn_mark 0
+  <br/>
+   new_flow_count 94 new_flows_len 0 old_flows_len 8 memory_used 1157632</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIEN'><a class='permalink' href='#VER_TAMBIEN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/tc.8.en'>tc(8)</a>, <a href='/man/tc-pie.8.en'>tc-pie(8)</a>, <a href='/man/tc-fq_codel.8.en'>tc-fq_codel(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FUENTES'><a class='permalink' href='#FUENTES'>FUENTES</a></h1>
+<p class="Pp">RFC 8033: <a href='https://tools.ietf.org/html/rfc8033'>https://tools.ietf.org/html/rfc8033</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp">FQ-PIE fue implementado por Mohit P. Tahiliani. Por favor, reporte
+    correcciones a la lista de correo de redes de Linux
+    &lt;netdev@vger.kernel.org&gt;.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">23 de enero de 2020</td>
+    <td class="foot-os">iproute2</td>
+  </tr>
+</table>
+
+</section>
+            </article>
+            <aside id="content-right">
+                <div id="sidebar">
+    <div class="widget">
+        <div class="widget-header">
+            <h3 class="widget-title">Páginas del manual</h3>
+        </div>
+        <div class="widget-content">
+            <ul class="links">
+                <li><a href="/man/tc.8.en">tc(8)</a></li>
+                <li><a href="/man/tc-pie.8.en">tc-pie(8)</a></li>
+                <li><a href="/man/tc-fq_codel.8.en">tc-fq_codel(8)</a></li>
+            </ul>
+        </div>
+    </div>
+</div>
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+</tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/iproute2/">core/iproute2</a></dd>
+        <dt>Versión:</dt>
+        <dd>6.18.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git">https://git.kernel.org/pub/scm/network/iproute2/iproute2.git</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/iproute2/">/listing/core/iproute2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ALGORITHM">ALGORITMO</a></li>
+        
+            <li><a href="#PARAMETERS">PARÁMETROS</a></li>
+        
+            <li><a href="#EXAMPLES">EJEMPLOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#SOURCES">FUENTES</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/tc-fq_pie.8.en.txt">txt</a>, 
+        
+            <a href="/man/tc-fq_pie.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

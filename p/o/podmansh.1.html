@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>podmansh(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">podmansh(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/podman/">podman</a></p>
+<p class="lic">Licencias: Apache-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">podmansh(1)</td>
+    <td class="head-vol">Manual de Comandos Generales</td>
+    <td class="head-rtitle">podmansh(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">podmansh - Ejecutar shell de inicio de sesión dentro del contenedor <b>podmansh</b> de Podman</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>podmansh</b></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Ejecuta un shell de usuario dentro de un contenedor cuando el usuario inicia sesión en el sistema. El contenedor al que se añaden los usuarios se puede definir a través de un archivo Quadlet de Podman. Este usuario solo tiene acceso a los volúmenes y capacidades configurados en el archivo Quadlet.</p>
+<p class="Pp">Los administradores pueden crear un Quadlet en
+    /etc/containers/systemd/users, que systemd iniciará para todos los usuarios cuando inicien sesión. El administrador puede crear un Quadlet específico con el nombre de contenedor <b>podmansh</b>, y luego permitir a los usuarios usar el shell de inicio de sesión /usr/bin/podmansh. Estos shells de inicio de sesión de usuario se ejecutan automáticamente dentro del contenedor <b>podmansh</b> a través de Podman.</p>
+<p class="Pp">Opcionalmente, el administrador puede colocar archivos Quadlet en el
+    directorio /etc/containers/systemd/users/${UID} para un usuario. Solo este UID
+    ejecutará estos servicios Quadlet cuando ese usuario inicie sesión.</p>
+<p class="Pp">El usuario está confinado al entorno del contenedor a través de todos los mecanismos de seguridad, incluido SELinux. La única información que estará disponible del sistema proviene de los volúmenes filtrados al contenedor.</p>
+<p class="Pp">Systemd creará automáticamente el contenedor cuando se inicie la sesión del usuario. Systemd detendrá el contenedor cuando se eliminen todas las conexiones a la sesión del usuario. Esto significa que los usuarios pueden iniciar sesión en el sistema varias veces, y cada sesión se conectará al mismo contenedor.</p>
+<p class="Pp">Los administradores pueden usar volúmenes para exponer datos específicos del host al usuario, sin que el usuario esté expuesto a otras partes del sistema.</p>
+<p class="Pp">El tiempo de espera para podmansh se puede establecer usando la opción <b>podmansh_timeout</b> en containers.conf.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Configuración'><a class='permalink' href='#Configuración'>Configuración</a></h1>
+<p class="Pp">Cree una sesión de inicio de sesión de usuario usando useradd mientras se ejecuta como root.</p>
+<pre># useradd -s /usr/bin/podmansh lockedu
+# grep lockedu /etc/passwd
+lockedu:x:4008:4008::/home/lockedu:/usr/bin/podmansh</pre>
+<p class="Pp">Cree un archivo Podman Quadlet que se parezca a uno de los siguientes.</p>
+<p class="Pp">Contenedor completamente bloqueado, sin acceso al sistema operativo host.</p>
+<pre># USERID=$(id -u lockedu)
+# mkdir -p /etc/containers/systemd/users/${USERID}
+# cat &gt; /etc/containers/systemd/users/${USERID}/podmansh.container &lt;&lt; _EOF
+[Unit]
+Description=The podmansh container
+After=local-fs.target
+[Container]
+Image=registry.fedoraproject.org/fedora
+ContainerName=podmansh
+UserNS=keep-id
+RunInit=yes
+DropCapability=all
+NoNewPrivileges=true
+Exec=sleep infinity
+[Install]
+RequiredBy=default.target
+_EOF</pre>
+<p class="Pp">Alternativamente, mientras se ejecuta como root, cree un Quadlet donde al usuario se le permite convertirse en root dentro del espacio de nombres de usuario. También pueden leer/escribir permanentemente contenido de su directorio de inicio, que se monta como volumen desde la cuenta de usuario real del host, en lugar de estar dentro del contenedor.</p>
+<pre># useradd -s /usr/bin/podmansh confinedu
+# grep confinedu /etc/passwd
+confinedu:x:4009:4009::/home/confinedu:/usr/bin/podmansh
+# USERID=$(id -u confinedu)
+# mkdir -p /etc/containers/systemd/users/${USERID}
+# cat &gt; /etc/containers/systemd/users/${USERID}/podmansh.container &lt;&lt; _EOF
+[Unit]
+Description=The podmansh container
+After=local-fs.target
+[Container]
+Image=registry.fedoraproject.org/fedora
+ContainerName=podmansh
+UserNS=keep-id
+RunInit=yes
+Volume=%h/data:%h:Z
+Exec=sleep infinity
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/data
+[Install]
+RequiredBy=default.target
+_EOF</pre>
+<p class="Pp">Otro ejemplo: mientras se ejecuta como root, cree un Quadlet donde a los usuarios dentro de este contenedor se les permite ejecutar contenedores con separación SELinux y pueden leer y escribir contenido en el directorio $HOME/data.</p>
+<pre># useradd -s /usr/bin/podmansh fullu
+# grep fullu /etc/passwd
+fullu:x:4010:4010::/home/fullu:/usr/bin/podmansh
+# USERID=$(id -u fullu)
+# mkdir -p /etc/containers/systemd/users/${USERID}
+# cat &gt; /etc/containers/systemd/users/${USERID}/podmansh.container &lt;&lt; _EOF
+[Unit]
+Description=The podmansh container
+After=local-fs.target
+[Container]
+Image=registry.fedoraproject.org/fedora
+ContainerName=podmansh
+UserNS=keep-id
+RunInit=yes
+PodmanArgs=--security-opt=unmask=/sys/fs/selinux   
+	--security-opt=label=nested   
+	--security-opt=label=user:container_user_u   
+	--security-opt=label=type:container_user_t   
+	--security-opt=label=role:container_user_r   
+	--security-opt=label=level:s0-s0:c0.c1023
+Volume=%h/data:%h:Z
+WorkingDir=%h
+Volume=/sys/fs/selinux:/sys/fs/selinux
+Exec=sleep infinity
+[Service]
+ExecStartPre=/usr/bin/mkdir -p %h/data
+[Install]
+RequiredBy=default.target
+_EOF</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/containers.conf.5.en'>containers.conf(5)</a>
+    <b>&#x27E8;containers.conf.5.md&#x27E9;</b>, <a href='/man/podman.1.en'>podman(1)</a>,
+    <a href='/man/podman-exec.1.en'>podman-exec(1)</a>, <a href='/man/podman-systemd.unit.5.en'>podman-systemd.unit(5)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORIA'><a class='permalink' href='#HISTORIA'>HISTORIA</a></h1>
+<p class="Pp">Mayo de 2023, Compilado originalmente por Dan Walsh dwalsh@redhat.com
+    &#x27E8;mailto:dwalsh@redhat.com&#x27E9;</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/podman/">extra/podman</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.7.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/containers/podman">https://github.com/containers/podman</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Apache-2.0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/podman/">/listing/extra/podman/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#Configuración">Configuración</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#HISTORIA">HISTORIA</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/podmansh.1.en.txt">txt</a>, 
+        
+            <a href="/man/podmansh.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

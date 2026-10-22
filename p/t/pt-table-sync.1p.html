@@ -1,0 +1,1603 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pt-table-sync(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pt-table-sync(1p)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/percona-toolkit/">percona-toolkit</a></p>
+<p class="lic">Licencias: GPL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PT-TABLE-SYNC(1p)</td>
+    <td class="head-vol">Documentación de Perl aportada por el usuario</td>
+    <td class="head-rtitle">PT-TABLE-SYNC(1p)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">pt-table-sync - Sincroniza datos de tablas MySQL de forma eficiente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp">Uso: pt-table-sync [OPCIONES] DSN [DSN]</p>
+<p class="Pp">pt-table-sync sincroniza datos de forma eficiente entre tablas
+    MySQL.</p>
+<p class="Pp">Esta herramienta modifica datos, por lo que para máxima seguridad,
+    debes hacer una copia de seguridad de tus datos antes de usarla. Al
+    sincronizar un servidor que es una réplica de replicación con los métodos
+    &quot;--replicate&quot; o &quot;--sync-to-source&quot;, <b>siempre</b>
+    realiza los cambios en el origen de replicación, <b>nunca</b> directamente
+    en la réplica de replicación. Esto es, en general, la única forma segura de
+    volver a sincronizar una réplica con su origen; los cambios en la réplica
+    son usualmente la causa de los problemas en primer lugar. Sin embargo, los
+    cambios que realiza en el origen deberían ser cambios no-op que establecen
+    los datos a sus valores actuales, y que en realidad solo afectan a la
+    réplica.</p>
+<p class="Pp">Sincroniza db.tbl en host1 con host2:</p>
+<pre>pt-table-sync --execute h=host1,D=db,t=tbl h=host2</pre>
+<p class="Pp">Sincroniza todas las tablas en host1 con host2 y host3:</p>
+<pre>pt-table-sync --execute host1 host2 host3</pre>
+<p class="Pp">Hace que replica1 tenga los mismos datos que su origen de
+    replicación:</p>
+<pre>pt-table-sync --execute --sync-to-source replica1</pre>
+<p class="Pp">Resuelve diferencias que pt-table-checksum encontró en todas las
+    réplicas de source1:</p>
+<pre>pt-table-sync --execute --replicate percona.checksum source1</pre>
+<p class="Pp">Igual que lo anterior, pero solo resuelve diferencias en
+    replica1:</p>
+<pre>pt-table-sync --execute --replicate percona.checksum \
+  --sync-to-source replica1</pre>
+<p class="Pp">Sincroniza source2 en una configuración de replicación origen-origen,
+    donde la copia de db.tbl de source2 se sabe o se sospecha que es
+    incorrecta:</p>
+<pre>pt-table-sync --execute --sync-to-source h=source2,D=db,t=tbl</pre>
+<p class="Pp">Ten en cuenta que en la configuración origen-origen, lo siguiente
+    NO hará lo que deseas, porque realizará cambios directamente en source2,
+    los cuales fluirán a través de la replicación y cambiarán los datos de
+    source1:</p>
+<pre># ¡No hagas esto en una configuración origen-origen!
+pt-table-sync --execute h=source1,D=db,t=tbl source2</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RIESGOS'><a class='permalink' href='#RIESGOS'>RIESGOS</a></h1>
+<p class="Pp"><b>ADVERTENCIA</b>: ¡pt-table-sync modifica datos! Antes de
+    utilizar esta herramienta, por favor:</p>
+<ul class="Bl-bullet">
+  <li>Lee la documentación de la herramienta</li>
+  <li>Revisa los &quot;BUGS&quot; conocidos de la herramienta</li>
+  <li>Prueba la herramienta en un servidor que no sea de producción</li>
+  <li>Haz una copia de seguridad de tu servidor de producción y verifica las
+        copias de seguridad.
+    <p class="Pp">pt-table-sync es madura, probada en el mundo real y bien
+        testeada, pero si se usa incorrectamente puede tener consecuencias
+        adversas. Siempre prueba la sincronización primero con
+        &quot;--dry-run&quot; y &quot;--print&quot;.</p>
+  </li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">pt-table-sync realiza sincronización unidireccional y bidireccional
+    de datos de tablas. <b>No</b> sincroniza estructuras de tablas, índices ni
+    ningún otro objeto de esquema. Lo siguiente describe la sincronización
+    unidireccional. La &quot;SINCRONIZACIÓN BIDIRECCIONAL&quot; se describe
+    más adelante.</p>
+<p class="Pp">Esta herramienta es compleja y funciona de varias maneras
+    diferentes. Para usarla de forma segura y eficaz, debes comprender tres
+    cosas: el propósito de &quot;--replicate&quot;, encontrar diferencias y
+    especificar hosts. Estos tres conceptos están estrechamente relacionados y
+    determinan cómo se ejecutará la herramienta. La siguiente es la lógica
+    abreviada:</p>
+<pre>si DSN tiene una parte t, sincroniza solo esa tabla:
+   si 1 DSN:
+      si --sync-to-source:
+         El DSN es una réplica. Conéctate a su origen y sincroniza.
+   si más de 1 DSN:
+      El primer DSN es el origen. Sincroniza cada DSN en su turno.
+sino si --replicate:
+   si --sync-to-source:
+      El DSN es una réplica. Conéctate a su origen, encuentra registros
+      de diferencias y corrígelos.
+   sino:
+      El DSN es el origen. Encuentra réplicas y conéctate a cada una,
+      encuentra registros de diferencias y corrígelos.
+sino:
+   si solo 1 DSN y --sync-to-source:
+      El DSN es una réplica. Conéctate a su origen, encuentra tablas y
+      filtra con --databases etc, y sincroniza cada tabla con el origen.
+   sino:
+      encuentra tablas, filtrando con --databases etc, y sincroniza cada
+      DSN con el primero.</pre>
+<p class="Pp">pt-table-sync puede ejecutarse de una de dos maneras: con
+    &quot;--replicate&quot; o sin él. El valor predeterminado es ejecutar sin
+    &quot;--replicate&quot;, lo que hace que pt-table-sync encuentre automáticamente
+    diferencias de forma eficiente con uno de varios algoritmos (ver
+    &quot;ALGORITMOS&quot;). Alternativamente, el valor de
+    &quot;--replicate&quot;, si se especifica, hace que pt-table-sync use las
+    diferencias ya encontradas al haber ejecutado previamente pt-table-checksum
+    con su propia opción <span class="Li">&quot;--replicate&quot;</span>. Estrictamente
+    hablando, no necesitas usar &quot;--replicate&quot; porque pt-table-sync
+    puede encontrar diferencias, pero muchas personas usan &quot;--replicate&quot;
+    si, por ejemplo, realizan checksums regularmente usando pt-table-checksum y
+    luego corrigen las diferencias según sea necesario con pt-table-sync. Si no
+    estás seguro, lee detenidamente la documentación de cada herramienta y decide
+    por ti mismo, o consulta con un experto.</p>
+<p class="Pp">Independientemente de si se usa &quot;--replicate&quot; o no,
+    necesitas especificar qué hosts sincronizar. Hay dos maneras: con
+    &quot;--sync-to-source&quot; o sin él. Especificar &quot;--sync-to-source&quot;
+    hace que pt-table-sync espere un y solo un DSN de réplica en la línea de
+    comandos. La herramienta descubrirá automáticamente el origen de la réplica
+    y la sincronizará para que sus datos sean iguales a los de su origen. Esto
+    se logra realizando cambios en el origen que luego fluyen a través de la
+    replicación y actualizan la réplica para resolver sus diferencias.
+    <b>Ten cuidado</b>: aunque esta opción especifica y sincroniza una sola
+    réplica, si hay otras réplicas en el mismo origen, recibirán a través de la
+    replicación los cambios destinados a la réplica que estás intentando
+    sincronizar.</p>
+<p class="Pp">Alternativamente, si no especificas &quot;--sync-to-source&quot;,
+    el primer DSN proporcionado en la línea de comandos es el host de origen.
+    Solo hay un host de origen. Si tampoco especificas &quot;--replicate&quot;,
+    entonces debes especificar al menos otro DSN como host de destino. Puede
+    haber uno o más hosts de destino. Los hosts de origen y destino deben ser
+    independientes; no pueden estar en la misma topología de replicación.
+    pt-table-sync morirá con un error si detecta que un host de destino es una
+    réplica porque los cambios se escriben directamente en los hosts de destino
+    (y no es seguro escribir directamente en las réplicas). O, si especificas
+    &quot;--replicate&quot; (pero no &quot;--sync-to-source&quot;) entonces
+    pt-table-sync espera uno y solo un DSN de origen en la línea de comandos.
+    La herramienta descubrirá automáticamente todas las réplicas del origen y
+    las sincronizará con el origen. Esta es la única forma de sincronizar
+    varias (todas) réplicas a la vez (porque &quot;--sync-to-source&quot; solo
+    especifica una réplica).</p>
+<p class="Pp">Cada host en la línea de comandos se especifica como un DSN. El
+    primer DSN (o el único DSN para casos como &quot;--sync-to-source&quot;)
+    proporciona valores predeterminados para otros DSNs, ya sea que esos otros
+    DSNs estén especificados en la línea de comandos o sean descubiertos
+    automáticamente por la herramienta. Así que en este ejemplo,</p>
+<pre>pt-table-sync --execute h=host1,u=msandbox,p=msandbox h=host2</pre>
+<p class="Pp">el DSN host2 hereda las partes DSN <span class="Li">&quot;u&quot;</span>
+    y <span class="Li">&quot;p&quot;</span> del DSN host1. Usa la opción
+    &quot;--explain-hosts&quot; para ver cómo pt-table-sync interpretará los DSNs
+    dados en la línea de comandos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LIMITACIONES'><a class='permalink' href='#LIMITACIONES'>LIMITACIONES</a></h1>
+<dl class="Bl-tag">
+  <dt id="Replicas"><a class="permalink" href="#Replicas">Réplicas usando
+    replicación basada en filas</a></dt>
+  <dd>pt-table-sync requiere replicación basada en sentencias cuando se usa con
+      la opción &quot;--sync-to-source&quot; o &quot;--replicate&quot;. Por
+      lo tanto, establecerá <span class="Li">&quot;binlog_format=STATEMENT&quot;</span>
+      en el origen para su sesión si es necesario. Para hacer esto, el usuario
+      debe tener el privilegio <span class="Li">&quot;SUPER&quot;</span>.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SALIDA'><a class='permalink' href='#SALIDA'>SALIDA</a></h1>
+<p class="Pp">Si especificas la opción &quot;--verbose&quot;, verás
+    información sobre las diferencias entre las tablas. Hay una fila por tabla.
+    Cada servidor se imprime por separado. Por ejemplo,</p>
+<pre># Sincronizando h=host1,D=test,t=test1
+# BORRAR REEMPLAZAR INSERTAR ACTUALIZAR ALGORITMO INICIO    FIN      SALIDA BASE_DATOS.TABLA
+#      0       0      3      0 Fragmento 13:00:00 13:00:17 2    test.test1</pre>
+<p class="Pp">La tabla test.test1 en host1 requirió 3 sentencias
+    <span class="Li">&quot;INSERT&quot;</span> para sincronizarse y utilizó el
+    algoritmo Fragmento (ver &quot;ALGORITMOS&quot;). La operación de sincronización
+    para esta tabla comenzó a las 13:00:00 y terminó 17 segundos después (tiempos
+    tomados de <span class="Li">NOW()</span> en el host de origen). Debido a que
+    se encontraron diferencias, su &quot;ESTADO DE SALIDA&quot; fue 2.</p>
+<p class="Pp">Si especificas la opción &quot;--print&quot;, verás las
+    sentencias SQL reales</p>
+</div>
+</section>
+
+            </article>
+        </main>
+    </body>
+</html>
+que el script usa para sincronizar la tabla si
+    también se especifica "--execute".</p>
+<p class="Pp">Si quieres ver las sentencias SQL que pt-table-sync está utilizando
+    para seleccionar fragmentos, pedacitos, filas, etc., entonces especifica
+    "--print" una vez y "--verbose" dos veces. Ten cuidado, sin embargo: esto puede
+    imprimir muchas sentencias SQL.</p>
+<p class="Pp">Hay casos en los que ninguna combinación de sentencias
+    <span class="Li">&quot;INSERT&quot;</span>,
+    <span class="Li">&quot;UPDATE&quot;</span> o
+    <span class="Li">&quot;DELETE&quot;</span> puede resolver diferencias sin
+    violar alguna clave única. Por ejemplo, supongamos que hay una clave primaria
+    en la columna a y una clave única en la columna b. Entonces no hay forma de
+    sincronizar estas dos tablas con sentencias UPDATE directas:</p>
+<pre>+---+---+  +---+---+
+| a | b |  | a | b |
++---+---+  +---+---+
+| 1 | 2 |  | 1 | 1 |
+| 2 | 1 |  | 2 | 2 |
++---+---+  +---+---+</pre>
+<p class="Pp">La herramienta reescribe las consultas a
+    <span class="Li">&quot;DELETE&quot;</span> y
+    <span class="Li">&quot;REPLACE&quot;</span> en este caso. Esto se maneja
+    automáticamente después de la primera violación de índice, por lo que no
+    tienes que preocuparte por ello.</p>
+<p class="Pp">Ten cuidado al usar pt-table-sync en cualquier configuración de
+    fuente-fuente. La replicación de fuente-fuente es intrínsecamente complicada
+    y es fácil cometer errores. Debes asegurarte de que estás utilizando la
+    herramienta correctamente para la replicación de fuente-fuente. Consulta el
+    "SYNOPSIS" para ver la descripción general del uso correcto.</p>
+<p class="Pp">También ten cuidado con las tablas que tienen restricciones de
+    clave externa con definiciones <span class="Li">&quot;ON DELETE&quot;</span>
+    o <span class="Li">&quot;ON UPDATE&quot;</span> porque estas podrían causar
+    cambios no intencionados en las tablas hijas. Consulta
+    "--[no]check-child-tables".</p>
+<p class="Pp">En general, esta herramienta es más adecuada cuando tus tablas
+    tienen una clave primaria o un índice único. Aunque puede sincronizar datos
+    en tablas que carecen de clave primaria o índice único, podría ser mejor
+    sincronizar esos datos por otros medios.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEGURIDAD_DE_REPLICACION'><a class='permalink' href='#SEGURIDAD_DE_REPLICACION'>SEGURIDAD DE   REPLICACIÓN</a></h1>
+<p class="Pp">Sincronizar una fuente de replicación y una réplica de forma segura
+    es un problema no trivial, en general. Hay todo tipo de problemas a tener en
+    cuenta, como otros procesos que cambian datos, intentar cambiar datos en la
+    réplica, si el destino y la fuente son un par fuente-fuente, y mucho más.</p>
+<p class="Pp">En general, la forma segura de hacerlo es cambiar los datos en la
+    fuente y dejar que los cambios fluyan a través de la replicación a la réplica
+    como cualquier otro cambio. Sin embargo, esto solo funciona si es posible
+    ejecutar REPLACE en la tabla de la fuente. REPLACE solo funciona si hay un
+    índice único en la tabla (de lo contrario, actúa como un INSERT ordinario).</p>
+<p class="Pp">Si tu tabla tiene claves únicas, deberías usar las opciones
+    "--sync-to-source" y/o "--replicate" para sincronizar una réplica con su
+    fuente. Esto generalmente hará lo correcto. Cuando no hay una clave única en
+    la tabla, no hay otra opción que cambiar los datos en la réplica, y
+    pt-table-sync detectará que estás intentando hacerlo. Se quejará y fallará a
+    menos que especifiques
+    <span class="Li">&quot;--no-check-replica&quot;</span> (ver
+    "--[no]check-replica").</p>
+<p class="Pp">Si estás sincronizando una tabla sin clave primaria o única en un par
+    fuente-fuente, debes cambiar los datos en el servidor de destino. Por lo
+    tanto, necesitas especificar
+    <span class="Li">&quot;--no-bin-log&quot;</span> por seguridad (ver
+    "--[no]bin-log"). Si no lo haces, los cambios que hagas en el servidor de
+    destino se replicarán al servidor fuente y cambiarán los datos allí.</p>
+<p class="Pp">Lo generalmente seguro que se puede hacer en un par fuente-fuente es
+    usar la opción "--sync-to-source" para no cambiar los datos en el servidor de
+    destino. También necesitarás especificar
+    <span class="Li">&quot;--no-check-replica&quot;</span> para evitar que
+    pt-table-sync se queje de que está cambiando datos en una réplica.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ALGORITMOS'><a class='permalink' href='#ALGORITMOS'>ALGORITMOS</a></h1>
+<p class="Pp">pt-table-sync tiene un framework genérico de sincronización de datos
+    que utiliza diferentes algoritmos para encontrar diferencias. La herramienta
+    elige automáticamente el mejor algoritmo para cada tabla según los índices,
+    tipos de columna y las preferencias de algoritmo especificadas por
+    "--algorithms". Los siguientes algoritmos están disponibles, listados en su
+    orden de preferencia por defecto:</p>
+<dl class="Bl-tag">
+  <dt id="Chunk"><a class="permalink" href="#Chunk">Chunk</a></dt>
+  <dd>Encuentra un índice cuya primera columna sea numérica (incluyendo tipos de
+      fecha y hora), y divide el rango de valores de la columna en fragmentos de
+      aproximadamente "--chunk-size" filas. Sincroniza un fragmento a la vez
+      haciendo checksum de todo el fragmento. Si el fragmento difiere en la fuente
+      y el destino, hace checksum de las filas de cada fragmento individualmente
+      para encontrar las filas que difieren.
+    <p class="Pp">Es eficiente cuando la columna tiene suficiente cardinalidad para
+        que los fragmentos tengan el tamaño adecuado.</p>
+    <p class="Pp">El checksum inicial por fragmento es bastante pequeño y resulta
+        en un tráfico de red y consumo de memoria mínimos. Si las filas de un
+        fragmento deben ser examinadas, solo las columnas de clave primaria y un
+        checksum se envían a través de la red, no la fila completa. Si se encuentra
+        que una fila es diferente, se recuperará la fila completa, pero no antes.</p>
+    <p class="Pp">Ten en cuenta que este algoritmo no funcionará si se fragmenta
+        una columna char donde todos los valores comienzan con el mismo carácter.
+        En ese caso, la herramienta fallará y sugerirá elegir un algoritmo
+        diferente.</p>
+  </dd>
+  <dt id="Nibble"><a class="permalink" href="#Nibble">Nibble</a></dt>
+  <dd>Encuentra un índice y asciende el índice en pedacitos de tamaño fijo de
+      "--chunk-size" filas, utilizando un algoritmo que no retrocede (ver
+      pt-archiver para más información sobre este algoritmo). Es muy similar a
+      "Chunk", pero en lugar de precalcular los límites de cada pieza de la tabla
+      basándose en la cardinalidad del índice, utiliza
+      <span class="Li">&quot;LIMIT&quot;</span> para definir el límite superior
+      de cada pedacito, y el límite superior del pedacito anterior para definir el
+      límite inferior.
+    <p class="Pp">Funciona en pasos: una consulta encuentra la fila que definirá el
+        límite superior del siguiente pedacito, y la siguiente consulta hace
+        checksum de todo el pedacito. Si el pedacito difiere entre la fuente y el
+        destino, lo examina fila por fila, al igual que lo hace "Chunk".</p>
+  </dd>
+  <dt id="GroupBy"><a class="permalink" href="#GroupBy">GroupBy</a></dt>
+  <dd>Selecciona toda la tabla agrupada por todas las columnas, con una columna
+      COUNT(*) añadida. Compara todas las columnas, y si son iguales, compara el
+      valor de la columna COUNT(*) para determinar cuántas filas insertar o
+      eliminar en el destino. Funciona en tablas sin clave primaria o índice
+      único.</dd>
+  <dt id="Stream"><a class="permalink" href="#Stream">Stream</a></dt>
+  <dd>Selecciona toda la tabla en un único flujo grande y compara todas las
+      columnas. Selecciona todas las columnas. Mucho menos eficiente que los otros
+      algoritmos, pero funciona cuando no hay un índice adecuado para que lo
+      usen.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINCRONIZACION_BIDIRECCIONAL'><a class='permalink' href='#SINCRONIZACION_BIDIRECCIONAL'>SINCRONIZACIÓN   BIDIRECCIONAL</a></h1>
+<p class="Pp">La sincronización bidireccional es una característica experimental. Para
+    que funcione de manera fiable existen una serie de limitaciones estrictas:</p>
+<pre>* solo funciona al sincronizar un servidor con otros servidores independientes
+* no funciona de ninguna manera con la replicación
+* requiere que la(s) tabla(s) sean fragmentables con el algoritmo Chunk
+* no es N-vías, solo bidireccional entre dos servidores a la vez
+* no maneja cambios DELETE</pre>
+<p class="Pp">Por ejemplo, supongamos que tenemos tres servidores: c1, r1, r2. c1 es
+    el servidor central, una pseudo-fuente para los otros servidores (es decir,
+    r1 y r2 no son réplicas de c1). r1 y r2 son servidores remotos. Las filas en la
+    tabla foo se actualizan e insertan en los tres servidores y queremos
+    sincronizar todos los cambios entre todos los servidores. La tabla foo tiene
+    columnas:</p>
+<pre>id    int PRIMARY KEY
+ts    timestamp auto updated
+name  varchar</pre>
+<p class="Pp">Se utilizan compensaciones de auto-incremento para que las nuevas filas
+    de cualquier servidor no creen valores de clave primaria (id) conflictivos.
+    En general, las filas más nuevas, según lo determinado por la columna ts,
+    tienen prioridad cuando se encuentra una fila idéntica pero diferente durante
+    la sincronización bidireccional. "Idéntica pero diferente" significa que dos
+    filas tienen el mismo valor de clave primaria (id) pero valores diferentes
+    para alguna otra columna, como la columna name en este ejemplo. Los conflictos
+    de "idéntica pero diferente" se resuelven mediante un "conflicto". Un
+    conflicto compara alguna columna de las filas competidoras para determinar un
+    "ganador". La fila ganadora se convierte en la fuente y sus valores se usan
+    para actualizar la otra fila.</p>
+<p class="Pp">Hay diferencias sutiles entre tres columnas utilizadas para lograr la
+    sincronización bidireccional con las que deberías estar familiarizado: columna
+    de fragmento ("--chunk-column"), columna(s) de comparación ("--columns") y
+    columna de conflicto ("--conflict-column"). La columna de fragmento solo se
+    usa para fragmentar la tabla; por ejemplo, "WHERE id >= 5 AND id < 10". Los
+    fragmentos se someten a checksum y cuando los checksums de fragmento revelan
+    una diferencia, la herramienta selecciona las filas de ese fragmento y hace
+    checksum de las "--columns" para cada fila. Si el checksum de una columna
+    difiere, las filas tienen uno o más valores de columna en conflicto. En una
+    sincronización unidireccional tradicional, el conflicto es irrelevante porque
+    se puede resolver simplemente actualizando toda la fila de destino con los
+    valores de la fila de origen. Sin embargo, en una sincronización bidireccional,
+    la "--conflict-column" (de acuerdo con otras opciones
+    <span class="Li">&quot;--conflict-*&quot;</span> listadas a continuación) se
+    compara para determinar qué fila es "correcta" o "autorizada"; esta fila se
+    convierte en la "fuente".</p>
+<p class="Pp">Para sincronizar completamente los tres servidores, se requieren dos
+    ejecuciones de pt-table-sync. La primera ejecución sincroniza c1 y r1, luego
+    sincroniza c1 y r2 incluyendo cualquier cambio de r1. En este punto, c1 y r2
+    están completamente sincronizados, pero r1 carece de cualquier cambio de r2
+    porque c1 no tenía estos cambios cuando se sincronizaron él y r1. Por lo tanto,
+    se necesita una segunda ejecución que sincronice los servidores en el mismo
+    orden, pero esta vez cuando se sincronizan c1 y r1, r1 recibe los cambios de
+    r2.</p>
+<p class="Pp">La herramienta no sincroniza N-vías, solo bidireccionalmente entre el
+    primer DSN dado en la línea de comandos y cada DSN subsiguiente en orden.
+    Así que la herramienta en este ejemplo se ejecutaría dos veces así:</p>
+<pre>pt-table-sync --bidirectional h=c1 h=r1 h=r2</pre>
+<p class="Pp">La opción "--bidirectional" habilita esta característica y causa que
+    se realicen varias comprobaciones de cordura. Debes especificar otras opciones
+    que le digan a pt-table-sync cómo resolver conflictos para filas idénticas pero
+    diferentes. Estas opciones son:</p>
+<pre>* --conflict-column
+* --conflict-comparison
+* --conflict-value
+* --conflict-threshold
+* --conflict-error  (opcional)</pre>
+<p class="Pp">Usa "--print" para probar esta opción antes de "--execute". Las
+    sentencias SQL impresas tendrán comentarios que indican en qué host se
+    ejecutaría la sentencia si usaras "--execute".</p>
+<p class="Pp">Nota técnica: el primer DSN es siempre el servidor de la "izquierda" y
+    los otros DSNs son siempre el servidor de la "derecha". Dado que eit</p><section class="Sh">
+<h1 class="Sh" id="SYNTAX"><a class="permalink" href="#SYNTAX">SYNTAX</a></h1>
+<pre class="Nm">pt-table-sync [OPTIONS] [DSN1] [DSN2]</pre>
+<p class="Pp">or</p>
+<pre class="Nm">pt-table-sync [OPTIONS] --source DSN --[no]examine-source [DSN]</pre>
+<p class="Pp">or</p>
+<pre class="Nm">pt-table-sync [OPTIONS] --replica DSN --[no]examine-replica [DSN]</pre>
+<p class="Pp">or</p>
+<pre class="Nm">pt-table-sync [OPTIONS] --source DSN --replica DSN</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp">Percona Toolkit's <span class="Nm">pt-table-sync</span> is a
+    Perl script that synchronizes tables between MySQL servers. It compares tables
+    and generates SQL to make the destination tables identical to the source
+    tables. The script can either print the SQL to STDOUT, or execute it directly
+    against the destination server.</p>
+<p class="Pp">The script can compare tables and find differences in a variety of
+    ways, from simple row-by-row comparisons to more advanced algorithms designed
+    to minimize server load and lock times. It can also handle large tables by
+    breaking them down into smaller chunks.</p>
+<p class="Pp">The script supports various options for controlling the comparison
+    process, including specifying which columns to compare, how to chunk tables,
+    and how to handle conflicts in bidirectional synchronization.</p>
+<p class="Pp">It's important to note that the terms "source" and "destination"
+    can sometimes be confusing, especially when dealing with replication setups or
+    when a server acts as both a source and a destination. Therefore, the script
+    often uses the generic terms "left" and "right" to refer to the servers involved
+    in a comparison. The "left" server is typically the first DSN specified on the
+    command line, and the "right" server is the subsequent one.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXIT_STATUS"><a class="permalink" href="#EXIT_STATUS">EXIT STATUS</a></h1>
+<p class="Pp">The following are the exit statuses (also called return values, or
+    return codes) when <span class="Nm">pt-table-sync</span> finishes and exits.</p>
+<pre>STATUS  MEANING
+======  =======================================================
+0       Success.
+1       Internal error.
+2       At least one table differed on the destination.
+3       Combination of 1 and 2.</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h1>
+<p class="Pp">Specify at least one of "--print", "--execute", or "--dry-run".</p>
+<p class="Pp">"--where" and "--replicate" are mutually exclusive.</p>
+<p class="Pp">This tool accepts additional command-line arguments. Refer to the
+    "SYNOPSIS" and usage information for details.</p>
+<dl class="Bl-tag">
+  <dt id="algorithms"><a class="permalink" href="#algorithms">--algorithms</a></dt>
+  <dd>type: string; default: Chunk,Nibble,GroupBy,Stream
+    <p class="Pp">Algorithm to use when comparing the tables, in order of
+        preference.</p>
+    <p class="Pp">For each table, <span class="Nm">pt-table-sync</span> will check if the table can be
+        synced with the given algorithms in the order that they're given. The
+        first algorithm that can sync the table is used. See
+        "ALGORITHMS".</p>
+  </dd>
+  <dt id="ask"><a class="permalink" href="#ask">--ask-pass</a></dt>
+  <dd>Prompt for a password when connecting to MySQL.</dd>
+  <dt id="bidirectional"><a class="permalink" href="#bidirectional">--bidirectional</a></dt>
+  <dd>Enable bidirectional sync between first and subsequent hosts.
+    <p class="Pp">See "BIDIRECTIONAL SYNCING" for more
+        information.</p>
+  </dd>
+  <dt>--[no]bin-log</dt>
+  <dd>default: yes
+    <p class="Pp">Log to the binary log (<span class="Li">"SET
+        SQL_LOG_BIN=1"</span>).</p>
+    <p class="Pp">Specifying <span class="Li">"--no-bin-log"</span>
+        will <span class="Li">"SET SQL_LOG_BIN=0"</span>.</p>
+  </dd>
+  <dt id="buffer"><a class="permalink" href="#buffer">--buffer-in-mysql</a></dt>
+  <dd>Instruct MySQL to buffer queries in its memory.
+    <p class="Pp">This option adds the
+        <span class="Li">"SQL_BUFFER_RESULT"</span> option to the
+        comparison queries. This causes MySQL to execute the queries and place
+        them in a temporary table internally before sending the results back to
+        <span class="Nm">pt-table-sync</span>. The advantage of this strategy is that <span class="Nm">pt-table-sync</span> can
+        fetch rows as desired without using a lot of memory inside the Perl
+        process, while releasing locks on the MySQL table (to reduce contention
+        with other queries). The disadvantage is that it uses more memory on the
+        MySQL server instead.</p>
+    <p class="Pp">You probably want to leave "--[no]buffer-to-client"
+        enabled too, because buffering into a temp table and then fetching it
+        all into Perl's memory is probably a silly thing to do. This option is
+        most useful for the GroupBy and Stream algorithms, which may fetch a lot
+        of data from the server.</p>
+  </dd>
+  <dt>--[no]buffer-to-client</dt>
+  <dd>default: yes
+    <p class="Pp">Fetch rows one-by-one from MySQL while comparing.</p>
+    <p class="Pp">This option enables
+        <span class="Li">"mysql_use_result"</span> which causes MySQL
+        to hold the selected rows on the server until the tool fetches them.
+        This allows the tool to use less memory but may keep the rows locked on
+        the server longer.</p>
+    <p class="Pp">If this option is disabled by specifying
+        <span class="Li">"--no-buffer-to-client"</span> then
+        <span class="Li">"mysql_store_result"</span> is used which
+        causes MySQL to send all selected rows to the tool at once. This may
+        result in the results "cursor" being held open for a shorter time on the
+        server, but if the tables are large, it could take a long time anyway,
+        and use all your memory.</p>
+    <p class="Pp">For most non-trivial data sizes, you want to leave this option
+        enabled.</p>
+    <p class="Pp">This option is disabled when "--bidirectional" is
+        used.</p>
+  </dd>
+  <dt id="channel"><a class="permalink" href="#channel">--channel</a></dt>
+  <dd>type: string
+    <p class="Pp">Channel name used when connected to a server using replication
+        channels. Suppose you have two sources, source_a at port 12345, source_b
+        at port 1236 and a replica connected to both sources using channels
+        chan_source_a and chan_source_b. If you want to run <span class="Nm">pt-table-sync</span> to
+        synchronize the replica against source_a, <span class="Nm">pt-table-sync</span> won't be able
+        to determine what's the correct source since SHOW REPLICA STATUS will
+        return 2 rows. In this case, you can use --channel=chan_source_a to
+        specify the channel name to use in the SHOW REPLICA STATUS command.</p>
+  </dd>
+  <dt id="charset"><a class="permalink" href="#charset">--charset</a></dt>
+  <dd>short form: -A; type: string
+    <p class="Pp">Default character set. If the value is utf8, sets Perl's
+        binmode on STDOUT to utf8, passes the mysql_enable_utf8 option to
+        DBD::mysql, and runs SET NAMES UTF8 after connecting to MySQL. Any other
+        value sets binmode on STDOUT without the utf8 layer, and runs SET NAMES
+        after connecting to MySQL.</p>
+  </dd>
+  <dt>--[no]check-child-tables</dt>
+  <dd>default: yes
+    <p class="Pp">Check if "--execute" will adversely affect child
+        tables. When "--replace", "--replicate", or
+        "--sync-to-source" is specified, the tool may sync tables
+        using <span class="Li">"REPLACE"</span> statements. If a table
+        being synced has child tables with <span class="Li">"ON DELETE
+        CASCADE"</span>, <span class="Li">"ON UPDATE
+        CASCADE"</span>, or <span class="Li">"ON UPDATE SET
+        NULL"</span>, the tool prints an error and skips the table because
+        <span class="Li">"REPLACE"</span> becomes
+        <span class="Li">"DELETE"</span> then
+        <span class="Li">"INSERT"</span>, so the
+        <span class="Li">"DELETE"</span> will cascade to the child
+        table and delete its rows. In the worst case, this can delete all rows
+        in child tables!</p>
+    <p class="Pp">Specify
+        <span class="Li">"--no-check-child-tables"</span> to disable
+        this check. To completely avoid affecting child tables, also specify
+        <span class="Li">"--no-foreign-key-checks"</span> so MySQL
+        will not cascade any operations from the parent to child tables.</p>
+    <p class="Pp">This check is only preformed if "--execute" and one
+        of "--replace", "--replicate", or
+        "--sync-to-source" is specified. "--print" does not
+        check child tables.</p>
+    <p class="Pp">The error message only prints the first child table found with
+        an <span class="Li">"ON DELETE CASCADE"</span>,
+        <span class="Li">"ON UPDATE CASCADE"</span>, or
+        <span class="Li">"ON UPDATE SET NULL"</span> foreign key
+        constraint. There could be other affected child tables.</p>
+  </dd>
+  <dt>--[no]check-master</dt>
+  <dd>default: yes
+    <p class="Pp">This option is deprecated and will be removed in future
+        releases. Use "--[no]check-source" instead.</p>
+  </dd>
+  <dt>--[no]check-slave</dt>
+  <dd>This option is deprecated and will be removed in future releases. Use
+      "--[no]check-replica" instead.
+    <p class="Pp">default: yes</p>
+  </dd>
+  <dt>--[no]check-source</dt>
+  <dd>default: yes
+    <p class="Pp">With "--sync-to-source", try to verify that the
+        detected source is the real source.</p>
+  </dd>
+  <dt>--[no]check-replica</dt>
+  <dd>default: yes
+    <p class="Pp">Check whether the destination server is a replica.</p>
+    <p class="Pp">If the destination server is a replica, it's generally unsafe
+        to make changes on it. However, sometimes you have to;
+        "--replace" won't work unless there's a unique index, for
+        example, so you can't make changes on the source in that scenario. By
+        default <span class="Nm">pt-table-sync</span> will complain if you try to change data on a
+        replica. Specify <span class="Li">"--no-check-replica"</span>
+        to disable this check. Use it at your own risk.</p>
+  </dd>
+  <dt>--[no]check-triggers</dt>
+  <dd>default: yes
+    <p class="Pp">Check that no triggers are defined on the destination
+        table.</p>
+    <p class="Pp">Triggers were introduced in MySQL v5.0.2, so for older
+        versions this option has no effect because triggers will not be
+      checked.</p>
+  </dd>
+  <dt id="chunk"><a class="permalink" href="#chunk">--chunk-column</a></dt>
+  <dd>type: string
+    <p class="Pp">Chunk the table on this column.</p>
+  </dd>
+  <dt id="chunk~2"><a class="permalink" href="#chunk~2">--chunk-index</a></dt>
+  <dd>type: string
+    <p class="Pp">Chunk the table using this index.</p>
+  </dd>
+  <dt id="chunk~3"><a class="permalink" href="#chunk~3">--chunk-size</a></dt>
+  <dd>type: string; default: 1000
+    <p class="Pp">Number of rows or data size per chunk.</p>
+    <p class="Pp">The size of each chunk of rows for the "Chunk" and
+        "Nibble" algorithms. The size can be either a number of rows,
+        or a data size. Data sizes are specified with a suffix of k=kibibytes,
+        M=mebibytes, G=gibibytes. Data sizes are converted to a number of rows
+        by dividing by the average row length.</p>
+  </dd>
+  <dt id="columns"><a class="permalink" href="#columns">--columns</a></dt>
+  <dd>short form: -c; type: array
+    <p class="Pp">Compare this comma-separated list of columns.</p>
+  </dd>
+  <dt id="config"><a class="permalink" href="#config">--config</a></dt>
+  <dd>type: Array
+    <p class="Pp">Read this comma-separated list of config files; if specified,
+        this must be the first option on the command line.</p>
+  </dd>
+  <dt id="conflict"><a class="permalink" href="#conflict">--conflict-column</a></dt>
+  <dd>type: string
+    <p class="Pp">Compare this column when rows conflict during a
+        "--bidirectional" sync.</p>
+    <p class="Pp">When a same but differing row is found the value of this
+        column from each row is compared according to
+        "--conflict-comparison", "--conflict-value" and
+        "--conflict-threshold" to determine which row has the correct
+        data and becomes the source. The column can be any type for which there
+        is an appropriate "--conflict-comparison" (this is almost all
+        types except, for example, blobs).</p>
+    <p class="Pp">This option only works with "--bidirectional". See
+        "BIDIRECTIONAL SYNCING" for more information.</p>
+  </dd>
+  <dt id="conflict~2"><a class="permalink" href="#conflict~2">--conflict-comparison</a></dt>
+  <dd>type: string
+    <p class="Pp">Choose the "--conflict-column" with this property as
+        the source.</p>
+    <p class="Pp">The option affects how the "--conflict-column"
+        values from the conflicting rows are compared. Possible comparisons are
+        one of these MAGIC_comparisons:</p>
+        <pre>newest|oldest|greatest|least|equals|matches
+COMPARIS</pre>
+    <p class="Pp">This option only works with "--bidirectional". See
+        "BIDIRECTIONAL SYNCING" for more information.</p>
+  </dd>
+  <dt id="conflict~3"><a class="permalink" href="#conflict~3">--conflict-threshold</a></dt>
+  <dd>type: string
+    <p class="Pp">The threshold for --conflict-column comparisons.</p>
+    <p class="Pp">This option is used with "--conflict-column" and
+        "--conflict-comparison" to determine which row is the source.
+        For example, if you want to make the row with the newest value in the
+        `modified` column the source, you would specify
+        `--conflict-column modified --conflict-comparison newest --conflict-threshold 1`.
+        The threshold is a number, or a string that can be interpreted as a
+        number (e.g., '1', '100', '1M').</p>
+    <p class="Pp">This option only works with "--bidirectional". See
+        "BIDIRECTIONAL SYNCING" for more information.</p>
+  </dd>
+  <dt id="conflict~4"><a class="permalink" href="#conflict~4">--conflict-value</a></dt>
+  <dd>type: string
+    <p class="Pp">The value to compare against for --conflict-column.</p>
+    <p class="Pp">This option is used with "--conflict-column" and
+        "--conflict-comparison" to determine which row is the source.
+        For example, if you want to make the row with the newest value in the
+        `modified` column the source, you would specify
+        `--conflict-column modified --conflict-comparison newest --conflict-threshold 1`.
+        The value can be any type that can be compared to the column's type.</p>
+    <p class="Pp">This option only works with "--bidirectional". See
+        "BIDIRECTIONAL SYNCING" for more information.</p>
+  </dd>
+  <dt id="database"><a class="permalink" href="#database">--databases</a></dt>
+  <dd>short form: -d; type: array
+    <p class="Pp">Only sync the specified databases.</p>
+  </dd>
+  <dt id="dry-run"><a class="permalink" href="#dry-run">--dry-run</a></dt>
+  <dd>
+    <p class="Pp">Print the SQL statements that would be executed, but do not
+        execute them.</p>
+  </dd>
+  <dt id="execute"><a class="permalink" href="#execute">--execute</a></dt>
+  <dd>
+    <p class="Pp">Execute the SQL statements that synchronize the tables. This
+        is the default action if neither "--print" nor "--dry-run" is
+        specified.</p>
+  </dd>
+  <dt>--[no]explain</dt>
+  <dd>default: yes
+    <p class="Pp">Explain the queries used for comparison. This can help diagnose
+        performance issues but will slow down the comparison.</p>
+  </dd>
+  <dt id="filter"><a class="permalink" href="#filter">--filter</a></dt>
+  <dd>type: string
+    <p class="Pp">Only sync tables matching this filter. The filter is a comma-separated
+        list of patterns. A pattern can be a table name, or a wildcarded table
+        name (e.g., `*.important`). See percona-toolkit documentation for details.</p>
+  </dd>
+  <dt id="foreign-key-checks"><a class="permalink" href="#foreign-key-checks">--[no]foreign-key-checks</a></dt>
+  <dd>default: yes
+    <p class="Pp">Enable or disable foreign key checks during synchronization.
+        Disabling foreign key checks can speed up synchronization but may lead to
+        data inconsistencies if not used carefully. It's recommended to keep this
+        enabled unless you know what you're doing.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore</a></dt>
+  <dd>type: array
+    <p class="Pp">Ignore the specified tables. This is a comma-separated list of
+        table names. Wildcards are supported (e.g., `temp%`).</p>
+  </dd>
+  <dt id="index"><a class="permalink" href="#index">--index</a></dt>
+  <dd>type: string
+    <p class="Pp">Use this index for comparison. This is useful when the default
+        index selection is not optimal.</p>
+  </dd>
+  <dt id="lines"><a class="permalink" href="#lines">--lines</a></dt>
+  <dd>type: string; default: 1000
+    <p class="Pp">Number of rows per chunk for the "Chunk" and "Nibble"
+        algorithms. This is an alias for "--chunk-size" when used with a numeric
+        value.</p>
+  </dd>
+  <dt id="max-lag"><a class="permalink" href="#max-lag">--max-lag</a></dt>
+  <dd>type: string; default: 10
+    <p class="Pp">Maximum lag in seconds allowed between the source and replica.
+        If the replica is lagging more than this value, <span class="Nm">pt-table-sync</span> will
+        stop to prevent desynchronization.</p>
+  </dd>
+  <dt id="print"><a class="permalink" href="#print">--print</a></dt>
+  <dd>
+    <p class="Pp">Print the SQL statements that synchronize the tables to STDOUT.
+        This is the default action if neither "--execute" nor "--dry-run" is
+        specified.</p>
+  </dd>
+  <dt id="progress"><a class="permalink" href="#progress">--progress</a></dt>
+  <dd>type: string
+    <p class="Pp">Report progress to this file. The file is updated periodically
+        with the status of the synchronization.</p>
+  </dd>
+  <dt id="replace"><a class="permalink" href="#replace">--replace</a></dt>
+  <dd>
+    <p class="Pp">Use REPLACE statements instead of INSERT/DELETE when synchronizing.
+        This can be useful for tables without primary keys or unique indexes, but
+        it can be slower and may have side effects depending on triggers.</p>
+  </dd>
+  <dt id="replicate"><a class="permalink" href="#replicate">--replicate</a></dt>
+  <dd>type: string
+    <p class="Pp">Synchronize only the specified tables. This is a comma-separated
+        list of table names. Wildcards are supported (e.g., `temp%`). This option
+        is mutually exclusive with "--where".</p>
+  </dd>
+  <dt id="retry"><a class="permalink" href="#retry">--retry</a></dt>
+  <dd>type: integer; default: 0
+    <p class="Pp">Number of times to retry operations that fail due to transient
+        errors (e.g., deadlock). A value of 0 means no retries.</p>
+  </dd>
+  <dt id="retry-sleep"><a class="permalink" href="#retry-sleep">--retry-sleep</a></dt>
+  <dd>type: string; default: 1s
+    <p class="Pp">Time to sleep between retries. The value can be specified in
+        seconds (e.g., '5s'), minutes (e.g., '1m'), or hours (e.g., '1h').</p>
+  </dd>
+  <dt id="run-time-limit"><a class="permalink" href="#run-time-limit">--run-time-limit</a></dt>
+  <dd>type: string
+    <p class="Pp">Maximum time to run the synchronization. The value can be specified
+        in seconds (e.g., '3600s'), minutes (e.g., '60m'), or hours (e.g., '1h').
+        If the time limit is reached, <span class="Nm">pt-table-sync</span> will stop and exit.</p>
+  </dd>
+  <dt id="safe-slave-backup"><a class="permalink" href="#safe-slave-backup">--safe-slave-backup</a></dt>
+  <dd>
+    <p class="Pp">Avoids making changes on a replica if it's running and lagging.
+        It checks the replica status and exits if the lag exceeds a certain
+        threshold or if the replica is not in a healthy state.</p>
+  </dd>
+  <dt id="server-id"><a class="permalink" href="#server-id">--server-id</a></dt>
+  <dd>type: integer
+    <p class="Pp">The server ID to use when connecting to MySQL. This is useful in
+        environments with multiple MySQL servers.</p>
+  </dd>
+  <dt id="slave-connect-options"><a class="permalink" href="#slave-connect-options">--slave-connect-options</a></dt>
+  <dd>type: string
+    <p class="Pp">Additional options to use when connecting to the replica server.
+        These options are passed directly to the DBD::mysql driver.</p>
+  </dd>
+  <dt id="source"><a class="permalink" href="#source">--source</a></dt>
+  <dd>type: string
+    <p class="Pp">DSN for the source MySQL server.</p>
+  </dd>
+  <dt id="slave-skip-counter"><a class="permalink" href="#slave-skip-counter">--slave-skip-counter</a></dt>
+  <dd>type: integer
+    <p class="Pp">The number of replication events to skip on the replica. Use with
+        extreme caution as this can lead to data inconsistencies.</p>
+  </dd>
+  <dt id="slave-sync-thread"><a class="permalink" href="#slave-sync-thread">--slave-sync-thread</a></dt>
+  <dd>type: integer
+    <p class="Pp">Number of threads to use for synchronizing the replica. Default is
+        1.</p>
+  </dd>
+  <dt id="source-connect-options"><a class="permalink" href="#source-connect-options">--source-connect-options</a></dt>
+  <dd>type: string
+    <p class="Pp">Additional options to use when connecting to the source server.
+        These options are passed directly to the DBD::mysql driver.</p>
+  </dd>
+  <dt id="stream"><a class="permalink" href="#stream">--stream</a></dt>
+  <dd>type: string
+    <p class="Pp">Stream results to this file instead of printing to STDOUT or
+        executing. This is useful for very large amounts of SQL that might
+        overwhelm STDOUT or cause memory issues.</p>
+  </dd>
+  <dt id="sync-to-source"><a class="permalink" href="#sync-to-source">--sync-to-source</a></dt>
+  <dd>
+    <p class="Pp">Synchronize the destination server to match the source server.
+        This is the default behavior when two DSNs are provided.</p>
+  </dd>
+  <dt id="tables"><a class="permalink" href="#tables">--tables</a></dt>
+  <dd>type: array
+    <p class="Pp">Only sync the specified tables. This is a comma-separated list of
+        table names. Wildcards are supported (e.g., `temp%`).</p>
+  </dd>
+  <dt id="throttle"><a class="permalink" href="#throttle">--throttle</a></dt>
+  <dd>type: string
+    <p class="Pp">Limit the rate of SQL operations. The value is a comma-separated list
+        of operations and their rates (e.g., `INSERT=100/s,UPDATE=50/s`).</p>
+  </dd>
+  <dt id="threads"><a class="permalink" href="#threads">--threads</a></dt>
+  <dd>type: integer
+    <p class="Pp">Number of threads to use for comparison and synchronization. Default
+        is 1.</p>
+  </dd>
+  <dt id="tries"><a class="permalink" href="#tries">--tries</a></dt>
+  <dd>type: integer; default: 0
+    <p class="Pp">Number of times to try synchronizing a table. If a table fails to
+        synchronize after this many tries, <span class="Nm">pt-table-sync</span> will stop.</p>
+  </dd>
+  <dt id="update-binary-log"><a class="permalink" href="#update-binary-log">--update-binary-log</a></dt>
+  <dd>
+    <p class="Pp">Enable or disable writing synchronization commands to the binary log.
+        This option is deprecated and is replaced by "--[no]bin-log".</p>
+  </dd>
+  <dt id="user"><a class="permalink" href="#user">--user</a></dt>
+  <dd>short form: -u; type: string
+    <p class="Pp">Username for connecting to MySQL.</p>
+  </dd>
+  <dt id="verbose"><a class="permalink" href="#verbose">--verbose</a></dt>
+  <dd>short form: -v
+    <p class="Pp">Print verbose output, including information about tables being
+        compared and synchronized.</p>
+  </dd>
+  <dt id="version"><a class="permalink" href="#version">--version</a></dt>
+  <dd>
+    <p class="Pp">Print version information and exit.</p>
+  </dd>
+  <dt id="where"><a class="permalink" href="#where">--where</a></dt>
+  <dd>type: string
+    <p class="Pp">Only sync rows that match this WHERE clause. This option is mutually
+        exclusive with "--replicate".</p>
+  </dd>
+</dl>
+</section>
+EN SELECCIONA FILA CON
+==========  =========================================================
+newest      Valor más reciente de la columna temporal --conflict-column
+oldest      Valor más antiguo de la columna temporal --conflict-column
+greatest    Valor numérico mayor de la columna --conflict-column
+least       Valor numérico menor de la columna --conflict-column
+equals      Valor de la columna --conflict-column igual a --conflict-value
+matches     Valor de la columna --conflict-column que coincide con el patrón de expresión regular de Perl
+            --conflict-value
+</pre>
+    <p class="Pp">Esta opción solo funciona con "--bidirectional". Consulte
+        "SINCRONIZACIÓN BIDIRECCIONAL" para obtener más información.</p>
+  </dd>
+  <dt id="conflict~3"><a class="permalink" href="#conflict~3">--conflict-error</a></dt>
+  <dd>tipo: string; predeterminado: warn
+    <p class="Pp">Cómo informar conflictos irresolubles y errores de conflicto</p>
+    <p class="Pp">Esta opción cambia cómo se notifica al usuario cuando un
+        conflicto no se puede resolver o causa algún tipo de error. Los valores
+        posibles son:</p>
+        <pre>* warn: Imprime una advertencia en STDERR sobre el conflicto irresoluble
+* die:  Muere, detiene la sincronización e imprime una advertencia en STDERR
+</pre>
+    <p class="Pp">Esta opción solo funciona con "--bidirectional". Consulte
+        "SINCRONIZACIÓN BIDIRECCIONAL" para obtener más información.</p>
+  </dd>
+  <dt id="conflict~4"><a class="permalink" href="#conflict~4">--conflict-threshold</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Cantidad en la que una columna "--conflict-column" debe exceder
+        a la otra.</p>
+    <p class="Pp">El "--conflict-threshold" evita que un conflicto se resuelva
+        si la diferencia absoluta entre los dos valores de "--conflict-column"
+        es menor que esta cantidad. Por ejemplo, si dos "--conflict-column"
+        tienen valores de marca de tiempo "2009-12-01 12:00:00" y
+        "2009-12-01 12:05:00", la diferencia es de 5 minutos. Si
+        "--conflict-threshold" se establece en "5m", el conflicto se resolverá,
+        pero si "--conflict-threshold" se establece en "6m", el conflicto no se
+        resolverá porque la diferencia no es mayor o igual a 6 minutos. En este
+        último caso, "--conflict-error" informará el fallo.</p>
+    <p class="Pp">Esta opción solo funciona con "--bidirectional". Consulte
+        "SINCRONIZACIÓN BIDIRECCIONAL" para obtener más información.</p>
+  </dd>
+  <dt id="conflict~5"><a class="permalink" href="#conflict~5">--conflict-value</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Utilice este valor para ciertas comparaciones de
+        "--conflict-comparison".</p>
+    <p class="Pp">Esta opción proporciona el valor para las comparaciones
+        "--conflict-comparison" de "equals" y "matches".</p>
+    <p class="Pp">Esta opción solo funciona con "--bidirectional". Consulte
+        "SINCRONIZACIÓN BIDIRECCIONAL" para obtener más información.</p>
+  </dd>
+  <dt id="databases"><a class="permalink" href="#databases">--databases</a></dt>
+  <dd>forma corta: -d; tipo: hash
+    <p class="Pp">Sincronice solo esta lista de bases de datos separadas por
+        comas.</p>
+    <p class="Pp">Una solicitud común es sincronizar tablas de una base de datos
+        con tablas de otra base de datos en el mismo servidor o en uno diferente.
+        Esto aún no es posible. "--databases" no lo hará, y tampoco puede
+        hacerlo con la parte D del DSN, ya que en ausencia de un nombre de tabla
+        asume que todo el servidor debe sincronizarse y la parte D solo controla
+        la base de datos predeterminada de la conexión.</p>
+  </dd>
+  <dt id="defaults"><a class="permalink" href="#defaults">--defaults-file</a></dt>
+  <dd>forma corta: -F; tipo: string
+    <p class="Pp">Lea solo las opciones de MySQL del archivo dado. Debe
+        proporcionar una ruta de acceso absoluta.</p>
+  </dd>
+  <dt id="dry"><a class="permalink" href="#dry">--dry-run</a></dt>
+  <dd>Analiza, decide el algoritmo de sincronización a usar, imprime y sale.
+    <p class="Pp">Implica "--verbose" para que pueda ver los resultados. Los
+        resultados están en el mismo formato de salida que verá al ejecutar la
+        herramienta, pero habrá ceros para las filas afectadas. Esto se debe a
+        que la herramienta se ejecuta, pero se detiene antes de comparar
+        cualquier dato y simplemente devuelve ceros. Los ceros no significan
+        que no haya cambios que hacer.</p>
+  </dd>
+  <dt id="engines"><a class="permalink" href="#engines">--engines</a></dt>
+  <dd>forma corta: -e; tipo: hash
+    <p class="Pp">Sincronice solo esta lista de motores de almacenamiento
+        separados por comas.</p>
+  </dd>
+  <dt id="execute"><a class="permalink" href="#execute">--execute</a></dt>
+  <dd>Ejecuta consultas para que las tablas tengan datos idénticos.
+    <p class="Pp">Esta opción hace que pt-table-sync realmente sincronice los
+        datos de las tablas ejecutando todas las consultas que creó para resolver
+        las diferencias de tablas. ¡Por lo tanto, **las tablas se modificarán**! Y
+        a menos que también especifique "--verbose", los cambios se realizarán
+        en silencio. Si esto no es lo que desea, consulte "--print" o
+        "--dry-run".</p>
+  </dd>
+  <dt id="explain"><a class="permalink" href="#explain">--explain-hosts</a></dt>
+  <dd>Imprime información de conexión y sale.
+    <p class="Pp">Imprime una lista de hosts a los que pt-table-sync se conectará,
+        con todas las diversas opciones de conexión, y sale.</p>
+  </dd>
+  <dt id="float"><a class="permalink" href="#float">--float-precision</a></dt>
+  <dd>tipo: int
+    <p class="Pp">Precisión para la conversión de números a cadenas de
+        "FLOAT" y "DOUBLE". Provoca que los valores FLOAT y DOUBLE se redondeen
+        al número especificado de dígitos después del punto decimal, con la
+        función <b>ROUND()</b> en MySQL. Esto puede ayudar a evitar discrepancias
+        de suma de verificación debido a diferentes representaciones de punto
+        flotante de los mismos valores en diferentes versiones de MySQL y hardware.
+        El valor predeterminado es no redondear; los valores se convierten en
+        cadenas mediante la función <b>CONCAT()</b>, y MySQL elige la
+        representación de cadena. Si especifica un valor de 2, por ejemplo, los
+        valores 1.008 y 1.009 se redondearán a 1.01 y sumarán como iguales.</p>
+  </dd>
+  <dt>--[no]foreign-key-checks</dt>
+  <dd>predeterminado: yes
+    <p class="Pp">Habilita las comprobaciones de claves foráneas
+        ("SET FOREIGN_KEY_CHECKS=1").</p>
+    <p class="Pp">Especificar "--no-foreign-key-checks" establecerá
+        "SET FOREIGN_KEY_CHECKS=0".</p>
+  </dd>
+  <dt id="function"><a class="permalink" href="#function">--function</a></dt>
+  <dd>tipo: string
+    <p class="Pp">Qué función hash le gustaría utilizar para las sumas de
+        verificación.</p>
+    <p class="Pp">El valor predeterminado es "CRC32". Otras buenas opciones
+        incluyen "MD5" y "SHA1". Si ha instalado la función definida por el
+        usuario "FNV_64", "pt-table-sync" la detectará y preferirá usarla, ya
+        que es mucho más rápida que las incorporadas. También puede usar
+        MURMUR_HASH si ha instalado esa función definida por el usuario. Ambas
+        se distribuyen con Percona Server. Consulte pt-table-checksum para
+        obtener más información y puntos de referencia.</p>
+  </dd>
+  <dt id="help"><a class="permalink" href="#help">--help</a></dt>
+  <dd>Muestra la ayuda y sale.</dd>
+  <dt>--[no]hex-blob</dt>
+  <dd>predeterminado: yes
+    <p class="Pp">Utiliza la función <b>HEX()</b> para las columnas "BLOB",
+        "TEXT" y "BINARY".</p>
+    <p class="Pp">Cuando se obtienen los datos de las filas de la fuente para
+        crear consultas que sincronicen los datos (es decir, las consultas que se
+        ven con "--print" y se ejecutan con "--execute"), las columnas binarias
+        se envuelven en <b>HEX()</b> para que los datos binarios no produzcan una
+        declaración SQL inválida. Puede deshabilitar esta opción, pero
+        probablemente no debería.</p>
+  </dd>
+  <dt id="host"><a class="permalink" href="#host">--host</a></dt>
+  <dd>forma corta: -h; tipo: string
+    <p class="Pp">Conéctate al host.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore">--ignore-columns</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de nombres de columnas separadas por comas
+        en las comparaciones.</p>
+    <p class="Pp">Esta opción hace que las columnas no se comparen. Sin embargo,
+        si se determina que una fila difiere entre tablas, se sincronizarán todas
+        las columnas de esa fila, independientemente. (Actualmente no es posible
+        excluir columnas del proceso de sincronización en sí, solo de la
+        comparación).</p>
+  </dd>
+  <dt id="ignore~2"><a class="permalink" href="#ignore~2">--ignore-databases</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de bases de datos separadas por comas.</p>
+    <p class="Pp">(Las bases de datos del sistema como <b>information_schema</b> y
+        <b>performance_schema</b> se ignoran de forma predeterminada)</p>
+  </dd>
+  <dt id="ignore~3"><a class="permalink" href="#ignore~3">--ignore-engines</a></dt>
+  <dd>tipo: Hash; predeterminado: FEDERATED,MRG_MyISAM
+    <p class="Pp">Ignora esta lista de motores de almacenamiento separados por
+        comas.</p>
+  </dd>
+  <dt id="ignore~4"><a class="permalink" href="#ignore~4">--ignore-tables</a></dt>
+  <dd>tipo: Hash
+    <p class="Pp">Ignora esta lista de tablas separadas por comas.</p>
+    <p class="Pp">Los nombres de las tablas pueden estar calificados con el nombre
+        de la base de datos.</p>
+  </dd>
+  <dt id="ignore~5"><a class="permalink" href="#ignore~5">--ignore-tables-regex</a></dt>
+  <dd>tipo: string; grupo: Filter
+    <p class="Pp">Ignora las tablas cuyos nombres coinciden con la expresión
+        regular de Perl.</p>
+  </dd>
+  <dt>--[no]index-hint</dt>
+  <dd>predeterminado: yes
+    <p class="Pp">Agrega sugerencias FORCE/USE INDEX a las consultas de fragmentos y
+        filas.</p>
+    <p class="Pp">Por defecto, "pt-table-sync" agrega una sugerencia FORCE/USE INDEX
+        a cada declaración SQL para forzar a MySQL a usar el índice elegido por el
+        algoritmo de sincronización o especificado por "--chunk-index". Esto
+        generalmente es bueno, pero en casos raros el índice puede no ser el mejor
+        para la consulta, por lo que puede suprimir la sugerencia de índice
+        especificando "--no-index-hint" y dejar que MySQL elija el índice.</p>
+    <p class="Pp">Esto no afecta a las consultas impresas por "--print"; solo
+        afecta a las consultas de fragmentos y filas que "pt-table-sync" utiliza
+        para seleccionar y comparar filas.</p>
+  </dd>
+  <dt id="lock"><a class="permalink" href="#lock">--lock</a></dt>
+  <dd>tipo: int
+    <p class="Pp">Bloquea tablas: 0=ninguno, 1=por ciclo de sincronización,
+        2=por tabla o 3=globalmente.</p>
+    <p class="Pp">Esto utiliza "LOCK TABLES". Esto puede ayudar a evitar que las
+        tablas se modifiquen mientras las examinas. Los valores posibles son los
+        siguientes:</p>
+        <pre>VALOR  SIGNIFICADO
+=====  =======================================================
+0      Nunca bloquear tablas.
+1      Bloquear y desbloquear una vez por ciclo de sincronización (como lo implementa
+       el algoritmo de sincronización). Este es el nivel de bloqueo más granular
+       disponible. Por ejemplo, el algoritmo Chunk bloqueará cada fragmento de C&lt;N&gt;
+       filas, y luego las desbloqueará si son iguales en la fuente y el destino,
+       antes de pasar al siguiente fragmento.
+2      Bloquear y desbloquear antes y después de cada tabla.
+3      Bloquear y desbloquear una vez por cada servidor (DSN) sincronizado, con
+       C&lt;FLUSH TABLES WITH READ LOCK&gt;.
+</pre>
+    <p class="Pp">Una réplica de replicación nunca se bloquea si se especifica
+        "--replicate" o "--sync-to-source", ya que, en teoría, bloquear la tabla
+        o</p><section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+<dl class="Nd" compact="compact">
+<dt>--[no]binlog-format</dt>
+<dd>default: yes
+<p class="Pp">When comparing tables, this option is useful for comparing
+    tables which may have different <span class="Li">&quot;binlog_format&quot;</span>
+    settings. The default setting is to use the current server's setting. If
+    you wish to compare tables that are replicated with different binlog format
+    settings, you can use this option to force a specific setting.</p>
+<p class="Pp">For example, if the source is <span class="Li">&quot;ROW&quot;</span>
+    and the replica is <span class="Li">&quot;MIXED&quot;</span>, you can force
+    the comparison to use <span class="Li">&quot;ROW&quot;</span> by specifying
+    <span class="Li">&quot;--binlog-format=ROW&quot;</span>.</p>
+<p class="Pp">This option is only useful when comparing tables that have been
+    replicated.</p>
+</dd>
+<dt>--chunk-size</dt>
+<dd>short form: -C; type: integer
+<p class="Pp">The size of each chunk. Defaults to 10,000.</p>
+</dd>
+<dt>--compare-rows</dt>
+<dd>short form: -c; type: integer
+<p class="Pp">How many rows to compare at a time. Defaults to 1,000.</p>
+</dd>
+<dt>--databases</dt>
+<dd>type: string
+<p class="Pp">Specify the databases to sync. The default is to sync all
+    databases.</p>
+</dd>
+<dt>--dry-run</dt>
+<dd>short form: -n
+<p class="Pp">Print the statements that would be executed, but don't execute
+    them.</p>
+</dd>
+<dt>--dry-run-all</dt>
+<dd>short form: -N
+<p class="Pp">Print the statements that would be executed, but don't execute
+    them. Also prints the --print statements.</p>
+</dd>
+<dt>--execute</dt>
+<dd>type: string
+<p class="Pp">Execute the specified statement and exit.</p>
+</dd>
+<dt>--ignore-databases</dt>
+<dd>type: string
+<p class="Pp">Specify the databases to ignore. The default is to ignore none.</p>
+</dd>
+<dt>--ignore-fields</dt>
+<dd>type: string
+<p class="Pp">Specify the fields to ignore. The default is to ignore none.</p>
+</dd>
+<dt>--ignore-triggers</dt>
+<dd>short form: -T
+<p class="Pp">Ignore triggers when comparing tables.</p>
+</dd>
+<dt>--lock</dt>
+<dd>short form: -L; type: integer
+<p class="Pp">Lock tables for the specified number of seconds. Defaults to 0,
+    which means no locking. If set to 1, tables are locked for the duration of
+    the sync. This option is only useful if you are not using transactions.
+    If you are using transactions, they will be locked for the duration of the
+    transaction.</p>
+</dd>
+<dt>--print</dt>
+<dd>short form: -p
+<p class="Pp">Print the statements that would be executed.</p>
+</dd>
+<dt>--progress</dt>
+<dd>short form: -g; type: integer
+<p class="Pp">Print progress of sync operations every N seconds.</p>
+</dd>
+<dt>--set-names</dt>
+<dd>short form: -t
+<p class="Pp">Set the character set for the connection. Defaults to utf8.</p>
+</dd>
+<dt>--source-no-unique-checks</dt>
+<dd>
+<p class="Pp">Disable unique checks on the source server.</p>
+</dd>
+<dt>--source-unique-checks</dt>
+<dd>default: yes
+<p class="Pp">Enable unique checks on the source server.</p>
+</dd>
+<dt>--statistics</dt>
+<dd>short form: -s
+<p class="Pp">Print statistics about the sync operations.</p>
+</dd>
+<dt>--table-print</dt>
+<dd>type: string
+<p class="Pp">Print the specified table(s).</p>
+</dd>
+<dt>--tables</dt>
+<dd>type: string
+<p class="Pp">Specify the tables to sync. The default is to sync all
+    tables.</p>
+</dd>
+<dt>--tnsnames</dt>
+<dd>type: string
+<p class="Pp">Use the specified TNSNAMES database alias.</p>
+</dd>
+<dt>--trailing-space-full</dt>
+<dd>
+<p class="Pp">Compare trailing space differences between MySQL versions
+    L 4.1 to &gt;= 5.0.</p>
+<p class="Pp">This is useful when you don't care about the trailing space
+    differences between MySQL versions which vary in their handling of
+    trailing spaces. MySQL 5.0 and later all retain trailing spaces in
+    <span class="Li">&quot;VARCHAR&quot;</span>, while previous versions
+    would remove them.</p>
+</dd>
+<dt>--[no]unique-checks</dt>
+<dd>default: yes
+<p class="Pp">Enable unique key checks (<span class="Li">&quot;SET
+    UNIQUE_CHECKS=1&quot;</span>).</p>
+<p class="Pp">Specifying
+    <span class="Li">&quot;--no-unique-checks&quot;</span> will
+    <span class="Li">&quot;SET UNIQUE_CHECKS=0&quot;</span>.</p>
+</dd>
+<dt id="user"><a class="permalink" href="#user">--user</a></dt>
+<dd>short form: -u; type: string
+<p class="Pp">User for login if not current user.</p>
+</dd>
+<dt id="verbose"><a class="permalink" href="#verbose">--verbose</a></dt>
+<dd>short form: -v; cumulative: yes
+<p class="Pp">Print results of sync operations.</p>
+<p class="Pp">See &quot;OUTPUT&quot; for more details about the output.</p>
+</dd>
+<dt id="version"><a class="permalink" href="#version">--version</a></dt>
+<dd>Show version and exit.</dd>
+<dt>--[no]version-check</dt>
+<dd>default: yes
+<p class="Pp">Check for the latest version of Percona Toolkit, MySQL, and
+    other programs.</p>
+<p class="Pp">This is a standard &quot;check for updates automatically&quot;
+    feature, with two additional features. First, the tool checks its own
+    version and also the versions of the following software: operating
+    system, Percona Monitoring and Management (PMM), MySQL, Perl, MySQL
+    driver for Perl (DBD::mysql), and Percona Toolkit. Second, it checks for
+    and warns about versions with known problems. For example, MySQL 5.5.25
+    had a critical bug and was re-released as 5.5.25a.</p>
+<p class="Pp">A secure connection to Percona&#x2019;s Version Check database
+    server is done to perform these checks. Each request is logged by the
+    server, including software version numbers and unique ID of the checked
+    system. The ID is generated by the Percona Toolkit installation script
+    or when the Version Check database call is done for the first time.</p>
+<p class="Pp">Any updates or known problems are printed to STDOUT before the
+    tool's normal output. This feature should never interfere with the
+    normal operation of the tool.</p>
+<p class="Pp">For more information, visit
+    <a href='https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html'>https://www.percona.com/doc/percona-toolkit/LATEST/version-check.html</a>.</p>
+</dd>
+<dt id="wait"><a class="permalink" href="#wait">--wait</a></dt>
+<dd>short form: -w; type: time
+<p class="Pp">How long to wait for replicas to catch up to their source.</p>
+<p class="Pp">Make the source wait for the replica to catch up in
+    replication before comparing the tables. The value is the number of
+    seconds to wait before timing out (see also &quot;--timeout-ok&quot;).
+    Sets &quot;--lock&quot; to 1 and &quot;--[no]transaction&quot; to 0 by
+    default. If you see an error such as the following,</p>
+<pre>SOURCE_POS_WAIT returned -1
+</pre>
+<p class="Pp">It means the timeout was exceeded and you need to increase
+    it.</p>
+<p class="Pp">The default value of this option is influenced by other
+    options. To see what value is in effect, run with
+    &quot;--help&quot;.</p>
+<p class="Pp">To disable waiting entirely (except for locks), specify
+    &quot;--wait&quot; 0. This helps when the replica is lagging on tables
+    that are not being synced.</p>
+</dd>
+<dt id="where"><a class="permalink" href="#where">--where</a></dt>
+<dd>type: string
+<p class="Pp"><span class="Li">&quot;WHERE&quot;</span> clause to restrict
+    syncing to part of the table.</p>
+</dd>
+<dt>--[no]zero-chunk</dt>
+<dd>default: yes
+<p class="Pp">Add a chunk for rows with zero or zero-equivalent values. The
+    only has an effect when &quot;--chunk-size&quot; is specified. The
+    purpose of the zero chunk is to capture a potentially large number of
+    zero values that would imbalance the size of the first chunk. For
+    example, if a lot of negative numbers were inserted into an unsigned
+    integer column causing them to be stored as zeros, then these zero
+    values are captured by the zero chunk instead of the first chunk and all
+    its non-zero values.</p>
+</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DSN_OPTIONS'><a class='permalink' href='#DSN_OPTIONS'>DSN OPTIONS</a></h1>
+<p class="Pp">These DSN options are used to create a DSN. Each option is given
+    like <span class="Li">&quot;option=value&quot;</span>. The options are
+    case-sensitive, so P and p are not the same option. There cannot be
+    whitespace before or after the <span class="Li">&quot;=&quot;</span> and if
+    the value contains whitespace it must be quoted. DSN options are
+    comma-separated. See the percona-toolkit manpage for full details.</p>
+<ul class="Bl-bullet">
+<li>A
+<p class="Pp">dsn: charset; copy: yes</p>
+<p class="Pp">Default character set.</p>
+</li>
+<li>D
+<p class="Pp">dsn: database; copy: yes</p>
+<p class="Pp">Database containing the table to be synced.</p>
+</li>
+<li>F
+<p class="Pp">dsn: mysql_read_default_file; copy: yes</p>
+<p class="Pp">Only read default options from the given file</p>
+</li>
+<li>h
+<p class="Pp">dsn: host; copy: yes</p>
+<p class="Pp">Connect to host.</p>
+</li>
+<li>p
+<p class="Pp">dsn: password; copy: yes</p>
+<p class="Pp">Password to use when connecting. If password contains commas
+    they must be escaped with a backslash: &quot;exam\,ple&quot;</p>
+</li>
+<li>P
+<p class="Pp">dsn: port; copy: yes</p>
+<p class="Pp">Port number to use for connection.</p>
+</li>
+<li>S
+<p class="Pp">dsn: mysql_socket; copy: yes</p>
+<p class="Pp">Socket file to use for connection.</p>
+</li>
+<li>t
+<p class="Pp">copy: yes</p>
+<p class="Pp">Table to be synced.</p>
+</li>
+<li>u
+<p class="Pp">dsn: user; copy: yes</p>
+<p class="Pp">User for login if not current user.</p>
+</li>
+<li>s
+<p class="Pp">dsn: mysql_ssl; copy: yes</p>
+<p class="Pp">Create SSL connection</p>
+</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENVIRONMENT'><a class='permalink' href='#ENVIRONMENT'>ENVIRONMENT</a></h1>
+<p class="Pp">The environment variable
+    <span class="Li">&quot;PTDEBUG&quot;</span> enables verbose debugging output
+    to STDERR. To enable debugging and capture all output to a file, run the
+    tool like:</p>
+<pre>PTDEBUG=1 pt-table-sync ... &gt; FILE 2&gt;&amp;1</pre>
+<p class="Pp">Be careful: debugging output is voluminous and can generate
+    several megabytes of output.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ATTENTION'><a class='permalink' href='#ATTENTION'>ATTENTION</a></h1>
+<p class="Pp">Using &lt;PTDEBUG&gt; might expose passwords. When debug is
+    enabled, all command line parameters are shown in the output.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYSTEM_REQUIREMENTS'><a class='permalink' href='#SYSTEM_REQUIREMENTS'>SYSTEM REQUIREMENTS</a></h1>
+<p class="Pp">You need Perl, DBI, DBD::mysql, and some core packages that ought
+    to be installed in any reasonably new version of Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">For a list of known bugs, see
+    <a href='https://jira.percona.com/projects/PT/issues'>https://jira.percona.com/projects/PT/issues</a>.</p>
+<p class="Pp">Please report bugs at
+    <a href='https://jira.percona.com/projects/PT'>https://jira.percona.com/projects/PT</a>. Include the following
+    information in your bug report:</p>
+<ul class="Bl-bullet">
+<li>Complete command-line used to run the tool</li>
+<li>Tool &quot;--version&quot;</li>
+<li>MySQL version of all servers involved</li>
+<li>Output from the tool including STDERR</li>
+<li>Input files (log/dump/config files, etc.)</li>
+</ul>
+<p class="Pp">If possible, include debugging output by running the tool with
+    <span class="Li">&quot;PTDEBUG&quot;</span>; see
+    &quot;ENVIRONMENT&quot;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DOWNLOADING'><a class='permalink' href='#DOWNLOADING'>DOWNLOADING</a></h1>
+<p class="Pp">Visit <a href='http://www.percona.com/software/percona-toolkit/'>http://www.percona.com/software/percona-toolkit/</a> to
+    download the latest release of Percona Toolkit. Or, get the latest release
+    from the command line:</p>
+<pre>wget percona.com/get/percona-toolkit.tar.gz
+wget percona.com/get/percona-toolkit.rpm
+wget percona.com/get/percona-toolkit.deb</pre>
+<p class="Pp">You can also get individual tools from the latest release:</p>
+<pre>wget percona.com/get/TOOL</pre>
+<p class="Pp">Replace <span class="Li">&quot;TOOL&quot;</span> with the name of
+    any tool.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTHORS</a></h1>
+<p class="Pp">Baron Schwartz</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ACKNOWLEDGMENTS'><a class='permalink' href='#ACKNOWLEDGMENTS'>ACKNOWLEDGMENTS</a></h1>
+<p class="Pp">My work is based in part on Giuseppe Maxia's work on distributed
+    databases, <a href='http://www.sysadminmag.com/articles/2004/0408/'>http://www.sysadminmag.com/articles/2004/0408/</a> and code
+    derived from that article. There is more explanation, and a link to the
+    code, at <a href='http://www.perlmonks.org/?node_id=381053'>http://www.perlmonks.org/?node_id=381053</a>.</p>
+<p class="Pp">Another programmer extended Maxia's work even further. Fabien
+    Coelho changed and generalized Maxia's technique, introducing symmetry and
+    avoiding some problems that might have caused too-frequent checksum
+    collisions. This work grew into pg_comparator,
+    <a href='http://www.coelho.net/pg_comparator/'>http://www.coelho.net/pg_comparator/</a>. Coelho also explained the
+    technique further in a paper titled &quot;Remote Comparison of Database
+    Tables&quot; (<a href='http://cri.ensmp.fr/classement/doc/A-375.pdf'>http://cri.ensmp.fr/classement/doc/A-375.pdf</a>).</p>
+<p class="Pp">This existing literature mostly addressed how to find the
+    differences between the tables, not how to resolve them once found. I needed
+    a tool that would not only find them efficiently, but would then resolve
+    them. I first began thinking about how to improve the technique further with
+    my article
+    <a href='https://web.archive.org/web/20071018105253/http://www.xaprb.com/blog/2007/03/05/an-algorithm-to-find-and-resolve-data-differences-between-mysql-tables/'>https://web.archive.org/web/20071018105253/http://www.xaprb.com/blog/2007/03/05/an-algorithm-to-find-and-resolve-data-differences-between-mysql-tables/</a>,
+    where I discussed a number of problems with the Maxia/Coelho
+    &quot;bottom-up&quot; algorithm. After writing that article, I began to
+    write this tool. I wanted to actually implement their algorithm with some
+    improvements so I was sure I understood it completely. I discovered it is
+    not what I thought it was, and is considerably more complex than it appeared
+    to me at first. Fabien Coelho was kind enough to address some questions over
+    email.</p>
+<p class="Pp">The first versions of this tool implemented a version of the
+    Coelho/Maxia algorithm, which I called &quot;bottom-up&quot;, and my own,
+    which I called &quot;top-down.&quot; Those algorithms are considerably more
+    complex than the current algorithms and I have removed them from this tool,
+    and may add them back later. The improvements to the bottom-up algorithm are
+    my original work, as is the top-down algorithm. The techniques to actually
+    r</p>
+</section>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>pt-table-sync(1p) — Arch Linux</title>
+        <link rel="stylesheet" type="text/css" href="/css/style.css" />
+        <link rel="icon" type="image/png" href="/favicon.png" />
+        <meta name="description" content="Arch Linux manual pages - pt-table-sync(1p)" />
+        <meta name="keywords" content="arch linux, man pages, manual, pt-table-sync, 1p, perl, database synchronization" />
+    </head>
+    <body>
+        
+        <main>
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='ACKNOWLEDGMENTS'><a class='permalink' href='#ACKNOWLEDGMENTS'>ACKNOWLEDGMENTS</a></h1>
+<p class="Pp">This script is a fork of pt-table-checksum, and therefore I owe
+    a debt of gratitude to its authors for much of the technique. I have attempted
+    to reconcile the differences, and those differences are also my own work.</p>
+<p class="Pp">Another tool that can synchronize tables is the SQLyog Job Agent
+    from webyog. Thanks to Rohit Nadhani, SJA's author, for the conversations
+    about the general techniques. There is a comparison of pt-table-sync and SJA
+    at
+    <a href='https://web.archive.org/web/20070919024435/http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/'>https://web.archive.org/web/20070919024435/http://www.xaprb.com/blog/2007/04/05/mysql-table-sync-vs-sqlyog-job-agent/</a></p>
+<p class="Pp">Thanks to the following people and organizations for helping in
+    many ways:</p>
+<p class="Pp">The Rimm-Kaufman Group <a href='http://www.rimmkaufman.com/'>http://www.rimmkaufman.com/</a>, MySQL
+    AB <a href='http://www.mysql.com/'>http://www.mysql.com/</a>, Blue Ridge InternetWorks
+    <a href='http://www.briworks.com/'>http://www.briworks.com/</a>, Percona <a href='http://www.percona.com/'>http://www.percona.com/</a>,
+    Fabien Coelho, Giuseppe Maxia and others at MySQL AB, Kristian Koehntopp
+    (MySQL AB), Rohit Nadhani (WebYog), The helpful monks at Perlmonks, And
+    others too numerous to mention.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ABOUT_PERCONA_TOOLKIT'><a class='permalink' href='#ABOUT_PERCONA_TOOLKIT'>SOBRE PERCONA TOOLKIT</a></h1>
+<p class="Pp">This tool is part of Percona Toolkit, a collection of advanced
+    command-line tools for MySQL developed by Percona. Percona Toolkit was
+    forked from two projects in June, 2011: Maatkit and Aspersa. Those projects
+    were created by Baron Schwartz and primarily developed by him and Daniel
+    Nichter. Visit <a href='http://www.percona.com/software/'>http://www.percona.com/software/</a> to learn about other
+    free, open-source software from Percona.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT,_LICENSE,_AND_WARRANTY'><a class='permalink' href='#COPYRIGHT,_LICENSE,_AND_WARRANTY'>DERECHOS DE AUTOR, LICENCIA Y GARANTÍA</a></h1>
+<p class="Pp">This program is copyright 2011-2024 Percona LLC and/or its
+    affiliates, 2007-2011 Baron Schwartz.</p>
+<p class="Pp">THIS PROGRAM IS PROVIDED &quot;AS IS&quot; AND WITHOUT ANY EXPRESS
+    OR IMPLIED WARRANTIES, INCLUDING, WITHOUT LIMITATION, THE IMPLIED WARRANTIES
+    OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.</p>
+<p class="Pp">This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, version 2; OR the Perl Artistic License. On
+    UNIX and similar systems, you can issue `man perlgpl' or `man perlartistic'
+    to read these licenses.</p>
+<p class="Pp">You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software Foundation,
+    Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VERSION'><a class='permalink' href='#VERSION'>VERSIÓN</a></h1>
+<p class="Pp">pt-table-sync 3.7.0</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='POD_ERRORS'><a class='permalink' href='#POD_ERRORS'>ERRORES DE POD</a></h1>
+<p class="Pp">Hey! <b>The above document had some coding errors, which are
+    explained below:</b></p>
+<dl class="Bl-tag">
+  <dt id="Around"><a class="permalink" href="#Around">Around line
+    13145:</a></dt>
+  <dd>Non-ASCII character seen before =encoding in 'Percona&#x2019;s'. Assuming
+      UTF-8</dd>
+</dl>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-01-01</td>
+    <td class="foot-os">perl v5.40.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/percona-toolkit/">extra/percona-toolkit</a></dd>
+        <dt>Version:</dt>
+        <dd>3.7.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.percona.com/software/database-tools/percona-toolkit">https://www.percona.com/software/database-tools/percona-toolkit</a></dd>
+        <dt>Licenses:</dt>
+        <dd>GPL</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/percona-toolkit/">/listing/extra/percona-toolkit/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#RISKS">RISKS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#LIMITATIONS">LIMITATIONS</a></li>
+        
+            <li><a href="#OUTPUT">OUTPUT</a></li>
+        
+            <li><a href="#REPLICATION_SAFETY">REPLICATION SAFETY</a></li>
+        
+            <li><a href="#ALGORITHMS">ALGORITHMS</a></li>
+        
+            <li><a href="#BIDIRECTIONAL_SYNCING">BIDIRECTIONAL SYNCING</a></li>
+        
+            <li><a href="#EXIT_STATUS">EXIT STATUS</a></li>
+        
+            <li><a href="#OPTIONS">OPTIONS</a></li>
+        
+            <li><a href="#DSN_OPTIONS">DSN OPTIONS</a></li>
+        
+            <li><a href="#ENVIRONMENT">ENVIRONMENT</a></li>
+        
+            <li><a href="#ATTENTION">ATTENTION</a></li>
+        
+            <li><a href="#SYSTEM_REQUIREMENTS">SYSTEM REQUIREMENTS</a></li>
+        
+            <li><a href="#BUGS">BUGS</a></li>
+        
+            <li><a href="#DOWNLOADING">DOWNLOADING</a></li>
+        
+            <li><a href="#AUTHORS">AUTHORS</a></li>
+        
+            <li><a href="#ACKNOWLEDGMENTS">ACKNOWLEDGMENTS</a></li>
+        
+            <li><a href="#ABOUT_PERCONA_TOOLKIT">SOBRE PERCONA TOOLKIT</a></li>
+        
+            <li><a href="#COPYRIGHT,_LICENSE,_AND_WARRANTY">DERECHOS DE AUTOR, LICENCIA Y GARANTÍA</a></li>
+        
+            <li><a href="#VERSION">VERSIÓN</a></li>
+        
+            <li><a href="#POD_ERRORS">ERRORES DE POD</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/pt-table-sync.1p.en.txt">txt</a>, 
+        
+            <a href="/man/pt-table-sync.1p.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

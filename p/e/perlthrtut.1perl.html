@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlthrtut(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlthrtut.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLTHRTUT(1perl)</td>
+    <td class="head-vol">Guía de Referencia del Programador de Perl</td>
+    <td class="head-rtitle">PERLTHRTUT(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlthrtut - Tutorial sobre hilos en Perl</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este tutorial describe el uso de hilos del intérprete de Perl
+    (a veces referidos como <i>ithreads</i>). En este modelo, cada hilo se ejecuta
+    en su propio intérprete de Perl, y cualquier intercambio de datos entre
+    hilos debe ser explícito. La interfaz de usuario para <i>ithreads</i> utiliza
+    la clase threads.</p>
+<p class="Pp"><b>NOTA</b>: Existía otro modelo de hilos más antiguo en Perl llamado
+    modelo 5.005 que utilizaba la clase Thread. Este modelo antiguo era conocido
+    por tener problemas, fue obsoleto y eliminado en la versión 5.10. Se recomienda
+    encarecidamente migrar cualquier código existente con hilos 5.005 al nuevo
+    modelo lo antes posible.</p>
+<p class="Pp">Puede ver qué tipo de hilos (o ninguno) tiene ejecutando
+    <span class="Li">&quot;perl -V&quot;</span> y observando la sección
+    <span class="Li">&quot;Platform&quot;</span>. Si tiene
+    <span class="Li">&quot;useithreads=define&quot;</span> tiene ithreads, si tiene
+    <span class="Li">&quot;use5005threads=define&quot;</span> tiene hilos 5.005. Si
+    no tiene ninguno, no tiene soporte de hilos incorporado. Si tiene ambos, está
+    en problemas.</p>
+<p class="Pp">En tiempos más modernos, los términos
+    <span class="Li">&quot;ithreads&quot;</span> y
+    <span class="Li">&quot;threads&quot;</span> son sinónimos y se usan
+    indistintamente. La mejor práctica es usar
+    <span class="Li">&quot;useithreads&quot;</span> si su código depende de algo
+    específico de esa implementación, y usar
+    <span class="Li">&quot;usethreads&quot;</span> si no es así. De esa manera, en el
+    caso muy improbable de que aparezca algún nuevo modelo de hilos, su código
+    estará más protegido contra la necesidad de cambios. (Los símbolos
+    correspondientes a nivel del lenguaje C son
+    <span class="Li">&quot;USE_ITHREADS&quot;</span> y
+    <span class="Li">&quot;USE_THREADS&quot;</span>; estos son actualmente totalmente
+    sinónimos, pero no se garantiza que sigan siéndolo.)</p>
+<p class="Pp">Los módulos threads y threads::shared están incluidos en la
+    distribución principal de Perl. Adicionalmente, se mantienen como módulos
+    separados en CPAN, por lo que puede consultar allí cualquier actualización.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='¿Qué_es_un_hilo_de_todos_modos?'><a class='permalink' href='#¿Qué_es_un_hilo_de_todos_modos?'>¿Qué es un hilo de todos modos?</a></h1>
+<p class="Pp">Un hilo es un flujo de control a través de un programa con un único
+    punto de ejecución.</p>
+<p class="Pp">Suena muy parecido a un proceso, ¿verdad? Pues debería. Los hilos
+    son una de las partes de un proceso. Cada proceso tiene al menos un hilo y,
+    hasta ahora, cada proceso que ejecutaba Perl tenía solo un hilo. Sin embargo,
+    con la versión 5.8, puede crear hilos adicionales. Le mostraremos cómo, cuándo
+    y por qué.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Modelos_de_programas_con_hilos'><a class='permalink' href='#Modelos_de_programas_con_hilos'>Modelos de programas con hilos</a></h1>
+<p class="Pp">Hay tres formas básicas en las que puede estructurar un programa con
+    hilos. El modelo que elija dependerá de lo que necesite que haga su programa.
+    Para muchos programas con hilos no triviales, necesitará elegir diferentes
+    modelos para diferentes partes de su programa.</p>
+<section class="Ss">
+<h2 class="Ss" id='Jefe/Trabajador'><a class='permalink' href='#Jefe/Trabajador'>Jefe/Trabajador</a></h2>
+<p class="Pp">El modelo jefe/trabajador suele tener un hilo <i>jefe</i> y uno o
+    más hilos <i>trabajadores</i>. El hilo jefe recopila o genera tareas que
+    necesitan ser realizadas, y luego las distribuye al hilo trabajador
+    apropiado.</p>
+<p class="Pp">Este modelo es común en programas GUI y de servidor, donde un hilo
+    principal espera algún evento y luego lo pasa a los hilos trabajadores
+    correspondientes para su procesamiento. Una vez que el evento ha sido
+    transmitido, el hilo jefe vuelve a esperar otro evento.</p>
+<p class="Pp">El hilo jefe realiza relativamente poco trabajo. Si bien las tareas
+    no se realizan necesariamente más rápido que con cualquier otro método, tiende
+    a tener los mejores tiempos de respuesta para el usuario.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Equipo_de_trabajo'><a class='permalink' href='#Equipo_de_trabajo'>Equipo de trabajo</a></h2>
+<p class="Pp">En el modelo de equipo de trabajo, se crean varios hilos que hacen
+    esencialmente lo mismo con diferentes piezas de datos. Refleja de cerca el
+    procesamiento paralelo clásico y los procesadores vectoriales, donde una gran
+    matriz de procesadores hace exactamente lo mismo con muchas piezas de datos.</p>
+<p class="Pp">Este modelo es particularmente útil si el sistema que ejecuta el
+    programa distribuirá múltiples hilos a través de diferentes procesadores.
+    También puede ser útil en motores de trazado de rayos o renderizado, donde los
+    hilos individuales pueden pasar resultados intermedios para dar al usuario
+    retroalimentación visual.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Tubería'><a class='permalink' href='#Tubería'>Tubería</a></h2>
+<p class="Pp">El modelo de tubería divide una tarea en una serie de pasos y pasa
+    los resultados de un paso al hilo que procesa el siguiente. Cada hilo hace una
+    cosa con cada pieza de datos y pasa los resultados al siguiente hilo en la
+    línea.</p>
+<p class="Pp">Este modelo tiene más sentido si tiene múltiples procesadores para
+    que dos o más hilos se ejecuten en paralelo, aunque a menudo puede tener
+    sentido en otros contextos. Tiende a mantener las tareas individuales pequeñas
+    y simples, además de permitir que algunas partes de la tubería se bloqueen
+    (en E/S o llamadas al sistema, por ejemplo) mientras que otras partes
+    continúan. Si está ejecutando diferentes partes de la tubería en diferentes
+    procesadores, también puede aprovechar las cachés de cada procesador.</p>
+<p class="Pp">Este modelo también es útil para una forma de programación
+    recursiva donde, en lugar de que una subrutina se llame a sí misma, crea
+    otro hilo. Los generadores de números primos y Fibonacci se adaptan bien a
+    esta forma del modelo de tubería. (Una versión de un generador de números
+    primos se presenta más adelante).</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='¿Qué_tipo_de_hilos_son_los_hilos_de_Perl?'><a class='permalink' href='#¿Qué_tipo_de_hilos_son_los_hilos_de_Perl?'>¿Qué tipo de hilos son los hilos de Perl?</a></h1>
+<p class="Pp">Si tiene experiencia con otras implementaciones de hilos, podría
+    descubrir que las cosas no son exactamente lo que esperaba. Es muy importante
+    recordar al tratar con hilos de Perl que <i>los hilos de Perl no son hilos
+    X</i> para todos los valores de X. No son hilos POSIX, ni DecThreads, ni
+    hilos verdes de Java, ni hilos de Win32. Hay similitudes, y los conceptos
+    generales son los mismos, pero si empieza a buscar detalles de
+    implementación, se sentirá decepcionado o confundido. Posiblemente ambos.</p>
+<p class="Pp">Esto no quiere decir que los hilos de Perl sean completamente
+    diferentes de todo lo que ha existido antes. No lo son. El modelo de hilos de
+    Perl debe mucho a otros modelos de hilos, especialmente a POSIX. Así como
+    Perl no es C, los hilos de Perl no son hilos POSIX. Así que, si se encuentra
+    buscando mutexes o prioridades de hilos, es hora de dar un paso atrás y
+    pensar en lo que quiere hacer y cómo puede hacerlo Perl.</p>
+<p class="Pp">Sin embargo, es importante recordar que los hilos de Perl no pueden
+    hacer cosas mágicamente a menos que los hilos del sistema operativo lo
+    permitan. Por lo tanto, si su sistema bloquea todo el proceso en
+    <span class="Li">sleep()</span>, Perl generalmente también lo hará.</p>
+<p class="Pp"><b>Los hilos de Perl son diferentes.</b></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Módulos_seguros_para_hilos'><a class='permalink' href='#Módulos_seguros_para_hilos'>Módulos seguros para hilos</a></h1>
+<p class="Pp">La adición de hilos ha cambiado internamente Perl
+    sustancialmente. Hay implicaciones para las personas que escriben módulos
+    con código XS o bibliotecas externas. Sin embargo, dado que los datos de Perl
+    no se comparten entre hilos de forma predeterminada, los módulos de Perl tienen
+    una alta probabilidad de ser seguros para hilos o pueden hacerse seguros para
+    hilos fácilmente. Los módulos que no están marcados como seguros para hilos
+    deben probarse o revisarse antes de usarse en código de producción.</p>
+<p class="Pp">No todos los módulos que pueda usar son seguros para hilos, y
+    siempre debe asumir que un módulo es inseguro a menos que la documentación
+    diga lo contrario. Esto incluye módulos que se distribuyen como parte del
+    núcleo. Los hilos son una característica relativamente nueva, e incluso
+    algunos de los módulos estándar no son seguros para hilos.</p>
+<p class="Pp">Incluso si un módulo es seguro para hilos, no significa que esté
+    optimizado para funcionar bien con hilos. Un módulo podría ser reescrito para
+    utilizar las nuevas características de Perl con hilos para aumentar el
+    rendimiento en un entorno con hilos.</p>
+<p class="Pp">Si está utilizando un módulo que no es seguro para hilos por alguna
+    razón, puede protegerse usándolo desde un solo hilo y solo uno. Si necesita
+    que varios hilos accedan a dicho módulo, puede usar semáforos y mucha
+    disciplina de programación para controlar el acceso a él. Los semáforos se
+    tratan en &quot;Semáforos básicos&quot;.</p>
+<p class="Pp">Ver también &quot;Seguridad de hilos de bibliotecas del sistema&quot;.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Conceptos_básicos_de_hilos'><a class='permalink' href='#Conceptos_básicos_de_hilos'>Conceptos básicos de hilos</a></h1>
+<p class="Pp">El módulo threads proporciona las funciones básicas que necesita
+    para escribir programas con hilos. En las siguientes secciones, cubriremos
+    los conceptos básicos.</p>
+</section>
+
+</div>
+</section>
+            </article>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<html>
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threads in Perl</title>
+<style type="text/css">
+body { font-family: sans-serif; margin: 1em; }
+h1, h2 { margin-left: 1em; }
+h1.Sh { font-size: 1.5em; margin-top: 1em; margin-bottom: 0.5em; }
+h2.Ss { font-size: 1.2em; margin-top: 1em; margin-bottom: 0.5em; }
+p.Pp { margin-top: 0.5em; margin-bottom: 0.5em; }
+pre { margin-left: 2em; background-color: #f0f0f0; padding: 0.5em; }
+.permalink { text-decoration: none; color: black; font-size: 0.7em; margin-left: 0.5em; }
+.Li { font-family: monospace; }
+</style>
+</head>
+<body>
+
+<p>le muestra lo que necesita hacer para crear un programa con hilos. Después de eso,
+revisaremos algunas de las características del módulo `threads` que facilitan la programación con hilos.</p>
+
+<section class="Ss">
+<h2 class="Ss" id='Basic_Thread_Support'><a class='permalink' href='#Basic_Thread_Support'>Soporte Básico de Hilos</a></h2>
+<p class="Pp">El soporte para hilos es una opción de compilación de Perl. Es algo que se activa o desactiva cuando Perl se construye en su sitio, en lugar de cuando sus programas se compilan. Si su Perl no se compiló con el soporte de hilos habilitado, cualquier intento de usar hilos fallará.</p>
+<p class="Pp">Sus programas pueden usar el módulo `Config` para verificar si los hilos están habilitados. Si su programa no puede ejecutarse sin ellos, puede decir algo como:</p>
+<pre>use Config;
+$Config{useithreads} or
+    die('Recompile Perl with threads to run this program.');</pre>
+<p class="Pp">Un programa posiblemente con hilos que usa un módulo posiblemente con hilos podría tener código como este:</p>
+<pre>use Config;
+use MyMod;
+BEGIN {
+    if ($Config{useithreads}) {
+        # Tenemos hilos
+        require MyMod_threaded;
+        MyMod_threaded-&gt;import();
+    } else {
+        require MyMod_unthreaded;
+        MyMod_unthreaded-&gt;import();
+    }
+}</pre>
+<p class="Pp">Dado que el código que se ejecuta tanto con hilos como sin ellos suele ser bastante engorroso, es mejor aislar el código específico de hilos en su propio módulo. En nuestro ejemplo anterior, eso es lo que es <span class="Li">&quot;MyMod_threaded&quot;</span>, y solo se importa si estamos ejecutando en un Perl con hilos.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='A_Note_about_the_Examples'><a class='permalink' href='#A_Note_about_the_Examples'>Una Nota sobre los Ejemplos</a></h2>
+<p class="Pp">En una situación real, se debe tener cuidado de que todos los hilos terminen de ejecutarse antes de que el programa salga. Ese cuidado <b>no</b> se ha tomado en estos ejemplos en aras de la simplicidad. Ejecutar estos ejemplos <i>tal cual</i> producirá mensajes de error, generalmente causados por el hecho de que todavía hay hilos en ejecución cuando el programa sale. No se alarme por esto.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='Creating_Threads'><a class='permalink' href='#Creating_Threads'>Creación de Hilos</a></h2>
+<p class="Pp">El módulo `threads` proporciona las herramientas que necesita para crear nuevos hilos. Como cualquier otro módulo, necesita indicarle a Perl que desea usarlo; <span class="Li">&quot;use threads;&quot;</span> importa todas las piezas que necesita para crear hilos básicos.</p>
+<p class="Pp">La forma más simple y directa de crear un hilo es con <span class="Li">create()</span>:</p>
+<pre>use threads;
+my $thr = threads-&gt;create(\&amp;sub1);
+sub sub1 {
+    print(&quot;In the thread\n&quot;);
+}</pre>
+<p class="Pp">El método <span class="Li">create()</span> toma una referencia a una subrutina y crea un nuevo hilo que comienza a ejecutarse en la subrutina referenciada. El control pasa tanto a la subrutina como al llamador.</p>
+<p class="Pp">Si es necesario, su programa puede pasar parámetros a la subrutina como parte del inicio del hilo. Simplemente incluya la lista de parámetros como parte de la llamada <span class="Li">&quot;threads-&gt;create()&quot;</span>, así:</p>
+<pre>use threads;
+my $Param3 = 'foo';
+my $thr1 = threads-&gt;create(\&amp;sub1, 'Param 1', 'Param 2', $Param3);
+my @ParamList = (42, 'Hello', 3.14);
+my $thr2 = threads-&gt;create(\&amp;sub1, @ParamList);
+my $thr3 = threads-&gt;create(\&amp;sub1, qw(Param1 Param2 Param3));
+sub sub1 {
+    my @InboundParameters = @_;
+    print(&quot;In the thread\n&quot;);
+    print('Got parameters &gt;', join('&lt;&gt;',@InboundParameters), &quot;&lt;\n&quot;);
+}</pre>
+<p class="Pp">El último ejemplo ilustra otra característica de los hilos. Puede lanzar varios hilos usando la misma subrutina. Cada hilo ejecuta la misma subrutina, pero en un hilo separado con un entorno separado y potencialmente argumentos separados.</p>
+<p class="Pp"><span class="Li">new()</span> es un sinónimo de <span class="Li">create()</span>.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='Waiting_For_A_Thread_To_Exit'><a class='permalink' href='#Waiting_For_A_Thread_To_Exit'>Esperando a que un Hilo Finalice</a></h2>
+<p class="Pp">Dado que los hilos también son subrutinas, pueden devolver valores. Para esperar a que un hilo finalice y extraer cualquier valor que pueda devolver, puede usar el método <span class="Li">join()</span>:</p>
+<pre>use threads;
+my ($thr) = threads-&gt;create(\&amp;sub1);
+my @ReturnData = $thr-&gt;join();
+print('Thread returned ', join(', ', @ReturnData), &quot;\n&quot;);
+sub sub1 { return ('Fifty-six', 'foo', 2); }</pre>
+<p class="Pp">En el ejemplo anterior, el método <span class="Li">join()</span> regresa tan pronto como el hilo termina. Además de esperar a que un hilo finalice y recopilar cualquier valor que el hilo pueda haber devuelto, <span class="Li">join()</span> también realiza cualquier limpieza del sistema operativo necesaria para el hilo. Esa limpieza puede ser importante, especialmente para programas de larga duración que lanzan muchos hilos. Si no desea los valores de retorno y no desea esperar a que el hilo finalice, debe llamar al método <span class="Li">detach()</span> en su lugar, como se describe a continuación.</p>
+<p class="Pp">NOTA: En el ejemplo anterior, el hilo devuelve una lista, lo que hace necesario que la llamada de creación del hilo se realice en contexto de lista (es decir, <span class="Li">&quot;my ($thr)&quot;</span>). Consulte &quot;$thr-&gt;<b>join()</b>&quot; en threads y &quot;THREAD CONTEXT&quot; en threads para obtener más detalles sobre el contexto de los hilos y los valores de retorno.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='Ignoring_A_Thread'><a class='permalink' href='#Ignoring_A_Thread'>Ignorando un Hilo</a></h2>
+<p class="Pp"><span class="Li">join()</span> hace tres cosas: espera a que un hilo finalice, lo limpia y devuelve cualquier dato que el hilo haya producido. ¿Pero qué pasa si no le interesan los valores de retorno del hilo y realmente no le importa cuándo finaliza el hilo? Lo único que quiere es que el hilo se limpie cuando termine.</p>
+<p class="Pp">En este caso, usa el método <span class="Li">detach()</span>. Una vez que un hilo se desvincula, se ejecutará hasta que termine; luego Perl lo limpiará automáticamente.</p>
+<pre>use threads;
+my $thr = threads-&gt;create(\&amp;sub1);   # Lanza el hilo
+$thr-&gt;detach();   # Ahora oficialmente no nos importa más
+sleep(15);        # Deja que el hilo se ejecute por un tiempo
+sub sub1 {
+    my $count = 0;
+    while (1) {
+        $count++;
+        print(&quot;\$count is $count\n&quot;);
+        sleep(1);
+    }
+}</pre>
+<p class="Pp">Una vez que un hilo se desvincula, no se puede unir, y cualquier dato de retorno que pudiera haber producido (si hubiera terminado y estuviera esperando a ser unido) se pierde.</p>
+<p class="Pp"><span class="Li">detach()</span> también se puede llamar como un método de clase para permitir que un hilo se desvincule a sí mismo:</p>
+<pre>use threads;
+my $thr = threads-&gt;create(\&amp;sub1);
+sub sub1 {
+    threads-&gt;detach();
+    # Hacer más trabajo
+}</pre>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='Process_and_Thread_Termination'><a class='permalink' href='#Process_and_Thread_Termination'>Terminación de Procesos y Hilos</a></h2>
+<p class="Pp">Con los hilos, se debe tener cuidado para asegurarse de que todos tengan la oportunidad de completarse, asumiendo que eso es lo que desea.</p>
+<p class="Pp">Una acción que termina un proceso terminará <i>todos</i> los hilos en ejecución. <b>die()</b> y <b>exit()</b> tienen esta propiedad, y Perl sale cuando el hilo principal sale, quizás implícitamente al terminar el código, incluso si eso no es lo que desea.</p>
+<p class="Pp">Como ejemplo de este caso, este código imprime el mensaje &quot;Perl exited with active threads: 2 running and unjoined&quot;:</p>
+<pre>use threads;
+my $thr1 = threads-&gt;new(\&amp;thrsub, &quot;test1&quot;);
+my $thr2 = threads-&gt;new(\&amp;thrsub, &quot;test2&quot;);
+sub thrsub {
+   my ($message) = @_;
+   sleep 1;
+   print &quot;thread $message\n&quot;;
+}</pre>
+<p class="Pp">Pero cuando se agregan las siguientes líneas al final:</p>
+<pre>$thr1-&gt;join();
+$thr2-&gt;join();</pre>
+<p class="Pp">imprime dos líneas de salida, un resultado quizás más útil.</p>
+</section>
+
+</section>
+
+<section class="Sh">
+<h1 class="Sh" id='Threads_And_Data'><a class='permalink' href='#Threads_And_Data'>Hilos y Datos</a></h1>
+<p class="Pp">Ahora que hemos cubierto los conceptos básicos de los hilos, es hora de nuestro próximo tema: Datos. La programación con hilos introduce un par de complicaciones en el acceso a los datos de las que los programas sin hilos nunca necesitan preocuparse.</p>
+
+<section class="Ss">
+<h2 class="Ss" id='Shared_And_Unshared_Data'><a class='permalink' href='#Shared_And_Unshared_Data'>Datos Compartidos y No Compartidos</a></h2>
+<p class="Pp">La mayor diferencia entre los <i>ithreads</i> de Perl y el antiguo estilo de hilos de 5.005, o para el caso, con la mayoría de los otros sistemas de hilos existentes, es que, por defecto, no se comparten datos. Cuando se crea un nuevo hilo de Perl, todos los datos asociados con el hilo actual se copian al nuevo hilo, ¡y posteriormente son privados para ese nuevo hilo! Esto es similar en sensación a lo que sucede cuando un proceso Unix se bifurca, excepto que en este caso, los datos simplemente se copian a una parte diferente de la memoria dentro del mismo proceso en lugar de realizar una bifurcación real.</p>
+<p class="Pp">Sin embargo, para aprovechar la programación con hilos, uno generalmente quiere que los hilos compartan al menos algunos datos entre sí. Esto se hace con el módulo `threads::shared` y el atributo <span class="Li">&quot;:shared&quot;</span>:</p>
+<pre>use threads;
+use threads::shared;
+my $foo :shared = 1;
+my $bar = 1;
+threads-&gt;create(sub { $foo++; $bar++; })-&gt;join();
+print(&quot;$foo\n&quot;);  # Imprime 2 ya que $foo se comparte
+print(&quot;$bar\n&quot;);  # Imprime 1 ya que $bar no se comparte</pre>
+<p class="Pp">En el caso de un array compartido, todos los elementos del array se comparten, y para un hash compartido, todas las claves y valores se comparten. Esto impone restricciones en lo que se puede asignar a los elementos de arrays y hashes compartidos: solo se permiten valores simples o referencias a variables compartidas, esto es para que una variable privada no se comparta accidentalmente. Una asignación incorrecta hará que el hilo muera. Por ejemplo:</p>
+<pre>use threads;
+use threads::shared;
+my $var          = 1;
+my $svar :shared = 2;
+my %hash :shared;
+... create some threads ...
+$hash{a} = 1;       # Todos los hilos ven exists($hash{a})
+                    # y $hash{a} == 1
+$hash{a} = $var;    # okay - copia por valor: mismo efecto que el anterior
+$hash{a} = $svar;   # okay - copia por valor: mismo efecto que el anterior
+$hash{a} = \$svar;  # okay - una referencia a una variable compartida
+$hash{a} = \$var;   # Esto morirá
+delete($hash{a});   # okay - todos los hilos verán !exists($hash{a})</pre>
+<p class="Pp">Tenga en cuenta que una variable compartida garantiza que si dos o más hilos intentan modificarla al mismo tiempo, el estado interno de la variable no se corromperá. Sin embargo, no hay garantías más allá de esto, como se explica en la siguiente sección.</p>
+</section>
+
+<section class="Ss">
+<h2 class="Ss" id='Thread_Pitfalls:_Races'><a class='permalink' href='#Thread_Pitfalls:_Races'>Trampas de Hilos: Carreras (Races)</a></h2>
+<p class="Pp">Si bien los hilos traen un nuevo conjunto de herramientas útiles, también traen una serie de trampas. Una trampa es la condición de carrera:</p>
+<pre>use threads;
+use threads::shared;
+my $x :shared = 1;
+my $thr1 = threads-&gt;create(\&amp;sub1);
+my $thr2 = threads-&gt;create(\&amp;sub2);
+$thr1-&gt;join();
+$thr2-&gt;join();
+print(&quot;$x\n&quot;);
+sub sub1 { my $foo = $x; $x = $foo + 1; }
+sub sub2 { my $bar = $x; $x = $bar + 1; }</pre>
+<p class="Pp">¿Qué crees que será <span class="Li">$x</span>? La respuesta, desafortunadamente, es <i>depende</i>.</p>
+</body>
+</html>
+>depende</i>. Ambas
+    <span class="Li">sub1()</span> y <span class="Li">sub2()</span> acceden a la
+    variable global <span class="Li">$x</span>, una vez para leer y otra para escribir.
+    Dependiendo de factores que van desde el algoritmo de planificación de la implementación de tu hilo hasta la fase lunar, <span class="Li">$x</span> puede ser 2 o
+    3.</p>
+<p class="Pp">Las condiciones de carrera son causadas por el acceso no sincronizado a datos compartidos. Sin sincronización explícita, no hay forma de estar seguro de que no le ha sucedido nada a los datos compartidos entre el momento en que los accedes y el momento en que los actualizas. Incluso este simple fragmento de código tiene la posibilidad de error:</p>
+<pre>use threads;
+my $x :shared = 2;
+my $y :shared;
+my $z :shared;
+my $thr1 = threads-&gt;create(sub { $y = $x; $x = $y + 1; });
+my $thr2 = threads-&gt;create(sub { $z = $x; $x = $z + 1; });
+$thr1-&gt;join();
+$thr2-&gt;join();</pre>
+<p class="Pp">Dos hilos acceden a <span class="Li">$x</span>. Cada hilo puede ser interrumpido en cualquier momento o ejecutado en cualquier orden. Al final, <span class="Li">$x</span> podría ser 3 o 4, y tanto
+    <span class="Li">$y</span> como <span class="Li">$z</span> podrían ser 2 o
+  3.</p>
+<p class="Pp">Incluso <span class="Li">&quot;$x += 5&quot;</span> o
+    <span class="Li">&quot;$x++&quot;</span> no garantizan ser
+  atómicos.</p>
+<p class="Pp">Siempre que tu programa acceda a datos o recursos que puedan ser accedidos por otros hilos, debes tomar medidas para coordinar el acceso o arriesgarte a inconsistencias de datos y condiciones de carrera. Ten en cuenta que Perl protegerá sus internos de tus condiciones de carrera, pero no te protegerá de ti mismo.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Sincronización_y_control'><a class='permalink' href='#Sincronización_y_control'>Sincronización   y control</a></h1>
+<p class="Pp">Perl proporciona una serie de mecanismos para coordinar las interacciones entre ellos y sus datos, para evitar condiciones de carrera y similares. Algunos de estos están diseñados para parecerse a las técnicas comunes utilizadas en bibliotecas de hilos como <span class="Li">&quot;pthreads&quot;</span>; otros son específicos de Perl. A menudo, las técnicas estándar son torpes y difíciles de hacer correctamente (como las esperas condicionales). Siempre que sea posible, suele ser más fácil utilizar técnicas Perlish como las colas, que eliminan parte del trabajo duro implicado.</p>
+<section class="Ss">
+<h2 class="Ss" id='Control_de_acceso:_&lt;b&gt;lock()&lt;/b&gt;'><a class='permalink' href='#Control_de_acceso:_&lt;b&gt;lock()&lt;/b&gt;'>Control   de acceso: <b>lock()</b></a></h2>
+<p class="Pp">La función <span class="Li">lock()</span> toma una variable compartida y le pone un bloqueo. Ningún otro hilo puede bloquear la variable hasta que la variable sea desbloqueada por el hilo que tiene el bloqueo. El desbloqueo ocurre automáticamente cuando el hilo que bloquea sale del bloque que contiene la llamada a la función <span class="Li">lock()</span>. Usar
+    <span class="Li">lock()</span> es sencillo: Este ejemplo tiene varios hilos haciendo algunos cálculos en paralelo y, ocasionalmente, actualizando un total acumulado:</p>
+<pre>use threads;
+use threads::shared;
+my $total :shared = 0;
+sub calc {
+    while (1) {
+        my $result;
+        # (... haz algunos cálculos y establece $result ...)
+        {
+            lock($total);  # Bloquea hasta que obtengamos el bloqueo
+            $total += $result;
+        } # El bloqueo se libera implícitamente al final del ámbito
+        last if $result == 0;
+    }
+}
+my $thr1 = threads-&gt;create(\&amp;calc);
+my $thr2 = threads-&gt;create(\&amp;calc);
+my $thr3 = threads-&gt;create(\&amp;calc);
+$thr1-&gt;join();
+$thr2-&gt;join();
+$thr3-&gt;join();
+print(&quot;total=$total\n&quot;);</pre>
+<p class="Pp"><span class="Li">lock()</span> bloquea el hilo hasta que la
+    variable que se está bloqueando esté disponible. Cuando <span class="Li">lock()</span>
+    retorna, tu hilo puede estar seguro de que ningún otro hilo puede bloquear esa variable
+    hasta que el bloque que contiene el bloqueo salga de ámbito.</p>
+<p class="Pp">Es importante tener en cuenta que los bloqueos no impiden el acceso a la
+    variable en cuestión, solo los intentos de bloqueo. Esto está en consonancia con la
+    tradición de Perl de programación cortés y el bloqueo de archivos consultivo que
+    te proporciona <span class="Li">flock()</span>.</p>
+<p class="Pp">Puedes bloquear arrays y hashes, así como escalares. Bloquear un
+    array, sin embargo, no bloqueará bloqueos posteriores en los elementos del array, solo
+    intentos de bloqueo en el array mismo.</p>
+<p class="Pp">Los bloqueos son recursivos, lo que significa que está bien que un hilo bloquee una
+    variable más de una vez. El bloqueo durará hasta que el <span class="Li">lock()</span>
+    más externo sobre la variable salga de ámbito. Por ejemplo:</p>
+<pre>my $x :shared;
+doit();
+sub doit {
+    {
+        {
+            lock($x); # Espera el bloqueo
+            lock($x); # NO-OP - ya tenemos el bloqueo
+            {
+                lock($x); # NO-OP
+                {
+                    lock($x); # NO-OP
+                    lockit_some_more();
+                }
+            }
+        } # *** Desbloqueo implícito aquí ***
+    }
+}
+sub lockit_some_more {
+    lock($x); # NO-OP
+} # Nada sucede aquí</pre>
+<p class="Pp">Ten en cuenta que no hay una función <span class="Li">unlock()</span>; la
+    única forma de desbloquear una variable es permitir que salga de ámbito.</p>
+<p class="Pp">Un bloqueo puede ser utilizado para proteger los datos contenidos dentro de la
+    variable que se está bloqueando, o puede ser utilizado para proteger algo más, como una
+    sección de código. En este último caso, la variable en cuestión no contiene datos útiles,
+    y existe solo con el propósito de ser bloqueada. En este aspecto, la variable se comporta
+    como los mutex y semáforos básicos de las bibliotecas de hilos tradicionales.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Un_peligro_de_los_hilos:_Interbloqueos'><a class='permalink' href='#Un_peligro_de_los_hilos:_Interbloqueos'>Un   peligro de los hilos: Interbloqueos</a></h2>
+<p class="Pp">Los bloqueos son una herramienta útil para sincronizar el acceso a los datos, y usarlos correctamente es la clave para datos compartidos seguros. Desafortunadamente, los bloqueos no están exentos de peligros, especialmente cuando intervienen múltiples bloqueos. Considera el siguiente código:</p>
+<pre>use threads;
+use threads::shared;
+my $x :shared = 4;
+my $y :shared = 'foo';
+my $thr1 = threads-&gt;create(sub {
+    lock($x);
+    sleep(20);
+    lock($y);
+});
+my $thr2 = threads-&gt;create(sub {
+    lock($y);
+    sleep(20);
+    lock($x);
+});
+$thr1-&gt;join();
+$thr2-&gt;join();</pre>
+<p class="Pp">Este programa probablemente se colgará hasta que lo mates. La única forma en que no se cuelga es si uno de los dos hilos adquiere ambos bloqueos primero. Una versión que garantice el bloqueo es más complicada, pero el principio es el mismo.</p>
+<p class="Pp">El primer hilo tomará un bloqueo sobre <span class="Li">$x</span>, luego, después de una pausa durante la cual el segundo hilo probablemente ha tenido tiempo de hacer algo de trabajo, intentará tomar un bloqueo sobre <span class="Li">$y</span>. Mientras tanto, el segundo hilo toma un bloqueo sobre <span class="Li">$y</span>, y luego más tarde intenta tomar un bloqueo sobre <span class="Li">$x</span>. El segundo intento de bloqueo para ambos hilos se bloqueará, cada uno esperando que el otro libere su
+    bloqueo.</p>
+<p class="Pp">Esta condición se llama interbloqueo, y ocurre siempre que dos o más hilos intentan obtener bloqueos sobre recursos que los otros poseen. Cada hilo se bloqueará, esperando que el otro libere un bloqueo sobre un recurso. Eso nunca sucede, sin embargo, ya que el hilo con el recurso está él mismo esperando que se libere un bloqueo.</p>
+<p class="Pp">Hay una serie de formas de manejar este tipo de problema. La mejor manera es siempre tener todos los hilos adquiriendo bloqueos en el mismo orden exacto. Si, por ejemplo, bloqueas las variables <span class="Li">$x</span>,
+    <span class="Li">$y</span> y <span class="Li">$z</span>, siempre bloquea
+    <span class="Li">$x</span> antes que <span class="Li">$y</span>, y
+    <span class="Li">$y</span> antes que <span class="Li">$z</span>. También es mejor
+    mantener los bloqueos durante el menor tiempo posible para minimizar los riesgos de
+    interbloqueo.</p>
+<p class="Pp">Las otras primitivas de sincronización descritas a continuación pueden sufrir problemas similares.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Colas:_Pasando_datos'><a class='permalink' href='#Colas:_Pasando_datos'>Colas:   Pasando datos</a></h2>
+<p class="Pp">Una cola es un objeto especial seguro para hilos que te permite poner datos en un extremo y sacarlos del otro sin tener que preocuparte por problemas de sincronización. Son bastante sencillas y se ven así:</p>
+<pre>use threads;
+use Thread::Queue;
+my $DataQueue = Thread::Queue-&gt;new();
+my $thr = threads-&gt;create(sub {
+    while (my $DataElement = $DataQueue-&gt;dequeue()) {
+        print(&quot;Saqué $DataElement de la cola\n&quot;);
+    }
+});
+$DataQueue-&gt;enqueue(12);
+$DataQueue-&gt;enqueue(&quot;A&quot;, &quot;B&quot;, &quot;C&quot;);
+sleep(10);
+$DataQueue-&gt;enqueue(undef);
+$thr-&gt;join();</pre>
+<p class="Pp">Creas la cola con
+    <span class="Li">&quot;Thread::Queue-&gt;new()&quot;</span>. Luego puedes
+    agregar listas de escalares al final con <span class="Li">enqueue()</span>,
+    y sacar escalares del frente con <span class="Li">dequeue()</span>.
+    Una cola no tiene un tamaño fijo y puede crecer según sea necesario para contener todo lo que se le inserta.</p>
+<p class="Pp">Si una cola está vacía, <span class="Li">dequeue()</span> se bloqueará
+    hasta que otro hilo inserte algo. Esto hace que las colas sean ideales para bucles de eventos y otras comunicaciones entre hilos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Semáforos:_Sincronizando_acceso_a_datos'><a class='permalink' href='#Semáforos:_Sincronizando_acceso_a_datos'>Semáforos:   Sincronizando acceso a datos</a></h2>
+<p class="Pp">Los semáforos son un tipo de mecanismo de bloqueo genérico. En su forma más básica, se comportan de manera muy similar a los escalares bloqueables, excepto que no pueden contener datos y deben ser desbloqueados explícitamente. En su forma avanzada, actúan como una especie de contador y pueden permitir que múltiples hilos tengan el *bloqueo* en cualquier momento.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Semáforos_básicos'><a class='permalink' href='#Semáforos_básicos'>Semáforos   básicos</a></h2>
+<p class="Pp">Los semáforos tienen dos métodos, <span class="Li">down()</span> y
+    <span class="Li">up()</span>: <span class="Li">down()</span> decrementa el
+    contador de recursos, mientras que <span class="Li">up()</span> lo incrementa. Las llamadas a
+    <span class="Li">down()</span> se bloquearán si el contador actual del semáforo
+    decrementaríase por debajo de cero. Este programa ofrece una demostración rápida:</p>
+<pre>use threads;
+use Thread::Semaphore;
+my $semaphore = Thread::Semaphore-&gt;new();
+my $GlobalVariable :shared = 0;
+$thr1 = threads-&gt;create(\&amp;sample_sub, 1);
+$thr2 = threads-&gt;create(\&amp;sample_sub, 2);
+$thr3 = threads-&gt;create(\&amp;sample_sub, 3);
+sub sample_sub {
+    my $SubNumber = shift(@_);
+    my $TryCount = 10;
+    my $LocalCopy;
+    sleep(1);
+    while ($TryCount--) {
+        $semaphore-&gt;down();
+        $LocalCopy = $GlobalVariable;
+        print(&quot;$TryCount intentos restantes para la sub $SubNumber &quot;
+             .&quot;(\$GlobalVariable es $GlobalVariable)\n&quot;);
+        sleep(2);
+        $LocalCopy++;
+        $GlobalVariable = $LocalCopy;
+        $semaphore-&gt;up();
+    }
+}
+$thr1-&gt;join();
+$thr2-&gt;join();
+$thr3-&gt;join();</pre>
+<p class="Pp">Las tres invocaciones de la subrutina operan en sincronía. El semáforo, sin embargo, asegura que solo un hilo esté accediendo a la variable global a la vez.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Semáforos_avanzados'><a class='permalink' href='#Semáforos_avanzados'>Semáforos   avanzados</a></h2>
+<p class="Pp">Por defecto, los semáforos se comportan como bloqueos, permitiendo que solo un hilo
+    los <span class="Li">down()</span> a la vez. Ho</p>
+<section class="Sh">
+<h1 class="Sh" id='Semaphores_and_Synchronization_Primitives'><a class='permalink' href='#Semaphores_and_Synchronization_Primitives'>Semáforos y Primitivas de Sincronización</a></h1>
+<p class="Pp">wever, hay otros usos para los semáforos.</p>
+<p class="Pp">Cada semáforo tiene un contador asociado. Por defecto, los semáforos se crean con el contador establecido en uno, <span class="Li">down()</span> decrementa el contador en uno, y <span class="Li">up()</span> lo incrementa en uno. Sin embargo, podemos anular cualquiera o todos estos valores predeterminados simplemente pasando valores diferentes:</p>
+<pre>use threads;
+use Thread::Semaphore;
+my $semaphore = Thread::Semaphore-&gt;new(5);
+                # Crea un semáforo con el contador establecido en cinco
+my $thr1 = threads-&gt;create(\&amp;sub1);
+my $thr2 = threads-&gt;create(\&amp;sub1);
+sub sub1 {
+    $semaphore-&gt;down(5); # Decrementa el contador en cinco
+    # Haz cosas aquí
+    $semaphore-&gt;up(5); # Incrementa el contador en cinco
+}
+$thr1-&gt;detach();
+$thr2-&gt;detach();</pre>
+<p class="Pp">Si <span class="Li">down()</span> intenta decrementar el contador por debajo de cero, se bloquea hasta que el contador sea lo suficientemente grande. Tenga en cuenta que, si bien un semáforo puede crearse con un recuento inicial de cero, cualquier <span class="Li">up()</span> o <span class="Li">down()</span> siempre cambia el contador en al menos uno, por lo que <span class="Li">&quot;$semaphore-&gt;down(0)&quot;</span> es lo mismo que <span class="Li">&quot;$semaphore-&gt;down(1)&quot;</span>.</p>
+<p class="Pp">La pregunta, por supuesto, es ¿por qué harías algo así? ¿Por qué crear un semáforo con un recuento inicial que no sea uno, o por qué decrementarlo o incrementarlo en más de uno? La respuesta es la disponibilidad de recursos. Muchos recursos para los que desea gestionar el acceso pueden ser utilizados de forma segura por más de un hilo a la vez.</p>
+<p class="Pp">Por ejemplo, tomemos un programa impulsado por GUI. Tiene un semáforo que utiliza para sincronizar el acceso a la pantalla, de modo que solo un hilo dibuja a la vez. Útil, pero por supuesto, no quieres que ningún hilo comience a dibujar hasta que las cosas estén configuradas correctamente. En este caso, puedes crear un semáforo con un contador establecido en cero y activarlo cuando las cosas estén listas para dibujar.</p>
+<p class="Pp">Los semáforos con contadores mayores que uno también son útiles para establecer cuotas. Digamos, por ejemplo, que tienes un número de hilos que pueden realizar E/S a la vez. Sin embargo, no quieres que todos los hilos lean o escriban a la vez, ya que eso puede potencialmente abrumar tus canales de E/S o agotar la cuota de descriptores de archivos de tu proceso. Puedes usar un semáforo inicializado al número de solicitudes de E/S concurrentes (o archivos abiertos) que deseas en cualquier momento, y hacer que tus hilos se bloqueen y desbloqueen silenciosamente.</p>
+<p class="Pp">Los incrementos o decrementos más grandes son útiles en aquellos casos en los que un hilo necesita obtener o devolver varios recursos a la vez.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Esperando_una_Condición'><a class='permalink' href='#Esperando_una_Condición'>Esperando una Condición</a></h2>
+<p class="Pp">Las funciones <span class="Li">cond_wait()</span> y <span class="Li">cond_signal()</span> se pueden usar junto con bloqueos para notificar a los hilos cooperativos que un recurso se ha vuelto disponible. Son muy similares en uso a las funciones que se encuentran en <span class="Li">&quot;pthreads&quot;</span>. Sin embargo, para la mayoría de los propósitos, las colas son más simples de usar y más intuitivas. Consulte threads::shared para más detalles.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Cediendo_el_control'><a class='permalink' href='#Cediendo_el_control'>Cediendo el control</a></h2>
+<p class="Pp">Hay momentos en los que puede resultarle útil que un hilo ceda explícitamente la CPU a otro hilo. Puede estar haciendo algo intensivo en procesador y querer asegurarse de que el hilo de la interfaz de usuario se llame con frecuencia. Independientemente, hay momentos en los que puede desear que un hilo ceda el procesador.</p>
+<p class="Pp">El paquete de hilos de Perl proporciona la función <span class="Li">yield()</span> que hace esto. <span class="Li">yield()</span> es bastante sencillo y funciona así:</p>
+<pre>use threads;
+sub loop {
+    my $thread = shift;
+    my $foo = 50;
+    while($foo--) { print(&quot;En el hilo $thread\n&quot;); }
+    threads-&gt;yield();
+    $foo = 50;
+    while($foo--) { print(&quot;En el hilo $thread\n&quot;); }
+}
+my $thr1 = threads-&gt;create(\&amp;loop, 'primero');
+my $thr2 = threads-&gt;create(\&amp;loop, 'segundo');
+my $thr3 = threads-&gt;create(\&amp;loop, 'tercero');</pre>
+<p class="Pp">Es importante recordar que <span class="Li">yield()</span> es solo una sugerencia para ceder la CPU, depende de su hardware, sistema operativo y bibliotecas de hilos de lo que realmente sucede. <b>En muchos sistemas operativos, yield() no hace nada.</b> Por lo tanto, es importante tener en cuenta que no se debe basar la programación de los hilos en las llamadas a <span class="Li">yield()</span>. Puede funcionar en su plataforma, pero no funcionará en otra plataforma.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Rutinas_de_utilidad_general_de_hilos'><a class='permalink' href='#Rutinas_de_utilidad_general_de_hilos'>Rutinas de utilidad general de hilos</a></h1>
+<p class="Pp">Hemos cubierto las partes fundamentales del paquete de hilos de Perl, y con estas herramientas debería estar bien encaminado para escribir código y paquetes con hilos. Hay algunas pequeñas piezas útiles que realmente no encajaban en ningún otro lugar.</p>
+<section class="Ss">
+<h2 class="Ss" id='¿En_qué_hilo_estoy?'><a class='permalink' href='#¿En_qué_hilo_estoy?'>¿En qué hilo estoy?</a></h2>
+<p class="Pp">El método de clase <span class="Li">&quot;threads-&gt;self()&quot;</span> proporciona a su programa una forma de obtener un objeto que representa el hilo en el que se encuentra actualmente. Puede usar este objeto de la misma manera que los devueltos por la creación de hilos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='IDs_de_hilo'><a class='permalink' href='#IDs_de_hilo'>IDs de hilo</a></h2>
+<p class="Pp"><span class="Li">tid()</span> es un método de objeto de hilo que devuelve el ID del hilo que representa el objeto. Los IDs de hilo son enteros, siendo el hilo principal en un programa 0. Actualmente, Perl asigna un TID único a cada hilo creado en su programa, asignando al primer hilo creado un TID de 1, y aumentando el TID en 1 por cada nuevo hilo que se crea. Cuando se usa como método de clase, <span class="Li">&quot;threads-&gt;tid()&quot;</span> puede ser utilizado por un hilo para obtener su propio TID.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='¿Son_estos_hilos_los_mismos?'><a class='permalink' href='#¿Son_estos_hilos_los_mismos?'>¿Son estos hilos los mismos?</a></h2>
+<p class="Pp">El método <span class="Li">equal()</span> toma dos objetos de hilo y devuelve verdadero si los objetos representan el mismo hilo y falso si no lo hacen.</p>
+<p class="Pp">Los objetos de hilo también tienen una comparación <span class="Li">&quot;==&quot;</span> sobrecargada para que pueda realizar comparaciones en ellos como lo haría con objetos normales.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='¿Qué_hilos_se_están_ejecutando?'><a class='permalink' href='#¿Qué_hilos_se_están_ejecutando?'>¿Qué hilos se están ejecutando?</a></h2>
+<p class="Pp"><span class="Li">&quot;threads-&gt;list()&quot;</span> devuelve una lista de objetos de hilo, uno por cada hilo que se está ejecutando actualmente y no está separado. Útil para una serie de cosas, incluida la limpieza al final de su programa (desde el hilo principal de Perl, por supuesto):</p>
+<pre># Recorre todos los hilos
+foreach my $thr (threads-&gt;list()) {
+    $thr-&gt;join();
+}</pre>
+<p class="Pp">Si algunos hilos no han terminado de ejecutarse cuando finaliza el hilo principal de Perl, Perl le advertirá al respecto y morirá, ya que es imposible que Perl se limpie mientras otros hilos se estén ejecutando.</p>
+<p class="Pp">NOTA: El hilo principal de Perl (hilo 0) está en un estado <i>separado</i>, y por lo tanto no aparece en la lista devuelta por <span class="Li">&quot;threads-&gt;list()&quot;</span>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Un_ejemplo_completo'><a class='permalink' href='#Un_ejemplo_completo'>Un ejemplo completo</a></h1>
+<p class="Pp">¿Confundido todavía? Es hora de un programa de ejemplo para mostrar algunas de las cosas que hemos cubierto. Este programa encuentra números primos usando hilos.</p>
+<pre> 1 #!/usr/bin/perl
+ 2 # prime-pthread, cortesía de Tom Christiansen
+ 3
+ 4 use v5.36;
+ 5
+ 6 use threads;
+ 7 use Thread::Queue;
+ 8
+ 9 sub check_num ($upstream, $cur_prime) {
+10     my $kid;
+11     my $downstream = Thread::Queue-&gt;new();
+12     while (my $num = $upstream-&gt;dequeue()) {
+13         next unless ($num % $cur_prime);
+14         if ($kid) {
+15             $downstream-&gt;enqueue($num);
+16         } else {
+17             print(&quot;Encontrado primo: $num\n&quot;);
+18             $kid = threads-&gt;create(\&amp;check_num, $downstream, $num);
+19             if (! $kid) {
+20                 warn(&quot;Lo siento. Se acabaron los hilos.\n&quot;);
+21                 last;
+22             }
+23         }
+24     }
+25     if ($kid) {
+26         $downstream-&gt;enqueue(undef);
+27         $kid-&gt;join();
+28     }
+29 }
+30
+31 my $stream = Thread::Queue-&gt;new(3..1000, undef);
+32 check_num($stream, 2);</pre>
+<p class="Pp">Este programa utiliza el modelo de tubería para generar números primos. Cada hilo en la tubería tiene una cola de entrada que alimenta números para ser verificados, un número primo del que es responsable y una cola de salida en la que canaliza los números que han fallado la verificación. Si el hilo tiene un número que ha fallado su verificación y no hay un hilo hijo, entonces el hilo debe haber encontrado un nuevo número primo. En ese caso, se crea un nuevo hilo hijo para ese primo y se coloca al final de la tubería.</p>
+<p class="Pp">Probablemente esto suene un poco más confuso de lo que realmente es, así que repasemos este programa pieza por pieza y veamos qué hace. (Para aquellos de ustedes que puedan estar tratando de recordar exactamente qué es un número primo, es un número que solo es divisible uniformemente por sí mismo y por 1).</p>
+<p class="Pp">La mayor parte del trabajo la realiza la subrutina <span class="Li">check_num()</span>, que toma una referencia a su cola de entrada y un número primo del que es responsable. Creamos una nueva cola (línea 11) y reservamos un escalar para el hilo que probablemente crearemos más tarde (línea 10).</p>
+<p class="Pp">El bucle while de la línea 12 a la 24 toma un escalar de la cola de entrada y lo compara con el primo del que es responsable este hilo. La línea 13 comprueba si hay un resto cuando dividimos el número a verificar por nuestro primo. Si hay uno, el número no debe ser divisible uniformemente por nuestro primo, por lo que debemos pasarlo al siguiente hilo si hemos creado uno (línea 15) o crear un nuevo hilo si no lo hemos hecho.</p>
+<p class="Pp">La creación de un nuevo hilo es la línea 18. Le pasamos una referencia a la cola que hemos creado y el número primo que hemos encontrado. En las líneas 19 a 22, comprobamos para asegurarnos de que nuestro nuevo hilo se creó correctamente y, si no, dejamos de verificar los números restantes en la cola.</p>
+<p class="Pp">Finalmente, una vez que el bucle termina (porque recibimos un 0 o <span class="Li">&quot;undef&quot;</span> en la cola, que sirve como aviso para terminar), pasamos el aviso a nuestro hijo y esperamos a que salga si hemos creado un hijo (líneas 25 y 28).</p>
+<p class="Pp">Mientras tanto, de vuelta en el hilo principal, primero creamos una cola (línea 31) y ponemos en cola todos los números del 3 al 1000 para su verificación, más un aviso de terminación. Luego, todo lo que tenemos que hacer para poner en marcha las cosas es pasar la cola y el primer primo a la subrutina <span class="Li">check_num()</span> (línea 32).</p>
+<p class="Pp">Así es como funciona. Es bastante simple; como con muchos programas de Perl, la explicación es mucho más larga que el programa.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Recursos_compartidos_y_memoria_compartida'><a class='permalink' href='#Recursos_compartidos_y_memoria_compartida'>Recursos Compartidos y Memoria Compartida</a></h1>
+<p class="Pp">Si bien es posible acceder a datos compartidos sin más precauciones, esto casi siempre conduce a condiciones de carrera y corrupción de datos. Si varios hilos pueden acceder a los mismos datos, entonces esos datos deben estar protegidos por algún tipo de mecanismo de sincronización, ya sea un bloqueo de hilos, un semáforo o una cola de hilos.</p>
+<p class="Pp">El módulo <span class="Li">threads::shared</span> es un módulo de apoyo para el módulo de hilos principal. Le permite declarar variables que se compartirán entre todos los hilos que cree. Cualquier cambio en una variable declarada con <span class="Li">threads::shared</span> será visible para todos los demás hilos. Esto significa que no tendrá que preocuparse por pasar referencias a datos compartidos en el hilo de creación o recuperación. En cambio, el módulo de hilos simplemente asume que todas las variables son compartidas. Dado que esta es la forma más común de uso, el módulo de hilos se ha optimizado para esto.</p>
+<p class="Pp">Sin embargo, esto significa que si su programa tiene un gran conjunto de datos al que solo se accede desde un solo hilo, está incurriendo en una penalización de rendimiento innecesaria. En tales casos, debe asegurarse de que los datos no se compartan explícitamente. La forma en que lo hace dependerá de la implementación de los hilos de su Perl.</p>
+<p class="Pp">Para ilustrar el uso de <span class="Li">threads::shared</span>, suponga que desea ejecutar un servidor de red que pueda manejar hasta 100 clientes a la vez. Puede usar un contador para el número de clientes actualmente conectados.</p>
+<pre>use strict;
+use warnings;
+
+use threads;
+use threads::shared;
+use Thread::Semaphore;
+
+my $MAX_CLIENTS = 100;
+my $client_count : shared; # Variable compartida
+my $client_sem = Thread::Semaphore->new($MAX_CLIENTS);
+
+sub handle_client {
+    # Incrementar el contador de clientes
+    $client_sem->down();
+    $client_count++;
+    
+    print "Cliente conectado. Clientes activos: $client_count\n";
+    
+    # Simular el manejo del cliente
+    sleep(int(rand(5)) + 1);
+    
+    # Decrementar el contador de clientes
+    $client_count--;
+    $client_sem->up();
+    
+    print "Cliente desconectado. Clientes activos: $client_count\n";
+}
+
+# Bucle principal para aceptar conexiones de clientes (simulado)
+for (1..120) {
+    threads->create(\&handle_client)->detach();
+    sleep(1); 
+}
+
+# Esperar a que todos los clientes terminen (opcional)
+# Podrías tener una forma de esperar aquí o permitir que el programa termine.
+# Por simplicidad, simplemente imprimimos un mensaje.
+print "Programa principal esperando...\n";
+sleep(10); # Dar tiempo a algunos clientes para terminar
+print "Programa principal terminando.\n";
+
+exit(0);
+</pre>
+<p class="Pp">En este ejemplo:</p>
+<ul class="Bl-tag">
+<li>
+<p class="Pp"><span class="Li">$client_count</span> se declara como <span class="Li">shared</span>, lo que garantiza que los cambios realizados por un hilo sean visibles para todos los demás.</p>
+</li>
+<li>
+<p class="Pp"><span class="Li">$client_sem</span> se utiliza para limitar el número de clientes concurrentes a <span class="Li">$MAX_CLIENTS</span>. Cada vez que un cliente se conecta, se llama a <span class="Li">$client_sem-&gt;down()</span>, y cuando se desconecta, se llama a <span class="Li">$client_sem-&gt;up()</span>.</p>
+</li>
+<li>
+<p class="Pp">Dentro de <span class="Li">handle_client</span>, incrementamos y decrementamos <span class="Li">$client_count</span>. Debido a que es una variable compartida, los cambios son atómicos en el sentido de que se ven en todos los hilos, pero es importante usar el semáforo para controlar el acceso real.</p>
+</li>
+</ul>
+<p class="Pp">Tenga en cuenta que, si bien <span class="Li">threads::shared</span> hace que las variables sean visibles para todos los hilos, todavía necesita mecanismos como semáforos o bloqueos para coordinar el acceso a los recursos compartidos y evitar condiciones de carrera. El uso de <span class="Li">threads::shared</span> para <span class="Li">$client_count</span> simplemente asegura que el recuento sea siempre consistente en todos los hilos en cualquier momento dado, mientras que el semáforo garantiza que no excedamos el límite de clientes.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Different_implementations_of_threads'><a class='permalink' href='#Different_implementations_of_threads'>Diferentes implementaciones de hilos</a></h1>
+<p class="Pp">Algo de contexto sobre las implementaciones de hilos desde el punto de vista del sistema operativo. Existen tres categorías básicas de hilos: hilos en modo usuario, hilos del kernel y hilos del kernel multiprocesador.</p>
+<p class="Pp">Los hilos en modo usuario son hilos que viven completamente dentro de un programa y sus bibliotecas. En este modelo, el sistema operativo no sabe nada sobre los hilos. Para él, tu proceso es solo un proceso.</p>
+<p class="Pp">Esta es la forma más fácil de implementar hilos, y la forma en que la mayoría de los sistemas operativos comienzan. La gran desventaja es que, dado que el sistema operativo no sabe nada sobre los hilos, si un hilo se bloquea, todos lo hacen. Las actividades de bloqueo típicas incluyen la mayoría de las llamadas al sistema, la mayoría de las E/S y cosas como <span class="Li">sleep()</span>.</p>
+<p class="Pp">Los hilos del kernel son el siguiente paso en la evolución de los hilos. El sistema operativo conoce los hilos del kernel y hace concesiones para ellos. La principal diferencia entre un hilo del kernel y un hilo en modo usuario es el bloqueo. Con los hilos del kernel, las cosas que bloquean a un solo hilo no bloquean a otros hilos. Este no es el caso de los hilos en modo usuario, donde el kernel se bloquea a nivel de proceso y no a nivel de hilo.</p>
+<p class="Pp">Este es un gran paso adelante y puede darle a un programa con hilos un gran impulso de rendimiento en comparación con los programas sin hilos. Los hilos que se bloquean realizando E/S, por ejemplo, no bloquearán a los hilos que están haciendo otras cosas. Sin embargo, cada proceso todavía tiene un solo hilo ejecutándose a la vez, independientemente de cuántas CPUs tenga un sistema.</p>
+<p class="Pp">Dado que el anidamiento del kernel puede interrumpir un hilo en cualquier momento, descubrirá algunas de las suposiciones de bloqueo implícito que puede hacer en su programa. Por ejemplo, algo tan simple como <span class="Li">&quot;$x = $x + 2&quot;</span> puede comportarse de manera impredecible con los hilos del kernel si <span class="Li">$x</span> es visible para otros hilos, ya que otro hilo puede haber cambiado <span class="Li">$x</span> entre el momento en que se obtuvo en el lado derecho y el momento en que se almacena el nuevo valor.</p>
+<p class="Pp">Los hilos del kernel multiprocesador son el paso final en el soporte de hilos. Con hilos del kernel multiprocesador en una máquina con múltiples CPUs, el sistema operativo puede programar dos o más hilos para que se ejecuten simultáneamente en diferentes CPUs.</p>
+<p class="Pp">Esto puede darle un serio impulso de rendimiento a su programa con hilos, ya que más de un hilo se ejecutará al mismo tiempo. Sin embargo, como contrapartida, cualquiera de esos molestos problemas de sincronización que podrían no haber aparecido con los hilos básicos del kernel aparecerán con creces.</p>
+<p class="Pp">Además de los diferentes niveles de participación del sistema operativo en los hilos, diferentes sistemas operativos (y diferentes implementaciones de hilos para un sistema operativo en particular) asignan ciclos de CPU a los hilos de diferentes maneras.</p>
+<p class="Pp">Los sistemas de multitarea cooperativa hacen que los hilos en ejecución cedan el control si ocurre una de dos cosas. Si un hilo llama a una función de yield, cede el control. También cede el control si el hilo hace algo que lo haría bloquearse, como realizar E/S. En una implementación de multitarea cooperativa, un hilo puede dejar hambrientos a todos los demás de tiempo de CPU si así lo desea.</p>
+<p class="Pp">Los sistemas de multitarea preventiva interrumpen los hilos a intervalos regulares mientras el sistema decide qué hilo debe ejecutarse a continuación. En un sistema de multitarea preventiva, un hilo generalmente no monopolizará la CPU.</p>
+<p class="Pp">En algunos sistemas, puede haber hilos cooperativos y preventivos ejecutándose simultáneamente. (Los hilos que se ejecutan con prioridades en tiempo real a menudo se comportan de forma cooperativa, por ejemplo, mientras que los hilos que se ejecutan con prioridades normales se comportan de forma preventiva).</p>
+<p class="Pp">La mayoría de los sistemas operativos modernos soportan la multitarea preventiva hoy en día.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Performance_considerations'><a class='permalink' href='#Performance_considerations'>Consideraciones de rendimiento</a></h1>
+<p class="Pp">Lo principal a tener en cuenta al comparar los hilos de Perl con otros modelos de hilos es el hecho de que por cada nuevo hilo creado, se debe tomar una copia completa de todas las variables y datos del hilo padre. Por lo tanto, la creación de hilos puede ser bastante costosa, tanto en términos de uso de memoria como de tiempo dedicado a la creación. La forma ideal de reducir estos costos es tener un número relativamente pequeño de hilos de larga duración, todos creados bastante temprano (antes de que el hilo base haya acumulado demasiados datos). Por supuesto, esto puede no ser siempre posible, por lo que hay que hacer concesiones. Sin embargo, después de que se ha creado un hilo, su rendimiento y uso de memoria adicional deberían ser poco diferentes del código ordinario.</p>
+<p class="Pp">Tenga en cuenta también que bajo la implementación actual, las variables compartidas utilizan un poco más de memoria y son un poco más lentas que las variables ordinarias.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Process-scope_Changes'><a class='permalink' href='#Process-scope_Changes'>Cambios de ámbito de proceso</a></h1>
+<p class="Pp">Tenga en cuenta que, si bien los hilos en sí mismos son hilos de ejecución separados y los datos de Perl son privados del hilo a menos que se compartan explícitamente, los hilos pueden afectar el estado de ámbito del proceso, afectando a todos los hilos.</p>
+<p class="Pp">El ejemplo más común de esto es cambiar el directorio de trabajo actual usando <span class="Li">chdir()</span>. Un hilo llama a <span class="Li">chdir()</span>, y el directorio de trabajo de todos los hilos cambia.</p>
+<p class="Pp">Un ejemplo aún más drástico de un cambio de ámbito de proceso es <span class="Li">chroot()</span>: el directorio raíz de todos los hilos cambia, y ningún hilo puede deshacerlo (a diferencia de <span class="Li">chdir()</span>).</p>
+<p class="Pp">Otros ejemplos de cambios de ámbito de proceso incluyen <span class="Li">umask()</span> y el cambio de uids y gids.</p>
+<p class="Pp">¿Piensa en mezclar <span class="Li">fork()</span> y hilos? Por favor, acuéstese y espere hasta que pase la sensación. Tenga en cuenta que la semántica de <span class="Li">fork()</span> varía entre plataformas. Por ejemplo, algunos sistemas Unix copian todos los hilos actuales en el proceso hijo, mientras que otros solo copian el hilo que llamó a <span class="Li">fork()</span>. ¡Ha sido advertido!</p>
+<p class="Pp">De manera similar, mezclar señales e hilos puede ser problemático. Las implementaciones dependen de la plataforma, e incluso la semántica POSIX puede no ser lo que espera (y Perl ni siquiera le da la API POSIX completa). Por ejemplo, no hay forma de garantizar que una señal enviada a una aplicación Perl multihilo sea interceptada por un hilo en particular. (Sin embargo, una característica agregada recientemente proporciona la capacidad de enviar señales entre hilos. Vea &quot;SEÑALIZACIÓN DE HILOS&quot; en threads para más detalles).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Thread-Safety_of_System_Libraries'><a class='permalink' href='#Thread-Safety_of_System_Libraries'>Seguridad de hilos de bibliotecas del sistema</a></h1>
+<p class="Pp">Si las llamadas a la biblioteca C son seguras para hilos está fuera del control de Perl. Se producirá un comportamiento indefinido si se utilizan llamadas inseguras durante la operación multihilo. Consulte &quot;Cómo tratar con perls incrustados e hilos&quot; en perlclib.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Conclusion'><a class='permalink' href='#Conclusion'>Conclusión</a></h1>
+<p class="Pp">Un tutorial completo sobre hilos podría llenar un libro (y lo ha hecho, muchas veces), pero con lo que hemos cubierto en esta introducción, estará en camino de convertirse en un experto en Perl con hilos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp">POD anotado para threads: &lt;<a href='https://web.archive.org/web/20171028020148/http://annocpan.org/?mode=search'>https://web.archive.org/web/20171028020148/http://annocpan.org/?mode=search</a>&amp;field=Module&amp;name=threads&gt;</p>
+<p class="Pp">Última versión de threads en CPAN: <a href='https://metacpan.org/pod/threads'>https://metacpan.org/pod/threads</a></p>
+<p class="Pp">POD anotado para threads::shared: &lt;<a href='https://web.archive.org/web/20171028020148/http://annocpan.org/?mode=search'>https://web.archive.org/web/20171028020148/http://annocpan.org/?mode=search</a>&amp;field=Module&amp;name=threads%3A%3Ashared&gt;</p>
+<p class="Pp">Última versión de threads::shared en CPAN: <a href='https://metacpan.org/pod/threads::shared'>https://metacpan.org/pod/threads::shared</a></p>
+<p class="Pp">Lista de correo de threads de Perl: <a href='https://lists.perl.org/list/ithreads.html'>https://lists.perl.org/list/ithreads.html</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Bibliography'><a class='permalink' href='#Bibliography'>Bibliografía</a></h1>
+<p class="Pp">Aquí hay una breve bibliografía cortesía de Jürgen Christoffel:</p>
+<section class="Ss">
+<h2 class="Ss" id='Introductory_Texts'><a class='permalink' href='#Introductory_Texts'>Textos introductorios</a></h2>
+<p class="Pp">Birrell, Andrew D. An Introduction to Programming with Threads. Digital Equipment Corporation, 1989, Informe de investigación SRC de DEC #35 en línea en <a href='https://www.hpl.hp.com/techreports/Compaq-DEC/SRC-RR-35.pdf'>https://www.hpl.hp.com/techreports/Compaq-DEC/SRC-RR-35.pdf</a> (muy recomendado)</p>
+<p class="Pp">Robbins, Kay. A., y Steven Robbins. Practical Unix Programming: A Guide to Concurrency, Communication, and Multithreading. Prentice-Hall, 1996.</p>
+<p class="Pp">Lewis, Bill, y Daniel J. Berg. Multithreaded Programming with Pthreads. Prentice Hall, 1997, ISBN 0-13-443698-9 (una buena introducción a los hilos).</p>
+<p class="Pp">Nelson, Greg (editor). Systems Programming with Modula-3. Prentice Hall, 1991, ISBN 0-13-590464-1.</p>
+<p class="Pp">Nichols, Bradford, Dick Buttlar y Jacqueline Proulx Farrell. Pthreads Programming. O'Reilly &amp; Associates, 1996, ISBN 156592-115-1 (cubre hilos POSIX).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='OS-Related_References'><a class='permalink' href='#OS-Related_References'>Referencias relacionadas con el SO</a></h2>
+<p class="Pp">Boykin, Joseph, David Kirschen, Alan Langerman y Susan LoVerso. Programming under Mach. Addison-Wesley, 1994, ISBN 0-201-52739-1.</p>
+<p class="Pp">Tanenbaum, Andrew S. Distributed Operating Systems. Prentice Hall, 1995, ISBN 0-13-219908-4 (gran libro de texto).</p>
+<p class="Pp">Silberschatz, Abraham, y Peter B. Galvin. Operating System Concepts, 4ª ed. Addison-Wesley, 1995, ISBN 0-201-59292-4</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Other_References'><a class='permalink' href='#Other_References'>Otras referencias</a></h2>
+<p class="Pp">Arnold, Ken y James Gosling. The Java Programming Language, 2ª ed. Addison-Wesley, 1998, ISBN 0-201-31006-6.</p>
+<p class="Pp">FAQ de comp.programming.threads, <a href='http://www.serpentine.com/~bos/threads-faq/'>http://www.serpentine.com/~bos/threads-faq/</a></p>
+<p class="Pp">Le Sergent, T. y B. Berthomieu. &quot;Incremental MultiThreaded Garbage Collection on Virtually Shared Memory Architectures&quot; en Memory Management: Proc. of the International Workshop IWMM 92, St. Malo, Francia, septiembre de 1992, Yves Bekkers y Jacques Cohen, eds. Springer, 1992, ISBN 3540-55940-X (aplicaciones de hilos en la vida real).</p>
+<p class="Pp">Artur Bergman, &quot;Where Wizards Fear To Tread&quot;, 11 de junio de 2002, <a href='http://www.perl.com/pub/a/2002/06/11/threads.html'>http://www.perl.com/pub/a/2002/06/11/threads.html</a></p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Acknowledgements'><a class='permalink' href='#Acknowledgements'>Agradecimientos</a></h1>
+<p class="Pp">Gracias (en</p>
+<section class="Sh">
+<h1 class="Sh" id='Acknowledgements'><a class='permalink' href='#Acknowledgements'>ACKNOWLEDGEMENTS</a></h1>
+<p class="Pp">En ningún orden particular, a Chaim Frenkel, Steve Fink, Gurusamy
+    Sarathy, Ilya Zakharevich, Benjamin Sugars, Jürgen Christoffel, Joshua
+    Pritikin y Alan Burlison, por su ayuda en la comprobación de la realidad y el
+    pulido de este artículo. Un gran agradecimiento a Tom Christiansen por su
+    reescritura del generador de números primos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<p class="Pp">Dan Sugalski &lt;dan@sidhe.org&gt;</p>
+<p class="Pp">Ligeramente modificado por Arthur Bergman para adaptarse al nuevo
+    modelo/módulo de hilos.</p>
+<p class="Pp">Revisado ligeramente por Jörg Walter &lt;jwalt@cpan.org&gt; para
+    ser más conciso sobre la seguridad de hilos del código Perl.</p>
+<p class="Pp">Reorganizado ligeramente por Elizabeth Mattijsen &lt;liz@dijkmat.nl&gt;
+    para poner menos énfasis en <b>yield()</b>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Copyrights'><a class='permalink' href='#Copyrights'>Copyrights</a></h1>
+<p class="Pp">La versión original de este artículo apareció originalmente en The
+    Perl Journal #10, y tiene copyright © 1998 The Perl Journal. Aparece por
+    cortesía de Jon Orwant y The Perl Journal. Este documento puede ser distribuido
+    bajo los mismos términos que el propio Perl.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Versión:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#What_Is_A_Thread_Anyway?">¿Qué es un hilo de todos modos?</a></li>
+        
+            <li><a href="#Threaded_Program_Models">Modelos de programas con hilos</a></li>
+        
+            <li><a href="#What_kind_of_threads_are_Perl_threads?">¿Qué tipo de hilos son los hilos de Perl?</a></li>
+        
+            <li><a href="#Thread-Safe_Modules">Módulos seguros para hilos</a></li>
+        
+            <li><a href="#Thread_Basics">Conceptos básicos de hilos</a></li>
+        
+            <li><a href="#Threads_And_Data">Hilos y datos</a></li>
+        
+            <li><a href="#Synchronization_and_control">Sincronización y control</a></li>
+        
+            <li><a href="#General_Thread_Utility_Routines">Rutinas de utilidad general para hilos</a></li>
+        
+            <li><a href="#A_Complete_Example">Un ejemplo completo</a></li>
+        
+            <li><a href="#Different_implementations_of_threads">Diferentes implementaciones de hilos</a></li>
+        
+            <li><a href="#Performance_considerations">Consideraciones de rendimiento</a></li>
+        
+            <li><a href="#Process-scope_Changes">Cambios a nivel de proceso</a></li>
+        
+            <li><a href="#Thread-Safety_of_System_Libraries">Seguridad de hilos de bibliotecas del sistema</a></li>
+        
+            <li><a href="#Conclusion">Conclusión</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#Bibliography">Bibliografía</a></li>
+        
+            <li><a href="#Acknowledgements">Reconocimientos</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#Copyrights">Copyrights</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/perlthrtut.1perl.es.txt">txt</a>, 
+        
+            <a href="/man/perlthrtut.1perl.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

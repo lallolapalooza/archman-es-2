@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>seccomp_unotify(2) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">seccomp_unotify(2)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/any/man-pages/">man-pages</a></p>
+<p class="lic">Licencias: BSD-2-Clause, BSD-3-Clause, BSD-4.3TAHOE, BSD-4-Clause-UC, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-or-later, LGPL-3.0-or-later, LGPL-3.0-linking-exception, LicenseRef-Public-Domain, LicenseRef-UltraPermissive, Linux-man-pages-1-para, Linux-man-pages-copyleft, Linux-man-pages-copyleft-2-para, Linux-man-pages-copyleft-var, MIT, Spencer-94</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">seccomp_unotify(2)</td>
+    <td class="head-vol">Manual de Llamadas al Sistema</td>
+    <td class="head-rtitle">seccomp_unotify(2)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">seccomp_unotify - Mecanismo de notificación al espacio de usuario de Seccomp</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BIBLIOTECA'><a class='permalink' href='#BIBLIOTECA'>BIBLIOTECA</a></h1>
+<p class="Pp">Biblioteca C estándar (<i>libc</i>, <i>-lc</i>)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;linux/seccomp.h&gt;</b>
+<b>#include &lt;linux/filter.h&gt;</b>
+<b>#include &lt;linux/audit.h&gt;</b></pre>
+<pre><b>int seccomp(unsigned int </b><i>operacion</i><b>, unsigned int </b><i>flags</i><b>, void *</b><i>args</i><b>);</b></pre>
+<pre><b>#include &lt;sys/ioctl.h&gt;</b></pre>
+<pre><b>int ioctl(int </b><i>fd</i><b>, SECCOMP_IOCTL_NOTIF_RECV,</b>
+<b>          struct seccomp_notif *</b><i>req</i><b>);</b>
+<b>int ioctl(int </b><i>fd</i><b>, SECCOMP_IOCTL_NOTIF_SEND,</b>
+<b>          struct seccomp_notif_resp *</b><i>resp</i><b>);</b>
+<b>int ioctl(int </b><i>fd</i><b>, SECCOMP_IOCTL_NOTIF_ID_VALID, __u64 *</b><i>id</i><b>);</b>
+<b>int ioctl(int </b><i>fd</i><b>, SECCOMP_IOCTL_NOTIF_ADDFD,</b>
+<b>          struct seccomp_notif_addfd *</b><i>addfd</i><b>);</b></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCION'><a class='permalink' href='#DESCRIPCION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Esta página describe el mecanismo de notificación al espacio de usuario
+    proporcionado por la instalación de Computación Segura (seccomp). Además del
+    uso de la bandera <b>SECCOMP_FILTER_FLAG_NEW_LISTENER</b>, el valor de acción
+    <b>SECCOMP_RET_USER_NOTIF</b> y la operación
+    <b>SECCOMP_GET_NOTIF_SIZES</b> descritas en <a href='/man/seccomp.2.en'>seccomp(2)</a>, este mecanismo implica el
+    uso de una serie de operaciones relacionadas de <a href='/man/ioctl.2.en'>ioctl(2)</a>
+    (descritas a continuación).</p>
+<section class="Ss">
+<h2 class="Ss" id='Visión_general'><a class='permalink' href='#Visión_general'>Visión general</a></h2>
+<p class="Pp">En el uso convencional de un filtro seccomp, la decisión sobre cómo
+    tratar una llamada al sistema la toma el propio filtro. Por el contrario, el
+    mecanismo de notificación al espacio de usuario permite que el filtro seccomp
+    delegue el manejo de la llamada al sistema a otro proceso del espacio de
+    usuario. Tenga en cuenta que este mecanismo explícitamente <b>no</b> está
+    destinado como un método para implementar políticas de seguridad; véase
+    NOTAS.</p>
+<p class="Pp">En la discusión que sigue, los hilos sobre los que está instalado el
+    filtro seccomp se denominan el *objetivo*, y el proceso que es notificado por
+    el mecanismo de notificación al espacio de usuario se denomina el
+    *supervisor*.</p>
+<p class="Pp">Un supervisor adecuadamente privilegiado puede usar el mecanismo de
+    notificación al espacio de usuario para realizar acciones en nombre del
+    objetivo. La ventaja del mecanismo de notificación al espacio de usuario es
+    que el supervisor generalmente podrá recuperar información sobre el objetivo y
+    la llamada al sistema realizada que el propio filtro seccomp no puede. (Un
+    filtro seccomp está limitado en la información que puede obtener y en las
+    acciones que puede realizar, ya que se ejecuta en una máquina virtual dentro
+    del kernel.)</p>
+<p class="Pp">Una visión general de los pasos realizados por el objetivo y el
+    supervisor es la siguiente:</p>
+<dl class="Bl-tag">
+  <dt>(1)</dt>
+  <dd>El objetivo establece un filtro seccomp de la manera habitual, pero con dos
+      diferencias:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El argumento <i>flags</i> de <a href='/man/seccomp.2.en'>seccomp(2)</a> incluye la bandera
+      <b>SECCOMP_FILTER_FLAG_NEW_LISTENER</b>. En consecuencia, el valor de retorno
+      de la llamada (exitosa) a <a href='/man/seccomp.2.en'>seccomp(2)</a> es un nuevo descriptor de
+      archivo &quot;de escucha&quot; que se puede utilizar para recibir
+      notificaciones. Solo se puede instalar un filtro seccomp
+      &quot;de escucha&quot; por hilo.</dd>
+  <dt>&#x2022;</dt>
+  <dd>En los casos en que sea apropiado, el filtro seccomp devuelve el valor de
+      acción <b>SECCOMP_RET_USER_NOTIF</b>. Este valor de retorno activará un
+      evento de notificación.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt>(2)</dt>
+  <dd>Para que el supervisor pueda obtener notificaciones utilizando el descriptor
+      de archivo de escucha, (un duplicado de) ese descriptor de archivo debe
+      pasarse del objetivo al supervisor. Una forma de hacerlo es pasando el
+      descriptor de archivo a través de una conexión de socket de dominio UNIX
+      entre el objetivo y el supervisor (utilizando el tipo de mensaje auxiliar
+      <b>SCM_RIGHTS</b> descrito en <a href='/man/unix.7.en'>unix(7)</a>). Otra forma de hacerlo es
+      mediante el uso de <a href='/man/pidfd_getfd.2.en'>pidfd_getfd(2)</a>.</dd>
+  <dt>(3)</dt>
+  <dd>El supervisor recibirá eventos de notificación en el descriptor de archivo
+      de escucha. Estos eventos se devuelven como estructuras del tipo
+      <i>seccomp_notif</i>. Dado que esta estructura y su tamaño pueden
+      evolucionar con las versiones del kernel, el supervisor primero debe
+      determinar el tamaño de esta estructura utilizando la operación
+      <b>SECCOMP_GET_NOTIF_SIZES</b> de <a href='/man/seccomp.2.en'>seccomp(2)</a>, que devuelve una
+      estructura del tipo <i>seccomp_notif_sizes</i>. El supervisor asigna un
+      búfer de tamaño <i>seccomp_notif_sizes.seccomp_notif</i> bytes para
+      recibir eventos de notificación. Además, el supervisor asigna otro búfer de
+      tamaño <i>seccomp_notif_sizes.seccomp_notif_resp</i> bytes para la
+      respuesta (una estructura <i>seccomp_notif_resp</i>) que proporcionará al
+      kernel (y, por lo tanto, al objetivo).</dd>
+  <dt>(4)</dt>
+  <dd>El objetivo realiza entonces su carga de trabajo, que incluye llamadas al
+      sistema que serán controladas por el filtro seccomp. Siempre que una de
+      estas llamadas al sistema haga que el filtro devuelva el valor de acción
+      <b>SECCOMP_RET_USER_NOTIF</b>, el kernel <i>no</i> ejecuta (todavía) la llamada al
+      sistema; en su lugar, la ejecución del objetivo se bloquea temporalmente
+      dentro del kernel (en un estado de espera que puede ser interrumpido por
+      señales) y se genera un evento de notificación en el descriptor de
+      archivo de escucha.</dd>
+  <dt>(5)</dt>
+  <dd>El supervisor ahora puede monitorizar repetidamente el descriptor de archivo
+      de escucha para eventos activados por <b>SECCOMP_RET_USER_NOTIF</b>. Para
+      hacer esto, el supervisor utiliza la operación <a href='/man/ioctl.2.en'>ioctl(2)</a>
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b> para leer información sobre un evento de
+      notificación; esta operación se bloquea hasta que hay un evento
+      disponible. La operación devuelve una estructura <i>seccomp_notif</i>
+      que contiene información sobre la llamada al sistema que está intentando
+      el objetivo. (Como se describe en NOTAS, el descriptor de archivo también
+      puede ser monitorizado con <a href='/man/select.2.en'>select(2)</a>, <a href='/man/poll.2.en'>poll(2)</a> o
+      <a href='/man/epoll.7.en'>epoll(7)</a>.)</dd>
+  <dt>(6)</dt>
+  <dd>La estructura <i>seccomp_notif</i> devuelta por la operación
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b> incluye la misma información (una estructura
+      <i>seccomp_data</i>) que se pasó al filtro seccomp. Esta información
+      permite al supervisor descubrir el número de llamada al sistema y los
+      argumentos de la llamada al sistema del objetivo. Además, el evento de
+      notificación contiene el ID del hilo que activó la notificación y un valor
+      de cookie único que se utiliza en operaciones posteriores de
+      <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> y <b>SECCOMP_IOCTL_NOTIF_SEND</b>.</dd>
+  <dt></dt>
+  <dd>La información en la notificación se puede utilizar para descubrir los
+      valores de los argumentos de puntero para la llamada al sistema del
+      objetivo. (Esto es algo que no se puede hacer desde dentro de un filtro
+      seccomp.) Una forma en que el supervisor puede hacer esto es abrir el
+      archivo correspondiente de <i>/proc/</i>tid<i>/mem</i> (ver
+      <a href='/man/proc.5.en'>proc(5)</a>) y leer bytes de la ubicación que corresponde a uno de los
+      argumentos de puntero cuyo valor se proporciona en el evento de
+      notificación. (El supervisor debe tener cuidado de evitar una condición
+      de carrera que pueda ocurrir al hacer esto; véase la descripción de la
+      operación <a href='/man/ioctl.2.en'>ioctl(2)</a>
+      <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> más abajo.) Además, el supervisor puede
+      acceder a otra información del sistema que sea visible en el espacio de
+      usuario pero que no sea accesible desde un filtro seccomp.</dd>
+  <dt>(7)</dt>
+  <dd>Habiendo obtenido información según el paso anterior, el supervisor puede
+      entonces elegir realizar una acción en respuesta a la llamada al sistema
+      del objetivo (que, como se mencionó anteriormente, no se ejecuta cuando el
+      filtro seccomp devuelve el valor de acción
+      <b>SECCOMP_RET_USER_NOTIF</b>).</dd>
+  <dt></dt>
+  <dd>Un caso de uso de ejemplo aquí se relaciona con los contenedores. El objetivo
+      puede estar ubicado dentro de un contenedor donde no tiene suficientes
+      capacidades para montar un sistema de archivos en el espacio de nombres de
+      montaje del contenedor. Sin embargo, el supervisor puede ser un proceso más
+      privilegiado que sí tiene suficientes capacidades para realizar la operación
+      de montaje.</dd>
+  <dt>(8)</dt>
+  <dd>El supervisor luego envía una respuesta a la notificación. La información
+      en esta respuesta es utilizada por el kernel para construir un valor de
+      retorno para la llamada al sistema del objetivo y proporcionar un valor que
+      se asignará a la variable <i>errno</i> del objetivo.</dd>
+  <dt></dt>
+  <dd>La respuesta se envía utilizando la operación <a href='/man/ioctl.2.en'>ioctl(2)</a>
+      <b>SECCOMP_IOCTL_NOTIF_SEND</b>, que se utiliza para transmitir una estructura
+      <i>seccomp_notif_resp</i> al kernel. Esta estructura incluye un valor de cookie
+      que el supervisor obtuvo en la estructura <i>seccomp_notif</i> devuelta por
+      la operación <a href='/man/ioctl.2.en'>ioctl(2)</a>
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b>.</dd>
+</dl>
+<section class="Ss">
+<h2 class="Ss" id='El_mecanismo_de_notificación'><a class='permalink' href='#El_mecanismo_de_notificación'>El mecanismo de notificación</a></h2>
+<p class="Pp">El mecanismo de notificación se inicia configurando un filtro seccomp
+    con la bandera <b>SECCOMP_FILTER_FLAG_NEW_LISTENER</b>. Esto hace que la llamada
+    al sistema <a href='/man/seccomp.2.en'>seccomp(2)</a> devuelva un descriptor de archivo
+    (el descriptor de archivo de escucha) en lugar de la usualmente esperada (y
+    en este caso, vacía) estructura <i>sockaddr</i>. Este descriptor de archivo
+    de escucha se puede duplicar y pasar a otro proceso (el supervisor).</p>
+<p class="Pp">Un filtro seccomp que utiliza este mecanismo debe configurarse para
+    devolver el valor de acción <b>SECCOMP_RET_USER_NOTIF</b> para las llamadas al
+    sistema que se desean delegar al supervisor.</p>
+<p class="Pp">Cuando una llamada al sistema se activa con el valor de acción
+    <b>SECCOMP_RET_USER_NOTIF</b>, el kernel no ejecuta la llamada al sistema. En
+    su lugar, se genera un evento de notificación en el descriptor de archivo de
+    escucha. El proceso del objetivo se bloquea en la llamada al sistema hasta
+    que el supervisor proporciona una respuesta.</p>
+<p class="Pp">Las notificaciones se reciben utilizando la operación
+    <b>SECCOMP_IOCTL_NOTIF_RECV</b> en el descriptor de archivo de escucha. Esta
+    operación se bloquea hasta que llega una notificación. La estructura
+    <i>seccomp_notif</i> devuelta contiene información sobre la llamada al sistema
+    que se está intentando, incluyendo la estructura <i>seccomp_data</i> y un
+    valor de cookie.</p>
+<p class="Pp">La estructura <i>seccomp_data</i> dentro de <i>seccomp_notif</i>
+    contiene la siguiente información:</p>
+<dl class="Bl-tag">
+  <dt><i>nr</i></dt>
+  <dd>El número de llamada al sistema (como se define en
+      <i>/usr/include/asm/unistd_64.h</i>).</dd>
+  <dt><i>args</i>[0..4]</dt>
+  <dd>Los primeros cinco argumentos de la llamada al sistema. Tenga en cuenta que
+      estos son valores de 64 bits incluso en sistemas de 32 bits, por lo que es
+      posible que deba tener en cuenta el relleno.</dd>
+</dl>
+<p class="Pp">El supervisor utiliza el valor de cookie para identificar la
+    notificación específica cuando envía una respuesta usando la operación
+    <b>SECCOMP_IOCTL_NOTIF_SEND</b>. La respuesta (en una estructura
+    <i>seccomp_notif_resp</i>) especifica los valores de retorno y
+    <i>errno</i> que el kernel utilizará para reanudar la llamada al sistema
+    bloqueada del objetivo.</p>
+<p class="Pp">La operación
+    <b>SECCOMP_IOCTL_NOTIF_ADDFD</b> permite al supervisor transferir descriptores
+    de archivo adicionales al objetivo. Esto es útil si el supervisor necesita
+    proporcionar al objetivo acceso a ciertos recursos (por ejemplo, un puerto de
+    red abierto) para que el objetivo pueda completar su tarea después de que el
+    supervisor haya intervenido.</p>
+<p class="Pp">La operación <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> permite al
+    supervisor validar si una notificación (identificada por su ID) todavía está
+    activa. Esto es útil para evitar condiciones de carrera cuando se intenta
+    leer datos del espacio de direcciones del objetivo usando
+    /proc/<i>tid</i>/mem. El supervisor debe llamar a esta operación después de
+    abrir el archivo de memoria, pero antes de leerlo. Si la operación devuelve
+    éxito, el supervisor puede proceder a leer la memoria; de lo contrario, debe
+    obtener una nueva notificación.</p>
+<p class="Pp">El supervisor debe usar <a href='/man/seccomp.2.en'>seccomp(2)</a>
+    con la operación <b>SECCOMP_GET_NOTIF_SIZES</b> para obtener los tamaños
+    correctos de las estructuras de notificación y respuesta. Esto se debe a que
+    estas estructuras pueden cambiar entre versiones del kernel.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estructuras'><a class='permalink' href='#Estructuras'>Estructuras</a></h2>
+<p class="Pp">La estructura <i>seccomp_notif</i> está definida en
+    <i>&lt;linux/seccomp.h&gt;</i> como:</p>
+<pre>struct seccomp_notif {
+    __u64 id;
+    __u32 error;
+    __u32 __unused;
+    struct seccomp_data data;
+};</pre>
+<p class="Pp">La estructura <i>seccomp_notif_resp</i> está definida en
+    <i>&lt;linux/seccomp.h&gt;</i> como:</p>
+<pre>struct seccomp_notif_resp {
+    __u64 id;
+    __s64 val;
+    __s32 errno;
+};</pre>
+<p class="Pp">La estructura <i>seccomp_notif_sizes</i> está definida en
+    <i>&lt;linux/seccomp.h&gt;</i> como:</p>
+<pre>struct seccomp_notif_sizes {
+    __u16 seccomp_notif;
+    __u16 seccomp_notif_resp;
+};</pre>
+<p class="Pp">La estructura <i>seccomp_notif_addfd</i> está definida en
+    <i>&lt;linux/seccomp.h&gt;</i> como:</p>
+<pre>struct seccomp_notif_addfd {
+    __u64 id;
+    __u32 srcfd;
+    __u32 flags;
+};</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Operaciones_de_ioctl'><a class='permalink' href='#Operaciones_de_ioctl'>Operaciones de ioctl</a></h2>
+<p class="Pp">Las siguientes operaciones de <a href='/man/ioctl.2.en'>ioctl(2)</a> se aplican al descriptor de
+    archivo de escucha:</p>
+<dl class="Bl-tag">
+  <dt><b>SECCOMP_IOCTL_NOTIF_RECV</b></dt>
+  <dd>Lee la siguiente notificación del descriptor de archivo de escucha. Bloquea
+      si no hay notificaciones pendientes. El argumento es un puntero a una
+      estructura <i>seccomp_notif</i>.</dd>
+  <dt><b>SECCOMP_IOCTL_NOTIF_SEND</b></dt>
+  <dd>Envía una respuesta a una notificación pendiente. El argumento es un puntero a
+      una estructura <i>seccomp_notif_resp</i>. El valor de <i>id</i> en la
+      respuesta debe coincidir con el de la notificación que se está
+      respondiendo.</dd>
+  <dt><b>SECCOMP_IOCTL_NOTIF_ID_VALID</b></dt>
+  <dd>Comprueba si una notificación con el ID dado sigue siendo válida. El
+      argumento es un puntero a un <i>__u64</i> que contiene el ID. Devuelve
+      0 en caso de éxito y -1 en caso de error (por ejemplo, si la notificación
+      ya ha expirado).</dd>
+  <dt><b>SECCOMP_IOCTL_NOTIF_ADDFD</b></dt>
+  <dd>Transfiere un descriptor de archivo del supervisor al objetivo. El argumento
+      es un puntero a una estructura <i>seccomp_notif_addfd</i>. El campo
+      <i>id</i> debe coincidir con el de la notificación para la que se está
+      añadiendo el descriptor de archivo. El campo <i>srcfd</i> es el descriptor
+      de archivo que se va a transferir. El campo <i>flags</i> se puede usar para
+      controlar el comportamiento (actualmente no se utilizan flags, así que
+      debe ser 0).</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Valores_de_retorno_y_errores'><a class='permalink' href='#Valores_de_retorno_y_errores'>Valores de retorno y errores</a></h2>
+<p class="Pp">La llamada al sistema <a href='/man/seccomp.2.en'>seccomp(2)</a> devuelve el descriptor de
+    archivo de escucha en caso de éxito, o -1 en caso de error y establece
+    <i>errno</i> adecuadamente.</p>
+<p class="Pp">Las operaciones de <a href='/man/ioctl.2.en'>ioctl(2)</a> devuelven 0 en caso de
+    éxito, o -1 en caso de error y establecen <i>errno</i> adecuadamente.</p>
+<p class="Pp">Los errores posibles para las operaciones de <a href='/man/ioctl.2.en'>ioctl(2)</a>
+    incluyen:</p>
+<dl class="Bl-tag">
+  <dt><b>EBADF</b></dt>
+  <dd>El descriptor de archivo proporcionado no es válido.</dd>
+  <dt><b>EFAULT</b></dt>
+  <dd>El argumento de puntero es inválido.</dd>
+  <dt><b>EINVAL</b></dt>
+  <dd>La operación de ioctl no es válida para el descriptor de archivo, o el
+      ID de notificación no es válido.</dd>
+  <dt><b>ENOTTY</b></dt>
+  <dd>El descriptor de archivo no está asociado a un archivo de dispositivo
+      apropiado (necesario para ioctl).</dd>
+  <dt><b>ENOMSG</b></dt>
+  <dd>No hay notificaciones pendientes para
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b>.</dd>
+  <dt><b>EPERM</b></dt>
+  <dd>El ID de notificación no es válido para
+      <b>SECCOMP_IOCTL_NOTIF_SEND</b> o
+      <b>SECCOMP_IOCTL_NOTIF_ADDFD</b> (por ejemplo, ya ha expirado o fue
+      respondido).</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFORMIDAD'><a class='permalink' href='#CONFORMIDAD'>CONFORMIDAD</a></h1>
+<p class="Pp">Este mecanismo se introdujo en Linux 5.4. Las operaciones de
+    <a href='/man/ioctl.2.en'>ioctl(2)</a> se introdujeron en Linux 5.11.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<p class="Pp">Este mecanismo <b>no</b> está destinado a la implementación de políticas
+    de seguridad. Está diseñado para permitir que los procesos supervisen y
+    posiblemente modifiquen el comportamiento de otros procesos en escenarios
+    controlados, como la depuración o la monitorización.</p>
+<p class="Pp">La comunicación entre el objetivo y el supervisor (por ejemplo, pasar
+    el descriptor de archivo de escucha) debe manejarse con cuidado para evitar
+    condiciones de carrera y garantizar la seguridad.</p>
+<p class="Pp">Cuando se utiliza el mecanismo de notificación, el filtro seccomp
+    debe diseñarse cuidadosamente para evitar bucles infinitos o la denegación de
+    servicio. Por ejemplo, un filtro que notifica incondicionalmente un bucle
+    podría hacer que el proceso se congele si el supervisor no responde.</p>
+<p class="Pp">El supervisor tiene acceso a información más detallada que la que el
+    filtro seccomp podría obtener por sí mismo. Esto incluye la capacidad de leer
+    la memoria del proceso objetivo. El supervisor debe ser consciente de las
+    implicaciones de seguridad de esto y manejarlo con cuidado.</p>
+<p class="Pp">La operación
+    <b>SECCOMP_IOCTL_NOTIF_ADDFD</b> transfiere la propiedad del descriptor de
+    archivo del proceso supervisor al proceso objetivo. El objetivo es entonces
+    responsable de cerrar el descriptor de archivo.</p>
+<p class="Pp">Tenga en cuenta que la llamada al sistema <a href='/man/seccomp.2.en'>seccomp(2)</a>
+    cuando se utiliza la bandera <b>SECCOMP_FILTER_FLAG_NEW_LISTENER</b> devuelve
+    el descriptor de archivo de escucha en lugar de la estructura <i>sockaddr</i>.
+    Este descriptor de archivo de escucha está destinado a ser utilizado únicamente
+    con operaciones de <a href='/man/ioctl.2.en'>ioctl(2)</a> y no es un descriptor de archivo
+    de socket normal.</p>
+<p class="Pp">Es importante manejar el campo <i>error</i> en la estructura
+    <i>seccomp_notif</i>. Si el supervisor no está preparado para manejar un
+    error específico y simplemente devuelve 0 para el valor de retorno y el
+    código de error, el error se devolverá al proceso objetivo como si hubiera
+    ocurrido un error de sistema real.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">Los siguientes fragmentos de código ilustran el uso básico del
+    mecanismo de notificación. Son simplificaciones y omiten el manejo de
+    errores y otros detalles necesarios para una implementación robusta.</p>
+<p class="Pp"><b>Objetivo (proceso que se somete a seccomp):</b></p>
+<pre>
+#include &lt;linux/seccomp.h&gt;
+#include &lt;linux/filter.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;poll.h&gt;
+
+// Suponiendo que tenemos una función para establecer el filtro
+// y obtener el descriptor de archivo de escucha.
+// Por ejemplo:
+// int install_user_notif_filter(int syscall_num);
+
+int main() {
+    int listener_fd = install_user_notif_filter( __NR_read ); // Notificar sobre read()
+
+    if (listener_fd &lt; 0) {
+        perror("install_user_notif_filter");
+        exit(EXIT_FAILURE);
+    }
+
+    // Pasar listener_fd al supervisor (por ejemplo, a través de un socket UNIX)
+
+    // Ahora, realizar una llamada al sistema que se notificará
+    char buf[100];
+    ssize_t bytes_read = read(STDIN_FILENO, buf, sizeof(buf) - 1);
+    // El programa se bloqueará aquí hasta que el supervisor responda.
+
+    if (bytes_read &gt; 0) {
+        buf[bytes_read] = '\0';
+        printf("Read %zd bytes: %s\n", bytes_read, buf);
+    } else {
+        perror("read");
+    }
+
+    close(listener_fd);
+    return 0;
+}
+</pre>
+<p class="Pp"><b>Supervisor:</b></p>
+<pre>
+#include &lt;linux/seccomp.h&gt;
+#include &lt;linux/filter.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;poll.h&gt;
+
+// Suponiendo que tenemos una función para recibir el descriptor de archivo
+// de escucha del objetivo (por ejemplo, a través de un socket UNIX).
+// int receive_listener_fd();
+
+int main() {
+    int listener_fd = receive_listener_fd(); // Obtener el descriptor de archivo de escucha
+
+    if (listener_fd &lt; 0) {
+        perror("receive_listener_fd");
+        exit(EXIT_FAILURE);
+    }
+
+    // Obtener tamaños de estructura
+    struct seccomp_notif_sizes sizes;
+    if (seccomp(SECCOMP_GET_NOTIF_SIZES, 0, &amp;sizes) == -1) {
+        perror("seccomp(SECCOMP_GET_NOTIF_SIZES)");
+        exit(EXIT_FAILURE);
+    }
+
+    struct seccomp_notif notification;
+    struct seccomp_notif_resp response;
+
+    // Esperar una notificación
+    struct pollfd pfd = { .fd = listener_fd, .events = POLLIN };
+    if (poll(&amp;pfd, 1, -1) == -1) {
+        perror("poll");
+        exit(EXIT_FAILURE);
+    }
+
+    // Recibir la notificación
+    if (ioctl(listener_fd, SECCOMP_IOCTL_NOTIF_RECV, &amp;notification) == -1) {
+        perror("ioctl(SECCOMP_IOCTL_NOTIF_RECV)");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Received notification ID: %llu, Syscall: %d, Args: %llu, %llu, ...\n",
+           (unsigned long long)notification.id,
+           notification.data.nr,
+           (unsigned long long)notification.data.args[0],
+           (unsigned long long)notification.data.args[1]);
+
+    // Preparar la respuesta (por ejemplo, permitir la llamada al sistema con éxito)
+    response.id = notification.id;
+    response.val = 0; // Valor de retorno exitoso
+    response.errno = 0; // Sin error
+
+    // Enviar la respuesta
+    if (ioctl(listener_fd, SECCOMP_IOCTL_NOTIF_SEND, &amp;response) == -1) {
+        perror("ioctl(SECCOMP_IOCTL_NOTIF_SEND)");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Responded to notification.\n");
+
+    close(listener_fd);
+    return 0;
+}
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/seccomp.2.en'>seccomp(2)</a>, <a href='/man/ioctl.2.en'>ioctl(2)</a>, <a href='/man/syscalls.7.en'>syscalls(7)</a>, <a href='/man/unix.7.en'>unix(7)</a>, <a href='/man/pidfd_getfd.2.en'>pidfd_getfd(2)</a>, <a href='/man/proc.5.en'>proc(5)</a>, <a href='/man/select.2.en'>select(2)</a>, <a href='/man/poll.2.en'>poll(2)</a>, <a href='/man/epoll.7.en'>epoll(7)</a></p>
+</section>
+</div>
+</section>
+
+            </article>
+            <aside id="content-right">
+                <div id="content-right-box">
+                    <div id="content-right-box-header">
+                        Tabla de contenidos
+                    </div>
+                    <nav id="content-right-box-content">
+                        <ul>
+<li><a href="#NOMBRE">NOMBRE</a></li>
+<li><a href="#BIBLIOTECA">BIBLIOTECA</a></li>
+<li><a href="#SINOPSIS">SINOPSIS</a></li>
+<li><a href="#DESCRIPCION">DESCRIPCIÓN</a>
+<ul>
+<li><a href="#Visión_general">Visión general</a></li>
+<li><a href="#El_mecanismo_de_notificación">El mecanismo de notificación</a></li>
+<li><a href="#Estructuras">Estructuras</a></li>
+<li><a href="#Operaciones_de_ioctl">Operaciones de ioctl</a></li>
+<li><a href="#Valores_de_retorno_y_errores">Valores de retorno y errores</a></li>
+</ul>
+</li>
+<li><a href="#CONFORMIDAD">CONFORMIDAD</a></li>
+<li><a href="#NOTAS">NOTAS</a></li>
+<li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+<li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+</ul>
+                    </nav>
+                </div>
+            </aside>
+        </main>
+        <footer>
+            <p>
+                Arch Linux, una distribución Linux ligera y flexible.
+            </p>
+        </footer>
+    </body>
+</html>
+* **OPERACIÓN <i>RECV</i></b>. Este
+      valor de cookie permite al kernel asociar la respuesta con el destino.
+      Esta estructura debe incluir el valor de cookie que el supervisor obtuvo
+      en la estructura <i>seccomp_notif</i> devuelta por la
+      operación <b>SECCOMP_IOCTL_NOTIF_RECV</b>; el cookie permite al kernel
+      asociar la respuesta con el destino.</dd>
+  <dt>(9)</dt>
+  <dd>Una vez enviada la notificación, la llamada al sistema en el hilo destino
+      se desbloquea, devolviendo la información que el supervisor proporcionó en
+      la respuesta de notificación.</dd>
+</dl>
+<p class="Pp">Como variación de los dos últimos pasos, el supervisor puede enviar
+    una respuesta que indique al kernel que debe ejecutar la llamada al sistema
+    del hilo destino; véase la discusión de <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b>,
+    más abajo.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPERACIONES_IOCTL'><a class='permalink' href='#OPERACIONES_IOCTL'>OPERACIONES IOCTL</a></h1>
+<p class="Pp">Las siguientes operaciones de <a href='/man/ioctl.2.en'>ioctl(2)</a> son compatibles con el
+    descriptor de archivo de notificación del espacio de usuario de seccomp. Para
+    cada una de estas operaciones, el primer argumento (descriptor de archivo) de
+      <a href='/man/ioctl.2.en'>ioctl(2)</a> es el descriptor de archivo de escucha devuelto por una
+    llamada a <a href='/man/seccomp.2.en'>seccomp(2)</a> con la bandera
+    <b>SECCOMP_FILTER_FLAG_NEW_LISTENER</b>.</p>
+<section class="Ss">
+<h2 class="Ss" id='SECCOMP_IOCTL_NOTIF_RECV'><a class='permalink' href='#SECCOMP_IOCTL_NOTIF_RECV'>SECCOMP_IOCTL_NOTIF_RECV</a></h2>
+<p class="Pp">La operación <b>SECCOMP_IOCTL_NOTIF_RECV</b> (disponible desde
+    Linux 5.0) se utiliza para obtener un evento de notificación del espacio de
+    usuario. Si no hay ningún evento de este tipo pendiente actualmente, la
+    operación se bloquea hasta que ocurre un evento. El tercer argumento de
+      <a href='/man/ioctl.2.en'>ioctl(2)</a> es un puntero a una estructura de la siguiente forma
+    que contiene información sobre el evento. Esta estructura debe inicializarse
+    a cero antes de la llamada.</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct seccomp_notif {
+    __u64  id;              /* Cookie */
+    __u32  pid;             /* TID del hilo destino */
+    __u32  flags;           /* Actualmente no utilizado (0) */
+    struct seccomp_data data;   /* Véase seccomp(2) */
+};</pre>
+<p class="Pp">Los campos de esta estructura son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="id"><a class="permalink" href="#id"><i>id</i></a></dt>
+  <dd>Este es un cookie para la notificación. Se garantiza que cada cookie es
+      único para el filtro seccomp correspondiente.</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>El cookie se puede utilizar con la operación
+      <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> de
+      <a href='/man/ioctl.2.en'>ioctl(2)</a> descrita a continuación.</dd>
+  <dt>&#x2022;</dt>
+  <dd>Al devolver una respuesta de notificación al kernel, el supervisor debe
+      incluir el valor del cookie en la estructura <i>seccomp_notif_resp</i> que
+      se especifica como argumento de la operación <b>SECCOMP_IOCTL_NOTIF_SEND</b>.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="pid"><a class="permalink" href="#pid"><i>pid</i></a></dt>
+  <dd>Este es el ID del hilo destino que activó el evento de notificación.</dd>
+  <dt id="flags"><a class="permalink" href="#flags"><i>flags</i></a></dt>
+  <dd>Esta es una máscara de bits de banderas que proporciona información
+      adicional sobre el evento. En la implementación actual, este campo es
+      siempre cero.</dd>
+  <dt id="data"><a class="permalink" href="#data"><i>data</i></a></dt>
+  <dd>Esta es una estructura <i>seccomp_data</i> que contiene información sobre
+      la llamada al sistema que activó la notificación. Esta es la misma
+      estructura que se pasa al filtro seccomp. Consulte <a href='/man/seccomp.2.en'>seccomp(2)</a>
+      para obtener detalles de esta estructura.</dd>
+</dl>
+<p class="Pp">En caso de éxito, esta operación devuelve 0; en caso de fallo, se
+    devuelve -1 y <i>errno</i> se establece para indicar el error. Esta operación
+    puede fallar con los siguientes errores:</p>
+<dl class="Bl-tag">
+  <dt id="EINVAL"><a class="permalink" href="#EINVAL"><b>EINVAL</b> (desde Linux
+    5.5)</a></dt>
+  <dd>La estructura <i>seccomp_notif</i> que se pasó a la llamada contenía
+      campos distintos de cero.</dd>
+  <dt id="ENOENT"><a class="permalink" href="#ENOENT"><b>ENOENT</b></a></dt>
+  <dd>El hilo destino fue eliminado por una señal mientras se generaba la
+      información de notificación, o la llamada al sistema (bloqueada) del destino
+      fue interrumpida por un manejador de señales.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='SECCOMP_IOCTL_NOTIF_ID_VALID'><a class='permalink' href='#SECCOMP_IOCTL_NOTIF_ID_VALID'>SECCOMP_IOCTL_NOTIF_ID_VALID</a></h2>
+<p class="Pp">La operación <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> (disponible desde
+    Linux 5.0) se utiliza para verificar que un ID de notificación devuelto por
+    una operación anterior <b>SECCOMP_IOCTL_NOTIF_RECV</b> sigue siendo válido
+    (es decir, que el destino todavía existe y su llamada al sistema todavía está
+    bloqueada esperando una respuesta).</p>
+<p class="Pp">El tercer argumento de <a href='/man/ioctl.2.en'>ioctl(2)</a> es un puntero al cookie
+    (<i>id</i>) devuelto por la operación <b>SECCOMP_IOCTL_NOTIF_RECV</b>.</p>
+<p class="Pp">Esta operación es necesaria para evitar condiciones de carrera que
+    pueden ocurrir cuando el <i>pid</i> devuelto por la operación
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b> termina, y ese ID de proceso es reutilizado
+    por otro proceso. Un ejemplo de este tipo de carrera es el siguiente:</p>
+<dl class="Bl-tag">
+  <dt>(1)</dt>
+  <dd>Se genera una notificación en el descriptor de archivo de escucha. La
+        <i>seccomp_notif</i> devuelta contiene el TID del hilo destino (en el
+        campo <i>pid</i> de la estructura).</dd>
+  <dt>(2)</dt>
+  <dd>El destino termina.</dd>
+  <dt>(3)</dt>
+  <dd>Otro hilo o proceso se crea en el sistema que, por casualidad, reutiliza el
+        TID que se liberó cuando el destino terminó.</dd>
+  <dt>(4)</dt>
+  <dd>El supervisor abre el archivo <i>/proc/</i>tid<i>/mem</i> para el TID
+      obtenido en el paso 1, con la intención de (por ejemplo) inspeccionar la(s)
+      ubicación(es) de memoria que contienen el(los) argumento(s) de la llamada
+      al sistema que activó la notificación en el paso 1.</dd>
+</dl>
+<p class="Pp">En el escenario anterior, el riesgo es que el supervisor intente
+    acceder a la memoria de un proceso diferente al destino. Esta carrera puede
+    evitarse siguiendo la llamada a <a href='/man/open.2.en'>open(2)</a> con una
+    operación <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> para verificar que el proceso
+    que generó la notificación todavía está activo. (Tenga en cuenta que si el
+    destino termina después del último paso, una posterior <a href='/man/read.2.en'>read(2)</a> del descriptor de archivo
+    puede devolver 0, indicando fin de archivo).</p>
+<p class="Pp">Consulte NOTAS para una discusión de otros casos en los que deben
+    realizarse comprobaciones de <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b>.</p>
+<p class="Pp">En caso de éxito (es decir, el ID de notificación sigue siendo
+    válido), esta operación devuelve 0. En caso de fallo (es decir, el ID de
+    notificación ya no es válido), se devuelve -1 y <i>errno</i> se establece en
+      <b>ENOENT</b>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='SECCOMP_IOCTL_NOTIF_SEND'><a class='permalink' href='#SECCOMP_IOCTL_NOTIF_SEND'>SECCOMP_IOCTL_NOTIF_SEND</a></h2>
+<p class="Pp">La operación <b>SECCOMP_IOCTL_NOTIF_SEND</b> (disponible desde
+    Linux 5.0) se utiliza para enviar una respuesta de notificación de vuelta al
+    kernel. El tercer argumento de <a href='/man/ioctl.2.en'>ioctl(2)</a> de esta
+    estructura es un puntero a una estructura de la siguiente forma:</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct seccomp_notif_resp {
+    __u64 id;           /* Valor del cookie */
+    __s64 val;          /* Valor de retorno de éxito */
+    __s32 error;        /* 0 (éxito) o número de error negativo */
+    __u32 flags;        /* Véase más abajo */
+};</pre>
+<p class="Pp">Los campos de esta estructura son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="id~2"><a class="permalink" href="#id~2"><i>id</i></a></dt>
+  <dd>Este es el valor del cookie que se obtuvo utilizando la operación
+      <b>SECCOMP_IOCTL_NOTIF_RECV</b>. Este valor de cookie permite al kernel
+      asociar correctamente esta respuesta con la llamada al sistema que activó
+      la notificación del espacio de usuario.</dd>
+  <dt id="val"><a class="permalink" href="#val"><i>val</i></a></dt>
+  <dd>Este es el valor que se utilizará para un retorno de éxito simulado para la
+      llamada al sistema del destino; véase más abajo.</dd>
+  <dt id="error"><a class="permalink" href="#error"><i>error</i></a></dt>
+  <dd>Este es el valor que se utilizará como número de error (<i>errno</i>) para un
+      retorno de error simulado para la llamada al sistema del destino; véase más
+      abajo.</dd>
+  <dt id="flags~2"><a class="permalink" href="#flags~2"><i>flags</i></a></dt>
+  <dd>Esta es una máscara de bits que incluye cero o más de las siguientes
+      banderas:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="SECCOMP_USER_NOTIF_FLAG_CONTINUE"><a class="permalink" href="#SECCOMP_USER_NOTIF_FLAG_CONTINUE"><b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b>
+    (desde Linux 5.5)</a></dt>
+  <dd>Indicar al kernel que ejecute la llamada al sistema del destino.</dd>
+</dl>
+</div>
+<p class="Pp">Son posibles dos tipos de respuesta:</p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>Una respuesta al kernel indicándole que ejecute la llamada al sistema del
+      destino. En este caso, el campo <i>flags</i> incluye
+      <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b> y los campos <i>error</i> y
+        <i>val</i> deben ser cero.</dd>
+  <dt></dt>
+  <dd>Este tipo de respuesta puede ser útil en casos en los que el supervisor
+      necesita realizar un análisis más profundo de la llamada al sistema del
+      destino del que es posible desde un filtro seccomp (por ejemplo, examinar
+      los valores de los argumentos de puntero), y, habiendo decidido que la
+      llamada al sistema no requiere emulación por parte del supervisor, el
+      supervisor desea que la llamada al sistema se ejecute normalmente en el
+      destino.</dd>
+  <dt></dt>
+  <dd>La bandera <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b> debe usarse con
+      precaución; véase NOTAS.</dd>
+  <dt>&#x2022;</dt>
+  <dd>Un valor de retorno simulado para la llamada al sistema del destino. En
+      este caso, el kernel no ejecuta la llamada al sistema del destino, sino que
+      provoca que la llamada al sistema devuelva un valor simulado especificado por
+      los campos de la estructura <i>seccomp_notif_resp</i>. El supervisor debe
+      establecer los campos de esta estructura de la siguiente manera:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd><i>flags</i> no contiene
+      <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b>.</dd>
+  <dt>&#x2022;</dt>
+  <dd><i>error</i> se establece en 0 para un retorno simulado de
+      &quot;éxito&quot; o en un número de error negativo para un retorno simulado de
+      &quot;fallo&quot;. En el primer caso, el kernel hace que la llamada al sistema
+      del destino devuelva el valor especificado en el campo <i>val</i>. En el
+      segundo caso, el kernel hace que la llamada al sistema del destino devuelva
+      -1, y <i>errno</i> se asigna al valor <i>error</i> negado.</dd>
+  <dt>&#x2022;</dt>
+  <dd><i>val</i> se establece en un valor que se utilizará como valor de retorno
+      para un retorno simulado de &quot;éxito&quot; para la llamada al sistema del
+      destino. El valor de este campo se ignora si el campo <i>error</i>
+      contiene un valor distinto de cero.</dd>
+</dl>
+</div>
+<p class="Pp">En caso de éxito, esta operación devuelve 0; en caso de fallo, se
+    devuelve -1 y <i>errno</i> se establece para indicar el error. Esta operación
+    puede fallar con los siguientes errores:</p>
+<dl class="Bl-tag">
+  <dt id="EINPROGRESS"><a class="permalink" href="#EINPROGRESS"><b>EINPROGRESS</b></a></dt>
+  <dd>Ya se ha enviado una respuesta a esta notificación.</dd>
+  <dt id="EINVAL~2"><a class="permalink" href="#EINVAL~2"><b>EINVAL</b></a></dt>
+  <dd>Se especificó un valor no válido en el campo <i>flags.</i></dd>
+  <dt><b><b>EINVAL</b></b></dt>
+  <dd>El campo <i>flags</i> contenía <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b>,
+      y el campo <i>error</i> o <i>val</i></dd>
+</dl>{
+  "title": "seccomp_api(7) — Linux manual page",
+  "sections": [
+    {
+      "title": "NAME",
+      "content": "seccomp_api - seccomp system call notification API"
+    },
+    {
+      "title": "SYNOPSIS",
+      "content": "int seccomp_new(uint32_t flags);\nint seccomp_add_rule(int seccomp_fd, uint32_t rule_uid, struct sock_filter *filter, size_t flen);\nint seccomp_remove_rule(int seccomp_fd, uint32_t rule_uid);\nint seccomp_syscall_metadata(int seccomp_fd, uint32_t rule_uid, struct seccomp_metadata *metadata);\nint seccomp_ioctl(int seccomp_fd, unsigned long request, ...);\n\n/* ioctl requests */\n#define SECCOMP_IOCTL_NEW_ASYNC_FILTER _IOW(‘S‘, 1, struct seccomp_ready_fd)\n#define SECCOMP_IOCTL_RUN_FILTER _IOW(‘S‘, 2, struct seccomp_ready_fd)\n#define SECCOMP_IOCTL_RESET_FILTER _IOW(‘S‘, 3, uint32_t)\n#define SECCOMP_IOCTL_GET_FILTER _IOR(‘S‘, 4, struct seccomp_filter_status)\n#define SECCOMP_IOCTL_NOTIF_ADD _IOW(‘S‘, 5, struct seccomp_notif_add)\n#define SECCOMP_IOCTL_NOTIF_DEL _IOW(‘S‘, 6, uint32_t)\n#define SECCOMP_IOCTL_NOTIF_RECV _IOR(‘S‘, 7, struct seccomp_notif)\n#define SECCOMP_IOCTL_NOTIF_SEND _IOR(‘S‘, 8, struct seccomp_notif_resp)\n#define SECCOMP_IOCTL_NOTIF_ADDFD _IOW(‘S‘, 9, struct seccomp_notif_addfd)\n#define SECCOMP_IOCTL_GET_NOTIF_SIZES _IOR(‘S‘, 10, struct seccomp_notif_sizes)\n\n/* ioctl arguments */\nstruct seccomp_notif {\n    uint64_t id;\n    uint32_t pid;\n    uint32_t status;\n    union {\n        struct {\n            uint32_t nr;\n            uint64_t args[6];\n        } syscall;\n        /* ... other notification types */\n    } data;\n};\n\nstruct seccomp_notif_resp {\n    uint64_t id;\n    int64_t  error;\n    uint64_t val;\n    uint32_t flags;\n};\n\nstruct seccomp_notif_addfd {\n    uint64_t id;\n    uint32_t flags;\n    uint32_t srcfd;\n    uint32_t newfd;\n    uint32_t newfd_flags;\n};\n"
+    },
+    {
+      "title": "DESCRIPTION",
+      "content": "The seccomp system call and associated ioctl operations provide a mechanism for applications to control the system calls that are allowed to be executed by a process.\n\nThis API enables a supervisor process to intercept system call invocations from a target process and either allow them to proceed, block them, or emulate them.\n\nWhen seccomp is initialized with the SECCOMP_FILTER_FLAG_USER_NOTIF flag, system calls that match a seccomp filter rule that has the SECCOMP_USER_NOTIF_FLAG_CONTINUE flag set will not be executed directly by the kernel. Instead, the kernel will send a notification to the supervisor process via a file descriptor (obtained via SECCOMP_IOCTL_NEW_ASYNC_FILTER or SECCOMP_IOCTL_RUN_FILTER). The supervisor can then examine the system call and its arguments, perform any necessary actions (e.g., emulating the system call, preparing resources), and then instruct the kernel to either continue the system call, kill the target process, or return an error.\n\nWhen seccomp is initialized with the SECCOMP_FILTER_FLAG_SECCOMP_RET_ACTION flag, the supervisor can specify an action to be taken when a rule matches. This can be SECCOMP_RET_ACTION_ERRNO (return an error), SECCOMP_RET_ACTION_TRACE (send a notification), or SECCOMP_RET_ACTION_LOG (log the event). This allows for more granular control over system call filtering.\n\nThe SECCOMP_IOCTL_NOTIF_ADDFD operation (available since Linux 5.9) allows the supervisor to install a file descriptor into the target's file descriptor table. Much like the use of SCM_RIGHTS messages described in unix(7), this operation is semantically equivalent to duplicating a file descriptor from the supervisor's file descriptor table into the target's file descriptor table.\n\nThe SECCOMP_IOCTL_NOTIF_ADDFD operation permits the supervisor to emulate a target system call (such as socket(2) or openat(2)) that generates a file descriptor. The supervisor can perform the system call that generates the file descriptor (and associated open file description) and then use this operation to allocate a file descriptor that refers to the same open file description in the target. (For an explanation of open file descriptions, see open(2).)\n\nOnce this operation has been performed, the supervisor can close its copy of the file descriptor.\n\nIn the target, the received file descriptor is subject to the same Linux Security Module (LSM) checks as are applied to a file descriptor that is received in an SCM_RIGHTS ancillary message. If the file descriptor refers to a socket, it inherits the cgroup version 1 network controller settings (classid and netprioidx) of the target.\n\nThe third ioctl argument is a pointer to a structure of the following form:\n\nstruct seccomp_notif_addfd {\n    __u64 id;           /* Cookie value */\n    __u32 flags;        /* Flags */\n    __u32 srcfd;        /* Local file descriptor number */\n    __u32 newfd;        /* 0 or desired file descriptor\n                           number in target */\n    __u32 newfd_flags;  /* Flags to set on target file\n                           descriptor */\n};\n\nThe fields in this structure are as follows:\n\n* id: This field should be set to the notification ID (cookie value) that was obtained via SECCOMP_IOCTL_NOTIF_RECV.\n* flags: This field is a bit mask of flags that modify the behavior of the operation. Currently, only one flag is supported:\n  * SECCOMP_ADDFD_FLAG_SETFD: When allocating the file descriptor in the target, use the file descriptor number specified in the newfd field.\n  * SECCOMP_ADDFD_FLAG_SEND (since Linux 5.14): Perform the equivalent of SECCOMP_IOCTL_NOTIF_ADDFD plus SECCOMP_IOCTL_NOTIF_SEND as an atomic operation. On successful invocation, the target process's errno will be 0 and the return value will be the file descriptor number that was allocated in the target. If allocating the file descriptor in the target fails, the target's system call continues to be blocked until a successful response is sent.\n* srcfd: This field should be set to the number of the file descriptor in the supervisor that is to be duplicated.\n* newfd: This field determines which file descriptor number is allocated in the target. If the SECCOMP_ADDFD_FLAG_SETFD flag is set, then this field specifies which file descriptor number should be allocated. If this file descriptor number is already open in the target, it is atomically closed and reused. If the descriptor duplication fails due to an LSM check, or if srcfd is not a valid file descriptor, the file descriptor newfd will not be closed in the target process.\n  If the SECCOMP_ADDFD_FLAG_SETFD flag it not set, then this field must be 0, and the kernel allocates the lowest unused file descriptor number in the target.\n* newfd_flags: This field is a bit mask specifying flags that should be set on the file descriptor that is received in the target process. Currently, only the following flag is implemented:\n  * O_CLOEXEC: Set the close-on-exec flag on the received file descriptor.\n\nOn success, this ioctl call returns the number of the file descriptor that was allocated in the target. Assuming that the emulated system call is one that returns a file descriptor as its function result (e.g., socket(2)), this value can be used as the return value (resp.val) that is supplied in the response that is subsequently sent with the SECCOMP_IOCTL_NOTIF_SEND operation.\n\nOn error, -1 is returned and errno is set to indicate the error.\n\nThis operation can fail with the following errors:\n"
+    },
+    {
+      "title": "ERRORS",
+      "content": "EBADF\nThe blocked system call in the target has been interrupted by a signal\nhandler or the target has terminated.\nEBADF\nAllocating the file descriptor in the target would cause the target's\nRLIMIT_NOFILE limit to be exceeded (see getrlimit(2)).\nEBUSY\nIf the flag SECCOMP_IOCTL_NOTIF_SEND is used, this means the\noperation can't proceed until other SECCOMP_IOCTL_NOTIF_ADDFD\nrequests are processed.\nEINPROGRESS\nThe user-space notification specified in the id field exists but\nhas not yet been fetched (by a SECCOMP_IOCTL_NOTIF_RECV) or has\nalready been responded to (by a SECCOMP_IOCTL_NOTIF_SEND).\nEINVAL\nAn invalid flag was specified in the flags or newfd_flags\nfield, or the newfd field is nonzero and the\nSECCOMP_ADDFD_FLAG_SETFD flag was not specified in the flags\nfield.\nEMFILE\nThe file descriptor number specified in newfd exceeds the limit\nspecified in /proc/sys/fs/nr_open.\nENOENT\nThe blocked system call in the target has been interrupted by a signal\nhandler or the target has terminated."
+    },
+    {
+      "title": "NOTES",
+      "content": "One example use case for the user-space notification mechanism is\nto allow a container manager (a process which is typically running with more\nprivilege than the processes inside the container) to mount block devices or\ncreate device nodes for the container. The mount use case provides an\nexample of where the SECCOMP_USER_NOTIF_FLAG_CONTINUE ioctl\noperation is useful. Upon receiving a notification for the mount(2)\nsystem call, the container manager (the \"supervisor\") can\ndistinguish a request to mount a block filesystem (which would not be\npossible for a \"target\" process inside the container) and mount\nthat file system. If, on the other hand, the container manager detects that\nthe operation could be performed by the process inside the container (e.g.,\na mount of a tmpfs(5) filesystem), it can notify the kernel that the\ntarget process's mount(2) system call can continue.\n\nselect()/poll()/epoll semantics\nThe file descriptor returned when seccomp(2) is employed\nwith the SECCOMP_FILTER_FLAG_NEW_LISTENER flag can be monitored using\npoll(2), epoll(7), and select(2). These interfaces\nindicate that the file descriptor is ready as follows:\n\n•\nWhen a notification is pending, these interfaces indicate that the file\ndescriptor is readable. Following such an indication, a subsequent\nSECCOMP_IOCTL_NOTIF_RECV ioctl will not block, returning\neither information about a notification or else failing with the error\nEINTR if the target has been killed by a signal or its system call\nhas been interrupted by a signal handler.\n•\nAfter the notification has been received (i.e., by the\nSECCOMP_IOCTL_NOTIF_RECV ioctl operation), these\ninterfaces indicate that the file descriptor is writable, meaning that a\nnotification response can be sent using the\nSECCOMP_IOCTL_NOTIF_SEND ioctl operation.\n•\nAfter the last thread using the filter has terminated and been reaped using\nwaitpid(2) (or similar), the file descriptor indicates an\nend-of-file condition (readable in select(2); POLLHUP/EPOLLHUP in poll(2)/\nepoll_wait(2)).\n\nDesign goals; use of SECCOMP_USER_NOTIF_FLAG_CONTINUE\nT"
+    }
+  ]
+}
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp"><code class="Nm">seccomp_user_notif</code>, <code class="Nm">SECCOMP_IOCTL_NOTIF_RECV</code>, <code class="Nm">SECCOMP_IOCTL_NOTIF_SEND</code>, <code class="Nm">SECCOMP_IOCTL_NOTIF_ID_VALID</code>, <code class="Nm">SECCOMP_IOCTL_NOTIF_ADDFD</code> - seccomp user-space notification support</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LIBRARY'><a class='permalink' href='#LIBRARY'>LIBRARY</a></h1>
+<p class="Pp">Seccomp library <code class="Ft">libseccomp</code></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<pre class="Source">
+#include &lt;libseccomp.h&gt;
+
+// ...
+
+int seccomp_user_notif_recv(struct libseccomp_notif_private *priv,
+                            struct libseccomp_notif **req);
+int seccomp_user_notif_send(struct libseccomp_notif_private *priv,
+                            struct libseccomp_notif *resp);
+int seccomp_user_notif_id_valid(struct libseccomp_notif_private *priv,
+                                uint64_t id);
+int seccomp_user_notif_addfd(struct libseccomp_notif_private *priv,
+                             struct libseccomp_notif *req,
+                             int fd,
+                             uint32_t flags);
+
+// ...
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The purpose of the user-space notification feature is to allow
+    system calls to be performed on behalf of the target. The target's system
+    call should either be handled by the supervisor or allowed to continue
+    normally in the kernel (where standard security policies will be
+  applied).</p>
+<p class="Pp"><b>Note well</b>: this mechanism must not be used to make security
+    policy decisions about the system call, which would be inherently race-prone
+    for reasons described next.</p>
+<p class="Pp">The <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b> flag must be used with
+    caution. If set by the supervisor, the target's system call will continue.
+    However, there is a time-of-check, time-of-use race here, since an attacker
+    could exploit the interval of time where the target is blocked waiting on
+    the &quot;continue&quot; response to do things such as rewriting the system
+    call arguments.</p>
+<p class="Pp">Note furthermore that a user-space notifier can be bypassed if the
+    existing filters allow the use of <a href='/man/seccomp.2.en'>seccomp(2)</a> or <a href='/man/prctl.2.en'>prctl(2)</a> to
+    install a filter that returns an action value with a higher precedence than
+    <b>SECCOMP_RET_USER_NOTIF</b> (see <a href='/man/seccomp.2.en'>seccomp(2)</a>).</p>
+<p class="Pp">It should thus be absolutely clear that the seccomp user-space
+    notification mechanism <b>can not</b> be used to implement a security
+    policy! It should only ever be used in scenarios where a more privileged
+    process supervises the system calls of a lesser privileged target to get
+    around kernel-enforced security restrictions when the supervisor deems this
+    safe. In other words, in order to continue a system call, the supervisor
+    should be sure that another security mechanism or the kernel itself will
+    sufficiently block the system call if its arguments are rewritten to
+    something unsafe.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Caveats_regarding_the_use_of'><a class='permalink' href='#Caveats_regarding_the_use_of'>Caveats   regarding the use of</a></h2>
+<p class="Pp"><i>/proc/</i>tid<i>/mem</i> The discussion above noted the need to
+    use the <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> <a href='/man/ioctl.2.en'>ioctl(2)</a> when opening the
+    <i>/proc/</i>tid<i>/mem</i> file of the target to avoid the possibility of
+    accessing the memory of the wrong process in the event that the target
+    terminates and its ID is recycled by another (unrelated) thread. However,
+    the use of this <a href='/man/ioctl.2.en'>ioctl(2)</a> operation is also necessary in other
+    situations, as explained in the following paragraphs.</p>
+<p class="Pp">Consider the following scenario, where the supervisor tries to
+    read the pathname argument of a target's blocked <a href='/man/mount.2.en'>mount(2)</a> system
+    call:</p>
+<dl class="Bl-tag">
+  <dt>(1)</dt>
+  <dd>From one of its functions (<i>func()</i>), the target calls
+      <a href='/man/mount.2.en'>mount(2)</a>, which triggers a user-space notification and causes the
+      target to block.</dd>
+  <dt>(2)</dt>
+  <dd>The supervisor receives the notification, opens
+      <i>/proc/</i>tid<i>/mem</i>, and (successfully) performs the
+      <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> check.</dd>
+  <dt>(3)</dt>
+  <dd>The target receives a signal, which causes the <a href='/man/mount.2.en'>mount(2)</a> to
+    abort.</dd>
+  <dt>(4)</dt>
+  <dd>The signal handler executes in the target, and returns.</dd>
+  <dt>(5)</dt>
+  <dd>Upon return from the handler, the execution of <i>func()</i> resumes, and
+      it returns (and perhaps other functions are called, overwriting the memory
+      that had been used for the stack frame of <i>func()</i>).</dd>
+  <dt>(6)</dt>
+  <dd>Using the address provided in the notification information, the supervisor
+      reads from the target's memory location that used to contain the
+    pathname.</dd>
+  <dt>(7)</dt>
+  <dd>The supervisor now calls <a href='/man/mount.2.en'>mount(2)</a> with some arbitrary bytes
+      obtained in the previous step.</dd>
+</dl>
+<p class="Pp">The conclusion from the above scenario is this: since the target's
+    blocked system call may be interrupted by a signal handler, the supervisor
+    must be written to expect that the target may abandon its system call at
+    <b>any</b> time; in such an event, any information that the supervisor
+    obtained from the target's memory must be considered invalid.</p>
+<p class="Pp">To prevent such scenarios, every read from the target's memory
+    must be separated from use of the bytes so obtained by a
+    <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b> check. In the above example, the check
+    would be placed between the two final steps. An example of such a check is
+    shown in EXAMPLES.</p>
+<p class="Pp">Following on from the above, it should be clear that a write by
+    the supervisor into the target's memory can <b>never</b> be considered
+  safe.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Caveats_regarding_blocking_system_calls'><a class='permalink' href='#Caveats_regarding_blocking_system_calls'>Caveats   regarding blocking system calls</a></h2>
+<p class="Pp">Suppose that the target performs a blocking system call (e.g.,
+    <a href='/man/accept.2.en'>accept(2)</a>) that the supervisor should handle. The supervisor might
+    then in turn execute the same blocking system call.</p>
+<p class="Pp">In this scenario, it is important to note that if the target's
+    system call is now interrupted by a signal, the supervisor is <i>not</i>
+    informed of this. If the supervisor does not take suitable steps to actively
+    discover that the target's system call has been canceled, various
+    difficulties can occur. Taking the example of <a href='/man/accept.2.en'>accept(2)</a>, the
+    supervisor might remain blocked in its <a href='/man/accept.2.en'>accept(2)</a> holding a port
+    number that the target (which, after the interruption by the signal handler,
+    perhaps closed its listening socket) might expect to be able to reuse in a
+    <a href='/man/bind.2.en'>bind(2)</a> call.</p>
+<p class="Pp">Therefore, when the supervisor wishes to emulate a blocking system
+    call, it must do so in such a way that it gets informed if the target's
+    system call is interrupted by a signal handler. For example, if the
+    supervisor itself executes the same blocking system call, then it could
+    employ a separate thread that uses the <b>SECCOMP_IOCTL_NOTIF_ID_VALID</b>
+    operation to check if the target is still blocked in its system call.
+    Alternatively, in the <a href='/man/accept.2.en'>accept(2)</a> example, the supervisor might use
+    <a href='/man/poll.2.en'>poll(2)</a> to monitor both the notification file descriptor (so as to
+    discover when the target's <a href='/man/accept.2.en'>accept(2)</a> call has been interrupted) and
+    the listening file descriptor (so as to know when a connection is
+    available).</p>
+<p class="Pp">If the target's system call is interrupted, the supervisor must
+    take care to release resources (e.g., file descriptors) that it acquired on
+    behalf of the target.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Interaction_with_SA_RESTART_signal_handlers'><a class='permalink' href='#Interaction_with_SA_RESTART_signal_handlers'>Interaction   with SA_RESTART signal handlers</a></h2>
+<p class="Pp">Consider the following scenario:</p>
+<dl class="Bl-tag">
+  <dt>(1)</dt>
+  <dd>The target process has used <a href='/man/sigaction.2.en'>sigaction(2)</a> to install a signal
+      handler with the <b>SA_RESTART</b> flag.</dd>
+  <dt>(2)</dt>
+  <dd>The target has made a system call that triggered a seccomp user-space
+      notification and the target is currently blocked until the supervisor
+      sends a notification response.</dd>
+  <dt>(3)</dt>
+  <dd>A signal is delivered to the target and the signal handler is
+    executed.</dd>
+  <dt>(4)</dt>
+  <dd>When (if) the supervisor attempts to send a notification response, the
+      <b>SECCOMP_IOCTL_NOTIF_SEND</b> <a href='/man/ioctl.2.en'>ioctl(2)</a>) operation will fail with
+      the <b>ENOENT</b> error.</dd>
+</dl>
+<p class="Pp">In this scenario, the kernel will restart the target's system
+    call. Consequently, the supervisor will receive another user-space
+    notification. Thus, depending on how many times the blocked system call is
+    interrupted by a signal handler, the supervisor may receive multiple
+    notifications for the same instance of a system call in the target.</p>
+<p class="Pp">One oddity is that system call restarting as described in this
+    scenario will occur even for the blocking system calls listed in
+    <a href='/man/signal.7.en'>signal(7)</a> that would <b>never</b> normally be restarted by the
+    <b>SA_RESTART</b> flag.</p>
+<p class="Pp">Furthermore, if the supervisor response is a file descriptor added
+    with <b>SECCOMP_IOCTL_NOTIF_ADDFD</b>, then the flag
+    <b>SECCOMP_ADDFD_FLAG_SEND</b> can be used to atomically add the file
+    descriptor and return that value, making sure no file descriptors are
+    inadvertently leaked into the target.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">If a <b>SECCOMP_IOCTL_NOTIF_RECV</b> <a href='/man/ioctl.2.en'>ioctl(2)</a> operation is
+    performed after the target terminates, then the <a href='/man/ioctl.2.en'>ioctl(2)</a> call simply
+    blocks (rather than returning an error to indicate that the target no longer
+    exists).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EXAMPLES</a></h1>
+<p class="Pp">The (somewhat contrived) program shown below demonstrates the use
+    of the interfaces described in this page. The program creates a child
+    process that serves as the &quot;target&quot; process. The child process
+    installs a seccomp filter that returns the <b>SECCOMP_RET_USER_NOTIF</b>
+    action value if a call is made to <a href='/man/mkdir.2.en'>mkdir(2)</a>. The child process then
+    calls <a href='/man/mkdir.2.en'>mkdir(2)</a> once for each of the supplied command-line arguments,
+    and reports the result returned by the call. After processing all arguments,
+    the child process terminates.</p>
+<p class="Pp">The parent process acts as the supervisor, listening for the
+    notifications that are generated when the target process calls
+    <a href='/man/mkdir.2.en'>mkdir(2)</a>. When such a notification occurs, the supervisor examines
+    the memory of the target process (using <i>/proc/</i>pid<i>/mem</i>) to
+    discover the pathname argument that was supplied to the <a href='/man/mkdir.2.en'>mkdir(2)</a>
+    call, and performs one of the following actions:</p>
+<dl class="Bl-tag">
+  <dt>&#x2022;</dt>
+  <dd>If the pathname begins with the prefix &quot;/tmp/&quot;, then the
+      supervisor attempts to create the specified directory, and then spoofs a
+      return for the target process based on the return value of the
+      supervisor's <a href='/man/mkdir.2.en'>mkdir(2)</a> call. In the event that that call succeeds,
+      the spoofed success return value is the length of the pathname.</dd>
+  <dt>&#x2022;</dt>
+  <dd>If the pathname begins with &quot;./&quot; (i.e., it is a relative
+      pathname), the supervisor sends a <b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b>
+      response to the kernel to say that the kernel should execute the target
+      process's <a href='/man/mkdir.2.en'>mkdir(2)</a> call.</dd>
+  <dt>&#x2022;</dt>
+  <dd>If the pathname begins with some other prefix, the supervisor spoofs an
+      error return for the target process, so that the target process's
+      <a href='/man/mkdir.2.en'>mkdir(2)</a> call appears to fail with the error <b>EOPNOTSUPP</b>
+      (&quot;Operation not supported&quot;). Additionally, if the specified
+      pathname is exactly &quot;/bye&quot;, then the supervisor terminates.</dd>
+</dl>
+<p class="Pp">This program can be used to demonstrate various aspects of the
+    behavior of the seccomp user-</p>
+# seccomp_unotify(8) - Linux manual pages
+
+## NAME
+seccomp_unotify - seccomp user notification mechanism example
+
+## SYNOPSIS
+`seccomp_unotify` `pathname`...
+
+## DESCRIPTION
+This program demonstrates the seccomp user notification mechanism. To help aid such
+demonstrations, the program logs various messages to show the operation of
+the target process (lines prefixed "T:") and the supervisor
+(indented lines prefixed "S:").
+
+In the following example, the target attempts to create the
+directory */tmp/x*. Upon receiving the notification, the supervisor
+creates the directory on the target's behalf, and spoofs a success return to
+be received by the target process's <a href='/man/mkdir.2.en'>mkdir(2)</a> call.
+
+<br/>
+
+```
+$<b> ./seccomp_unotify /tmp/x</b>;
+T: PID = 23168
+T: about to mkdir("/tmp/x")
+        S: got notification (ID 0x17445c4a0f4e0e3c) for PID 23168
+        S: executing: mkdir("/tmp/x", 0700)
+        S: success! spoofed return = 6
+        S: sending response (flags = 0; val = 6; error = 0)
+T: SUCCESS: mkdir(2) returned 6
+T: terminating
+        S: target has terminated; bye
+```
+
+In the above output, note that the spoofed return value seen by
+the target process is 6 (the length of the pathname */tmp/x*), whereas
+a normal <a href='/man/mkdir.2.en'>mkdir(2)</a> call returns 0 on success.
+
+In the next example, the target attempts to create a directory
+using the relative pathname */./sub*. Since this pathname starts with
+"./", the supervisor sends a
+<b>SECCOMP_USER_NOTIF_FLAG_CONTINUE</b> response to the kernel, and the
+kernel then (successfully) executes the target process's <a href='/man/mkdir.2.en'>mkdir(2)</a>
+call.
+
+<br/>
+
+```
+$<b> ./seccomp_unotify ./sub</b>;
+T: PID = 23204
+T: about to mkdir("./sub")
+        S: got notification (ID 0xddb16abe25b4c12) for PID 23204
+        S: target can execute system call
+        S: sending response (flags = 0x1; val = 0; error = 0)
+T: SUCCESS: mkdir(2) returned 0
+T: terminating
+        S: target has terminated; bye
+```
+
+If the target process attempts to create a directory with a
+pathname that doesn't start with "." and doesn't begin with the
+prefix "/tmp/", then the supervisor spoofs an error return
+(<b>EOPNOTSUPP</b>, "Operation not supported") for the target's
+<a href='/man/mkdir.2.en'>mkdir(2)</a> call (which is not executed):
+
+<br/>
+
+```
+$<b> ./seccomp_unotify /xxx</b>;
+T: PID = 23178
+T: about to mkdir("/xxx")
+        S: got notification (ID 0xe7dc095d1c524e80) for PID 23178
+        S: spoofing error response (Operation not supported)
+        S: sending response (flags = 0; val = 0; error = -95)
+T: ERROR: mkdir(2): Operation not supported
+T: terminating
+        S: target has terminated; bye
+```
+
+In the next example, the target process attempts to create a
+directory with the pathname **\/tmp/nosuchdir/b**. Upon receiving the
+notification, the supervisor attempts to create that directory, but the
+<a href='/man/mkdir.2.en'>mkdir(2)</a> call fails because the directory **/tmp/nosuchdir** does
+not exist. Consequently, the supervisor spoofs an error return that passes
+the error that it received back to the target process's <a href='/man/mkdir.2.en'>mkdir(2)</a>
+call.
+
+<br/>
+
+```
+$<b> ./seccomp_unotify /tmp/nosuchdir/b</b>;
+T: PID = 23199
+T: about to mkdir("/tmp/nosuchdir/b")
+        S: got notification (ID 0x8744454293506046) for PID 23199
+        S: executing: mkdir("/tmp/nosuchdir/b", 0700)
+        S: failure! (errno = 2; No such file or directory)
+        S: sending response (flags = 0; val = 0; error = -2)
+T: ERROR: mkdir(2): No such file or directory
+T: terminating
+        S: target has terminated; bye
+```
+
+If the supervisor receives a notification and sees that the
+argument of the target's <a href='/man/mkdir.2.en'>mkdir(2)</a> is the string "/bye",
+then (as well as spoofing an <b>EOPNOTSUPP</b> error), the supervisor
+terminates. If the target process subsequently executes another
+<a href='/man/mkdir.2.en'>mkdir(2)</a> that triggers its seccomp filter to return the
+<b>SECCOMP_RET_USER_NOTIF</b> action value, then the kernel causes the
+target process's system call to fail with the error <b>ENOSYS</b>
+("Function not implemented"). This is demonstrated by the
+following example:
+
+<br/>
+
+```
+$<b> ./seccomp_unotify /bye /tmp/y</b>;
+T: PID = 23185
+T: about to mkdir("/bye")
+        S: got notification (ID 0xa81236b1d2f7b0f4) for PID 23185
+        S: spoofing error response (Operation not supported)
+        S: sending response (flags = 0; val = 0; error = -95)
+        S: terminating **********
+T: ERROR: mkdir(2): Operation not supported
+T: about to mkdir("/tmp/y")
+T: ERROR: mkdir(2): Function not implemented
+T: terminating
+```
+
+## Program source
+
+```c
+#define _GNU_SOURCE
+#include &lt;err.h&gt;
+#include &lt;errno.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;limits.h&gt;
+#include &lt;linux/audit.h&gt;
+#include &lt;linux/filter.h&gt;
+#include &lt;linux/seccomp.h&gt;
+#include &lt;signal.h&gt;
+#include &lt;stdbool.h&gt;
+#include &lt;stddef.h&gt;
+#include &lt;stdint.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;sys/ioctl.h&gt;
+#include &lt;sys/prctl.h&gt;
+#include &lt;sys/socket.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;sys/syscall.h&gt;
+#include &lt;sys/types.h&gt;
+#include &lt;sys/un.h&gt;
+#include &lt;unistd.h&gt;
+#define NITEMS(arr)  (sizeof(arr) / sizeof((arr)[0]))
+/* Send the file descriptor 'fd' over the connected UNIX domain socket
+   'sockfd'.  Returns 0 on success, or -1 on error.  */
+static int
+sendfd(int sockfd, int fd)
+{
+    int             data;
+    struct iovec    iov;
+    struct msghdr   msgh;
+    struct cmsghdr  *cmsgp;
+    /* Allocate a char array of suitable size to hold the ancillary data.
+       However, since this buffer is in reality a 'struct cmsghdr', use a
+       union to ensure that it is suitably aligned.  */
+    union {
+        char   buf[CMSG_SPACE(sizeof(int))];
+                        /* Space large enough to hold an 'int' */
+        struct cmsghdr align;
+    } controlMsg;
+    /* The 'msg_name' field can be used to specify the address of the
+       destination socket when sending a datagram.  However, we do not
+       need to use this field because 'sockfd' is a connected socket.  */
+    msgh.msg_name = NULL;
+    msgh.msg_namelen = 0;
+    /* On Linux, we must transmit at least one byte of real data in
+       order to send ancillary data.  We transmit an arbitrary integer
+       whose value is ignored by recvfd().  */
+    msgh.msg_iov = &amp;iov;
+    msgh.msg_iovlen = 1;
+    iov.iov_base = &amp;data;
+    iov.iov_len = sizeof(int);
+    data = 12345;
+    /* Set 'msghdr' fields that describe ancillary data */
+    msgh.msg_control = controlMsg.buf;
+    msgh.msg_controllen = sizeof(controlMsg.buf);
+    /* Set up ancillary data describing file descriptor to send */
+    cmsgp = CMSG_FIRSTHDR(&amp;msgh);
+    cmsgp-&gt;cmsg_level = SOL_SOCKET;
+    cmsgp-&gt;cmsg_type = SCM_RIGHTS;
+    cmsgp-&gt;cmsg_len = CMSG_LEN(sizeof(int));
+    memcpy(CMSG_DATA(cmsgp), &amp;fd, sizeof(int));
+    /* Send real plus ancillary data */
+    if (sendmsg(sockfd, &amp;msgh, 0) == -1)
+        return -1;
+    return 0;
+}
+/* Receive a file descriptor on a connected UNIX domain socket.  Returns
+   the received file descriptor on success, or -1 on error.  */
+static int
+recvfd(int sockfd)
+{
+    int            data, fd;
+    ssize_t        nr;
+    struct iovec   iov;
+    struct msghdr  msgh;
+    /* Allocate a char buffer for the ancillary data.  See the comments
+       in sendfd() */
+    union {
+        char   buf[CMSG_SPACE(sizeof(int))];
+        struct cmsghdr align;
+    } controlMsg;
+    struct cmsghdr *cmsgp;
+    /* The 'msg_name' field can be used to obtain the address of the
+       sending socket.  However, we do not need this information.  */
+    msgh.msg_name = NULL;
+    msgh.msg_namelen = 0;
+    /* Specify buffer for receiving real data */
+    msgh.msg_iov = &amp;iov;
+    msgh.msg_iovlen = 1;
+    iov.iov_base = &amp;data;       /* Real data is an 'int' */
+    iov.iov_len = sizeof(int);
+    /* Set 'msghdr' fields that describe ancillary data */
+    msgh.msg_control = controlMsg.buf;
+    msgh.msg_controllen = sizeof(controlMsg.buf);
+    /* Receive real plus ancillary data; real data is ignored */
+    nr = recvmsg(sockfd, &amp;msgh, 0);
+    if (nr == -1)
+        return -1;
+    cmsgp = CMSG_FIRSTHDR(&amp;msgh);
+    /* Check the validity of the 'cmsghdr' */
+    if (cmsgp == NULL
+        || cmsgp-&gt;cmsg_len != CMSG_LEN(sizeof(int))
+        || cmsgp-&gt;cmsg_level != SOL_SOCKET
+        || cmsgp-&gt;cmsg_type != SCM_RIGHTS)
+    {
+        errno = EINVAL;
+        return -1;
+    }
+    /* Return the received file descriptor to our caller */
+    memcpy(&amp;fd, CMSG_DATA(cmsgp), sizeof(int));
+    return fd;
+}
+static void
+sigchldHandler(int sig)
+{
+    char msg[] = "\tS: target has terminated; bye\n";
+    write(STDOUT_FILENO, msg, sizeof(msg) - 1);
+    _exit(EXIT_SUCCESS);
+}
+static int
+seccomp(unsigned int operation, unsigned int flags, void *args)
+{
+    return syscall(SYS_seccomp, operation, flags, args);
+}
+/* The following is the x86-64-specific BPF boilerplate code for checking
+   that the BPF program is running on the right architecture + ABI.  At
+   completion of these instructions, the accumulator contains the system
+   call number.  */
+/* For the x32 ABI, all system call numbers have bit 30 set */
+#define X32_SYSCALL_BIT         0x40000000
+#define X86_64_CHECK_ARCH_AND_LOAD_SYSCALL_NR \
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, \
+                 (offsetof(struct seccomp_data, arch))), \
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, AUDIT_ARCH_X86_64, 0, 2), \
+        BPF_STMT(BPF_LD | BPF_W | BPF_ABS, \
+                 (offsetof(struct seccomp_data, nr))), \
+        BPF_JUMP(BPF_JMP | BPF_JGE | BPF_K, X32_SYSCALL_BIT, 0, 1), \
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_RET_KILL_PROCESS)
+/* installNotifyFilter() installs a seccomp filter that generates
+   user-space notifications (SECCOMP_RET_USER_NOTIF) when the process
+   calls mkdir(2); the filter allows all other system calls.
+   The function return value is a file descriptor from which the
+   user-space notifications can be fetched.  */
+static int
+installNotifyFilter(void)
+{
+    int notifyFd;
+    struct sock_filter filter[] = {
+        X86_64_CHECK_ARCH_AND_LOAD_SYSCALL_NR,
+        /* mkdir() triggers notification to user-space supervisor */
+        BPF_JUMP(BPF_JMP | BPF_JEQ | BPF_K, SYS_mkdir, 0, 1),
+        BPF_STMT(BPF_RET + BPF_K, SECCOMP_RET_USER_NOTIF),
+        /* Every other system call is allowed */
+        BPF_STMT(BPF_RET | BPF_K, SECCOMP_ALLOW),
+    };
+    struct sock_fprog prog = {
+        .len = NITEMS(filter),
+        .filter = filter,
+    };
+    /* Install the filter with the SECCOMP_FILTER_FLAG_NEW_LISTENER flag;
+       as a result, seccomp() returns a notification file descriptor.  */
+    notifyFd = seccomp(SECCOMP_SET_MODE_FILTER,
+                       SECCOMP_FILTER_FLAG_NEW_LISTENER, &amp;prog);
+    if (notifyFd == -1)
+        err(EXIT_FAILURE, "seccomp-install-notify-filter");
+    return notifyFd;
+}
+/* Close a pair of sockets created by socketpair() */
+static void
+closeSocketPair(int sockPair[2])
+{
+    if (close(sockPair[0]) == -1)
+        err(EXIT_FAILURE, "closeSocketPair-close-0");
+    if (close(sockPair[1]) == -1)
+        err(EXIT_FAILURE, "closeSocketPair-close-1");
+}
+/* Implementation of the target process.  Create a child process that:
+   (1) installs a seccomp filter with the
+       SECCOMP_FILTER_FLAG_NEW_LISTENER flag;
+   (2) writes the seccomp notificatio
+n file descriptor devuelto del
+       paso anterior en el socket de dominio UNIX, 'sockPair[0]';
+   (3) llama a mkdir(2) para cada elemento de 'argv'.
+   El valor de retorno de la función en el padre es el PID del proceso hijo;
+   el hijo no regresa de esta función.  */
+static pid_t
+targetProcess(int sockPair[2], char *argv[])
+{
+    int    notifyFd, s;
+    pid_t  targetPid;
+    targetPid = fork();
+    if (targetPid == -1)
+        err(EXIT_FAILURE, &quot;fork&quot;);
+    if (targetPid &gt; 0)          /* En el padre, devuelve el PID del hijo */
+        return targetPid;
+    /* El hijo continúa hasta aquí */
+    printf(&quot;T: PID = %ld\n&quot;, (long) getpid());
+    /* Instalar filtro(s) seccomp */
+    if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+        err(EXIT_FAILURE, &quot;prctl&quot;);
+    notifyFd = installNotifyFilter();
+    /* Pasar el descriptor de archivo de notificación al proceso de rastreo
+       a través de un socket de dominio UNIX */
+    if (sendfd(sockPair[0], notifyFd) == -1)
+        err(EXIT_FAILURE, &quot;sendfd&quot;);
+    /* Los FD de notificación y socket ya no son necesarios en el objetivo */
+    if (close(notifyFd) == -1)
+        err(EXIT_FAILURE, &quot;close-target-notify-fd&quot;);
+    closeSocketPair(sockPair);
+    /* Realizar una llamada a mkdir() para cada uno de los argumentos de la
+       línea de comandos */
+    for (char **ap = argv; *ap != NULL; ap++) {
+        printf(&quot;\nT: a punto de mkdir(\&quot;%s\&quot;)\n&quot;, *ap);
+        s = mkdir(*ap, 0700);
+        if (s == -1)
+            perror(&quot;T: ERROR: mkdir(2)&quot;);
+        else
+            printf(&quot;T: ÉXITO: mkdir(2) devolvió %d\n&quot;, s);
+    }
+    printf(&quot;\nT: terminando\n&quot;);
+    exit(EXIT_SUCCESS);
+}
+/* Comprobar que el ID de notificación proporcionado por una operación
+   SECCOMP_IOCTL_NOTIF_RECV sigue siendo válido. Ya no será válido si el
+   proceso objetivo ha terminado o ya no está bloqueado en la llamada al
+   sistema que generó la notificación (porque fue interrumpido por una
+   señal). Esta operación se puede utilizar al acceder a archivos
+   /proc/PID en el proceso objetivo para evitar condiciones de carrera
+   TOCTOU donde el PID devuelto por SECCOMP_IOCTL_NOTIF_RECV termina y es
+   reutilizado por otro proceso.  */
+static bool
+cookieIsValid(int notifyFd, uint64_t id)
+{
+    return ioctl(notifyFd, SECCOMP_IOCTL_NOTIF_ID_VALID, &amp;id) == 0;
+}
+/* Acceder a la memoria del proceso objetivo para obtener la ruta de
+   archivo a la que se refiere el argumento 'argNum' de la llamada al
+   sistema en 'req-&gt;data.args[]'. La ruta de archivo se devuelve en
+   'path', un búfer de 'size' bytes asignado por el llamante.
+   Devuelve verdadero si la ruta de archivo se obtiene correctamente y
+   falso en caso contrario. Para posibles causas de error, consulte los
+   comentarios a continuación.  */
+static bool
+getTargetPathname(struct seccomp_notif *req, int notifyFd,
+                  int argNum, char *path, size_t size)
+{
+    int      procMemFd;
+    char     procMemPath[PATH_MAX];
+    ssize_t  nread;
+    snprintf(procMemPath, sizeof(procMemPath), &quot;/proc/%d/mem&quot;, req-&gt;pid);
+    procMemFd = open(procMemPath, O_RDONLY | O_CLOEXEC);
+    if (procMemFd == -1)
+        return false;
+    /* Comprobar que el proceso cuya información estamos accediendo sigue
+       vivo y bloqueado en la llamada al sistema que causó la notificación.
+       Si la operación SECCOMP_IOCTL_NOTIF_ID_VALID (realizada en
+       cookieIsValid()) tuvo éxito, sabemos que el descriptor de archivo
+       /proc/PID/mem que abrimos correspondía al proceso para el que
+       recibimos una notificación. Si ese proceso termina posteriormente,
+       entonces read() en ese descriptor de archivo devolverá 0 (EOF).  */
+    if (!cookieIsValid(notifyFd, req-&gt;id)) {
+        close(procMemFd);
+        return false;
+    }
+    /* Leer bytes en la ubicación que contiene el argumento de la ruta de
+       archivo */
+    nread = pread(procMemFd, path, size, req-&gt;data.args[argNum]);
+    close(procMemFd);
+    if (nread &lt;= 0)
+        return false;
+    /* Una vez más, comprobar que el ID de notificación sigue siendo válido.
+       El caso que nos preocupa especialmente aquí es que justo antes de
+       obtener la ruta de archivo, la llamada al sistema bloqueada del
+       objetivo fue interrumpida por un manejador de señales, y después de
+       que el manejador regresó, el objetivo continuó la ejecución (pasando
+       la llamada al sistema interrumpida). En ese caso, no tenemos
+       garantías sobre lo que estamos leyendo, ya que la memoria del
+       objetivo puede haber sido modificada arbitrariamente por operaciones
+       posteriores.  */
+    if (!cookieIsValid(notifyFd, req-&gt;id)) {
+        perror(&quot;\tS: ¡¡¡la comprobación del ID de notificación falló!!!&quot;);
+        return false;
+    }
+    /* Incluso si la llamada al sistema del objetivo no fue interrumpida por
+       una señal, no tenemos garantías sobre lo que había en la memoria del
+       proceso objetivo. (La memoria puede haber sido modificada por otro
+       hilo, o incluso por un proceso atacante externo). Por lo tanto,
+       tratamos el búfer devuelto por pread() como entrada no confiable.
+       El búfer debe contener un byte nulo terminador; si no, activaremos
+       un error para el proceso objetivo.  */
+    if (strnlen(path, nread) &lt; nread)
+        return true;
+    return false;
+}
+/* Asignar búferes para las estructuras de solicitud y respuesta de
+   notificación de usuario de seccomp. Es responsabilidad del llamante
+   liberar los búferes devueltos a través de 'req' y 'resp'.  */
+static void
+allocSeccompNotifBuffers(struct seccomp_notif **req,
+                         struct seccomp_notif_resp **resp,
+                         struct seccomp_notif_sizes *sizes)
+{
+    size_t  resp_size;
+    /* Descubrir los tamaños de las estructuras que se utilizan para recibir
+       notificaciones y enviar respuestas de notificación, y asignar
+       búferes de esos tamaños.  */
+    if (seccomp(SECCOMP_GET_NOTIF_SIZES, 0, sizes) == -1)
+        err(EXIT_FAILURE, &quot;seccomp-SECCOMP_GET_NOTIF_SIZES&quot;);
+    *req = malloc(sizes-&gt;seccomp_notif);
+    if (*req == NULL)
+        err(EXIT_FAILURE, &quot;malloc-seccomp_notif&quot;);
+    /* Al asignar el búfer de respuesta, debemos tener en cuenta el hecho de
+       que el binario de usuario puede haber sido compilado con encabezados
+       de usuario donde 'struct seccomp_notif_resp' es más grande que el
+       búfer de respuesta esperado por el kernel (más antiguo). Por lo
+       lo tanto, asignamos un búfer que es el máximo de los dos tamaños.
+       Esto asegura que si el supervisor coloca bytes en la estructura de
+       respuesta que están más allá del tamaño de respuesta que espera el
+       kernel, entonces el supervisor no está tocando una ubicación de
+       memoria inválida.  */
+    resp_size = sizes-&gt;seccomp_notif_resp;
+    if (sizeof(struct seccomp_notif_resp) &gt; resp_size)
+        resp_size = sizeof(struct seccomp_notif_resp);
+    *resp = malloc(resp_size);
+    if (*resp == NULL)
+        err(EXIT_FAILURE, &quot;malloc-seccomp_notif_resp&quot;);
+}
+/* Manejar notificaciones que llegan a través del descriptor de archivo
+   SECCOMP_RET_USER_NOTIF, 'notifyFd'.  */
+static void
+handleNotifications(int notifyFd)
+{
+    bool                        pathOK;
+    char                        path[PATH_MAX];
+    struct seccomp_notif        *req;
+    struct seccomp_notif_resp   *resp;
+    struct seccomp_notif_sizes  sizes;
+    allocSeccompNotifBuffers(&amp;req, &amp;resp, &amp;sizes);
+    /* Bucle manejando notificaciones */
+    for (;;) {
+        /* Esperar la próxima notificación, devolviendo la información en
+           '*req' */
+        memset(req, 0, sizes.seccomp_notif);
+        if (ioctl(notifyFd, SECCOMP_IOCTL_NOTIF_RECV, req) == -1) {
+            if (errno == EINTR)
+                continue;
+            err(EXIT_FAILURE, &quot;\tS: ioctl-SECCOMP_IOCTL_NOTIF_RECV&quot;);
+        }
+        printf(&quot;\tS: notificación recibida (ID %#llx) para PID %d\n&quot;,
+               req-&gt;id, req-&gt;pid);
+        /* La única llamada al sistema que puede generar un evento de
+           notificación es mkdir(2). Sin embargo, comprobamos que la llamada
+           al sistema notificada es de hecho mkdir() como una especie de
+           previsión de futuro para este código en caso de que el filtro
+           seccomp se modifique posteriormente para generar notificaciones
+           para otras llamadas al sistema.  */
+        if (req-&gt;data.nr != SYS_mkdir) {
+            printf(&quot;\tS: la notificación contenía un número de llamada al &quot;
+                   &quot;sistema inesperado; ¡adiós!\n&quot;);
+            exit(EXIT_FAILURE);
+        }
+        pathOK = getTargetPathname(req, notifyFd, 0, path, sizeof(path));
+        /* Prellenar algunos campos de la respuesta */
+        resp-&gt;id = req-&gt;id;     /* La respuesta incluye el ID de notificación */
+        resp-&gt;flags = 0;
+        resp-&gt;val = 0;
+        /* Si getTargetPathname() falló, activar una respuesta de error EINVAL
+           (enviar esta respuesta puede generar un error si el fallo ocurrió
+           porque el ID de notificación ya no era válido); si el directorio
+           está en /tmp, entonces créalo en nombre del supervisor; si la ruta
+           de archivo comienza con '.', dile al kernel que permita que el
+           proceso objetivo ejecute mkdir(); de lo contrario, genera un error
+           para una ruta de archivo de directorio en cualquier otra ubicación.  */
+        if (!pathOK) {
+            resp-&gt;error = -EINVAL;
+            printf(&quot;\tS: falsificando error para ruta de archivo inválida (%s)\n&quot;,
+                   strerror(-resp-&gt;error));
+        } else if (strncmp(path, &quot;/tmp/&quot;, strlen(&quot;/tmp/&quot;)) == 0) {
+            printf(&quot;\tS: ejecutando: mkdir(\&quot;%s\&quot;, %#llo)\n&quot;,
+                   path, req-&gt;data.args[1]);
+            if (mkdir(path, req-&gt;data.args[1]) == 0) {
+                resp-&gt;error = 0;            /* "Éxito" */
+                resp-&gt;val = strlen(path);   /* Utilizado como valor de retorno
+                                               de mkdir() en el objetivo */
+                printf(&quot;\tS: ¡éxito! retorno falsificado = %lld\n&quot;,
+                       resp-&gt;val);
+            } else {
+                /* Si mkdir() falló en el supervisor, pasar el error de
+                   vuelta al objetivo */
+                resp-&gt;error = -errno;
+                printf(&quot;\tS: fallo! (errno = %d; %s)\n&quot;, errno,
+                       strerror(errno));
+            }
+        } else if (strncmp(path, &quot;./&quot;, strlen(&quot;./&quot;)) == 0) {
+            resp-&gt;error = resp-&gt;val = 0;
+            resp-&gt;flags = SECCOMP_USER_NOTIF_FLAG_CONTINUE;
+            printf(&quot;\tS: el objetivo puede ejecutar la llamada al sistema\n&quot;);
+        } else {
+            resp-&gt;error = -EOPNOTSUPP;
+            printf(&quot;\tS: falsificando respuesta de error (%s)\n&quot;,
+                   strerror(-resp-&gt;error));
+        }
+        /* Enviar una respuesta a la notificación */
+        printf(&quot;\tS: enviando respuesta &quot;
+               &quot;(flags = %#x; val = %lld; error = %d)\n&quot;,
+               resp-&gt;flags, resp-&gt;val, resp-&gt;error);
+        if (ioctl(notifyFd, SECCOMP_IOCTL_NOTIF_SEND, resp) == -1) {
+            if (errno == ENOENT)
+                printf(&quot;\tS: la respuesta falló con ENOENT; &quot;
+                       &quot;¿quizás la llamada al sistema del proceso &quot;
+                       &quot;objetivo fue interrumpida por una señal?\n&quot;);
+            else
+                perror(&quot;ioctl-SECCOMP_IOCTL_NOTIF_SEND&quot;);
+        }
+        /* Si la ruta de archivo es simplemente "/bye", el supervisor sale del
+           bucle y termina. Esto nos permite ver qué sucede si el proceso
+           objetivo realiza más llamadas a mkdir(2).  */
+        if (strcmp(path, &quot;/bye&quot;) == 0)
+            break;
+    }
+    free(req);
+    free(resp);
+    printf(&quot;\tS: terminando **********\n&quot;);
+    exit(EXIT_FAILURE);
+}
+/* Implementación del proceso supervisor:
+   (1) obtiene el descriptor de archivo de notificación de 'sockPair[1]'
+   (2) maneja las notificaciones que llegan a ese descriptor de archivo.  */
+static void
+supervisor(int sockPair[2])
+{
+    int notifyFd;
+    notifyFd = recvfd(sockPair[1]);
+    if (notifyFd == -1)
+        err(EXIT_FAILURE, &quot;recvfd
+"");
+    closeSocketPair(sockPair);  /* Ya no necesitamos el par de sockets */
+    handleNotifications(notifyFd);
+}
+int
+main(int argc, char *argv[])
+{
+    int               sockPair[2];
+    struct sigaction  sa;
+    setbuf(stdout, NULL);
+    if (argc < 2) {
+        fprintf(stderr, "Se requiere al menos un argumento de ruta\n");
+        exit(EXIT_FAILURE);
+    }
+    /* Crea un socket de dominio UNIX que se utiliza para pasar el descriptor
+       de archivo de notificación seccomp del proceso objetivo al proceso
+       supervisor.  */
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sockPair) == -1)
+        err(EXIT_FAILURE, "socketpair");
+    /* Crea un proceso hijo, el "objetivo", que instala el filtrado seccomp.
+       El proceso objetivo escribe el descriptor de archivo de notificación
+       seccomp en 'sockPair[0]' y luego llama a mkdir(2) para cada directorio
+       en los argumentos de la línea de comandos.  */
+    (void) targetProcess(sockPair, &argv[optind]);
+    /* Captura SIGCHLD cuando el objetivo termina, para que el
+       supervisor también pueda terminar.  */
+    sa.sa_handler = sigchldHandler;
+    sa.sa_flags = 0;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGCHLD, &sa, NULL) == -1)
+        err(EXIT_FAILURE, "sigaction");
+    supervisor(sockPair);
+    exit(EXIT_SUCCESS);
+}
+</pre>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ioctl.2.en'>ioctl(2)</a>, <a href='/man/pidfd_getfd.2.en'>pidfd_getfd(2)</a>, <a href='/man/pidfd_open.2.en'>pidfd_open(2)</a>,
+    <a href='/man/seccomp.2.en'>seccomp(2)</a></p>
+<p class="Pp">Se puede encontrar un ejemplo de programa adicional en el archivo de
+    fuente del kernel <i>samples/seccomp/user-trap.c</i>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-09-21</td>
+    <td class="foot-os">Páginas del manual de Linux 6.16</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/any/man-pages/">core/man-pages</a></dd>
+        <dt>Versión:</dt>
+        <dd>6.16-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.kernel.org/doc/man-pages/">https://www.kernel.org/doc/man-pages/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>BSD-2-Clause, BSD-3-Clause, BSD-4.3TAHOE, BSD-4-Clause-UC, GPL-1.0-or-later, GPL-2.0-only, GPL-2.0-or-later, GPL-3.0-or-later, LGPL-3.0-or-later, LGPL-3.0-linking-exception, LicenseRef-Public-Domain, LicenseRef-UltraPermissive, Linux-man-pages-1-para, Linux-man-pages-copyleft, Linux-man-pages-copyleft-2-para, Linux-man-pages-copyleft-var, MIT, Spencer-94</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/man-pages/">/listing/core/man-pages/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#BIBLIOTECA">BIBLIOTECA</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#OPERACIONES_IOCTL">OPERACIONES IOCTL</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+            <li><a href="#ERRORES">ERRORES</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/seccomp_unotify.2.en.txt">txt</a>, 
+        
+            <a href="/man/seccomp_unotify.2.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

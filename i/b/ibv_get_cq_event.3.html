@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ibv_get_cq_event(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ibv_get_cq_event(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/rdma-core/">rdma-core</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">IBV_GET_CQ_EVENT(3)</td>
+    <td class="head-vol">Manual del programador de Libibverbs</td>
+    <td class="head-rtitle">IBV_GET_CQ_EVENT(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">ibv_get_cq_event, ibv_ack_cq_events - obtener y acusar recibo de
+    eventos de colas de finalización (CQ)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;infiniband/verbs.h&gt;</b>
+
+<b>int ibv_get_cq_event(struct ibv_comp_channel </b><i>*channel</i><b>,</b>
+<b>                     struct ibv_cq </b><i>**cq</i><b>, void </b><i>**cq_context</i><b>);</b>
+
+<b>void ibv_ack_cq_events(struct ibv_cq </b><i>*cq</i><b>, unsigned int </b><i>nevents</i><b>);</b></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>ibv_get_cq_event()</b> espera el próximo evento de finalización
+    en el canal de eventos de finalización <i>channel.</i> Rellena los argumentos
+    <i>cq</i> con la CQ que recibió el evento y <i>cq_context</i> con el
+    contexto de la CQ.</p>
+<p class="Pp"><b>ibv_ack_cq_events()</b> acusa recibo de <i>nevents</i> eventos
+    en la CQ <i>cq.</i></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp"><b>ibv_get_cq_event()</b> devuelve 0 si tiene éxito y -1 si hay un
+    error.</p>
+<p class="Pp"><b>ibv_ack_cq_events()</b> no devuelve ningún valor.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<p class="Pp">Todos los eventos de finalización que devuelve
+    <b>ibv_get_cq_event()</b> deben ser acusados recibo usando
+    <b>ibv_ack_cq_events().</b> Para evitar condiciones de carrera, la destrucción
+    de una CQ esperará a que se acusen recibo todos los eventos de finalización;
+    esto garantiza una correspondencia uno a uno entre los acuses de recibo y las
+    obtenciones exitosas.</p>
+<p class="Pp">Llamar a <b>ibv_ack_cq_events()</b> puede ser relativamente costoso
+    en el plano de datos, ya que debe adquirir un mutex. Por lo tanto, puede ser
+    mejor amortizar este coste manteniendo un recuento del número de eventos que
+    necesitan acusar recibo y acusar recibo de varios eventos de finalización en
+    una sola llamada a <b>ibv_ack_cq_events().</b></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLOS'><a class='permalink' href='#EJEMPLOS'>EJEMPLOS</a></h1>
+<p class="Pp">El siguiente ejemplo de código demuestra una forma posible de trabajar
+    con eventos de finalización. Realiza los siguientes pasos:</p>
+<p class="Pp">Etapa I: Preparación
+  <br/>
+  1. Crea una CQ
+  <br/>
+  2. Solicita notificación ante un nuevo (primer) evento de finalización</p>
+<p class="Pp">Etapa II: Rutina de manejo de finalización
+  <br/>
+  3. Espera el evento de finalización y acúsalo recibo
+  <br/>
+  4. Solicita notificación ante el próximo evento de finalización
+  <br/>
+  5. Vacía la CQ</p>
+<p class="Pp">Tenga en cuenta que puede activarse un evento adicional sin una
+    entrada de finalización correspondiente en la CQ. Esto ocurre si se añade una
+    entrada de finalización a la CQ entre el Paso 4 y el Paso 5, y luego la CQ se
+    vacía (se consulta) en el Paso 5.</p>
+<pre>cq = ibv_create_cq(ctx, 1, ev_ctx, channel, 0);
+if (!cq) {
+        fprintf(stderr, &quot;Fallo al crear CQ\n&quot;);
+        return 1;
+}</pre>
+<pre>/* Solicita notificación antes de que se pueda crear ninguna finalización */
+if (ibv_req_notify_cq(cq, 0)) {
+        fprintf(stderr, &quot;No se pudo solicitar notificación de CQ\n&quot;);
+        return 1;
+}</pre>
+<pre>.
+.
+.</pre>
+<pre>/* Espera el evento de finalización */
+if (ibv_get_cq_event(channel, &amp;ev_cq, &amp;ev_ctx)) {
+        fprintf(stderr, &quot;Fallo al obtener cq_event\n&quot;);
+        return 1;
+}
+/* Acusa recibo del evento */
+ibv_ack_cq_events(ev_cq, 1);</pre>
+<pre>/* Solicita notificación ante el próximo evento de finalización */
+if (ibv_req_notify_cq(ev_cq, 0)) {
+        fprintf(stderr, &quot;No se pudo solicitar notificación de CQ\n&quot;);
+        return 1;
+}</pre>
+<pre>/* Vacía la CQ: consulta todas las finalizaciones de la CQ (si las hay) */
+do {
+        ne = ibv_poll_cq(cq, 1, &amp;wc);
+        if (ne &lt; 0) {
+                fprintf(stderr, &quot;Fallo al consultar finalizaciones de la CQ\n&quot;);
+                return 1;
+        }
+        /* puede haber un evento extra sin finalización en la CQ */
+        if (ne == 0)
+                continue;</pre>
+<pre>        if (wc.status != IBV_WC_SUCCESS) {
+                fprintf(stderr, &quot;Se encontró finalización con estado 0x%x\n&quot;, wc.status);
+                return 1;
+        }
+} while (ne);</pre>
+<p class="Pp">El siguiente ejemplo de código demuestra una forma posible de trabajar
+    con eventos de finalización en modo no bloqueante. Realiza los siguientes
+    pasos:</p>
+<p class="Pp">1. Establece el canal de eventos de finalización en modo no
+    bloqueante
+  <br/>
+  2. Consulta el canal hasta que tenga un evento de finalización
+  <br/>
+  3. Obtiene el evento de finalización y acúsalo recibo</p>
+<pre>/* cambia el modo de bloqueo del canal de finalización */
+flags = fcntl(channel-&gt;fd, F_GETFL);
+rc = fcntl(channel-&gt;fd, F_SETFL, flags | O_NONBLOCK);
+if (rc &lt; 0) {
+	fprintf(stderr, &quot;Fallo al cambiar el descriptor de archivo del canal de eventos de finalización\n&quot;);
+	return 1;
+}
+/*
+ * consulta el canal hasta que tenga un evento y duerme ms_timeout
+ * milisegundos entre cada iteración
+ */
+my_pollfd.fd      = channel-&gt;fd;
+my_pollfd.events  = POLLIN;
+my_pollfd.revents = 0;
+do {
+	rc = poll(&amp;my_pollfd, 1, ms_timeout);
+} while (rc == 0);
+if (rc &lt; 0) {
+	fprintf(stderr, &quot;poll falló\n&quot;);
+	return 1;
+}
+ev_cq = cq;
+/* Espera el evento de finalización */
+if (ibv_get_cq_event(channel, &amp;ev_cq, &amp;ev_ctx)) {
+        fprintf(stderr, &quot;Fallo al obtener cq_event\n&quot;);
+        return 1;
+}
+/* Acusa recibo del evento */
+ibv_ack_cq_events(ev_cq, 1);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ibv_create_comp_channel.3.en'>ibv_create_comp_channel(3)</a>, <a href='/man/ibv_create_cq.3.en'>ibv_create_cq(3)</a>,
+    <a href='/man/ibv_req_notify_cq.3.en'>ibv_req_notify_cq(3)</a>, <a href='/man/ibv_poll_cq.3.en'>ibv_poll_cq(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<dl class="Bl-tag">
+  <dt id="Dotan"><a class="permalink" href="#Dotan">Dotan Barak</a></dt>
+  <dd>&lt;<i>dotanba@gmail.com</i>&gt;</dd>
+</dl>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2006-10-31</td>
+    <td class="foot-os">libibverbs</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/rdma-core/">extra/rdma-core</a></dd>
+        <dt>Versión:</dt>
+        <dd>60.0-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/linux-rdma/rdma-core">https://github.com/linux-rdma/rdma-core</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/rdma-core/">/listing/extra/rdma-core/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+            <li><a href="#EJEMPLOS">EJEMPLOS</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/ibv_get_cq_event.3.en.txt">txt</a>, 
+        
+            <a href="/man/ibv_get_cq_event.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

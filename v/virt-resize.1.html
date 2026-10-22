@@ -1,0 +1,1186 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>virt-resize(1) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">virt-resize(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/guestfs-tools/">guestfs-tools</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later, LGPL-2.1-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">virt-resize(1)</td>
+    <td class="head-vol">Virtualization Support</td>
+    <td class="head-rtitle">virt-resize(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp">virt-resize - Redimensionar un disco de máquina virtual</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<pre>virt-resize [--resize /dev/sdaN=[+/-]&lt;size&gt;[%]]
+  [--expand /dev/sdaN] [--shrink /dev/sdaN]
+  [--ignore /dev/sdaN] [--delete /dev/sdaN] [...] disco_entrada disco_salida</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">Virt-resize es una herramienta que puede redimensionar un disco de
+    máquina virtual, haciéndolo más grande o más pequeño en general, y
+    redimensionando o eliminando cualquier partición contenida en él.</p>
+<p class="Pp">Virt-resize <b>no puede</b> redimensionar imágenes de disco in
+    situ. Virt-resize <b>no debe</b> usarse en máquinas virtuales en vivo; para
+    obtener resultados consistentes, apague la máquina virtual antes de
+    redimensionarla.</p>
+<p class="Pp">Si no está familiarizado con las herramientas asociadas:
+    <a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a> y <a href='/man/virt-df.1.en'>virt-df(1)</a>, le recomendamos que lea
+    esas páginas del manual primero.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES"><a class='permalink' href='#EXAMPLES'>EJEMPLOS</a></h1>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Este ejemplo toma <span class="Li">&quot;discoantiguo&quot;</span> y lo
+      redimensiona a <span class="Li">&quot;disconuevo&quot;</span>, extendiendo
+      una de las particiones del invitado para que ocupe los 5 GB adicionales de
+      espacio:
+        <pre>virt-filesystems --long -h --all -a discoantiguo
+
+truncate -r discoantiguo disconuevo
+truncate -s +5G disconuevo
+
+# Nota: &quot;/dev/sda2&quot; es una partición dentro del archivo &quot;discoantiguo&quot;.
+virt-resize --expand /dev/sda2 discoantiguo disconuevo
+</pre>
+  </dd>
+  <dt>2.</dt>
+  <dd>Igual que el anterior, pero haciendo que la partición /boot sea 200 MB
+      más grande, mientras se da el espacio restante a /dev/sda2:
+        <pre>virt-resize --resize /dev/sda1=+200M --expand /dev/sda2 \
+  discoantiguo disconuevo
+</pre>
+  </dd>
+  <dt>3.</dt>
+  <dd>Como en el primer ejemplo, pero expandiendo un volumen lógico como paso
+      final. Esto es lo que normalmente usaría para invitados de Linux que
+      usan LVM:
+        <pre>virt-resize --expand /dev/sda2 --LV-expand /dev/vg_guest/lv_root \
+  discoantiguo disconuevo
+</pre>
+  </dd>
+  <dt>4.</dt>
+  <dd>Como en el primer ejemplo, pero el formato de salida será qcow2 en lugar
+      de un disco raw:
+        <pre>qemu-img create -f qcow2 -o preallocation=metadata disconuevo.qcow2 15G
+virt-resize --expand /dev/sda2 discoantiguo disconuevo.qcow2
+</pre>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DETAILED_USAGE"><a class='permalink' href='#DETAILED_USAGE'>USO DETALLADO</a></h1>
+<section class="Ss">
+<h2 class="Ss" id="EXPANDING_A_VIRTUAL_MACHINE_DISK"><a class='permalink' href='#EXPANDING_A_VIRTUAL_MACHINE_DISK'>EXPANDIENDO UN DISCO DE MÁQUINA VIRTUAL</a></h2>
+<dl class="Bl-tag">
+  <dt>1. Apague la máquina virtual</dt>
+  <dd></dd>
+  <dt>2. Localice la imagen del disco de entrada</dt>
+  <dd>Localice la imagen del disco de entrada (es decir, el archivo o dispositivo
+      en el host que contiene el disco del invitado). Si el invitado es gestionado
+      por libvirt, puede usar <span class="Li">&quot;virsh dumpxml&quot;</span> de la
+      siguiente manera para encontrar el nombre de la imagen del disco:
+        <pre># virsh dumpxml nombre_invitado | xpath -e /domain/devices/disk/source
+Found 1 nodes:
+-- NODE --
+&lt;source dev=&quot;/dev/vg/lv_guest&quot; /&gt;
+</pre>
+  </dd>
+  <dt>3. Observe el tamaño actual</dt>
+  <dd>Use <a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a> para mostrar
+      las particiones y tamaños actuales:
+        <pre># virt-filesystems --long --parts --blkdevs -h -a /dev/vg/lv_guest
+Name       Type       Size  Parent
+/dev/sda1  partition  101M  /dev/sda
+/dev/sda2  partition  7.9G  /dev/sda
+/dev/sda   device     8.0G  -
+</pre>
+    <p class="Pp">(Este ejemplo es una máquina virtual con un disco de 8 GB que
+        nos gustaría expandir a 10 GB).</p>
+  </dd>
+  <dt>4. Cree el disco de salida</dt>
+  <dd>Virt-resize no puede realizar modificaciones de disco in situ. Debe tener
+      espacio para almacenar el disco de salida redimensionado.
+    <p class="Pp">Para almacenar la imagen del disco redimensionado en un archivo,
+        cree un archivo de un tamaño adecuado:</p>
+        <pre># rm -f disco_salida
+# truncate -s 10G disco_salida
+</pre>
+    <p class="Pp">O use <a href='/man/lvcreate.1.en'>lvcreate(1)</a> para crear
+        un volumen lógico:</p>
+        <pre># lvcreate -L 10G -n nombre_lv vg_name
+</pre>
+    <p class="Pp">O use <a href='/man/virsh.1.en'>virsh(1)</a> vol-create-as para
+        crear un volumen de almacenamiento de libvirt:</p>
+        <pre># virsh pool-list
+# virsh vol-create-as nombre_pool nuevovolumen 10G
+</pre>
+  </dd>
+  <dt>5. Redimensione</dt>
+  <dd>virt-resize toma dos parámetros obligatorios, el disco de entrada y el disco
+      de salida (ambos pueden ser, por ejemplo, un dispositivo, un archivo o una
+      URI a un disco remoto). El disco de salida es el creado en el paso
+      anterior.
+        <pre># virt-resize disco_entrada disco_salida
+</pre>
+    <p class="Pp">Este comando simplemente copia la imagen de disco
+        <span class="Li">&quot;disco_entrada&quot;</span> a la imagen de disco
+        <span class="Li">&quot;disco_salida&quot;</span> <i>sin</i> redimensionar
+        ni cambiar ninguna partición existente. Si
+        <span class="Li">&quot;disco_salida&quot;</span> es más grande, se crea una
+        partición adicional vacía al final del disco que cubre el espacio
+        extra. Si <span class="Li">&quot;disco_salida&quot;</span> es más
+        pequeño, dará un error.</p>
+    <p class="Pp">Más realistamente, querrá expandir las particiones existentes
+        en la imagen del disco pasando opciones adicionales (para la lista
+        completa, consulte la sección &quot;OPCIONES&quot; a continuación).</p>
+    <p class="Pp">&quot;--expand&quot; es la opción más útil. Expande la
+        partición nombrada dentro del disco para llenar cualquier espacio
+        adicional:</p>
+        <pre># virt-resize --expand /dev/sda2 disco_entrada disco_salida
+</pre>
+    <p class="Pp">(En este caso, <i>no</i> se crea una partición adicional al
+        final del disco, porque no habrá espacio sin usar).</p>
+    <p class="Pp">&quot;--resize&quot; es la otra opción comúnmente utilizada.
+        Lo siguiente aumentaría el tamaño de /dev/sda1 en 200M y expandiría
+        /dev/sda2 para llenar el resto del espacio disponible:</p>
+        <pre># virt-resize --resize /dev/sda1=+200M --expand /dev/sda2 \
+    disco_entrada disco_salida
+</pre>
+    <p class="Pp">Si la partición expandida en la imagen contiene un sistema de
+        archivos o un PV de LVM, entonces si virt-resize sabe cómo, redimensionará
+        los contenidos, lo equivalente a llamar a un comando como <a href='/man/pvresize.8.en'>pvresize(8)</a>,
+        <a href='/man/resize2fs.8.en'>resize2fs(8)</a>, <a href='/man/ntfsresize.8.en'>ntfsresize(8)</a>, <a href='/man/btrfs.8.en'>btrfs(8)</a>,
+        <a href='/man/xfs_growfs.8.en'>xfs_growfs(8)</a>, o <a href='/man/resize.f2fs.8.en'>resize.f2fs(8)</a>. Sin embargo, virt-resize no sabe cómo
+        redimensionar algunos sistemas de archivos, por lo que tendría que
+        redimensionarlos en línea después de arrancar el invitado.</p>
+        <pre># virt-resize --expand /dev/sda2 nbd://ejemplo.com disco_salida
+</pre>
+    <p class="Pp">El disco de entrada puede ser una URI, para usar un disco remoto
+        como fuente. El formato de URI es compatible con guestfish. Consulte
+        &quot;AÑADIR ALMACENAMIENTO REMOTO&quot; en <a href='/man/guestfish.1.en'>guestfish(1)</a>.</p>
+    <p class="Pp">Otras opciones se cubren a continuación.</p>
+  </dd>
+  <dt>6. Probar</dt>
+  <dd>Pruebe a fondo la nueva imagen de disco <i>antes</i> de descartar la
+      antigua.
+    <p class="Pp">Si está utilizando libvirt, edite el XML para que apunte al
+        nuevo disco:</p>
+        <pre># virsh edit nombre_invitado
+</pre>
+    <p class="Pp">Cambie &lt;source ...&gt;, vea
+        <a href='http://libvirt.org/formatdomain.html#elementsDisks'>http://libvirt.org/formatdomain.html#elementsDisks</a></p>
+    <p class="Pp">Luego inicie el dominio con el nuevo disco redimensionado:</p>
+        <pre># virsh start nombre_invitado
+</pre>
+    <p class="Pp">y compruebe que todavía funciona. Consulte también la sección
+        &quot;NOTAS&quot; a continuación para obtener información adicional.</p>
+  </dd>
+  <dt>7. Redimensionar LVs, etc. dentro del invitado</dt>
+  <dd>(Esto también se puede hacer sin conexión usando <a href='/man/guestfish.1.en'>guestfish(1)</a>)
+    <p class="Pp">Una vez que el invitado haya arrancado, debería ver el nuevo
+        espacio disponible, al menos para los sistemas de archivos que virt-resize
+        sabe cómo redimensionar, y para los PVs. El usuario puede necesitar
+        redimensionar los LVs dentro de los PVs, y también redimensionar los tipos
+        de sistemas de archivos que virt-resize no sabe cómo expandir.</p>
+  </dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="SHRINKING_A_VIRTUAL_MACHINE_DISK"><a class='permalink' href='#SHRINKING_A_VIRTUAL_MACHINE_DISK'>REDUCIENDO UN DISCO DE MÁQUINA VIRTUAL</a></h2>
+<p class="Pp">Reducir es algo más complejo que expandir, y aquí solo se da una
+    visión general.</p>
+<p class="Pp">En primer lugar, virt-resize no intentará reducir ningún contenido
+    de partición (PVs, sistemas de archivos). El usuario tiene que reducir el
+    contenido antes de pasar la imagen del disco a virt-resize, y virt-resize
+    comprobará que el contenido se ha reducido correctamente.</p>
+<p class="Pp">(La reducción también se puede hacer sin conexión usando <a href='/man/guestfish.1.en'>guestfish(1)</a>)</p>
+<p class="Pp">Después de reducir los PVs y sistemas de archivos, apague el
+    invitado y proceda con los pasos 3 y 4 anteriores para asignar una nueva
+    imagen de disco.</p>
+<p class="Pp">Luego ejecute virt-resize con cualquiera de las opciones
+    <i>--shrink</i> y/o <i>--resize</i>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="IGNORING_OR_DELETING_PARTITIONS"><a class='permalink' href='#IGNORING_OR_DELETING_PARTITIONS'>IGNORANDO O ELIMINANDO PARTICIONES</a></h2>
+<p class="Pp">virt-resize también proporciona una forma conveniente de ignorar o
+    eliminar particiones al copiar del disco de entrada al disco de salida. Ignorar
+    una</p>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <code class="Nm">virt-resize</code> command resizes a virtual
+    machine disk image.</p>
+<p class="Pp">It creates a new disk image and copies the partitions and filesystems
+    from the old disk image to the new one. During this process, it can resize,
+    move, delete and create partitions.</p>
+<p class="Pp">The command copies partitions from the source disk image to the
+    destination disk image. If you want the destination disk to be smaller than
+    the source disk, you must specify which partitions to delete or omit using
+    the <a href='#delete'>--delete</a> or <a href='#ignore'>--ignore</a> options.</p>
+<p class="Pp">If you want the destination disk to be larger than the source
+    disk, then after all partitions have been copied, any remaining space is
+    left unpartitioned at the end of the disk. You can optionally use the
+    <a href='#expand'>--expand</a> option to make one of the partitions use up
+    this spare space.</p>
+<p class="Pp">If you want to change the size of a partition, you must specify
+    which partition and the new size. Note that partitions can only be grown if
+    the target disk image is larger than the source disk image.</p>
+<p class="Pp">If you are shrinking a partition, you must ensure that the partition
+    contains enough free space for the data to fit. If not, then the operation
+    will fail.</p>
+<p class="Pp">You can use <a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a> to list the partitions and
+    filesystems within a disk image. You can use <a href='/man/virt-image.1.en'>virt-image(1)</a> to create the
+    empty destination disk image.</p>
+<p class="Pp">The command can optionally copy the boot loader from the source disk
+    image to the destination disk image. This is usually desired, but can be
+    turned off with <a href='#no'>--no-copy-boot-loader</a>.</p>
+<p class="Pp">Resizing partitions can be a dangerous operation. Always make a
+    backup of your original disk image before attempting to resize it.</p>
+<p class="Pp">The command tries to be smart about boot loaders, but sometimes it
+    fails. You may need to reinstall the boot loader (e.g. GRUB) after resizing
+    the disk.</p>
+<p class="Pp">For Windows guests, virt-resize can resize the partition and the
+    NTFS filesystem within it. For Linux guests, virt-resize can resize ext2,
+    ext3, ext4, btrfs, xfs, f2fs, and swap partitions.</p>
+<p class="Pp">The operation is performed by creating a temporary disk image,
+    copying the partitions and filesystems into it, and then renaming the
+    temporary image to the final destination name. This minimizes the risk of
+    data corruption if the operation is interrupted.</p>
+<p class="Pp">The operation only works on disk images that do not contain logical
+    partitions, or on disk images where the logical partitions are not being
+    resized.</p>
+<section class="Ss">
+<h2 class="Ss" id='PARTITION_OPERATIONS'><a class='permalink' href='#PARTITION_OPERATIONS'>PARTITION OPERATIONS</a></h2>
+<p class="Pp">When resizing partitions, virt-resize must choose where to place
+    the partitions on the new disk. By default, it places them contiguously at
+    the beginning of the disk. This can lead to poor performance if the disk is
+    an SSD or a network block device, as these often perform best when partitions
+    are aligned on sector boundaries.</p>
+<p class="Pp">The <a href='#alignment'>--alignment</a> option allows you to specify
+    an alignment boundary. For example, <code class="Nm">--alignment 8</code> aligns
+    partitions on 4K boundaries (assuming 512-byte sectors).</p>
+<p class="Pp">The <a href='#align-first'>--align-first</a> option controls whether
+    the first partition is aligned. <code class="Nm">auto</code> (the default) tries
+    to align it only if it's safe to do so (e.g., for Windows guests where the
+    bootloader can be fixed automatically). <code class="Nm">never</code> never
+    aligns the first partition, which is the safest option. <code class="Nm">always</code>
+    always aligns the first partition, which may break the bootloader.</p>
+<p class="Pp">Creating a partition copies the contents of the source partition
+    to the destination partition. Deleting a partition removes it completely, but
+    note that it also renumbers any partitions after the one which is deleted,
+    which can leave some guests unbootable.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='QCOW2_AND_NON-SPARSE_RAW_FORMATS'><a class='permalink' href='#QCOW2_AND_NON-SPARSE_RAW_FORMATS'>QCOW2   AND NON-SPARSE RAW FORMATS</a></h2>
+<p class="Pp">If the input disk is in qcow2 format, then you may prefer that the
+    output is in qcow2 format as well. Alternately, virt-resize can convert the
+    format on the fly. The output format is simply determined by the format of
+    the empty output container that you provide. Thus to create qcow2 output,
+    use:</p>
+<pre>qemu-img create -f qcow2 -o preallocation=metadata outdisk [size]</pre>
+<p class="Pp">instead of the truncate command.</p>
+<p class="Pp">Similarly, to get non-sparse raw output use:</p>
+<pre>fallocate -l size outdisk</pre>
+<p class="Pp">(on older systems that don&#x2019;t have the <a href='/man/fallocate.1.en'>fallocate(1)</a>
+    command use <span class="Li">&quot;dd if=/dev/zero of=outdisk bs=1M
+    count=..&quot;</span>)</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='LOGICAL_PARTITIONS'><a class='permalink' href='#LOGICAL_PARTITIONS'>LOGICAL   PARTITIONS</a></h2>
+<p class="Pp">Logical partitions (a.k.a. <i>/dev/sda5+</i> on disks using DOS
+    partition tables) cannot be resized.</p>
+<p class="Pp">To understand what is going on, firstly one of the four partitions
+    <i>/dev/sda1-4</i> will have MBR partition type <span class="Li">05</span>
+    or <span class="Li">&quot;0f&quot;</span>. This is called the <b>extended
+    partition</b>. Use <a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a> to see the MBR partition
+  type.</p>
+<p class="Pp">Logical partitions live inside the extended partition.</p>
+<p class="Pp">The extended partition can be expanded, but not shrunk (unless you
+    force it, which is not advisable). When the extended partition is copied
+    across, all the logical partitions contained inside are copied over
+    implicitly. Virt-resize does not look inside the extended partition, so it
+    copies the logical partitions blindly.</p>
+<p class="Pp">You cannot specify a logical partition (<i>/dev/sda5+</i>) at all
+    on the command line. Doing so will give an error.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+<dl class="Bl-tag">
+  <dt id="help"><a class="permalink" href="#help"><b>--help</b></a></dt>
+  <dd>Display help.</dd>
+  <dt id="align"><a class="permalink" href="#align"><b>--align-first</b>
+    <b>auto</b></a></dt>
+  <dd></dd>
+  <dt id="align~2"><a class="permalink" href="#align~2"><b>--align-first</b>
+    <b>never</b></a></dt>
+  <dd></dd>
+  <dt id="align~3"><a class="permalink" href="#align~3"><b>--align-first</b>
+    <b>always</b></a></dt>
+  <dd>Align the first partition for improved performance (see also the
+      <i>--alignment</i> option).
+    <p class="Pp">The default is <i>--align-first auto</i> which only aligns the
+        first partition if it is safe to do so. That is, only when we know how
+        to fix the bootloader automatically, and at the moment that can only be
+        done for Windows guests.</p>
+    <p class="Pp"><i>--align-first never</i> means we never move the first
+        partition. This is the safest option. Try this if the guest does not
+        boot after resizing.</p>
+    <p class="Pp"><i>--align-first always</i> means we always align the first
+        partition (if it needs to be aligned). For some guests this will break
+        the bootloader, making the guest unbootable.</p>
+  </dd>
+  <dt id="alignment"><a class="permalink" href="#alignment"><b>--alignment</b>
+    N</a></dt>
+  <dd>Set the alignment of partitions to <span class="Li">&quot;N&quot;</span>
+      sectors. The default in virt-resize &lt; 1.13.19 was 64 sectors, and after
+      that is 128 sectors.
+    <p class="Pp">Assuming 512 byte sector size inside the guest, here are some
+        suitable values for this:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="alignment~2"><a class="permalink" href="#alignment~2"><i>--alignment
+    1</i> (512 bytes)</a></dt>
+  <dd>The partitions would be packed together as closely as possible, but would
+      be completely unaligned. In some cases this can cause very poor
+      performance. See <a href='/man/virt-alignment-scan.1.en'>virt-alignment-scan(1)</a> for further details.</dd>
+  <dt id="alignment~3"><a class="permalink" href="#alignment~3"><i>--alignment
+    8</i> (4K)</a></dt>
+  <dd>This would be the minimum acceptable alignment for reasonable performance
+      on modern hosts.</dd>
+  <dt id="alignment~4"><a class="permalink" href="#alignment~4"><i>--alignment
+    128</i> (64K)</a></dt>
+  <dd>This alignment provides good performance when the host is using high end
+      network storage.</dd>
+  <dt id="alignment~5"><a class="permalink" href="#alignment~5"><i>--alignment
+    2048</i> (1M)</a></dt>
+  <dd>This is the standard alignment used by all newly installed guests since
+      around 2008.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="colors"><a class="permalink" href="#colors"><b>--colors</b></a></dt>
+  <dd></dd>
+  <dt id="colours"><a class="permalink" href="#colours"><b>--colours</b></a></dt>
+  <dd>Use ANSI colour sequences to colourize messages. This is the default when
+      the output is a tty. If the output of the program is redirected to a file,
+      ANSI colour sequences are disabled unless you use this option.</dd>
+  <dt id="d"><a class="permalink" href="#d"><b>-d</b></a></dt>
+  <dd></dd>
+  <dt id="debug"><a class="permalink" href="#debug"><b>--debug</b></a></dt>
+  <dd>(Deprecated: use <i>-v</i> option instead)
+    <p class="Pp">Enable debugging messages.</p>
+  </dd>
+  <dt id="delete"><a class="permalink" href="#delete"><b>--delete</b>
+    PART</a></dt>
+  <dd>Delete the named partition. It would be more accurate to describe this as
+      &quot;don't copy it over&quot;, since virt-resize doesn't do in-place
+      changes and the original disk image is left intact.
+    <p class="Pp">Note that when you delete a partition, then anything contained
+        in the partition is also deleted. Furthermore, this causes any
+        partitions that come after to be <i>renumbered</i>, which can easily
+        make your guest unbootable.</p>
+    <p class="Pp">You can give this option multiple times.</p>
+  </dd>
+  <dt id="expand"><a class="permalink" href="#expand"><b>--expand</b>
+    PART</a></dt>
+  <dd>Expand the named partition so it uses up all extra space (space left over
+      after any other resize changes that you request have been done).
+    <p class="Pp">If virt-resize knows how, it will expand the direct content of
+        the partition. For example, if the partition is an LVM PV, it will
+        expand the PV to fit (like calling <a href='/man/pvresize.8.en'>pvresize(8)</a>). Virt-resize
+        leaves any other content it doesn't know about alone.</p>
+    <p class="Pp">Currently virt-resize can resize:</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>ext2, ext3 and ext4 filesystems.</li>
+  <li>NTFS filesystems, if libguestfs was compiled with support for NTFS.
+    <p class="Pp">The filesystem must have been shut down consistently last time
+        it was used. Additionally, <a href='/man/ntfsresize.8.en'>ntfsresize(8)</a> marks the resized
+        filesystem as requiring a consistency check, so at the first boot after
+        resizing Windows will check the disk.</p>
+  </li>
+  <li>LVM PVs (physical volumes). virt-resize does not usually resize anything
+      inside the PV, but see the <i>--LV-expand</i> option. The user could also
+      resize LVs as desired after boot.</li>
+  <li>Btrfs filesystems, if libguestfs was compiled with support for btrfs.</li>
+  <li>XFS filesystems, if libguestfs was compiled with support for XFS.</li>
+  <li>Linux swap partitions.
+    <p class="Pp">Please note that libguestfs <i>destroys</i> the existing swap
+        content by recreating it with
+        <span class="Li">&quot;mkswap&quot;</span>, so this should not be used
+        when the guest is suspended.</p>
+  </li>
+  <li>f2fs filesystems, if libguestfs was compiled with support for f2fs.</li>
+</ul>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Note that you cannot use <i>--expand</i> and <i>--shrink</i>
+    together.</p>
+</div>
+<dl class="Bl-tag">
+  <dt id="format"><a class="permalink" href="#format"><b>--format</b>
+    <b>raw</b></a></dt>
+  <dd>Specify the format of the input disk image. If this flag is not given then
+      it is auto-detected from the image itself.
+    <p class="Pp">If working with untrusted raw-format guest disk images, you
+        should ensure the format is always specified.</p>
+    <p class="Pp">Note that this option <i>does not</i> affect the output
+        format. See &quot;QCOW2 AND NON-SPARSE RAW FORMATS&quot;.</p>
+  </dd>
+  <dt id="ignore"><a class="permalink" href="#ignore"><b>--ignore</b>
+    PART</a></dt>
+  <dd>Ignore the named partition. Effectively this means the partition is
+      allocated on the destination disk, but the content is not copied across
+      from the source disk. The content of the partition will be blank (all zero
+      bytes).
+    <p class="Pp">You can give this option multiple times.</p>
+  </dd>
+  <dt id="LV"><a class="permalink" href="#LV"><b>--LV-expand</b> LOGVOL</a></dt>
+  <dd>This takes the logical volume and, as a final step, expands it to fill all
+      the space available in its volume group. A typical usage, assuming a Linux
+      guest with a single PV <i>/dev/sda2</i> and a root device called
+      <i>/dev/vg_guest/lv_root</i> would be:
+        <pre>virt-resize indisk outdisk \
+  --expand /dev/sda2 --LV-expand /dev/vg_guest/lv_root
+</pre>
+    <p class="Pp">This would first expand the partition (and PV), and then
+        expand the root device to fill the extra space in the PV.</p>
+    <p class="Pp">The contents of the LV are also resized if virt-resize knows
+        how to do that. You can stop virt-resize from trying to expand the
+        content by using the option <i>--no-expand-content</i>.</p>
+    <p class="Pp">Use <a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a> to list the filesystems in the
+        guest.</p>
+    <p class="Pp">You can give this option multiple times, <i>but</i> it doesn't
+        make sense to do this unless the logical volumes you specify are all in
+        different volume groups.</p>
+  </dd>
+  <dt id="machine"><a class="permalink" href="#machine"><b>--machine-readable</b></a></dt>
+  <dd></dd>
+  <dt id="machine~2"><a class="permalink" href="#machine~2"><b>--machine-readable</b>=format</a></dt>
+  <dd>This option is used to make the output more machine friendly when being
+      parsed by other programs. See &quot;MACHINE READABLE OUTPUT&quot;
+    below.</dd>
+  <dt id="n"><a class="permalink" href="#n"><b>-n</b></a></dt>
+  <dd></dd>
+  <dt id="dry"><a class="permalink" href="#dry"><b>--dry-run</b></a></dt>
+  <dd>Print a summary of what would be done, but don&#x2019;t do anything.</dd>
+  <dt id="no"><a class="permalink" href="#no"><b>--no-copy-boot-loader</b></a></dt>
+  <dd>By default, virt-resize copies some sectors at the start of the disk
+      (up to the beginning of the first partition). Commonly these sectors
+      contain the Master Boot Record (MBR) and the boot loader, and are required
+      in order for the guest to boot correctly.
+    <p class="Pp">If you specify this flag, then this initial copy is not done.
+        You may need to reinstall the boot loader in this case.</p>
+  </dd>
+  <dt id="no~2"><a class="permalink" href="#no~2"><b>--no-extra-partition</b></a></dt>
+  <dd>By default, virt-resize creates an extra partition if there is any extra,
+      unused space after all resizing has happened. Use this option to prevent
+      the extra partition fr</dd>
+</dl>
+<manpage>
+  <date>virt-resize(8)</date>
+  <section>
+    <title>virt-resize</title>
+    <title>resize virtual machine disk images</title>
+    <p><code>virt-resize</code> is a utility to resize virtual machine disk
+      images. It supports several formats including qcow2, vmdk, vdi, and raw.
+      It can also resize partitions and logical volumes within the disk image.</p>
+    <p>virt-resize works by creating a new disk image of the desired size and
+      copying the contents of the old disk image to the new one. During the copy
+      process, it can expand or shrink partitions and filesystems as specified
+      by the user.</p>
+    <p>It uses libguestfs(3) and can perform operations on a running VM's disk
+      image, provided the VM is suspended and the disk image is accessible.</p>
+    <p>virt-resize is part of the libguestfs suite.</p>
+  </section>
+  <section class="Sh">
+    <h1 class="Sh" id="OPTIONS"><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+    <dl class="Bl-tag">
+      <dt id="a"><a class="permalink" href="#a"><b>-a</b> FLIGHTPATH</a></dt>
+      <dt id="all"><a class="permalink" href="#all"><b>--all</b> FLIGHTPATH</a></dt>
+      <dd>Specify the disk image file to read from. This option can be
+        specified multiple times to read from multiple disk images (e.g. for
+        multi-disk VMs). If not specified, then virt-resize attempts to guess
+        the disk image from the VM's configuration file.</dd>
+      <dt id="b"><a class="permalink" href="#b"><b>-b</b></a></dt>
+      <dt id="batch"><a class="permalink" href="#batch"><b>--batch</b></a></dt>
+      <dd>Enable batch mode. This disables interactive prompts, which is useful
+        for scripting. Any prompts will be answered with default or safe
+        values. This option implies <i>--quiet</i>.</dd>
+      <dt id="c"><a class="permalink" href="#c"><b>-c</b> CONFIG</a></dt>
+      <dt id="connect"><a class="permalink" href="#connect"><b>--connect</b> CONFIG</a></dt>
+      <dd>Connect to the given hypervisor. This is usually "qemu:///system" or
+        "qemu:///session". If not specified, virt-resize will try to guess the
+        hypervisor.</dd>
+      <dt id="d"><a class="permalink" href="#d"><b>-d</b></a></dt>
+      <dt id="delete"><a class="permalink" href="#delete"><b>--delete</b></a></dt>
+      <dd>Delete the original disk image after a successful resize operation. Use
+        with caution!</dd>
+      <dt id="dry-run"><a class="permalink" href="#dry-run"><b>--dry-run</b></a></dt>
+      <dd>Perform a trial run with no changes made.</dd>
+      <dt id="e"><a class="permalink" href="#e"><b>-e</b></a></dt>
+      <dt id="echo"><a class="permalink" href="#e"><b>--echo</b></a></dt>
+      <dd>Print commands before executing them. This is useful for debugging.</dd>
+      <dt id="E"><a class="permalink" href="#E"><b>-E</b></a></dt>
+      <dt id="expand"><a class="permalink" href="#E"><b>--expand</b> PART=SIZE</a></dt>
+      <dd>Expand the named partition (expanding or shrinking it) so that it has
+        the given size.
+        <p class="Pp"><i>SIZE</i> can be expressed as an absolute number
+          followed by b/K/M/G to mean bytes, Kilobytes, Megabytes, or Gigabytes;
+          or as a percentage of the current size; or as a relative number or
+          percentage. For example:</p>
+        <pre>--expand /dev/sda2=10G
+--expand /dev/sda4=90%
+--expand /dev/sda2=+1G
+--expand /dev/sda2=-200M
+--expand /dev/sda1=+128K
+--expand /dev/sda1=+10%
+--expand /dev/sda1=-10%
+</pre>
+        <p class="Pp">You can increase the size of any partition. Virt-resize
+          will expand the direct content of the partition if it knows how (see
+          <i>--expand-content</i> above).</p>
+        <p class="Pp">You can only *decrease* the size of partitions that
+          contain filesystems or PVs which have already been shrunk. Virt-resize
+          will check this has been done before proceeding, or else will print an
+          error (see also <i>--resize-force</i>).</p>
+        <p class="Pp">You can give this option multiple times.</p>
+      </dd>
+      <dt id="expand~2"><a class="permalink" href="#expand~2"><b>--expand-content</b>
+        PART</a></dt>
+      <dd>Expand the named partition's filesystem content to fill the partition.
+        This option works on filesystems that virt-resize knows how to expand.
+        If the partition is larger than it needs to be for its filesystem, this
+        option will automatically resize the filesystem to fill the available
+        space. Note that this option is implicit when using the
+        <i>--expand</i> option with a size larger than the current partition
+        size.</dd>
+      <dt id="F"><a class="permalink" href="#F"><b>-F</b></a></dt>
+      <dt id="force"><a class="permalink" href="#F"><b>--force</b></a></dt>
+      <dd>Force overwriting of the output file if it already exists.</dd>
+      <dt id="h"><a class="permalink" href="#h"><b>-h</b></a></dt>
+      <dt id="help"><a class="permalink" href="#h"><b>--help</b></a></dt>
+      <dd>Display help message and exit.</dd>
+      <dt id="i"><a class="permalink" href="#i"><b>-i</b></a></dt>
+      <dt id="info"><a class="permalink" href="#i"><b>--info</b></a></dt>
+      <dd>Display information about the disk image and its partitions without
+        making any changes.</dd>
+      <dt id="m"><a class="permalink" href="#m"><b>-m</b></a></dt>
+      <dt id="machine-readable"><a class="permalink" href="#m"><b>--machine-readable</b></a></dt>
+      <dd>Output in machine-readable format. See MACHINE READABLE OUTPUT.</dd>
+      <dt id="o"><a class="permalink" href="#o"><b>-o</b> OUTPATH</a></dt>
+      <dt id="outfile"><a class="permalink" href="#o"><b>--outfile</b> OUTPATH</a></dt>
+      <dd>Specify the output disk image file. If this option is not given, then
+        a temporary file is created. The temporary file is deleted after the
+        operation is complete, unless <i>--retain-only-original</i> or
+        <i>--delete</i> is used.</dd>
+      <dt id="p"><a class="permalink" href="#p"><b>-p</b></a></dt>
+      <dt id="partition"><a class="permalink" href="#p"><b>--partition</b></a></dt>
+      <dd>Do not create any extra partitions. By default, if there is surplus
+        space on the disk image after resizing partitions, virt-resize will try
+        to create a new partition in the extra space. If you do this then the
+        extra space will be inaccessible until you run fdisk, parted, or some
+        other partitioning tool in the guest.
+        <p class="Pp">Note that if the surplus space is smaller than 10 MB, no
+          extra partition will be created.</p>
+      </dd>
+      <dt id="no~3"><a class="permalink" href="#no~3"><b>--no-expand-content</b></a></dt>
+      <dd>By default, virt-resize will try to expand the direct contents of
+        partitions, if it knows how (see <i>--expand</i> option above).
+        <p class="Pp">If you give the <i>--no-expand-content</i> option then
+          virt-resize will not attempt this.</p>
+      </dd>
+      <dt id="no~4"><a class="permalink" href="#no~4"><b>--no-sparse</b></a></dt>
+      <dd>Turn off sparse copying. See &quot;SPARSE COPYING&quot; below.</dd>
+      <dt id="ntfsresize"><a class="permalink" href="#ntfsresize"><b>--ntfsresize-force</b></a></dt>
+      <dd>Pass the <i>--force</i> option to <a href='/man/ntfsresize.8.en'>ntfsresize(8)</a>, allowing resizing
+        even if the NTFS disk is marked as needing a consistency check. You have
+        to use this option if you want to resize a Windows guest multiple times
+        without booting into Windows between each resize.</dd>
+      <dt id="output"><a class="permalink" href="#output"><b>--output-format</b>
+        <b>raw</b></a></dt>
+      <dd>Specify the format of the output disk image. If this flag is not given
+        then it is auto-detected from the image itself.
+        <p class="Pp">If working with untrusted raw-format guest disk images, you
+          should ensure the format is always specified.</p>
+        <p class="Pp">Note that this option <i>does not create</i> the output
+          format. This option just tells libguestfs what it is so it doesn't try
+          to guess it. You still need to create the output disk with the right
+          format. See &quot;QCOW2 AND NON-SPARSE RAW FORMATS&quot;.</p>
+      </dd>
+      <dt id="q"><a class="permalink" href="#q"><b>-q</b></a></dt>
+      <dt id="quiet"><a class="permalink" href="#q"><b>--quiet</b></a></dt>
+      <dd>Don't print the summary.</dd>
+      <dt id="resize"><a class="permalink" href="#resize"><b>--resize</b>
+        PART=SIZE</a></dt>
+      <dd>Resize the named partition (expanding or shrinking it) so that it has
+        the given size.
+        <p class="Pp"><span class="Li">&quot;SIZE&quot;</span> can be expressed
+          as an absolute number followed by b/K/M/G to mean bytes, Kilobytes,
+          Megabytes, or Gigabytes; or as a percentage of the current size; or as
+          a relative number or percentage. For example:</p>
+        <pre>--resize /dev/sda2=10G
+--resize /dev/sda4=90%
+--resize /dev/sda2=+1G
+--resize /dev/sda2=-200M
+--resize /dev/sda1=+128K
+--resize /dev/sda1=+10%
+--resize /dev/sda1=-10%
+</pre>
+        <p class="Pp">You can increase the size of any partition. Virt-resize
+          will expand the direct content of the partition if it knows how (see
+          <i>--expand</i> above).</p>
+        <p class="Pp">You can only <i>decrease</i> the size of partitions that
+          contain filesystems or PVs which have already been shrunk. Virt-resize
+          will check this has been done before proceeding, or else will print an
+          error (see also <i>--resize-force</i>).</p>
+        <p class="Pp">You can give this option multiple times.</p>
+      </dd>
+      <dt id="resize~2"><a class="permalink" href="#resize~2"><b>--resize-force</b>
+        PART=SIZE</a></dt>
+      <dd>This is the same as <i>--resize</i> except that it will let you decrease
+        the size of any partition. Generally this means you will lose any data
+        which was at the end of the partition you shrink, but you may not care
+        about that (eg. if shrinking an unused partition, or if you can easily
+        recreate it such as a swap partition).
+        <p class="Pp">See also the <i>--ignore</i> option.</p>
+      </dd>
+      <dt id="shrink"><a class="permalink" href="#shrink"><b>--shrink</b>
+        PART</a></dt>
+      <dd>Shrink the named partition until the overall disk image fits in the
+        destination. The named partition <b>must</b> contain a filesystem or PV
+        which has already been shrunk using another tool (eg. <a href='/man/guestfish.1.en'>guestfish(1)</a>
+        or other online tools). Virt-resize will check this and give an error if
+        it has not been done.
+        <p class="Pp">The amount by which the overall disk must be shrunk (after
+          carrying out all other operations requested by the user) is called the
+          &quot;deficit&quot;. For example, a straight copy (assume no other
+          operations) from a 5GB disk image to a 4GB disk image results in a 1GB
+          deficit. In this case, virt-resize would give an error unless the user
+          specified a partition to shrink and that partition had more than a
+          gigabyte of free space.</p>
+        <p class="Pp">Note that you cannot use <i>--expand</i> and <i>--shrink</i>
+          together.</p>
+      </dd>
+      <dt id="unknown"><a class="permalink" href="#unknown"><b>--unknown-filesystems</b>
+        <b>ignore</b></a></dt>
+      <dt id="unknown~2"><a class="permalink" href="#unknown~2"><b>--unknown-filesystems</b>
+        <b>warn</b></a></dt>
+      <dt id="unknown~3"><a class="permalink" href="#unknown~3"><b>--unknown-filesystems</b>
+        <b>error</b></a></dt>
+      <dd>Configure the behaviour of virt-resize when asking to expand a
+        filesystem, and neither libguestfs has the support it, nor virt-resize
+        knows how to expand the content of the filesystem.
+        <p class="Pp"><i>--unknown-filesystems ignore</i> will cause virt-resize
+          to silently ignore such filesystems, and nothing is printed about
+          them.</p>
+        <p class="Pp"><i>--unknown-filesystems warn</i> (the default
+          behaviour) will cause virt-resize to warn for each of the filesystem
+          that cannot be expanded, but still continuing to resize the disk.</p>
+        <p class="Pp"><i>--unknown-filesystems error</i> will cause virt-resize
+          to error out at the first filesystem that cannot be expanded.</p>
+        <p class="Pp">See also &quot;unknown/unavailable method for expanding the
+          TYPE filesystem on DEVICE/LV&quot;.</p>
+      </dd>
+      <dt id="v"><a class="permalink" href="#v"><b>-v</b></a></dt>
+      <dt id="verbose"><a class="permalink" href="#v"><b>--verbose</b></a></dt>
+      <dd>Enable debugging messages.</dd>
+      <dt id="V"><a class="permalink" href="#V"><b>-V</b></a></dt>
+      <dt id="version"><a class="permalink" href="#V"><b>--version</b></a></dt>
+      <dd>Display version number and exit.</dd>
+      <dt id="wrap"><a class="permalink" href="#wrap"><b>--wrap</b></a></dt>
+      <dd>Wrap error, warning, and informative messages. This is the default when
+        the output is a tty. If the output of the program is redirected to a
+        file, wrapping is disabled unless you use this option.</dd>
+      <dt id="x"><a class="permalink" href="#x"><b>-x</b></a></dt>
+      <dd>Enable tracing of libguestfs API calls.</dd>
+    </dl>
+  </section>
+  <section class="Sh">
+    <h1 class="Sh" id='MACHINE_READABLE_OUTPUT'><a class='permalink' href='#MACHINE_READABLE_OUTPUT'>MACHINE READABLE OUTPUT</a></h1>
+    <p class="Pp">The <i>--machine-readable</i> option can be used to make the
+      output more machine friendly, which is useful when calling virt-resize
+      from other programs, GUIs etc.</p>
+    <p class="Pp">There are two ways to use this option.</p>
+    <p class="Pp">Firstly use the option on its own to query the capabilities
+      of the virt-resize binary. Typical output looks like this:</p>
+    <pre>$ virt-resize --machine-readable
+virt-resize
+ntfsresize-force
+32bitok
+ntfs
+btrfs</pre>
+    <p class="Pp">A list of features is printed, one per line, and the program
+      exits with status 0.</p>
+    <p class="Pp">Secondly use the option in conjunction with other options to
+      make the regular program output more machine friendly.</p>
+    <p class="Pp">At the moment this means:</p>
+    <dl class="Bl-tag">
+      <dt>1.</dt>
+      <dd>Progress bar messages can be parsed from stdout by looking for this
+        regular expression:
+        <pre>^[0-9]+/[0-9]+$
+</pre>
+      </dd>
+      <dt>2.</dt>
+      <dd>The calling program should treat messages sent to stdout (except for
+        progress bar messages) as status messages. They can be logged and/or
+        displayed to the user.</dd>
+      <dt>3.</dt>
+      <dd>The calling program should treat messages sent to stderr as error
+        messages. In addition, virt-resize exits with a non-zero status code if
+        there was a fatal error.</dd>
+    </dl>
+    <p class="Pp">Versions of the program prior to 1.13.9 did not support the
+      <i>--machine-readable</i> option and will return an error.</p>
+    <p class="Pp">It is possible to specify a format string for controlling the
+      output; see &quot;ADVANCED MACHINE READABLE OUTPUT&quot; in
+      <a href='/man/guestfs.3.en'>guestfs(3)</a>.</p>
+  </section>
+  <section class="Sh">
+    <h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTES</a></h1>
+    <section class="Ss">
+      <h2 class="Ss" id='&amp;quot;Partition_1_does_not_end_on_cylinder_boundary.&amp;quot;'><a class='permalink' href='#&amp;quot;Partition_1_does_not_end_on_cylinder_boundary.&amp;quot;'>&quot;Partition 1 does not end on cylinder boundary.&quot;</a></h2>
+      <p class="Pp">Virt-resize aligns partitions to multiples of 128 sectors (see
+        the <i>--alignment</i> parameter). Usually this means the partitions
+        will not be aligned to the ancient CHS geometry. However CHS geometry is
+        meaningless for disks manufactured since the early 1990s, and doubly so
+        for virtual hard drives. Alignment of partitions to cylinders is not
+        required by any modern operating system.</p>
+    </section>
+    <section class="Ss">
+      <h2 class="Ss" id='GUEST_BOOT_STUCK_AT_&amp;quot;GRUB&amp;quot;'><a class='permalink' href='#GUEST_BOOT_STUCK_AT_&amp;quot;GRUB&amp;quot;'>GUEST BOOT STUCK AT &quot;GRUB&quot;</a></h2>
+      <p class="Pp">If a Linux guest does not boot after resizing, and the boot is
+        stuck after printing <span class="Li">&quot;GRUB&quot;</span> on the
+        console, try reinstalling grub.</p>
+      <pre>guestfish -i -a newdisk
+&gt;&lt;fs&gt; cat /boot/grub/device.map
+# check the contents of this file are sensible or
+# edit the file if necessary
+&gt;&lt;fs&gt; grub-install / /dev/vda
+&gt;&lt;fs&gt; exit</pre>
+      <p class="Pp">For more flexible guest reconfiguration, including if you need
+        to specify other parameters to grub-install, use <a href='/man/virt-rescue.1.en'>virt-rescue(1)</a>.</p>
+    </section>
+    <section class="Ss">
+      <h2 class="Ss" id='RESIZING_WINDOWS_BOOT_PARTITIONS'><a class='permalink' href='#RESIZING_WINDOWS_BOOT_PARTITIONS'>RESIZING WINDOWS BOOT PARTITIONS</a></h2>
+      <p class="Pp">In Windows Vista and later versions, Microsoft switched to using
+        a separate boot partition. In these VMs, typically <i>/dev/sda1</i> is
+        the boot partition and <i>/dev/sda2</i> is the main (C:) drive. Resizing
+        the first (boot) partition causes the bootloader to fail with
+        <span class="Li">0xC0000225</span> error. Resizing the second partition
+        (ie. C: drive) should work.</p>
+    </section>
+    <section class="Ss">
+      <h2 class="Ss" id='WINDOWS_CHKDSK'><a class='permalink' href='#WINDOWS_CHKDSK'>WINDOWS CHKDSK</a></h2>
+      <p class="Pp">Windows disks which use NTFS must be consistent before
+        virt-resize can be used. If the ntfsresize operation fails, try booting
+        the original VM and running <span class="Li">&quot;chkdsk /f&quot;</span>
+        on all NTFS partitions, then shut down the VM cleanly. For further
+        information see: <a href='https://bugzilla.redhat.com/show_bug.cgi?id=975753'>https://bugzilla.redhat.com/show_bug.cgi?id=975753</a></p>
+      <p class="Pp"><i>After resize</i> Windows may initiate a lengthy
+        &quot;chkdsk&quot; on first boot if NTFS partitions have been expanded.
+        This is just a safety check and (unless it find errors) is nothing to
+        worry about.</p>
+    </section>
+    <section class="Ss">
+      <h2 class="Ss" id='WINDOWS_UNMOUNTABLE_BOOT_VOLUME_BSOD'><a class='permalink' href='#WINDOWS_UNMOUNTABLE_BOOT_VOLUME_BSOD'>WINDOWS UNMOUNTABLE_BOOT_VOLUME BSOD</a></h2>
+      <p class="Pp">After sysprepping a Windows guest and then resizing it with</p>
+    </section>
+  </section>
+</manpage>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <title>virt-resize(1) — Arch Linux manual pages</title>
+        <link rel="stylesheet" type="text/css" href="/man.css">
+        <link rel="alternate" type="application/rss+xml" title="Arch Linux Manual Pages Updates" href="https://man.archlinux.org/feed.xml">
+    </head>
+    <body>
+        
+        <main class="container">
+            <article>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Nm">virt-resize</p>
+<p class="Nd">resize a virtual machine disk image</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]... <i>SOURCE</i>
+    <i>DEST</i></p>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]...
+    <i>SOURCE</i>... --expand <i>DEVICE</i></p>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]...
+    <i>SOURCE</i>... --expand-volume <i>DEVICE</i></p>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]...
+    <i>SOURCE</i>... --shrink <i>DEVICE</i></p>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]...
+    <i>SOURCE</i>... --shrink-volume <i>DEVICE</i></p>
+<p class="Pp"><code class="Nd">virt-resize</code> [<i>OPTION</i>]...
+    <i>SOURCE</i>... --resize-volume <i>DEVICE</i></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <code class="Nm">virt-resize</code> command resizes a virtual machine
+    disk image. It can grow or shrink the disk image, or resize partitions and
+    logical volumes within the disk image.</p>
+<p class="Pp">The command works by copying the source disk image to a new
+    destination disk image, resizing it in the process. It also attempts to
+    resize the filesystem(s) within the partitions on the disk image, if
+    necessary. This is a complex operation and requires the guest operating
+    system to be shut down.</p>
+<p class="Pp">The <code class="Nm">virt-resize</code> command supports a wide range of
+    disk image formats, including qcow2, raw, vmdk, and vdi. It can also resize
+    host partitions and logical volumes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EXAMPLES</a></h1>
+<p class="Pp"><code class="Nd">virt-resize disk.img disk-resized.img --expand-volume
+    sda</code></p>
+<p class="Pp">Expand the last partition on disk.img by extending the disk image
+    to the maximum possible size, and then expanding the filesystem on the
+    partition.</p>
+<p class="Pp"><code class="Nd">virt-resize disk.img disk-resized.img --expand-volume
+    sda:1</code></p>
+<p class="Pp">Expand the first partition on disk.img to the maximum possible
+    size.</p>
+<p class="Pp"><code class="Nd">virt-resize disk.img disk-resized.img --resize-volume
+    sda:1=20G</code></p>
+<p class="Pp">Resize the first partition on disk.img to 20 gigabytes.</p>
+<p class="Pp"><code class="Nd">virt-resize disk.img disk-resized.img --shrink-volume
+    sda:1</code></p>
+<p class="Pp">Shrink the first partition on disk.img to the minimum possible
+    size.</p>
+<p class="Pp"><code class="Nd">virt-resize disk.img disk-resized.img --resize-volume
+    sda=10G</code></p>
+<p class="Pp">Resize the entire disk image (not a partition) to 10 gigabytes.</p>
+<p class="Pp"><code class="Nd">virt-resize disk.img /dev/vg/lv --expand-volume
+    sda</code></p>
+<p class="Pp">Resize a disk image and write the result to a logical volume.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETAILED_USAGE'><a class='permalink' href='#DETAILED_USAGE'>DETAILED USAGE</a></h1>
+<p class="Pp">The primary use of <code class="Nm">virt-resize</code> is to grow or
+    shrink a virtual disk image. This is done by specifying the source and
+    destination disk images, and optionally one or more <code class="Cm">--expand</code>,
+    <code class="Cm">--shrink</code>, <code class="Cm">--expand-volume</code>,
+    <code class="Cm">--shrink-volume</code>, or
+    <code class="Cm">--resize-volume</code> options.</p>
+<p class="Pp">The <code class="Cm">--expand</code> and
+    <code class="Cm">--shrink</code> options resize the entire disk image. The
+    <code class="Cm">--expand-volume</code>, <code class="Cm">--shrink-volume</code>,
+    and <code class="Cm">--resize-volume</code> options resize specific partitions
+    or logical volumes within the disk image.</p>
+<p class="Pp">Partitions and logical volumes are specified using the format
+    <code class="Li">DEVICE:PARTITION</code>, where <code class="Li">DEVICE</code> is the
+    name of the disk device (e.g., <code class="Li">sda</code>) and
+    <code class="Li">PARTITION</code> is the partition number (e.g.,
+    <code class="Li">1</code>). If the partition number is omitted, it applies to
+    the entire disk device.</p>
+<p class="Pp">Filesystem resizing is automatic where possible. If
+    <code class="Nm">virt-resize</code> cannot automatically resize a filesystem,
+    it will report an error. In some cases, you may need to manually resize the
+    filesystem after resizing the partition.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+<p class="Pp">See <a href='/man/virt-resize.1.en'>virt-resize(1)</a> for a full
+    list of options.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MACHINE_READABLE_OUTPUT'><a class='permalink' href='#MACHINE_READABLE_OUTPUT'>MACHINE READABLE OUTPUT</a></h1>
+<p class="Pp">Use the <code class="Cm">--machine-readable</code> option to get
+    output in a format suitable for scripting.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='WINDOWS_XP_AND_SERVER_2003_SYSPREP'><a class='permalink' href='#WINDOWS_XP_AND_SERVER_2003_SYSPREP'>WINDOWS   XP   AND   SERVER   2003   SYSPREP</a></h2>
+<p class="Pp">If you are resizing a Windows XP or Server 2003 guest which has
+    been sysprepped, you may see the guest fail to boot with an
+    <span class="Li">&quot;UNMOUNTABLE_BOOT_VOLUME&quot;</span> BSOD. This error
+    is caused by having <span class="Li">&quot;ExtendOemPartition=1&quot;</span>
+    in the sysprep.inf file. Removing this line before sysprepping should fix
+    the problem.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='WINDOWS_8'><a class='permalink' href='#WINDOWS_8'>WINDOWS   8</a></h2>
+<p class="Pp">Windows 8 &quot;fast startup&quot; can prevent virt-resize from
+    resizing NTFS partitions. See &quot;WINDOWS HIBERNATION AND WINDOWS 8 FAST
+    STARTUP&quot; in <a href='/man/guestfs.3.en'>guestfs(3)</a>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='SPARSE_COPYING'><a class='permalink' href='#SPARSE_COPYING'>SPARSE   COPYING</a></h2>
+<p class="Pp">You should create a fresh, zeroed target disk image for
+    virt-resize to use.</p>
+<p class="Pp">Virt-resize by default performs sparse copying. This means that it
+    does not copy blocks from the source disk which are all zeroes. This
+    improves speed and efficiency, but will produce incorrect results if the
+    target disk image contains unzeroed data.</p>
+<p class="Pp">The main time this can be a problem is if the target is a host
+    partition (eg.
+    <span class="Li">&quot;virt-resize&#x00A0;source.img&#x00A0;/dev/sda4&quot;</span>)
+    because the usual partitioning tools tend to leave whatever data happened to
+    be on the disk before.</p>
+<p class="Pp">If you have to reuse a target which contains data already, you
+    should use the <i>--no-sparse</i> option. Note this can be much slower.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='&amp;quot;unknown/unavailable_method_for_expanding_the_TYPE_filesystem_on_DEVICE/LV&amp;quot;'><a class='permalink' href='#&amp;quot;unknown/unavailable_method_for_expanding_the_TYPE_filesystem_on_DEVICE/LV&amp;quot;'>&quot;unknown/unavailable   method for expanding the TYPE filesystem on DEVICE/LV&quot;</a></h2>
+<p class="Pp">Virt-resize was asked to expand a partition or a logical volume
+    containing a filesystem with the type
+    <span class="Li">&quot;TYPE&quot;</span>, but there is no available nor
+    known expanding method for that filesystem.</p>
+<p class="Pp">This may be due to either of the following:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>There corresponding filesystem is not available in libguestfs, because
+      there is no proper package in the host with utilities for it. This is
+      usually the case for <span class="Li">&quot;btrfs&quot;</span>,
+      <span class="Li">&quot;ntfs&quot;</span>,
+      <span class="Li">&quot;xfs&quot;</span>, and
+      <span class="Li">&quot;f2fs&quot;</span> filesystems.
+    <p class="Pp">Check the results of:</p>
+        <pre>virt-resize --machine-readable
+guestfish -a /dev/null run : available
+guestfish -a /dev/null run : filesystem_available TYPE
+</pre>
+    <p class="Pp">In this case, it is enough to install the proper packages
+        adding support for them. For example,
+        <span class="Li">&quot;libguestfs-xfs&quot;</span> on Red Hat Enterprise
+        Linux, CentOS, Debian, Ubuntu, and distributions derived from them, for
+        supporting the <span class="Li">&quot;xfs&quot;</span> filesystem.</p>
+  </dd>
+  <dt>2.</dt>
+  <dd>Virt-resize has no support for expanding that type of filesystem.
+    <p class="Pp">In this case, there&#x2019;s nothing that can be done to let
+        virt-resize expand that type of filesystem.</p>
+  </dd>
+</dl>
+<p class="Pp">In both cases, virt-resize will not expand the mentioned
+    filesystem; the result (unless <i>--unknown-filesystems error</i> is
+    specified) is that the partitions containing such filesystems will be
+    actually bigger as requested, but the filesystems will still be usable at
+    their older sizes.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ALTERNATIVE_TOOLS'><a class='permalink' href='#ALTERNATIVE_TOOLS'>ALTERNATIVE   TOOLS</a></h1>
+<p class="Pp">There are several proprietary tools for resizing partitions. We
+    won't mention any here.</p>
+<p class="Pp"><a href='/man/parted.8.en'>parted(8)</a> and its graphical shell gparted can do some types
+    of resizing operations on disk images. They can resize and move partitions,
+    but I don't think they can do anything with the contents, and they certainly
+    don't understand LVM.</p>
+<p class="Pp"><a href='/man/guestfish.1.en'>guestfish(1)</a> can do everything that virt-resize can do and
+    a lot more, but at a much lower level. You will probably end up
+    hand-calculating sector offsets, which is something that virt-resize was
+    designed to avoid. If you want to see the guestfish-equivalent commands that
+    virt-resize runs, use the <i>--debug</i> flag.</p>
+<p class="Pp"><a href='/man/dracut.8.en'>dracut(8)</a> includes a module called
+    <span class="Li">&quot;dracut-modules-growroot&quot;</span> which can be
+    used to grow the root partition when the guest first boots up. There is
+    documentation for this module in an associated README file.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXIT_STATUS'><a class='permalink' href='#EXIT_STATUS'>EXIT   STATUS</a></h1>
+<p class="Pp">This program returns 0 if successful, or non-zero if there was an
+    error.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE   ALSO</a></h1>
+<p class="Pp"><a href='/man/virt-filesystems.1.en'>virt-filesystems(1)</a>, <a href='/man/virt-df.1.en'>virt-df(1)</a>, <a href='/man/guestfs.3.en'>guestfs(3)</a>,
+    <a href='/man/guestfish.1.en'>guestfish(1)</a>, <a href='/man/lvm.8.en'>lvm(8)</a>, <a href='/man/pvresize.8.en'>pvresize(8)</a>, <a href='/man/lvresize.8.en'>lvresize(8)</a>,
+    <a href='/man/resize2fs.8.en'>resize2fs(8)</a>, <a href='/man/ntfsresize.8.en'>ntfsresize(8)</a>, <a href='/man/btrfs.8.en'>btrfs(8)</a>,
+    <a href='/man/xfs_growfs.8.en'>xfs_growfs(8)</a>, <a href='/man/resize.f2fs.8.en'>resize.f2fs(8)</a>, <a href='/man/virsh.1.en'>virsh(1)</a>,
+    <a href='/man/parted.8.en'>parted(8)</a>, <a href='/man/truncate.1.en'>truncate(1)</a>, <a href='/man/fallocate.1.en'>fallocate(1)</a>, <a href='/man/grub.8.en'>grub(8)</a>,
+    <a href='/man/grub-install.8.en'>grub-install(8)</a>, <a href='/man/virt-rescue.1.en'>virt-rescue(1)</a>, <a href='/man/virt-sparsify.1.en'>virt-sparsify(1)</a>,
+    <a href='/man/virt-alignment-scan.1.en'>virt-alignment-scan(1)</a>, <a href='http://libguestfs.org/'>http://libguestfs.org/</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTHOR</a></h1>
+<p class="Pp">Richard W.M. Jones <a href='http://people.redhat.com/~rjones/'>http://people.redhat.com/~rjones/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright (C) 2010-2025 Red Hat Inc.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENSE</a></h1>
+<p class="Pp">This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or (at your
+    option) any later version.</p>
+<p class="Pp">This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU General
+    Public License for more details.</p>
+<p class="Pp">You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software Foundation,
+    Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='BUGS'><a class='permalink' href='#BUGS'>BUGS</a></h1>
+<p class="Pp">To get a list of bugs against libguestfs, use this link:
+    <a href='https://bugzilla.redhat.com/buglist.cgi?component=libguestfs'>https://bugzilla.redhat.com/buglist.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">To report a new bug against libguestfs, use this link:
+    <a href='https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs'>https://bugzilla.redhat.com/enter_bug.cgi?component=libguestfs</a>&amp;product=Virtualization+Tools</p>
+<p class="Pp">When reporting a bug, please supply:</p>
+<ul class="Bl-bullet">
+  <li>The version of libguestfs.</li>
+  <li>Where you got libguestfs (eg. which Linux distro, compiled from source,
+      etc)</li>
+  <li>Describe the bug accurately and give a way to reproduce it.</li>
+  <li>Run <a href='/man/libguestfs-test-tool.1.en'>libguestfs-test-tool(1)</a> and paste the <b>complete, unedited</b>
+      output into the bug report.</li>
+</ul>
+</section>
+</section>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-06-12</td>
+    <td class="foot-os">guestfs-tools-1.54.0</td>
+  </tr>
+</table>
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/guestfs-tools/">extra/guestfs-tools</a></dd>
+        <dt>Version:</dt>
+        <dd>1.54.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://libguestfs.org/">https://libguestfs.org/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>GPL-2.0-or-later, LGPL-2.1-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/guestfs-tools/">/listing/extra/guestfs-tools/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#EXAMPLES">EXAMPLES</a></li>
+        
+            <li><a href="#DETAILED_USAGE">DETAILED USAGE</a></li>
+        
+            <li><a href="#OPTIONS">OPTIONS</a></li>
+        
+            <li><a href="#MACHINE_READABLE_OUTPUT">MACHINE READABLE OUTPUT</a></li>
+        
+            <li><a href="#NOTES">NOTES</a></li>
+        
+            <li><a href="#ALTERNATIVE_TOOLS">ALTERNATIVE TOOLS</a></li>
+        
+            <li><a href="#EXIT_STATUS">EXIT STATUS</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+            <li><a href="#AUTHOR">AUTHOR</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+            <li><a href="#LICENSE">LICENSE</a></li>
+        
+            <li><a href="#BUGS">BUGS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/virt-resize.1.en.txt">txt</a>, 
+        
+            <a href="/man/virt-resize.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

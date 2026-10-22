@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>ossl-guide-quic-server-non-block(7ssl) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">ossl-guide-quic-server-non-block(7ssl)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/openssl/">openssl</a></p>
+<p class="lic">Licencias: Apache-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">OSSL-GUIDE-QUIC-SERVER-NON-BLOCK(7ssl)</td>
+    <td class="head-vol">OpenSSL</td>
+    <td class="head-rtitle">OSSL-GUIDE-QUIC-SERVER-NON-BLOCK(7ssl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">ossl-guide-quic-server-non-block - Guía de OpenSSL: Escribiendo un servidor QUIC no bloqueante simple</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SIMPLE_NONBLOCKING_QUIC_SERVER_EXAMPLE"><a class='permalink' href='#SIMPLE_NONBLOCKING_QUIC_SERVER_EXAMPLE'>EJEMPLO DE SERVIDOR QUIC NO BLOQUEANTE SIMPLE</a></h1>
+<p class="Pp">Esta página presenta varios ejemplos de código que demuestran cómo escribir una aplicación de servidor QUIC "eco" simple y no concurrente, que acepta una conexión de cliente a la vez, devolviendo la entrada del cliente al mismo cliente. Una vez que el cliente actual se desconecta, se acepta la siguiente conexión de cliente.</p>
+<p class="Pp">El servidor solo acepta los ALPN <span class="Li">&quot;http/1.0&quot;</span> y <span class="Li">&quot;hq-interop&quot;</span> y en realidad no implementa HTTP, sino que solo realiza un simple eco. Esto no es estándar y no será compatible con servidores del mundo real. Esto es solo para fines demostrativos.</p>
+<p class="Pp">Hay varios métodos para probar este servidor: <b>quic-client-block.c</b> y <b>quic-client-non-block.c</b> enviarán una solicitud HTTP/1.0 básica, que el servidor devolverá. También puedes probar este servidor ejecutando <span class="Li">&quot;openssl s_client -connect localhost:4443 -4 -quic -alpn http/1.0&quot;</span> e introduciendo texto que el servidor devolverá.</p>
+<p class="Pp">Tanto el socket de escucha como el socket conectado son &quot;no bloqueantes&quot;. Sin embargo, usamos <b>select()</b> para que el socket de escucha se bloquee cuando no puede leer/escribir. En lugar de detenerse y esperar, tu aplicación puede necesitar realizar otras tareas mientras el objeto <b>SSL</b> no puede leer/escribir. Por ejemplo: actualizar una GUI o realizar operaciones en alguna otra conexión o flujo.</p>
+<p class="Pp">El código fuente completo para este servidor QUIC no bloqueante de ejemplo está disponible en el directorio <b>demos/guide</b> de la distribución fuente de OpenSSL en el archivo <b>quic-server-non-block.c</b>. También está disponible en línea en
+    <a href='https://github.com/openssl/openssl/blob/master/demos/guide/quic-server-non-block.c'>https://github.com/openssl/openssl/blob/master/demos/guide/quic-server-non-block.c</a>.</p>
+<p class="Pp">Suponemos que ya tienes OpenSSL instalado en tu sistema; que ya tienes una comprensión fundamental de los conceptos de OpenSSL y QUIC (ver <a href='/man/ossl-guide-libraries-introduction.7.en'>ossl-guide-libraries-introduction(7)</a> y <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a>); y que sabes cómo escribir y compilar código C y enlazarlo contra las bibliotecas libcrypto y libssl que proporciona OpenSSL. También asume que tienes una comprensión básica de UDP/IP y sockets.</p>
+<section class="Ss">
+<h2 class="Ss" id="Creating_the_SSL_CTX_and_SSL_objects"><a class='permalink' href='#Creating_the_SSL_CTX_and_SSL_objects'>Creación de los objetos SSL_CTX y SSL</a></h2>
+<p class="Pp">El primer paso es crear un objeto <b>SSL_CTX</b> para nuestro servidor. Utilizamos la función <a href='/man/SSL_CTX_new.3.en'>SSL_CTX_new(3)</a> para este propósito. Pasamos como argumento el valor de retorno de la función <a href='/man/OSSL_QUIC_server_method.3.en'>OSSL_QUIC_server_method(3)</a>. Debes usar este método siempre que estés escribiendo un servidor QUIC.</p>
+<pre>/*
+ * Un SSL_CTX contiene información de configuración compartida para múltiples
+ * conexiones SSL posteriores por cliente. Aquí cargamos específicamente un método
+ * de servidor QUIC.
+ */
+ctx = SSL_CTX_new(OSSL_QUIC_server_method());
+if (ctx == NULL)
+    goto err;</pre>
+<p class="Pp">Los servidores necesitan una clave privada y un certificado. A menudo se requieren certificados de CA emisores intermedios, y tanto el certificado del servidor (entidad final o EE) como los certificados del emisor (&quot;cadena&quot;) se configuran más fácilmente en un único &quot;archivo de cadena&quot;. A continuación, cargamos dicho archivo de cadena (el certificado EE debe aparecer primero), y luego cargamos la clave privada correspondiente, verificando que coincide con el certificado del servidor. No se realizan comprobaciones para verificar la integridad de la cadena (firmas de CA o fechas de caducidad de certificados, por ejemplo), pero sí verificamos la coherencia de la clave privada con el certificado correspondiente.</p>
+<pre>/*
+ * Carga el archivo de cadena de certificado del servidor (formato PEM), que incluye
+ * no solo el certificado del servidor hoja (entidad final), sino también cualquier
+ * certificado de CA intermedio emisor. El certificado hoja debe ser el
+ * primer certificado en el archivo.
+ *
+ * En casos de uso avanzados, esto se puede llamar varias veces, una por cada
+ * algoritmo de clave pública para el cual el servidor tenga un certificado
+ * correspondiente.
+ * Sin embargo, la clave privada correspondiente (ver más abajo) debe cargarse primero,
+ * *antes* de pasar al siguiente archivo de cadena.
+ */
+if (SSL_CTX_use_certificate_chain_file(ctx, cert_path) &lt;= 0) {
+    fprintf(stderr, &quot;no se pudo cargar el archivo de certificado: %s\n&quot;, cert_path);
+    goto err;
+}
+/*
+ * Carga la clave privada correspondiente, esto también comprueba que la clave
+ * privada coincide con el certificado de entidad final recién cargado. No comprueba
+ * si la cadena de certificados es válida, los certificados podrían estar
+ * caducados, o podrían no formar una cadena que un cliente pueda
+ * validar.
+ */
+if (SSL_CTX_use_PrivateKey_file(ctx, key_path, SSL_FILETYPE_PEM) &lt;= 0) {
+    fprintf(stderr, &quot;no se pudo cargar el archivo de clave: %s\n&quot;, key_path);
+    goto err;
+}</pre>
+<p class="Pp">La mayoría de los servidores, incluido este, no solicitan certificados de cliente. Por lo tanto, no necesitamos un &quot;almacén de confianza&quot; y permitimos que el handshake se complete incluso cuando el cliente no presenta un certificado. Nota: Incluso si un cliente presentara un certificado de confianza, para que sea útil, la aplicación del servidor aún necesitaría código personalizado para usar la identidad verificada para otorgar acceso no predeterminado a ese cliente en particular. Algunos servidores otorgan acceso a todos los clientes con certificados de una CA privada, esto requiere el procesamiento de listas de revocación de certificados para desautorizar a un cliente. A menudo es más simple y seguro mantener una lista de claves públicas autorizadas.</p>
+<p class="Pp">Aunque esta es la configuración predeterminada, llamamos explícitamente a la función <a href='/man/SSL_CTX_set_verify.3.en'>SSL_CTX_set_verify(3)</a> y le pasamos el valor <b>SSL_VERIFY_NONE</b>. El último argumento de esta función es una función de devolución de llamada que puedes proporcionar opcionalmente para anular el manejo predeterminado para la verificación de certificados. La mayoría de las aplicaciones no necesitan hacer esto, por lo que se puede establecer de forma segura en NULL para obtener el manejo predeterminado.</p>
+<pre>/*
+ * Los clientes rara vez emplean autenticación basada en certificados, por lo que no
+ * requerimos autenticación TLS &quot;mutua&quot; (de hecho, no hay forma de saber
+ * si y cómo el cliente autenticó al servidor, por lo que el término &quot;mutuo&quot;
+ * es potencialmente engañoso).
+ *
+ * Dado que no solicitamos ni procesamos certificados de cliente, no
+ * necesitamos configurar un almacén de certificados de confianza, por lo que no se
+ * necesita una llamada a SSL_CTX_set_default_verify_paths(). Se asume que la
+ * cadena de certificados del servidor es válida.
+ */
+SSL_CTX_set_verify(ctx, SSL_VERIFY_NONE, NULL);</pre>
+<p class="Pp">QUIC también dicta el uso de la Negociación de Protocolos de Capa de Aplicación (ALPN) para seleccionar un protocolo de aplicación. Utilizamos <a href='/man/SSL_CTX_set_alpn_select_cb.3.en'>SSL_CTX_set_alpn_select_cb(3)</a> para este propósito. Podemos pasar una función de devolución de llamada que se llamará para cada conexión para seleccionar un ALPN que el servidor considere aceptable.</p>
+<pre>/* Configura la devolución de llamada de negociación ALPN para decidir qué ALPN se acepta. */
+SSL_CTX_set_alpn_select_cb(ctx, select_alpn, NULL);</pre>
+<p class="Pp">En este caso, solo aceptamos &quot;http/1.0&quot; y &quot;hq-interop&quot;.</p>
+<pre>/*
+* Cadenas ALPN para el handshake TLS. Solo se aceptan 'http/1.0' y 'hq-interop'.
+*/
+static const unsigned char alpn_ossltest[] = {
+    8,  'h', 't', 't', 'p', '/', '1', '.', '0',
+    10, 'h', 'q', '-', 'i', 'n', 't', 'e', 'r', 'o', 'p',
+};
+static int select_alpn(SSL *ssl, const unsigned char **out,
+                       unsigned char *out_len, const unsigned char *in,
+                       unsigned int in_len, void *arg)
+{
+    if (SSL_select_next_proto((unsigned char **)out, out_len, alpn_ossltest,
+                              sizeof(alpn_ossltest), in,
+                              in_len) == OPENSSL_NPN_NEGOTIATED)
+        return SSL_TLSEXT_ERR_OK;
+    return SSL_TLSEXT_ERR_ALERT_FATAL;
+}</pre>
+<p class="Pp">Eso es todo lo que necesitamos configurar para el <b>SSL_CTX</b>. A continuación, creamos un socket UDP y lo enlazamos a localhost.</p>
+<pre>/* Recupera el descriptor de archivo para un nuevo socket UDP */
+if ((fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) &lt; 0) {
+    fprintf(stderr, &quot;no se puede crear el socket&quot;);
+    return -1;
+}
+sa.sin_family = AF_INET;
+sa.sin_port = htons(port);
+/* Enlaza al nuevo socket UDP en localhost */
+if (bind(fd, (const struct sockaddr *)&amp;sa, sizeof(sa)) &lt; 0) {
+    fprintf(stderr, &quot;no se puede enlazar a %u\n&quot;, port);
+    BIO_closesocket(fd);
+    return -1;
+}
+/* Establece el puerto en modo no bloqueante */
+if (BIO_socket_nbio(fd, 1) &lt;= 0) {
+    fprintf(stderr, &quot;no se puede establecer el puerto en modo no bloqueante&quot;);
+    BIO_closesocket(fd);
+    return -1;
+}</pre>
+<p class="Pp">Para ejecutar el servidor QUIC, creamos un <b>SSL_LISTENER</b> para escuchar las conexiones entrantes. Le proporcionamos el puerto UDP enlazado para que comience explícitamente a escuchar nuevas conexiones.</p>
+<pre>/* Crea un nuevo</pre>
+</div>
+</section>
+</article>
+
+        </main>
+    </body>
+</html>
+<section class="Ss">
+<h2 class="Ss" id='QUIC_listener'><a class='permalink' href='#QUIC_listener'>QUIC listener</a></h2>
+<pre>/* QUIC listener */
+if ((listener = SSL_new_listener(ctx, 0)) == NULL)
+    goto err;
+/* Provide the listener with our UDP socket. */
+if (!SSL_set_fd(listener, fd))
+    goto err;
+/* Set the listener mode to nonblocking, which is inherited by
+ * child objects.
+ */
+if (!SSL_set_blocking_mode(listener, 0))
+    goto err;
+/*
+ * Begin listening. Note that is not usually needed as SSL_accept_connection
+ * will implicitly start listening. It is only needed if a server wishes to
+ * ensure it has started to accept incoming connections but does not wish to
+ * actually call SSL_accept_connection yet.
+ */
+if (!SSL_listen(listener))
+    goto err;</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Server_loop'><a class='permalink' href='#Server_loop'>Bucle del servidor</a></h2>
+<p class="Pp">El servidor entra ahora en un bucle &quot;infinito&quot;, gestionando una conexión de cliente a la vez. Antes de cada conexión, limpiamos la pila de errores de OpenSSL para que cualquier informe de error se relacione solo con la nueva conexión.</p>
+<pre>/* Pristine error stack for each new connection */
+ERR_clear_error();</pre>
+<p class="Pp">Luego esperamos hasta que una conexión esté lista para ser leída. Utiliza la función select para esperar hasta que el socket sea legible o escribible, dependiendo de lo que requiera la conexión SSL.</p>
+<p class="Pp">A continuación, aceptamos una nueva conexión en la que el handshake ya se habrá producido. Sin embargo, como estamos en modo no bloqueante, <a href='/man/SSL_accept_connection.3.en'>SSL_accept_connection(3)</a> devolverá inmediatamente. Por lo tanto, utilizamos una función auxiliar para bloquear esencialmente hasta que se establezca una conexión.</p>
+<pre>printf(&quot;Waiting for connection\n&quot;);
+while ((conn = SSL_accept_connection(listener, 0)) == NULL) {
+    wait_for_activity(listener);
+}
+printf(&quot;Accepted new connection\n&quot;);</pre>
+<p class="Pp">La función auxiliar wait_for_activity utiliza <b>select()</b> para bloquear hasta que el descriptor de archivo perteneciente al objeto SSL pasado sea legible. Como se mencionó anteriormente, una aplicación del mundo real probablemente usaría este tiempo para realizar otras tareas.</p>
+<pre>/* Initialize the fd_set structure */
+FD_ZERO(&amp;read_fd);
+FD_ZERO(&amp;write_fd);
+/*
+ * Determine if we would like to write to the socket, read from it, or both.
+ */
+if (SSL_net_write_desired(ssl))
+    FD_SET(sock, &amp;write_fd);
+if (SSL_net_read_desired(ssl))
+    FD_SET(sock, &amp;read_fd);
+/*
+ * Find out when OpenSSL would next like to be called, regardless of
+ * whether the state of the underlying socket has changed or not.
+ */
+if (SSL_get_event_timeout(ssl, &amp;tv, &amp;isinfinite) &amp;&amp; !isinfinite)
+    tvp = &amp;tv;
+/*
+ * Wait until the socket is writeable or readable. We use select here
+ * for the sake of simplicity and portability, but you could equally use
+ * poll/epoll or similar functions
+ *
+ * NOTE: For the purposes of this demonstration code this effectively
+ * makes this demo block until it has something more useful to do. In a
+ * real application you probably want to go and do other work here (e.g.
+ * update a GUI, or service other connections).
+ *
+ * Let's say for example that you want to update the progress counter on
+ * a GUI every 100ms. One way to do that would be to use the timeout in
+ * the last parameter to &quot;select&quot; below. If the tvp value is greater
+ * than 100ms then use 100ms instead. Then, when select returns, you
+ * check if it did so because of activity on the file descriptors or
+ * because of the timeout. If the 100ms GUI timeout has expired but the
+ * tvp timeout has not then go and update the GUI and then restart the
+ * &quot;select&quot; (with updated timeouts).
+ */
+select(sock + 1, &amp;read_fd, &amp;write_fd, NULL, tvp);</pre>
+<p class="Pp">Con el handshake completo, el servidor lee toda la entrada del cliente.</p>
+<pre>/* Read from client until the client sends a end of stream packet */
+while (!eof) {
+    ret = SSL_read_ex(conn, buf + total_read, sizeof(buf) - total_read,
+                      &amp;nread);
+    total_read += nread;
+    if (total_read &gt;= 8192) {
+        fprintf(stderr, &quot;Could not fit all data into buffer\n&quot;);
+        goto err;
+    }
+    switch (handle_io_failure(conn, ret)) {
+    case 1:
+        continue; /* Retry */
+    case 0:
+        /* Reached end of stream */
+        if (!SSL_has_pending(conn))
+            eof = 1;
+        break;
+    default:
+        fprintf(stderr, &quot;Failed reading remaining data\n&quot;);
+        goto err;
+    }
+}</pre>
+<p class="Pp">Finalmente, devolvemos los datos recibidos al cliente. Podemos usar <a href='/man/SSL_write_ex2.3.en'>SSL_write_ex2(3)</a> para pasar un indicador especial SSL_WRITE_FLAG_CONCLUDE que enviará un paquete FIN una vez que la escritura haya terminado de escribir con éxito todos los datos al par.</p>
+<pre>/* Echo client input */
+while (!SSL_write_ex2(conn, buf,
+                      total_read,
+                      SSL_WRITE_FLAG_CONCLUDE, &amp;total_written)) {
+    if (handle_io_failure(conn, 0) == 1)
+        continue;
+    fprintf(stderr, &quot;Failed to write data\n&quot;);
+    goto err;
+}</pre>
+<p class="Pp">Luego cerramos la conexión con <a href='/man/SSL_shutdown.3.en'>SSL_shutdown(3)</a>, que puede necesitar ser llamada varias veces para asegurar que la conexión se cierre completamente.</p>
+<pre>/*
+ * Shut down the connection. We may need to call this multiple times
+ * to ensure the connection is shutdown completely.
+ */
+while ((ret = SSL_shutdown(conn)) != 1) {
+    if (ret &lt; 0 &amp;&amp; handle_io_failure(conn, ret) == 1)
+        continue; /* Retry */
+}</pre>
+<p class="Pp">Finalmente, liberamos la conexión SSL, y el servidor está ahora listo para aceptar la siguiente conexión de cliente.</p>
+<pre>SSL_free(conn);</pre>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Final_clean_up'><a class='permalink' href='#Final_clean_up'>Limpieza final</a></h2>
+<p class="Pp">Si el servidor, de alguna manera, logra salir del bucle infinito y está listo para salir, deasignaría el <b>SSL</b> construido.</p>
+<pre>SSL_free(listener);</pre>
+<p class="Pp">Y en la función principal, deasignaría el <b>SSL_CTX</b> construido.</p>
+<pre>SSL_CTX_free(ctx);
+BIO_closesocket(fd);</pre>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/ossl-guide-introduction.7.en'>ossl-guide-introduction(7)</a>,
+    <a href='/man/ossl-guide-libraries-introduction.7.en'>ossl-guide-libraries-introduction(7)</a>,
+    <a href='/man/ossl-guide-libssl-introduction.7.en'>ossl-guide-libssl-introduction(7)</a>,
+    <a href='/man/ossl-guide-quic-introduction.7.en'>ossl-guide-quic-introduction(7)</a>,
+    <a href='/man/ossl-guide-quic-client-non-block.7.en'>ossl-guide-quic-client-non-block(7)</a>,
+    <a href='/man/ossl-guide-quic-client-block.7.en'>ossl-guide-quic-client-block(7)</a>,
+    <a href='/man/ossl-guide-tls-server-block.7.en'>ossl-guide-tls-server-block(7)</a>,
+    <a href='/man/ossl-guide-quic-server-block.7.en'>ossl-guide-quic-server-block(7)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>DERECHOS DE AUTOR</a></h1>
+<p class="Pp">Copyright 2024-2025 The OpenSSL Project Authors. All Rights
+    Reserved.</p>
+<p class="Pp">Licensed under the Apache License 2.0 (the &quot;License&quot;).
+    You may not use this file except in compliance with the License. You can
+    obtain a copy in the file LICENSE in the source distribution or at
+    <a href='https://www.openssl.org/source/license.html'>https://www.openssl.org/source/license.html</a>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-10-01</td>
+    <td class="foot-os">3.6.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/openssl/">core/openssl</a></dd>
+        <dt>Version:</dt>
+        <dd>3.6.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.openssl.org">https://www.openssl.org</a></dd>
+        <dt>Licenses:</dt>
+        <dd>Apache-2.0</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/openssl/">/listing/core/openssl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SIMPLE_NONBLOCKING_QUIC_SERVER_EXAMPLE">EJEMPLO DE SERVIDOR QUIC SIMPLE NO BLOQUEANTE</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#COPYRIGHT">DERECHOS DE AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/ossl-guide-quic-server-non-block.7ssl.en.txt">txt</a>, 
+        
+            <a href="/man/ossl-guide-quic-server-non-block.7ssl.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>syncthing-device-ids(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">syncthing-device-ids(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/syncthing/">syncthing</a></p>
+<p class="lic">Licencias: MPL-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYNCTHING-DEVICE-IDS(7)</td>
+    <td class="head-vol">Syncthing</td>
+    <td class="head-rtitle">SYNCTHING-DEVICE-IDS(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NOMBRE</a></h1>
+<p class="Pp">syncthing-device-ids - Entendiendo los IDs de dispositivo</p>
+<p class="Pp">Cada dispositivo está identificado por un ID de dispositivo. El ID de
+    dispositivo se utiliza para la resolución de direcciones, autenticación y
+    autorización. El término &#x201C;ID de dispositivo&#x201D; podría haber sido
+    intercambiablemente &#x201C;ID de clave&#x201D; ya que el ID de dispositivo es
+    una propiedad directa de la clave pública en uso.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="KEYS"><a class="permalink" href="#KEYS"> CLAVES</a></h1>
+<p class="Pp">Para entender los IDs de dispositivo, necesitamos mirar los
+    mecanismos subyacentes. Al inicio, Syncthing creará un par de claves pública/privada.</p>
+<p class="Pp">Actualmente, esta es una clave ECDSA de 384 bits (RSA de 3072 bits
+    antes de la v0.12.5, que es lo que se usa como ejemplo en este artículo). Las
+    claves se guardan en forma de clave privada (<b>key.pem</b>) y un certificado
+    autofirmado (<b>cert.pem</b>). La parte de autofirma en realidad no añade
+    ninguna seguridad ni funcionalidad en lo que respecta a Syncthing, pero
+    permite el uso de las claves en un intercambio TLS estándar.</p>
+<p class="Pp">El certificado típico se verá algo así, inspeccionado con
+    <b>openssl x509</b>:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>Certificado:
+    Datos:
+        Versión: 3 (0x2)
+        Número de serie: 0 (0x0)
+        Algoritmo de firma: sha1WithRSAEncryption
+        Emisor: CN=syncthing
+        Validez
+            No antes de: Mar 30 21:10:52 2014 GMT
+            No después de: Dic 31 23:59:59 2049 GMT
+        Sujeto: CN=syncthing
+        Información de Clave Pública del Sujeto:
+            Algoritmo de Clave Pública: rsaEncryption
+            Clave Pública RSA: (3072 bits)
+                Módulo (3072 bits):
+                    00:da:83:8a:c0:95:af:0a:42:af:43:74:65:29:f2:
+                    30:e3:b9:12:d2:6b:70:93:da:0b:7b:8a:1e:e5:79:
+                    ...
+                    99:09:4c:a9:7b:ba:4a:6a:8b:3b:e6:e7:c7:2c:00:
+                    90:aa:bc:ad:94:e7:80:95:d2:1b
+                Exponente: 65537 (0x10001)
+        Extensiones X509v3:
+            X509v3 Uso de Clave: crítico
+                Firma Digital, Cifrado de Clave
+            X509v3 Uso Extendido de Clave:
+                Autenticación de Servidor Web TLS, Autenticación de Cliente Web TLS
+            X509v3 Restricciones Básicas: crítico
+                CA:FALSE
+    Algoritmo de firma: sha1WithRSAEncryption
+        68:72:43:8b:83:61:09:68:f0:ef:f0:43:b7:30:a6:73:1e:a8:
+        d9:24:6c:2d:b4:bc:c9:e8:3e:0b:1e:3c:cc:7a:b2:c8:f1:1d:
+        ...
+        88:7e:e2:61:aa:4c:02:e3:64:b0:da:70:3a:cd:1c:3d:86:db:
+        df:54:b9:4e:be:1b</pre>
+</div>
+</div>
+<p class="Pp">Podemos ver aquí que el certificado es poco más que un contenedor
+    para la clave pública; el número de serie es cero y tanto el Emisor como el
+    Sujeto son &#x201C;syncthing&#x201D;, donde en su lugar se esperaría un nombre
+    calificado.</p>
+<p class="Pp">Un usuario avanzado podría reemplazar los archivos
+    <b>key.pem</b> y <b>cert.pem</b> con un par de claves generado directamente
+    por la utilidad <b>openssl</b> u otro mecanismo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DEVICE_IDS"><a class="permalink" href="#DEVICE_IDS"> IDS DE DISPOSITIVO</a></h1>
+<p class="Pp">Para formar un ID de dispositivo, se calcula el hash SHA-256 de los
+    datos del certificado en formato DER. Esto significa que el hash cubre toda
+    la información bajo la sección <b>Certificado:</b> anterior.</p>
+<p class="Pp">El hash resulta en un hash de 256 bits que codificamos usando
+    base32. Base32 codifica cinco bits por carácter, por lo que necesitamos 256 /
+    5 = 51.2 caracteres para codificar el ID de dispositivo. Esto se convierte en
+    52 caracteres en la práctica, pero 52 caracteres de base32 decodificarían a
+    260 bits, lo cual no es un número entero de bytes. La codificación base32
+    añade relleno hasta 280 bits (el siguiente múltiplo de 5 y 8 bits), por lo
+    que el ID resultante se ve algo así:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>MFZWI3DBONSGYYLTMRWGC43ENRQXGZDMMFZWI3DBONSGYYLTMRWA====</pre>
+</div>
+</div>
+<p class="Pp">Se elimina el relleno (<b>====</b>), el ID de dispositivo se divide
+    en cuatro grupos y se añaden <i>dígitos de verificación</i>
+    <a href="https://forum.syncthing.net/t/v0-9-0-new-node-id-format/478">https://forum.syncthing.net/t/v0-9-0-new-node-id-format/478</a>
+    para cada grupo. Para fines de presentación, el ID de dispositivo se agrupa
+    con guiones, lo que resulta en el valor final:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>MFZWI3D-BONSGYC-YLTMRWG-C43ENR5-QXGZDMM-FZWI3DP-BONSGYY-LTMRWAD</pre>
+</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id="Connection_Establishment"><a class="permalink" href="#Connection_Establishment"> Establecimiento de la conexión</a></h2>
+<p class="Pp">Ahora que sabemos qué son los IDs de dispositivo, aquí se explica
+    cómo se utilizan en Syncthing. Cuando añade un ID de dispositivo a la
+    configuración, Syncthing intentará conectarse a ese dispositivo. Lo primero
+    que necesitamos hacer es averiguar la IP y el puerto a los que conectarse.
+    Hay tres posibilidades aquí:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>La IP y el puerto se pueden establecer de forma estática en la
+      configuración. La IP puede ser igualmente un nombre de host, por lo que si
+      tiene una IP estática o una configuración de DNS dinámico, esta podría ser
+      una buena opción.</li>
+  <li>Usando descubrimiento local, si está habilitado. Cada instancia de
+      Syncthing en una LAN transmite periódicamente información sobre sí misma
+      (ID de dispositivo, dirección, número de puerto). Si hemos visto una de
+      estas transmisiones para un ID de dispositivo determinado, ahí es donde
+      intentamos conectarnos.</li>
+  <li>Usando descubrimiento global, si está habilitado. Cada instancia de
+      Syncthing se anuncia al servicio de descubrimiento global (ID de
+      dispositivo y número de puerto externo: la dirección interna no se
+      anuncia al servidor global). Si no tenemos una dirección estática y no
+      hemos visto ningún anuncio local, se consultará al servidor de
+      descubrimiento global para obtener una dirección.</li>
+</ul>
+</div>
+<p class="Pp">Una vez que tenemos una dirección y un puerto, se establece una
+    conexión TCP y se realiza un apretón de manos TLS. Como parte del apretón
+    de manos, ambos dispositivos presentan sus certificados. Una vez que el
+    apretón de manos ha finalizado y se conoce el certificado del par, se
+    realizan los siguientes pasos:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Calcular el ID del dispositivo remoto procesando el certificado recibido
+      como se describió anteriormente.</dd>
+  <dt>2.</dt>
+  <dd>Descartar algunas posibles configuraciones erróneas, es decir, si el ID
+      del dispositivo es el del dispositivo local o el de un dispositivo al que
+      ya tenemos una conexión activa. En estos casos, se cierra la conexión.</dd>
+  <dt>3.</dt>
+  <dd>Verificar el ID del dispositivo remoto contra la configuración. Si no es un
+      ID de dispositivo con el que esperamos hablar, se cierra la conexión.</dd>
+  <dt>4.</dt>
+  <dd>Verificar el <b>CommonName</b> del certificado contra la configuración. Por
+      defecto, esperamos que sea <b>syncthing</b>, pero cuando se usan
+      certificados personalizados, esto se puede cambiar.</dd>
+  <dt>5.</dt>
+  <dd>Si todo está en orden hasta ahora, se acepta la conexión.</dd>
+</dl>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AN_ASIDE_ABOUT_COLLISIONS"><a class="permalink" href="#AN_ASIDE_ABOUT_COLLISIONS"> UNA NOTA SOBRE LAS COLISIONES</a></h1>
+<p class="Pp">El hash SHA-256 es criptográficamente resistente a colisiones. Esto
+    significa que no hay ninguna forma conocida de crear dos mensajes diferentes
+    con el mismo hash.</p>
+<p class="Pp">Se puede argumentar que, por supuesto, existen colisiones: hay una
+    cantidad infinita de entradas y una cantidad finita de salidas, por lo que
+    por definición existen infinitos mensajes que resultan en el mismo hash.</p>
+<p class="Pp">Voy a citar a <i>stack</i> <i>overflow</i>
+    <a href="https://stackoverflow.com/questions/4014090/is-it-safe-to-ignore-the-possibility-of-sha-collisions-in-practice">https://stackoverflow.com/questions/4014090/is-it-safe-to-ignore-the-possibility-of-sha-collisions-in-practice</a>
+    aquí:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">La respuesta habitual es la siguiente: ¿cuál es la
+    probabilidad de que un asteroide rogue choque contra la Tierra en el próximo
+    segundo, aniquilando la civilización tal como la conocemos y matando a unos
+    pocos miles de millones de personas? Se puede argumentar que cualquier evento
+    desafortunado con una probabilidad menor que esa no es realmente muy
+    importante.
+<p class="Pp">Si tenemos una función hash &#x201C;perfecta&#x201D; con tamaño de
+    salida n, y tenemos p mensajes para hashear (la longitud del mensaje individual
+    no es importante), entonces la probabilidad de colisión es de aproximadamente
+    p²/2<sup>n+1</sup> (esta es una aproximación válida para p &#x201C;pequeño&#x201D;,
+    es decir, sustancialmente menor que 2<sup>n/2</sup>). Por ejemplo, con
+    SHA-256 (n=256) y mil millones de mensajes (p=10<sup>9</sup>), la
+    probabilidad es de aproximadamente 4.3\*10<sup>-60</sup>.</p>
+<p class="Pp">Una roca espacial masacradora ocurre aproximadamente una vez cada
+    30 millones de años en promedio. Esto lleva a una probabilidad de que tal
+    evento ocurra en el próximo segundo de aproximadamente 10<sup>-15</sup>. Eso
+    es 45 órdenes de magnitud más probable que la colisión SHA-256. En pocas
+    palabras, si las colisiones SHA-256 le asustan, sus prioridades están
+    equivocadas.</p>
+</div>
+</div>
+<p class="Pp">También vale la pena señalar que la propiedad de SHA-256 que estamos
+    utilizando no es simplemente resistencia a colisiones, sino resistencia a un
+    ataque de preimagen, es decir, incluso si puedes encontrar dos mensajes que
+    resulten en una colisión de hash, eso no te ayuda a atacar Syncthing (o TLS
+    en general). Necesitas crear un mensaje que se hashee exactamente al hash que
+    mi certificado ya tiene, o no podrás entrar.</p>
+<p class="Pp">Tenga en cuenta también que no es suficiente encontrar una cadena
+    aleatoria de bits que</p>
+</div>
+</section>
+                
+</section>
+            </article>
+        </main>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class="permalink" href="#NOMBRE">NOMBRE</a></h1>
+<p class="Pp">syncthing-device-ids - Device IDs in Syncthing</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CLAVES"><a class="permalink" href="#CLAVES">CLAVES</a></h1>
+<p class="Pp">Each Syncthing node has a public cryptographic key, which serves as
+    its device ID. This key is an ED25519 public key, encoded as a SHA256 hash
+    of the certificate that contains it. The certificate is DER-encoded and
+    signed by the CA. The certificate contains the public key. The device ID is
+    the SHA256 hash of the DER-encoded certificate. This gives us the following
+    properties:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>The device ID is a public key.</li>
+  <li>The device ID is verifiable. If you are given a device ID, you can check
+      if a given certificate corresponds to it.</li>
+  <li>The device ID is immutable. If the certificate changes, the device ID
+      changes.</li>
+</ul>
+</div>
+<p class="Pp">The device ID is used to identify remote nodes. When you connect to
+    a remote node, you supply its device ID. When a remote node connects to you,
+    it supplies its device ID. We use these to verify that we are connecting to
+    the correct node.</p>
+<p class="Pp">The device ID is a SHA256 hash. It is a 32-byte value. We represent
+    it as a 5x8 block of Base32 encoding, totaling 40 characters. The Base32
+    encoding uses the alphabet consisting of A-Z and 2-7. This encoding is
+    case-insensitive and error-correcting.</p>
+<p class="Pp">The device ID is used in several places:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>In the connection string when connecting to a remote server.</li>
+  <li>In the list of devices in the web UI.</li>
+  <li>In the configuration file, in the <code class="Cm">devices</code> section.</li>
+</ul>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="IDS_DE_DISPOSITIVO"><a class="permalink" href="#IDS_DE_DISPOSITIVO">IDS
+    DE DISPOSITIVO</a></h1>
+<p class="Pp">The device ID is a SHA256 hash of the DER-encoded certificate. This
+    certificate is signed by a Certificate Authority (CA). In the future, we might
+    want to use certificates that are signed by a CA that we control. This would
+    allow us to issue certificates to our users and verify them.</p>
+<p class="Pp">However, for now, we are using self-signed certificates. This means
+    that each device generates its own certificate and signs it with its own
+    private key. This is not ideal, as it means that we cannot verify the
+    authenticity of the certificate. We are relying on the user to verify the
+    device ID out of band.</p>
+<p class="Pp">The device ID is a 32-byte SHA256 hash. We encode this hash as a
+    40-character string using Base32 encoding. The Base32 encoding uses the
+    alphabet A-Z and 2-7. This encoding is case-insensitive and error-correcting.</p>
+<p class="Pp">The device ID is used to identify remote devices. When you connect to
+    a remote device, you need to provide its device ID. When a remote device
+    connects to you, it provides its device ID. We use these to verify that we
+    are connecting to the correct device.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="UNA_OPINION_SOBRE_COLISIONES"><a class="permalink" href="#UNA_OPINION_SOBRE_COLISIONES">UNA
+    OPINION SOBRE COLISIONES</a></h1>
+<p class="Pp">The device ID is a SHA256 hash of the certificate. SHA256 is a
+    cryptographic hash function that produces a 256-bit (32-byte) hash value.
+    Finding a collision for SHA256 (i.e., finding two different inputs that produce
+    the same hash) is computationally infeasible with current technology.</p>
+<p class="Pp">However, let&#x2019;s imagine a scenario where we want to trick a user
+    into connecting to our malicious server. We would need to create a fake
+    certificate that has the same SHA256 hash as the legitimate server&#x2019;s
+    certificate. This is known as a collision attack.</p>
+<p class="Pp">The difficulty of finding a SHA256 collision is extremely high. It
+    is estimated that it would require more computational power than is currently
+    available in the world to find a SHA256 collision. Even if a collision were
+    found, it would be specific to the particular inputs used in the collision
+    discovery. This means that the attacker would need to find a collision that
+    is specific to the legitimate server&#x2019;s certificate.</p>
+<p class="Pp">To make matters even more difficult, the certificate must be valid
+    and signed by a trusted CA. This adds another layer of complexity to the
+    attack. The attacker would need to create a valid DER-encoded, signed
+    certificate that has the same hash as the legitimate server&#x2019;s
+    certificate. The difficulty of this is staggeringly far beyond the already
+    staggering difficulty of finding a SHA256 collision.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PROBLEMAS_Y_VULNERABILIDADES"><a class="permalink" href="#PROBLEMAS_Y_VULNERABILIDADES">PROBLEMAS
+    Y VULNERABILIDADES</a></h1>
+<p class="Pp">As far as I know, these are the issues or potential issues with
+    the above mechanism.</p>
+<section class="Ss">
+<h2 class="Ss" id="Suplantacion_de_Descubrimiento"><a class="permalink" href="#Suplantacion_de_Descubrimiento">Suplantacion
+    de Descubrimiento</a></h2>
+<p class="Pp">Currently, the local discovery mechanism isn&#x2019;t protected by
+    crypto. This means that any device can in theory announce itself for any
+    device ID and potentially receive connections for that device from the local
+    network.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Los_IDS_de_Dispositivo_largos_son_molestos"><a class="permalink" href="#Los_IDS_de_Dispositivo_largos_son_molestos">Los
+    IDS de Dispositivo largos son molestos</a></h2>
+<p class="Pp">It&#x2019;s a mouthful to read over the phone, annoying to type
+    into an SMS or even into a computer. And it needs to be done twice, once for
+    each side.</p>
+<p class="Pp">This isn&#x2019;t a vulnerability as such, but a user experience
+    problem. There are various possible solutions:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>Use shorter device IDs with verification based on the full ID (&#x201C;You
+      entered MFZWI3; I found and connected to a device with the ID
+      MFZWI3-DBONSG-YYLTMR-WGC43E-NRQXGZ-DMMFZW-I3DBON-SGYYLT-MRWA, please
+      confirm that this is correct&#x201D;).</li>
+  <li>Use shorter device IDs with an out of band authentication, a la Bluetooth
+      pairing. You enter a one time PIN into Syncthing and give that PIN plus a
+      short device ID to another user. On initial connect, both sides verify
+      that the other knows the correct PIN before accepting the connection.</li>
+</ul>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTOR"><a class="permalink" href="#AUTOR">AUTOR</a></h1>
+<p class="Pp">The Syncthing Authors</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DERECHOS_DE_AUTOR"><a class="permalink" href="#DERECHOS_DE_AUTOR">DERECHOS
+    DE AUTOR</a></h1>
+<p class="Pp">2014-2025, The Syncthing Authors</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">November 23, 2025</td>
+    <td class="foot-os">v2.0.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/syncthing/">extra/syncthing</a></dd>
+        <dt>Version:</dt>
+        <dd>2.0.12-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://syncthing.net/">https://syncthing.net/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>MPL-2.0</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/syncthing/">/listing/extra/syncthing/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#CLAVES">CLAVES</a></li>
+        
+            <li><a href="#IDS_DE_DISPOSITIVO">IDS DE DISPOSITIVO</a></li>
+        
+            <li><a href="#UNA_OPINION_SOBRE_COLISIONES">UNA OPINION SOBRE COLISIONES</a></li>
+        
+            <li><a href="#PROBLEMAS_Y_VULNERABILIDADES">PROBLEMAS Y VULNERABILIDADES</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#DERECHOS_DE_AUTOR">DERECHOS DE AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/syncthing-device-ids.7.en.txt">txt</a>, 
+        
+            <a href="/man/syncthing-device-ids.7.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

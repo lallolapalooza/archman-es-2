@@ -1,0 +1,613 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>smtpd-filters(7) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">smtpd-filters(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SMTPD-FILTERS(7)</td>
+    <td class="head-vol">Manual de Información Miscelánea</td>
+    <td class="head-rtitle">SMTPD-FILTERS(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp"><code class="Nm">smtpd-filters</code> &#x2014;
+    <span class="Nd">API de filtrado para el demonio smtpd</span></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El demonio <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> proporciona una implementación del Protocolo Simple de Transferencia de Correo (SMTP), que permite que las máquinas ordinarias se conviertan en Intercambiadores de Correo (MX). Algunas características comúnmente usadas por los MX, como los informes de entrega o el filtrado de spam, están fuera del alcance de SMTP y son demasiado complejas para caber en
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>.</p>
+<p class="Pp">Dado que un MX puede necesitar proporcionar estas características,
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> proporciona una API para extender su comportamiento a través de <code class="Nm">smtpd-filters</code>.</p>
+<p class="Pp">En tiempo de ejecución, <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> puede informar de eventos a los <code class="Nm">smtpd-filters</code>, consultando qué debe responder a estos eventos. Esto permite que la lógica de decisión dependa de programas de terceros.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESIGN'><a class='permalink' href='#DESIGN'>DISEÑO</a></h1>
+<p class="Pp"><code class="Nm">smtpd-filters</code> son programas que se ejecutan como procesos independientes únicos, no comparten el espacio de memoria de
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>. Son ejecutados por
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> al inicio y se espera que se ejecuten en un bucle infinito, leyendo eventos y solicitudes de filtrado desde
+    <a class="Xr" href="/man/stdin.4.en">stdin(4)</a>, escribiendo respuestas en
+    <a class="Xr" href="/man/stdout.4.en">stdout(4)</a> y registrando en
+    <a class="Xr" href="/man/stderr.4.en">stderr(4)</a>. No se les permite terminar.</p>
+<p class="Pp">Dado que los <code class="Nm">smtpd-filters</code> son programas independientes que se comunican con
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> a través de
+    <a class="Xr" href="/man/fd.4.en">fd(4)</a>, pueden ejecutarse como usuarios diferentes a
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> y pueden estar escritos en cualquier idioma. Los <code class="Nm">smtpd-filters</code> no deben usar E/S bloqueante, deben admitir respuestas asíncronas a
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORT_AND_FILTER'><a class='permalink' href='#REPORT_AND_FILTER'>INFORMAR Y FILTRAR</a></h1>
+<p class="Pp">La API se basa en dos flujos, informe y filtro.</p>
+<p class="Pp">El flujo de informe es un flujo unidireccional que permite a
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> informar a los <code class="Nm">smtpd-filters</code> en tiempo real sobre eventos. Los eventos de informe no esperan una respuesta de los <code class="Nm">smtpd-filters</code>; solo pretenden proporcionar información. Un filtro debería poder replicar el estado de
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> para una sesión recopilando información proveniente de eventos de informe. El flujo de informe nunca toma decisiones.</p>
+<p class="Pp">El flujo de filtro es un flujo bidireccional que permite a
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> consultar a los <code class="Nm">smtpd-filters</code> sobre lo que debe hacer con una sesión en una fase determinada. Las solicitudes de filtro esperan una respuesta de los <code class="Nm">smtpd-filters</code>;
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> no permitirá que la sesión avance hasta entonces. El flujo de filtro siempre debe tomar una decisión.</p>
+<p class="Pp">A veces es posible confiar en las solicitudes de filtro para recopilar información, pero dado que se espera una respuesta de
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>, esto es más costoso que usar eventos de informe. El patrón correcto para escribir filtros es usar eventos de informe para crear un estado local para una sesión, luego usar solicitudes de filtro para tomar decisiones basadas en este estado. El único caso en el que es correcto usar solicitudes de filtro en lugar de eventos de informe es cuando se requiere una decisión para la solicitud de filtro y no se necesita más información que la del propio evento.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PROTOCOL'><a class='permalink' href='#PROTOCOL'>PROTOCOLO</a></h1>
+<p class="Pp">El protocolo consiste en líneas legibles por humanos intercambiadas entre los <code class="Nm">smtpd-filters</code> y
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>, a través de
+    <a class="Xr" href="/man/fd.4.en">fd(4)</a>.</p>
+<p class="Pp">El protocolo comienza con un saludo. Primero,
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> proporciona a los <code class="Nm">smtpd-filters</code> información general de configuración en forma de líneas clave-valor:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>config|smtpd-version|7.8.0
+config|protocol|0.7
+config|smtp-session-timeout|300
+config|subsystem|smtp-in
+config|ready</pre>
+</div>
+<p class="Pp">Luego, los <code class="Nm">smtpd-filters</code> registran el flujo, el subsistema y el evento que desean manejar:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>register|report|smtp-in|link-connect
+register|ready</pre>
+</div>
+<p class="Pp">Finalmente, <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> emite eventos de informe y solicitudes de filtro, esperando que los <code class="Nm">smtpd-filters</code> respondan o no dependiendo del flujo:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>report|0.7|1576146008.006099|smtp-in|link-connect|7641df9771b4ed00|mail.openbsd.org|pass|199.185.178.25:33174|45.77.67.80:25
+report|0.7|1576147242.200225|smtp-in|link-connect|7641dfb3798eb5bf|mail.openbsd.org|pass|199.185.178.25:31205|45.77.67.80:25
+report|0.7|1576148447.982572|smtp-in|link-connect|7641dfc063102cbd|mail.openbsd.org|pass|199.185.178.25:24786|45.77.67.80:25</pre>
+</div>
+<p class="Pp">El carácter &#x201C;|&#x201D; solo puede aparecer en el último campo de una carga útil, en cuyo caso debe considerarse un carácter regular y no un separador. Ningún otro campo puede contener un &#x201C;|&#x201D;.</p>
+<p class="Pp">La lista de subsistemas y eventos, así como el formato de las solicitudes y respuestas, se documentan en las siguientes secciones.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CONFIGURATION'><a class='permalink' href='#CONFIGURATION'>CONFIGURACIÓN</a></h1>
+<p class="Pp">Durante el saludo inicial,
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> emite una serie de claves y valores de configuración. La lista está pensada para ser ignorada por los <code class="Nm">smtpd-filters</code> que no la necesiten y consumida amablemente por los filtros que sí lo hagan.</p>
+<p class="Pp">Actualmente hay tres claves:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>config|smtpd-version|7.8.0
+config|protocol|0.7
+config|smtp-session-timeout|300
+config|subsystem|smtp-in</pre>
+</div>
+<p class="Pp">Cuando <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> ha enviado todas las claves de configuración, emite la siguiente línea:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>config|ready</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORT_EVENTS'><a class='permalink' href='#REPORT_EVENTS'>EVENTOS DE INFORME</a></h1>
+<p class="Pp">Actualmente solo hay un subsistema compatible en la API: smtp-in.</p>
+<p class="Pp">Cada evento de informe es generado por
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> como una única línea similar a la siguiente:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>report|0.7|1576146008.006099|smtp-in|link-connect|7641df9771b4ed00|mail.openbsd.org|pass|199.185.178.25:33174|45.77.67.80:25</pre>
+</div>
+<p class="Pp">El formato consta de un prefijo de protocolo que contiene el flujo, la versión del protocolo, la marca de tiempo, el subsistema, el evento y el identificador único de la sesión, separados por &#x201C;|&#x201D;:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>report|0.7|1576146008.006099|smtp-in|link-connect|7641df9771b4ed00</pre>
+</div>
+<p class="Pp">Le sigue un sufijo que contiene los parámetros específicos del evento, también separados por &#x201C;|&#x201D;:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>mail.openbsd.org|pass|199.185.178.25:33174|45.77.67.80:25</pre>
+</div>
+<p class="Pp">La lista de eventos y parámetros específicos del evento para smtp-in son las siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="link-connect"><a class="permalink" href="#link-connect"><code class="Ic">link-connect</code></a>:
+    <var class="Ar">rdns fcrdns src dest</var></dt>
+  <dd>Este evento se genera al conectar.
+    <p class="Pp"><var class="Ar">rdns</var> contiene el nombre de host DNS inverso para el extremo remoto o una cadena vacía si no hay ninguno.</p>
+    <p class="Pp"><var class="Ar">fcrdns</var> contiene la cadena
+        &#x201C;pass&#x201D; o &#x201C;fail&#x201D; dependiendo de si el extremo remoto valida FCrDNS.</p>
+    <p class="Pp"><var class="Ar">src</var> contiene la dirección IP y el puerto de la dirección de origen, en el formato &#x201C;address:port&#x201D;, o la ruta a un socket UNIX en el formato
+      &#x201C;unix:/path&#x201D;.</p>
+    <p class="Pp"><var class="Ar">dest</var> contiene la dirección IP y el puerto de la dirección de destino, en el formato
+        &#x201C;address:port&#x201D;, o la ruta a un socket UNIX en el formato
+        &#x201C;unix:/path&#x201D;.</p>
+  </dd>
+  <dt id="link-greeting"><a class="permalink" href="#link-greeting"><code class="Ic">link-greeting</code></a>:
+    <var class="Ar">hostname</var></dt>
+  <dd>Este evento se genera al mostrar el banner del servidor.
+    <p class="Pp"><var class="Ar">hostname</var> contiene el nombre de host mostrado en el banner.</p>
+  </dd>
+</dl>
+</div>
+</section>
+                
+                <div class="man-page-nav">
+                    
+                </div>
+            </article>
+            <aside id="content-right">
+                <div id="man-page-nav-wrapper">
+                    <div id="man-page-nav-header">
+                        <p>On this page:</p>
+                    </div>
+                    <div id="man-page-nav-list">
+                        <ul>
+                            <li><a href="#NAME">NAME</a></li>
+                            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+                            <li><a href="#DESIGN">DESIGN</a></li>
+                            <li><a href="#REPORT_AND_FILTER">REPORT AND FILTER</a></li>
+                            <li><a href="#PROTOCOL">PROTOCOL</a></li>
+                            <li><a href="#CONFIGURATION">CONFIGURATION</a></li>
+                            <li><a href="#REPORT_EVENTS">REPORT EVENTS</a></li>
+                            <li><a href="#link-connect">link-connect</a></li>
+                            <li><a href="#link-greeting">link-greeting</a></li>
+                        </ul>
+                    </div>
+                </div>
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='EVENT_TYPES'><a class='permalink' href='#EVENT_TYPES'>EVENT TYPES</a></h1>
+<dl class="Bl-tag">
+<dt id="link-identify"><a class="permalink" href="#link-identify"><code class="Ic">link-identify</code></a>:
+    <var class="Ar">method identity</var></dt>
+  <dd>Este evento se genera al recibir el comando &#x201C;HELO&#x201D; o
+      &#x201C;EHLO&#x201D; del cliente.
+    <p class="Pp"><var class="Ar">method</var> contiene la cadena
+        &#x201C;HELO&#x201D; o &#x201C;EHLO&#x201D; indicando el método utilizado
+        por el cliente.</p>
+    <p class="Pp"><var class="Ar">identity</var> contiene la identidad proporcionada
+        por el cliente.</p>
+  </dd>
+  <dt id="link-tls"><a class="permalink" href="#link-tls"><code class="Ic">link-tls</code></a>:
+    <var class="Ar">tls-string</var></dt>
+  <dd>Este evento se genera tras la negociación exitosa de TLS.
+    <p class="Pp"><var class="Ar">tls-string</var> contiene una lista separada por
+        dos puntos de propiedades TLS que incluyen la versión TLS, el conjunto de
+        cifrado utilizado por la sesión y la fortaleza del cifrado en bits.</p>
+  </dd>
+  <dt id="link-disconnect"><a class="permalink" href="#link-disconnect"><code class="Ic">link-disconnect</code></a></dt>
+  <dd>Este evento se genera al desconectarse el cliente.</dd>
+  <dt id="link-auth"><a class="permalink" href="#link-auth"><code class="Ic">link-auth</code></a>:
+    <var class="Ar">result username</var></dt>
+  <dd>Este evento se genera al producirse un intento de autenticación por parte del
+      cliente.
+    <p class="Pp"><var class="Ar">result</var> contiene la cadena
+        &#x201C;pass&#x201D;, &#x201C;fail&#x201D; o &#x201C;error&#x201D;
+        dependiendo del resultado del intento de autenticación.</p>
+    <p class="Pp"><var class="Ar">username</var> contiene el nombre de usuario
+        utilizado para el intento de autenticación.</p>
+  </dd>
+  <dt id="tx-reset"><a class="permalink" href="#tx-reset"><code class="Ic">tx-reset</code></a>:
+    [message-id]</dt>
+  <dd>Este evento se genera cuando se restablece una transacción.
+    <p class="Pp">Si el restablecimiento se produjo durante una transacción,
+        <var class="Ar">message-id</var> contiene el identificador de la
+        transacción que se está restableciendo.</p>
+  </dd>
+  <dt id="tx-begin"><a class="permalink" href="#tx-begin"><code class="Ic">tx-begin</code></a>:
+    <var class="Ar">message-id</var></dt>
+  <dd>Este evento se genera cuando se inicia una transacción.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador de la
+        transacción.</p>
+  </dd>
+  <dt id="tx-mail"><a class="permalink" href="#tx-mail"><code class="Ic">tx-mail</code></a>:
+    <var class="Ar">message-id</var> <var class="Ar">result address</var></dt>
+  <dd>Este evento se genera cuando el cliente emite &#x201C;MAIL FROM&#x201D;.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador de la
+        transacción.</p>
+    <p class="Pp"><var class="Ar">result</var> contiene &#x201C;ok&#x201D; si
+        el remitente fue aceptado, &#x201C;permfail&#x201D; si fue rechazado o
+        &#x201C;tempfail&#x201D; si fue rechazado por un error transitorio.</p>
+    <p class="Pp"><var class="Ar">address</var> contiene la dirección de correo
+        electrónico del remitente. La dirección se normaliza y se limpia, se
+        eliminan los caracteres &#x201C;&lt;&#x201D; y &#x201C;&gt;&#x201D;, junto
+        con cualquier parámetro de &#x201C;MAIL FROM&#x201D;.</p>
+  </dd>
+  <dt id="tx-rcpt"><a class="permalink" href="#tx-rcpt"><code class="Ic">tx-rcpt</code></a>:
+    <var class="Ar">message-id</var> <var class="Ar">result address</var></dt>
+  <dd>Este evento se genera cuando el cliente emite &#x201C;RCPT TO&#x201D;.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador de la
+        transacción.</p>
+    <p class="Pp"><var class="Ar">result</var> contiene &#x201C;ok&#x201D; si
+        el destinatario fue aceptado, &#x201C;permfail&#x201D; si fue rechazado
+        o &#x201C;tempfail&#x201D; si fue rechazado por un error transitorio.</p>
+    <p class="Pp"><var class="Ar">address</var> contiene la dirección de correo
+        electrónico del destinatario. La dirección se normaliza y se limpia, se
+        eliminan los caracteres &#x201C;&lt;&#x201D; y &#x201C;&gt;&#x201D;, junto
+        con cualquier parámetro de &#x201C;RCPT TO&#x201D;.</p>
+  </dd>
+  <dt id="tx-envelope"><a class="permalink" href="#tx-envelope"><code class="Ic">tx-envelope</code></a>:
+    <var class="Ar">message-id</var> <var class="Ar">envelope-id</var></dt>
+  <dd>Este evento se genera cuando se acepta un sobre.
+    <p class="Pp"><var class="Ar">envelope-id</var> contiene el identificador
+        único del sobre.</p>
+  </dd>
+  <dt id="tx-data"><a class="permalink" href="#tx-data"><code class="Ic">tx-data</code></a>:
+    <var class="Ar">message-id</var> <var class="Ar">result</var></dt>
+  <dd>Este evento se genera cuando el cliente ha emitido &#x201C;DATA&#x201D;.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador
+        único de la transacción.</p>
+    <p class="Pp"><var class="Ar">result</var> contiene &#x201C;ok&#x201D; si
+        el servidor aceptó el mensaje para su procesamiento,
+        &#x201C;permfail&#x201D; si no ha sido aceptado y
+        &#x201C;tempfail&#x201D; si un error transitorio impidió el procesamiento
+        del mensaje.</p>
+  </dd>
+  <dt id="tx-commit"><a class="permalink" href="#tx-commit"><code class="Ic">tx-commit</code></a>:
+    <var class="Ar">message-id</var> <var class="Ar">message-size</var></dt>
+  <dd>Este evento se genera cuando el servidor ha aceptado una transacción.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador
+        único de la transacción SMTP.</p>
+    <p class="Pp"><var class="Ar">message-size</var> contiene el tamaño del
+        mensaje enviado en la fase &#x201C;DATA&#x201D; de la transacción
+        SMTP.</p>
+  </dd>
+  <dt id="tx-rollback"><a class="permalink" href="#tx-rollback"><code class="Ic">tx-rollback</code></a>:
+    <var class="Ar">message-id</var></dt>
+  <dd>Este evento se genera cuando el servidor ha rechazado una transacción.
+    <p class="Pp"><var class="Ar">message-id</var> contiene el identificador
+        único de la transacción SMTP.</p>
+  </dd>
+  <dt id="protocol-client"><a class="permalink" href="#protocol-client"><code class="Ic">protocol-client</code></a>:
+    <var class="Ar">command</var></dt>
+  <dd>Este evento se genera para cada comando enviado por el cliente. Contiene el
+      comando bruto tal como lo recibió el servidor.
+    <p class="Pp"><var class="Ar">command</var> contiene el comando emitido por
+        el cliente al servidor.</p>
+  </dd>
+  <dt id="protocol-server"><a class="permalink" href="#protocol-server"><code class="Ic">protocol-server</code></a>:
+    <var class="Ar">response</var></dt>
+  <dd>Este evento se genera para cada respuesta emitida por el servidor. Contiene
+      la respuesta bruta tal como la emitió el servidor.
+    <p class="Pp"><var class="Ar">response</var> contiene la respuesta emitida
+        por el servidor al cliente.</p>
+  </dd>
+  <dt id="filter-report"><a class="permalink" href="#filter-report"><code class="Ic">filter-report</code></a>:
+    <var class="Ar">filter-kind</var> <var class="Ar">name message</var></dt>
+  <dd>Este evento se genera cuando un filtro emite un informe.
+    <p class="Pp"><var class="Ar">filter-kind</var> puede ser
+        &#x201C;builtin&#x201D; o &#x201C;proc&#x201D; dependiendo de si el
+        filtro es un filtro incorporado de <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>
+        o un filtro de proceso que implementa la API.</p>
+    <p class="Pp"><var class="Ar">name</var> es el nombre del filtro que generó
+        el informe.</p>
+    <p class="Pp"><var class="Ar">message</var> es un mensaje específico del
+        filtro.</p>
+  </dd>
+  <dt id="filter-response"><a class="permalink" href="#filter-response"><code class="Ic">filter-response</code></a>:
+    <var class="Ar">phase response</var> [param]</dt>
+  <dd>Este evento se genera cuando un filtro responde a una solicitud de filtrado.
+    <p class="Pp"><var class="Ar">phase</var> contiene el nombre de la fase de la
+        solicitud. Las fases se documentan en la siguiente sección.</p>
+    <p class="Pp"><var class="Ar">response</var> contiene la respuesta del
+        filtro a la solicitud, y es una de las siguientes:
+        &#x201C;proceed&#x201D;, &#x201C;report&#x201D;,
+        &#x201C;reject&#x201D;, &#x201C;disconnect&#x201D;,
+        &#x201C;junk&#x201D; o &#x201C;rewrite&#x201D;.</p>
+    <p class="Pp">Si se especifica, <var class="Ar">param</var> es el parámetro
+        de la respuesta.</p>
+  </dd>
+  <dt id="timeout"><a class="permalink" href="#timeout"><code class="Ic">timeout</code></a></dt>
+  <dd>Este evento se genera cuando ocurre un tiempo de espera para una sesión.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FILTER_REQUESTS'><a class='permalink' href='#FILTER_REQUESTS'>SOLICITUDES DE FILTRO</a></h1>
+<p class="Pp">Actualmente, solo se admite un subsistema en la API: smtp-in.</p>
+<p class="Pp">Las solicitudes de filtro permiten a <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> consultar a
+    <code class="Nm">smtpd-filters</code> sobre qué hacer con una sesión en una
+    fase particular. Además, permiten a <code class="Nm">smtpd-filters</code>
+    alterar el contenido de un mensaje añadiendo, modificando o suprimiendo
+    líneas de entrada de una manera similar a lo que harían programas como
+    <a class="Xr" href="/man/sed.1.en">sed(1)</a> o <a class="Xr" href="/man/grep.1.en">grep(1)</a>.</p>
+<p class="Pp">Cada solicitud de filtro es generada por
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> como una sola línea similar
+    a la siguiente. Los campos están separados por el carácter &#x201C;|&#x201D;.</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter|0.7|1576146008.006099|smtp-in|connect|7641df9771b4ed00|1ef1c203cc576e5d|mail.openbsd.org|199.185.178.25</pre>
+</div>
+<p class="Pp">El formato consiste en un prefijo de protocolo que contiene el
+    flujo, la versión del protocolo, la marca de tiempo, el subsistema, la fase
+    de filtrado, el identificador único de la sesión y un token opaco que el
+    filtro debe proporcionar en su respuesta:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter|0.7|1576146008.006099|smtp-in|connect|7641df9771b4ed00|1ef1c203cc576e5d</pre>
+</div>
+<p class="Pp">Le sigue un sufijo que contiene los parámetros específicos de la
+    fase de la solicitud de filtro, también separados por &#x201C;|&#x201D;:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>mail.openbsd.org|199.185.178.25</pre>
+</div>
+<p class="Pp">A diferencia de los eventos de informe,
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> espera respuestas de las
+    solicitudes de filtro y no permitirá que una sesión avance hasta que el
+    filtro haya instruido a <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>
+    sobre cómo tratarla.</p>
+<p class="Pp">Para todas las fases excepto &#x201C;data-line&#x201D;, las
+    respuestas deben seguir la misma construcción: un mensaje de tipo
+    &#x201C;filter-result&#x201D;, seguido del ID de sesión único, el token
+    opaco, una decisión y parámetros opcionales específicos de la decisión:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter-result|7641df9771b4ed00|1ef1c203cc576e5d|proceed
+filter-result|7641df9771b4ed00|1ef1c203cc576e5d|reject|550 nope</pre>
+</div>
+<p class="Pp">Las decisiones posibles para un mensaje
+    &#x201C;filter-result&#x201D; se documentan a continuación.</p>
+<p class="Pp">Para la fase &#x201C;data-line&#x201D;,
+    <code class="Nm">smtpd-filters</code> recibe un flujo de líneas que corresponden
+    al mensaje a filtrar, terminado por un solo punto:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter|0.7|1576146008.006099|smtp-in|data-line|7641df9771b4ed00|1ef1c203cc576e5d|line 1
+filter|0.7|1576146008.006103|smtp-in|data-line|7641df9771b4ed00|1ef1c203cc576e5d|line 2
+filter|0.7|1576146008.006105|smtp-in|data-line|7641df9771b4ed00|1ef1c203cc576e5d|.</pre>
+</div>
+<p class="Pp">Se espera que devuelvan un flujo de salida igualmente terminado
+    por un solo punto. Un filtro puede añadir, suprimir, modificar o reflejar
+    las líneas que recibe. En última instancia,
+    <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> asume que el mensaje co</p>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE">NOMBRE</h1>
+<p class="Pp"><code class="Nm">smtpd-filters</code> &#x2014; filtros para OpenSMTPD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN">DESCRIPCIÓN</h1>
+<p class="Pp">El demonio <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a> se puede extender con
+    filtros. Estos filtros son programas externos que se ejecutan en un momento
+    determinado durante el protocolo SMTP para inspeccionar o modificar la
+    conexión. Los filtros se invocan a través de la directiva
+    <code class="Dv">filter</code> en el archivo de configuración de
+    OpenSMTPD.</p>
+<p class="Pp">La directiva <code class="Dv">filter</code> tiene la siguiente
+    sintaxis:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter &lt;nombre&gt;
+    match &lt;evento&gt; [&lt;evento&gt;...]
+    action &lt;comando&gt; [&lt;comando&gt;...]
+    listen on &lt;dirección&gt;[:&lt;puerto&gt;]
+    listen on &lt;socket&gt;</pre>
+</div>
+<p class="Pp">donde:</p>
+<dl class="Bl-tag">
+  <dt id="nombre"><code class="Dv">nombre</code>:</dt>
+  <dd>Un nombre para este filtro. Se utiliza para referenciarlo más adelante
+      en el archivo de configuración.</dd>
+  <dt id="match_evento"><code class="Dv">match &lt;evento&gt;</code>:</dt>
+  <dd>Indica qué eventos del protocolo SMTP deben activar este filtro. La lista
+      de eventos válidos se detalla en la sección <a class="Sx" href="#REPORT_EVENTS">REPORT EVENTS</a>.</dd>
+  <dt id="action_comando"><code class="Dv">action &lt;comando&gt;</code>:</dt>
+  <dd>El comando que se ejecutará para cada evento coincidente. El comando se
+      ejecuta en el contexto del usuario que ejecuta OpenSMTPD, o en el usuario
+      especificado en la configuración.</dd>
+  <dt id="listen_on_dirección"><code class="Dv">listen on &lt;dirección&gt;[:&lt;puerto&gt;]</code>:</dt>
+  <dd>El filtro se ejecutará como un servidor que escucha en la dirección y puerto
+      especificados. Solo se permite un <code class="Dv">listen on</code> por
+      filtro.</dd>
+  <dt id="listen_on_socket"><code class="Dv">listen on &lt;socket&gt;</code>:</dt>
+  <dd>El filtro se ejecutará como un servidor que escucha en el socket UNIX
+      especificado. Solo se permite un <code class="Dv">listen on</code> por
+      filtro.</dd>
+</dl>
+<p class="Pp">Cuando un filtro coincide con un evento, se le envía una solicitud
+    a través de la interfaz de red o socket UNIX especificada. La solicitud
+    contiene el tipo de evento y los parámetros asociados, codificados como
+    líneas de texto separadas por saltos de línea. El filtro debe responder con
+    una decisión, también codificada como una línea de texto.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DISEÑO">DISEÑO</h1>
+<p class="Pp">Los filtros están diseñados para ser independientes y solo necesitan
+    entender el protocolo de comunicación definido aquí. No tienen acceso directo
+    al estado del servidor SMTP ni a ninguna otra configuración de OpenSMTPD,
+    excepto por la información proporcionada en la propia solicitud del filtro.</p>
+<p class="Pp">El protocolo de comunicación entre OpenSMTPD y los filtros es simple
+    y se basa en líneas de texto. Cada línea está prefijada con un identificador
+    de evento o decisión, seguido de parámetros separados por el carácter
+    barra vertical (<code class="Cm">|</code>).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="REPORTE_Y_FILTRO">REPORTE Y FILTRO</h1>
+<p class="Pp">Existen dos tipos de filtros: de reporte y de filtrado.</p>
+<dl class="Bl-tag">
+  <dt id="report"><code class="Ic">report</code></dt>
+  <dd>Los filtros de reporte se utilizan para registrar información sobre la
+      conexión SMTP o los mensajes. No pueden modificar el comportamiento del
+      servidor SMTP.</dd>
+  <dt id="filter"><code class="Ic">filter</code></dt>
+  <dd>Los filtros de filtrado pueden tomar decisiones que afectan el flujo de la
+      conexión SMTP, como rechazar un remitente, marcar un mensaje como spam o
+      incluso desconectar al cliente.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PROTOCOLO">PROTOCOLO</h1>
+<p class="Pp">El protocolo utiliza una combinación de solicitudes y respuestas.
+    OpenSMTPD envía solicitudes al filtro, y el filtro responde con una decisión.</p>
+<p class="Pp">Las solicitudes de eventos se formatean como:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>evento|sesión-id|token-opaco|parámetro1|parámetro2|...</pre>
+</div>
+<p class="Pp">donde:</p>
+<dl class="Bl-tag">
+  <dt id="evento"><code class="Dv">evento</code>:</dt>
+  <dd>El tipo de evento que ocurrió (por ejemplo, <code class="Ic">connect</code>,
+      <code class="Ic">helo</code>, etc.).</dd>
+  <dt id="sesión-id"><code class="Dv">sesión-id</code>:</dt>
+  <dd>Un identificador único para la sesión SMTP actual.</dd>
+  <dt id="token-opaco"><code class="Dv">token-opaco</code>:</dt>
+  <dd>Un token opaco que debe ser devuelto por el filtro en su respuesta. Esto
+      ayuda a OpenSMTPD a correlacionar las respuestas con las solicitudes
+      correctas.</dd>
+  <dt id="parámetro1_parámetro2"><code class="Dv">parámetro1|parámetro2|...</code>:</dt>
+  <dd>Los parámetros específicos del evento.</dd>
+</dl>
+<p class="Pp">Las respuestas del filtro se formatean como:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>decisión|sesión-id|token-opaco|parámetro1|parámetro2|...</pre>
+</div>
+<p class="Pp">donde <code class="Dv">decisión</code> es una de las acciones
+    disponibles (ver sección <a class="Sx" href="#FILTER_REQUESTS">FILTER REQUESTS</a>).</p>
+<p class="Pp">La respuesta a las solicitudes de &#x201C;data-line&#x201D; utiliza su
+    propia estructura. Un prefijo &#x201C;filter-dataline&#x201D;, seguido del
+    identificador de sesión único, el token opaco y la línea de salida como
+    sigue:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter-dataline|7641df9771b4ed00|1ef1c203cc576e5d|línea 1
+filter-dataline|7641df9771b4ed00|1ef1c203cc576e5d|línea 2
+filter-dataline|7641df9771b4ed00|1ef1c203cc576e5d|.|</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="CONFIGURACIÓN">CONFIGURACIÓN</h1>
+<p class="Pp">Los filtros se configuran en el archivo
+    <code class=" Cm">/etc/smtpd.conf</code> utilizando la directiva
+    <code class="Dv">filter</code>. Por ejemplo:</p>
+<div class="Bd Pp Bd-indent Li">
+<pre>filter check_spam
+    match connect helo
+    listen on 127.0.0.1:8025
+
+filter log_mail
+    match mail-from rcpt-to data
+    action log </pre>
+</div>
+<p class="Pp">El ejemplo anterior define dos filtros:</p>
+<ul class="Bul">
+  <li><code class="Dv">check_spam</code>: que escucha en la dirección local en el
+      puerto 8025 y coincide con los eventos <code class="Ic">connect</code> y
+      <code class="Ic">helo</code>.</li>
+  <li><code class="Dv">log_mail</code>: que coincide con los eventos
+      <code class="Ic">mail-from</code>, <code class="Ic">rcpt-to</code> y
+      <code class="Ic">data</code>, y luego registra la información utilizando la
+      acción <code class="Dv">log</code>.</li>
+</ul>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EVENTOS_DE_REPORTE">EVENTOS DE REPORTE</h1>
+<p class="Pp">La siguiente lista de eventos y parámetros específicos para smtp-in
+    son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="connect-report"><code class="Ic">connect</code>: <var class="Ar">rdns src</var></dt>
+  <dd>Este evento se emite después de la conexión, antes de que se muestre el
+      banner. <var class="Ar">src</var> contiene la dirección IP de origen (a.b.c.d
+      para IPv4 o [x:x:x:x:x:x:x:x] para IPv6) o &#x201C;local&#x201D; (para
+      sockets UNIX).</dd>
+  <dt id="helo-report"><code class="Ic">helo</code>: <var class="Ar">identity</var></dt>
+  <dd>Este evento se emite después de que el cliente emite &#x201C;HELO&#x201D;.</dd>
+  <dt id="ehlo-report"><code class="Ic">ehlo</code>: <var class="Ar">identity</var></dt>
+  <dd>Este evento se emite después de que el cliente emite &#x201C;EHLO&#x201D;.</dd>
+  <dt id="starttls-report"><code class="Ic">starttls</code>: <var class="Ar">tls-string</var></dt>
+  <dd>Este evento se emite después de que el cliente solicita &#x201C;STARTTLS&#x201D;.</dd>
+  <dt id="auth-report"><code class="Ic">auth</code>: <var class="Ar">auth</var></dt>
+  <dd>Este evento se emite después de que el cliente solicita &#x201C;AUTH&#x201D;.</dd>
+  <dt id="mail-from-report"><code class="Ic">mail-from</code>: <var class="Ar">address</var></dt>
+  <dd>Este evento se emite después de que el cliente solicita &#x201C;MAIL
+      FROM&#x201D;.</dd>
+  <dt id="rcpt-to-report"><code class="Ic">rcpt-to</code>: <var class="Ar">address</var></dt>
+  <dd>Este evento se emite después de que el cliente solicita &#x201C;RCPT
+      TO&#x201D;.</dd>
+  <dt id="data-report"><code class="Ic">data</code></dt>
+  <dd>Este evento se emite después de que el cliente solicita
+      &#x201C;DATA&#x201D;.</dd>
+  <dt id="data-line-report"><code class="Ic">data-line</code>: <var class="Ar">line</var></dt>
+  <dd>Este evento se emite para cada línea de entrada durante la fase
+      &#x201C;DATA&#x201D;. Las líneas son datos de entrada SMTP crudos con escape de
+      puntos, terminados con un solo punto.</dd>
+  <dt id="commit-report"><code class="Ic">commit</code></dt>
+  <dd>Este evento se emite después de recibir el punto final único.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SOLICITUDES_DE_FILTRO">SOLICITUDES DE FILTRO</h1>
+<p class="Pp">Para cada fase de filtrado, excepto &#x201C;data-line&#x201D;, las
+    siguientes decisiones pueden ser tomadas por un filtro:</p>
+<dl class="Bl-tag">
+  <dt id="proceed"><code class="Ic">proceed</code></dt>
+  <dd>No se toma ninguna acción, la sesión o transacción puede pasar al siguiente
+      filtro.</dd>
+  <dt id="junk"><code class="Ic">junk</code></dt>
+  <dd>La sesión o transacción se marca como spam. <a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a>
+      prepondrá una cabecera &#x201C;X-Spam&#x201D; al mensaje.</dd>
+  <dt id="reject"><code class="Ic">reject</code> <var class="Ar">error</var></dt>
+  <dd>El comando se rechaza con el mensaje <var class="Ar">error</var>. El
+      mensaje debe ser un mensaje SMTP válido que incluya el código de estado,
+      5xx o 4xx.
+    <p class="Pp">Los mensajes que comienzan con un estado 5xx resultan en un
+        fallo permanente, aquellos que comienzan con un estado 4xx resultan en
+        un fallo temporal.</p>
+    <p class="Pp">Los mensajes que comienzan con un estado 421 resultarán en una
+        desconexión del cliente.</p>
+  </dd>
+  <dt id="disconnect"><code class="Ic">disconnect</code> <var class="Ar">error</var></dt>
+  <dd>El cliente se desconecta con el mensaje <var class="Ar">error</var>. El
+      mensaje debe ser un mensaje SMTP válido que incluya el código de estado,
+      5xx o 4xx.
+    <p class="Pp">Los mensajes que comienzan con un estado 5xx resultan en un
+        fallo permanente, aquellos que comienzan con un estado 4xx resultan en
+        un fallo temporal.</p>
+  </dd>
+  <dt id="rewrite"><code class="Ic">rewrite</code> <var class="Ar">parameter</var></dt>
+  <dd>El parámetro del comando se reescribe.
+    <p class="Pp">Esta decisión permite a un filtro realizar una reescritura de
+        los comandos enviados por el cliente antes de que sean procesados por el
+        motor SMTP. Se espera que <var class="Ar">parameter</var> sea un
+        parámetro SMTP válido para el comando.</p>
+  </dd>
+  <dt id="report-action"><code class="Ic">report</code> <var class="Ar">parameter</var></dt>
+  <dd>Genera un reporte con <var class="Ar">parameter</var> para este filtro.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="VER_TAMBIÉN">VER TAMBIÉN</h1>
+<p class="Pp"><a class="Xr" href="/man/smtpd.8.en">smtpd(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="HISTORIA">HISTORIA</h1>
+<p class="Pp"><code class="Nm">smtpd-filters</code> apareció por primera vez en
+    <span class="Ux">OpenBSD 6.6</span>.</p>
+</section>
+</section>
+<table class="foot">
+  <tr>
+    <td class="foot-date">30 de octubre de 2025</td>
+    <td class="foot-os">Linux 6.17.8-arch1-1</td>
+  </tr>
+</table>

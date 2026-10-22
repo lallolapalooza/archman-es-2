@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tc-tbf(8) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tc-tbf(8)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/iproute2/">iproute2</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">TC(8)</td>
+    <td class="head-vol">Linux</td>
+    <td class="head-rtitle">TC(8)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">tbf - Filtro de cubo de tokens (Token Bucket Filter)</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>tc qdisc ... tbf rate</b> tasa <b>burst</b> bytes/celda <b>(
+    latency</b> ms <b>| limit</b> bytes <b>) [ mpu</b> bytes <b>[ peakrate</b>
+    tasa <b>mtu</b> bytes/celda <b>] ]</b></p>
+<p class="Pp">burst también se conoce como buffer y maxburst. mtu también se conoce como
+    minburst.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El Filtro de Cubo de Tokens (Token Bucket Filter) es una disciplina de
+    cola (queueing discipline) de clase disponible para el control de tráfico con el
+    comando <a href='/man/tc.8.en'>tc(8)</a>.</p>
+<p class="Pp">TBF es un modelador (shaper) puro y nunca programa tráfico. No es
+    conservador de trabajo (non-work-conserving) y puede auto-ralentizarse, aunque
+    haya paquetes disponibles, para asegurar que no se exceda la tasa configurada. Es
+    capaz de modelar hasta 1mbit/s de tráfico normal con una ráfaga mínima ideal,
+    enviando datos exactamente a las tasas configuradas.</p>
+<p class="Pp">Son posibles tasas mucho mayores, pero a costa de perder la ráfaga
+    mínima. En ese caso, los datos se extraen de la cola en promedio a la tasa
+    configurada, pero pueden enviarse mucho más rápido en escalas de tiempo de
+    milisegundos. Debido a las colas adicionales que residen en los adaptadores de
+    red, esto a menudo no es un problema.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ALGORITMO'><a class='permalink' href='#ALGORITMO'>ALGORITMO</a></h1>
+<p class="Pp">Como su nombre indica, el tráfico se filtra basándose en el gasto de
+    **tokens**. Los tokens corresponden aproximadamente a bytes, con la
+    restricción adicional de que cada paquete consume algunos tokens, sin importar
+    lo pequeño que sea. Esto refleja el hecho de que incluso un paquete de tamaño
+    cero ocupa el enlace durante algún tiempo.</p>
+<p class="Pp">En el momento de la creación, el TBF se llena con tokens que
+    corresponden a la cantidad de tráfico que se puede enviar en una sola ráfaga. Los
+    tokens llegan a una tasa constante, hasta que el cubo se llena.</p>
+<p class="Pp">Si no hay tokens disponibles, los paquetes se ponen en cola, hasta un
+    límite configurado. El TBF calcula ahora el déficit de tokens y se
+    ralentiza hasta que el primer paquete de la cola pueda ser enviado.</p>
+<p class="Pp">Si no es aceptable enviar paquetes a máxima velocidad, se puede
+    configurar una tasa pico (peakrate) para limitar la velocidad a la que el cubo
+    se vacía. Esta tasa pico se implementa como un segundo TBF con un cubo muy
+    pequeño, para que no haga ráfagas.</p>
+<p class="Pp">Para lograr la perfección, el segundo cubo puede contener solo un
+    paquete, lo que lleva al límite de 1mbit/s mencionado anteriormente.</p>
+<p class="Pp">Este límite se debe al hecho de que el kernel solo puede ralentizarse
+    como mínimo 1 'jiffy', que depende de HZ como 1/HZ. Para un modelado perfecto,
+    solo se puede enviar un paquete por jiffy; para HZ=100, esto significa 100
+    paquetes de un promedio de 1000 bytes cada uno, lo que corresponde
+    aproximadamente a 1mbit/s.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='PARÁMETROS'><a class='permalink' href='#PARÁMETROS'>PARÁMETROS</a></h1>
+<p class="Pp">Vea <a href='/man/tc.8.en'>tc(8)</a> para saber cómo especificar las unidades de
+    estos valores.</p>
+<dl class="Bl-tag">
+  <dt id="limit"><a class="permalink" href="#limit">limit o latency</a></dt>
+  <dd>Limit es el número de bytes que pueden estar en cola esperando a que haya
+      tokens disponibles. También puede especificar esto de la otra manera
+      estableciendo el parámetro latency, que especifica la cantidad máxima de
+      tiempo que un paquete puede permanecer en el TBF. El último cálculo tiene en
+      cuenta el tamaño del cubo, la tasa y posiblemente la tasa pico (si está
+      establecida). Estos dos parámetros son mutuamente excluyentes.</dd>
+  <dt id="burst"><a class="permalink" href="#burst">burst</a></dt>
+  <dd>También conocido como buffer o maxburst. Tamaño del cubo, en bytes. Esta es
+      la cantidad máxima de bytes para los que los tokens pueden estar disponibles
+      instantáneamente. En general, las tasas de modelado más altas requieren un
+      buffer más grande. Para 10mbit/s en Intel, ¡necesita al menos 10kbyte de
+      buffer si quiere alcanzar la tasa configurada!
+    <p class="Pp">Si su buffer es demasiado pequeño, los paquetes pueden ser
+        descartados porque llegan más tokens por tick de temporizador de los que
+        caben en su cubo. El tamaño mínimo del buffer se puede calcular dividiendo
+        la tasa por HZ.</p>
+    <p class="Pp">Los cálculos de uso de tokens se realizan utilizando una tabla que
+        por defecto tiene una resolución de 8 paquetes. Esta resolución se puede
+        cambiar especificando el tamaño de la **celda** con el burst. Por ejemplo,
+        para especificar un buffer de 6000 bytes con un tamaño de celda de 16
+        bytes, establezca un burst de 6000/16. Probablemente nunca tendrá que
+        establecer esto. Debe ser una potencia entera de 2.</p>
+  </dd>
+  <dt id="mpu"><a class="permalink" href="#mpu">mpu</a></dt>
+  <dd>Un paquete de tamaño cero no utiliza ancho de banda cero. Para Ethernet,
+      ningún paquete utiliza menos de 64 bytes. La Unidad Mínima de Paquete
+      (Minimum Packet Unit) determina el uso mínimo de tokens (especificado en
+      bytes) para un paquete. Por defecto es cero.</dd>
+  <dt id="rate"><a class="permalink" href="#rate">rate</a></dt>
+  <dd>La perilla de velocidad. ¡Vea las observaciones anteriores sobre los
+      límites! Vea <a href='/man/tc.8.en'>tc(8)</a> para las unidades.</dd>
+</dl>
+<p class="Pp">Además, si se desea una tasa pico, los siguientes parámetros están
+    disponibles:</p>
+<dl class="Bl-tag">
+  <dt id="peakrate"><a class="permalink" href="#peakrate">peakrate</a></dt>
+  <dd>Tasa máxima de vaciado del cubo. La tasa pico no necesita ser establecida,
+      solo es necesaria si se requiere un modelado perfecto en la escala de
+      milisegundos.
+      </dd>
+  <dt id="mtu/minburst"><a class="permalink" href="#mtu/minburst">mtu/minburst</a></dt>
+  <dd>Especifica el tamaño del cubo de la tasa pico. Para una precisión perfecta,
+      debería establecerse en el MTU de la interfaz. Si se necesita una tasa pico,
+      pero se acepta cierta ráfaga, este tamaño puede aumentarse. Un minburst de
+      3000 bytes permite alrededor de 3mbit/s de tasa pico, dados paquetes de 1000
+      bytes.
+    <p class="Pp">Al igual que el tamaño de burst regular, también puede especificar un
+        tamaño de **celda**.</p>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO_&amp;amp;_USO'><a class='permalink' href='#EJEMPLO_&amp;amp;_USO'>EJEMPLO   &amp; USO</a></h1>
+<p class="Pp">Para adjuntar un TBF con una tasa máxima sostenida de 0.5mbit/s, una
+    tasa pico de 1.0mbit/s, un buffer de 5 kilobytes, con un tamaño de cola pre-cubo
+    calculado para que el TBF cause como máximo 70ms de latencia, con comportamiento
+    de tasa pico perfecto, emita:</p>
+<p class="Pp"># tc qdisc add dev eth0 handle 10: root tbf rate 0.5mbit \
+  <br/>
+   burst 5kb latency 70ms peakrate 1mbit \
+  <br/>
+   minburst 1540</p>
+<p class="Pp">Para adjuntar una qdisc interna, por ejemplo sfq, emita:</p>
+<p class="Pp"># tc qdisc add dev eth0 parent 10:1 handle 100: sfq</p>
+<p class="Pp">Sin qdisc interna, la cola TBF actúa como bfifo. Si la qdisc interna
+    se cambia, el límite/latencia ya no será efectivo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/tc.8.en'>tc(8)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">Alexey N. Kuznetsov, &lt;kuznet@ms2.inr.ac.ru&gt;. Esta página del
+    manual mantenida por bert hubert &lt;ahu@ds9a.nl&gt;</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">13 de diciembre de 2001</td>
+    <td class="foot-os">iproute2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/iproute2/">core/iproute2</a></dd>
+        <dt>Versión:</dt>
+        <dd>6.18.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/network/iproute2/iproute2.git">https://git.kernel.org/pub/scm/network/iproute2/iproute2.git</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/iproute2/">/listing/core/iproute2/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ALGORITMO">ALGORITMO</a></li>
+        
+            <li><a href="#PARÁMETROS">PARÁMETROS</a></li>
+        
+            <li><a href="#EJEMPLO_&amp;amp;_USO">EJEMPLO &amp; USO</a></li>
+        
+            <li><a href="#VER_TAMBIÉN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/tc-tbf.8.en.txt">txt</a>, 
+        
+            <a href="/man/tc-tbf.8.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la <a href=
+               licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>, excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

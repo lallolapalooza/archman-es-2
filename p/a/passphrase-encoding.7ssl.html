@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>passphrase-encoding(7ssl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">passphrase-encoding(7ssl)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/openssl/">openssl</a></p>
+<p class="lic">Licencias: Apache-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PASSPHRASE-ENCODING(7ssl)</td>
+    <td class="head-vol">OpenSSL</td>
+    <td class="head-rtitle">PASSPHRASE-ENCODING(7ssl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">passphrase-encoding - Cómo las diversas partes de OpenSSL tratan la codificación de caracteres de las contraseñas</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">En el mundo moderno con todo tipo de codificaciones de caracteres, el tratamiento de las contraseñas se ha vuelto cada vez más complejo. Esta página del manual intenta ofrecer una visión general de cómo se aborda actualmente este problema en diferentes partes de la biblioteca OpenSSL.</p>
+<section class="Ss">
+<h2 class="Ss" id='El_caso_general'><a class='permalink' href='#El_caso_general'>El caso general</a></h2>
+<p class="Pp">La biblioteca OpenSSL no trata las contraseñas de ninguna manera especial como regla general, y confía en que la aplicación o el usuario elijan un conjunto de caracteres adecuado y se aten a él durante toda la vida útil de los objetos afectados. Esto significa que para un objeto que fue cifrado utilizando una contraseña codificada en ISO-8859-1, ese objeto debe ser descifrado utilizando una contraseña codificada en ISO-8859-1. Se espera que el uso de una codificación incorrecta cause un fallo en el descifrado.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='PKCS#12'><a class='permalink' href='#PKCS#12'>PKCS#12</a></h2>
+<p class="Pp">PKCS#12 es un poco diferente con respecto a la codificación de contraseñas. El estándar estipula que la contraseña debe codificarse como una BMPString ASN.1, que consiste en los puntos de código del plano multilingüe básico, codificados en big endian (UCS-2 BE).</p>
+<p class="Pp">OpenSSL intenta adaptarse a estos requisitos de una de las siguientes maneras:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Trata la contraseña recibida como codificada en UTF-8 e intenta volver a codificarla a UTF-16 (que es lo mismo que UCS-2 para caracteres U+0000 a U+D7FF y U+E000 a U+FFFF, pero se expande para cualquier otro carácter), o si no, procede con el paso 2.</dd>
+  <dt>2.</dt>
+  <dd>Asume que la contraseña está codificada en ASCII o ISO-8859-1 y antepone oportunistamente un byte cero a cada byte para obtener la codificación UCS-2 de los caracteres, que almacena como BMPString.
+    <p class="Pp">Tenga en cuenta que, dado que no hay verificación de su configuración regional, esto puede producir caracteres UCS-2 / UTF-16 que no corresponden a los caracteres originales de la contraseña para otros conjuntos de caracteres, como cualquier codificación ISO-8859-X que no sea ISO-8859-1 (o para Windows, CP 1252 con excepción de los caracteres "gráficos" adicionales en el rango 0x80-0x9F).</p>
+  </dd>
+</dl>
+<p class="Pp">Las versiones de OpenSSL anteriores a la 1.1.0 solo realizan la variante 2, y esa es la razón por la que OpenSSL todavía lo hace, para poder leer archivos producidos con versiones anteriores.</p>
+<p class="Pp">Cabe señalar que este enfoque no está completamente libre de errores.</p>
+<p class="Pp">Una contraseña codificada en ISO-8859-2 podría muy bien tener una secuencia como 0xC3 0xAF (que son los dos caracteres "LETRA MAYÚSCULA LATINA A CON CARÓN" y "LETRA MAYÚSCULA LATINA Z CON PUNTO ARRIBA" en codificación ISO-8859-2), pero sería malinterpretada como el punto de código U+00EF (LETRA MINÚSCULA LATINA I CON DIÉRESIS) codificado en UTF-8 válido <i>si la contraseña no contiene nada que</i> <i>sea UTF-8 inválido</i>. Una contraseña que contenga este tipo de secuencia de bytes dará un resultado diferente en OpenSSL 1.1.0 y posteriores que en OpenSSL anteriores a 1.1.0.</p>
+<pre>0x00 0xC3 0x00 0xAF                    # OpenSSL anterior a 1.1.0
+0x00 0xEF                              # OpenSSL 1.1.0 y más recientes</pre>
+<p class="Pp">De la misma manera, cualquier cosa codificada en UTF-8 que se proporcionara a OpenSSL anterior a la versión 1.1.0 se malinterpretaba como secuencias ISO-8859-1.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='OSSL_STORE'><a class='permalink' href='#OSSL_STORE'>OSSL_STORE</a></h2>
+<p class="Pp"><a href='/man/ossl_store.7.en'>ossl_store(7)</a> actúa como una interfaz general para acceder a todo tipo de objetos, potencialmente protegidos con una contraseña, un PIN o algo más. Esta API estipula que las contraseñas deben estar codificadas en UTF-8, y que cualquier otra codificación de contraseña puede dar resultados indefinidos. Esta API se basa en que la aplicación garantice la codificación UTF-8, y no verifica que sea así, por lo que lo que recibe, también lo pasará al cargador subyacente.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RECOMENDACIONES'><a class='permalink' href='#RECOMENDACIONES'>RECOMENDACIONES</a></h1>
+<p class="Pp">Esta sección asume que sabe qué contraseña se utilizó para el cifrado, pero que puede haber estado codificada en una codificación de caracteres diferente a la utilizada por su método de entrada actual. Por ejemplo, la contraseña puede haberse utilizado en un momento en que su codificación predeterminada era ISO-8859-1 (es decir, "ingenua" que resulta en la secuencia de bytes 0x6E 0x61 0xEF 0x76 0x65), y ahora se encuentra en un entorno donde su codificación predeterminada es UTF-8 (es decir, "ingenua" que resulta en la secuencia de bytes 0x6E 0x61 0xC3 0xAF 0x76 0x65). Siempre que se mencione que debe usar una codificación de caracteres determinada, debe entenderse que debe cambiar el método de entrada para usar la codificación mencionada cuando escriba su contraseña, o usar alguna herramienta adecuada para convertir su contraseña de su codificación predeterminada a la codificación de destino.</p>
+<p class="Pp">Tenga en cuenta también que las subsecciones siguientes discuten contraseñas legibles por humanos. Esto es particularmente relevante para los objetos PKCS#12, donde se asumen contraseñas legibles por humanos. Para otros objetos, es tan legítimo usar cualquier secuencia de bytes (como una secuencia de bytes de <i>/dev/urandom</i> que se haya guardado), lo que hace que cualquier discusión sobre codificación de caracteres sea irrelevante; en tales casos, simplemente use la misma secuencia de bytes tal como está.</p>
+<section class="Ss">
+<h2 class="Ss" id='Creación_de_nuevos_objetos'><a class='permalink' href='#Creación_de_nuevos_objetos'>Creación de nuevos objetos</a></h2>
+<p class="Pp">Para crear nuevos objetos protegidos con contraseña, asegúrese de que la contraseña esté codificada usando UTF-8. Esto es predeterminado en la mayoría de los sistemas Unix modernos, pero puede requerir un esfuerzo en otras plataformas. Específicamente para Windows, la configuración de la variable de entorno <b>OPENSSL_WIN32_UTF8</b> hará que cualquier entrada en el símbolo del sistema [Windows] se convierta a UTF-8 (tanto en la línea de comandos como en las contraseñas solicitadas por separado).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Apertura_de_objetos_existentes'><a class='permalink' href='#Apertura_de_objetos_existentes'>Apertura de objetos existentes</a></h2>
+<p class="Pp">Para abrir objetos protegidos con contraseña donde sepa qué codificación de caracteres se utilizó para la contraseña de cifrado, asegúrese de usar la misma codificación nuevamente.</p>
+<p class="Pp">Para abrir objetos protegidos con contraseña donde la codificación de caracteres utilizada sea desconocida, o donde la aplicación productora sea desconocida, intente lo siguiente:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Intente la contraseña tal como la tiene en la codificación de caracteres de su entorno. Es posible que su secuencia de bytes sea exactamente la correcta.</dd>
+  <dt>2.</dt>
+  <dd>Convierta la contraseña a UTF-8 e intente con el resultado. Específicamente con PKCS#12, esto debería abrir cualquier objeto que se creó de acuerdo con la especificación.</dd>
+  <dt>3.</dt>
+  <dd>Realice una conversión ingenua (es decir, puramente matemática) de ISO-8859-1 a UTF-8 y pruebe con el resultado. Esto difiere del intento anterior porque ISO-8859-1 se mapea directamente a U+0000 a U+00FF, lo cual otros conjuntos de caracteres no UTF-8 no hacen.
+    <p class="Pp">Esto también cubre el caso en que se utilizó una cadena codificada en UTF-8 con OpenSSL anterior a la versión 1.1.0. (por ejemplo, <span class="Li">&quot;&#x00EF;&quot;</span>, que es 0xC3 0xAF cuando se codifica en UTF-8, se convertiría en 0xC3 0x83 0xC2 0xAF cuando se recodifique de forma ingenua. La conversión a BMPString luego produciría 0x00 0xC3 0x00 0xA4 0x00 0x00, la codificación errónea/no conforme utilizada por OpenSSL anterior a la versión 1.1.0)</p>
+  </dd>
+</dl>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIÉN'><a class='permalink' href='#VER_TAMBIÉN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/evp.7.en'>evp(7)</a>, <a href='/man/ossl_store.7.en'>ossl_store(7)</a>, <a href='/man/EVP_BytesToKey.3.en'>EVP_BytesToKey(3)</a>,
+    <a href='/man/EVP_DecryptInit.3.en'>EVP_DecryptInit(3)</a>, <a href='/man/PEM_do_header.3.en'>PEM_do_header(3)</a>, <a href='/man/PKCS12_parse.3.en'>PKCS12_parse(3)</a>,
+    <a href='/man/PKCS12_newpass.3.en'>PKCS12_newpass(3)</a>, <a href='/man/d2i_PKCS8PrivateKey_bio.3.en'>d2i_PKCS8PrivateKey_bio(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPYRIGHT'><a class='permalink' href='#COPYRIGHT'>COPYRIGHT</a></h1>
+<p class="Pp">Copyright 2018-2021 Los autores del Proyecto OpenSSL. Todos los derechos reservados.</p>
+<p class="Pp">Concedido bajo la Licencia Apache 2.0 (la "Licencia"). No puede utilizar este archivo excepto en cumplimiento de la Licencia. Puede obtener una copia en el archivo LICENSE en la distribución fuente o en
+    <a href='https://www.openssl.org/source/license.html'>https://www.openssl.org/source/license.html</a>.</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-10-01</td>
+    <td class="foot-os">3.6.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct
+-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/openssl/">core/openssl</a></dd>
+        <dt>Versión:</dt>
+        <dd>3.6.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.openssl.org">https://www.openssl.org</a></dd>
+        <dt>Licencias:</dt>
+        <dd>Apache-2.0</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/core/openssl/">/listing/core/openssl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RECOMMENDATIONS">RECOMENDACIONES</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#COPYRIGHT">DERECHOS DE AUTOR</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/passphrase-encoding.7ssl.en.txt">txt</a>, 
+        
+            <a href="/man/passphrase-encoding.7ssl.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

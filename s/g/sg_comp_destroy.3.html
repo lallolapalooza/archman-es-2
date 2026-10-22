@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>sg_comp_destroy(3) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">sg_comp_destroy(3)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">sg_comp_init(3)</td>
+    <td class="head-vol"></td>
+    <td class="head-rtitle">sg_comp_init(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp"><b>sg_comp_init</b>, <b>sg_comp_destroy</b>, <b>sg_comp_get_tls</b>,
+    <b>sg_global_lock</b>, <b>sg_global_unlock</b> - gestión de la entrega de
+    estadísticas del sistema</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre>#include &quot;tools.h&quot;</pre>
+<p class="Pp">
+  <br/>
+  void *<b>get_global_static</b>
+  <br/>
+  (unsigned int <i>id</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  sg_error <b>sg_global_lock</b>
+  <br/>
+  (void);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  sg_error <b>sg_global_unlock</b>
+  <br/>
+  (void);
+  <br/>
+</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp"><b>sg_comp_init</b>() es llamada por <b>sg_init</b>() para
+    ejecutar la inicialización del componente de globales y de cada componente
+    de libstatgrab registrado. Este registro se realiza estáticamente añadiendo
+    una estructura de información de inicialización de componente (instancia
+    de sg_comp_info) a la lista comp_info en
+    <i>src/libstatgrab/globals.c</i>. La instancia de sg_comp_info se define
+    normalmente usando uno de <b>EASY_COMP_SETUP</b>() o
+    <b>EXTENDED_COMP_SETUP</b>(), respectivamente.</p>
+<p class="Pp"><b>sg_comp_destroy</b>() es llamada por <b>sg_shutdown</b>()
+    para destruir todos los recursos globales, p.ej., tablas de traducción de
+    nombres de dispositivos o expresiones regulares compiladas para hacer
+    coincidir nombres de rutas, etc. Los recursos de estadísticas se gestionan
+    en otro lugar y se liberan (conceptualmente y normalmente) antes de que se
+    invoque <b>sg_comp_destroy</b>().</p>
+<p class="Pp"><b>sg_comp_get_tls</b>() es la función interna para acceder al
+    almacenamiento local de hilos (anteriormente globales estáticas) del
+    componente. Normalmente es más fácil confiar en la macro encapsuladora
+    <b>GLOBAL_GET_TLS</b>().</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<p class="Pp">La entrega de estadísticas del sistema es trabajo de libstatgrab,
+    la gestión de la entrega es trabajo del componente de globales. Para
+    cumplir este trabajo, los componentes a gestionar deben estar preparados:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>declarar la estructura de datos global y TLS del componente (probablemente
+      solo en papel, no en código)</dd>
+  <dt>2.</dt>
+  <dd>definir funciones de inicialización global, destrucción de hilos y
+      destrucción de procesos (si son requeridas por 1.)</dd>
+  <dt>3.</dt>
+  <dd>definir la estructura de información del componente usando
+      <b>*_COMP_SETUP</b>()</dd>
+  <dt>4.</dt>
+  <dd>definir los accesores del componente usando uno o más de
+      <p class="Pp"><b>EASY_COMP_ACCESS</b>()
+      <br/>
+      <b>EASY_COMP_DIFF</b>()
+      <br/>
+      <b>MULTI_COMP_ACCESS</b>()
+      <br/>
+      <b>MULTI_COMP_DIFF</b>()</p>
+  </dd>
+</dl>
+<p class="Pp">Habiendo realizado estos pasos, nace un nuevo componente que
+    entrega nuevas estadísticas y necesita ser &quot;anunciado&quot;. Suponiendo
+    que el componente se llama <i>cpu</i>, añada la línea { &amp;sg_cpu_init, 0 }
+    a la lista comp_info mencionada anteriormente.</p>
+<p class="Pp">Información de inicialización del componente en detalle:</p>
+<pre>typedef sg_error (*comp_global_init_function)(unsigned id);
+typedef void (*comp_global_destroy_function)(void);
+typedef void (*comp_global_cleanup_function)(void *);
+struct sg_comp_status {
+        sg_error init_error;
+};
+struct sg_comp_init {
+        comp_global_init_function init_fn;
+        comp_global_destroy_function destroy_fn;
+        comp_global_cleanup_function cleanup_fn;
+        size_t static_buf_size;
+#if defined(ENABLE_THREADS) &amp;&amp; defined(HAVE_PTHREAD)
+        const char **required_locks;
+#endif
+        struct sg_comp_status *status;
+};
+</pre>
+<p class="Pp">Los componentes que no necesitan nada especial pueden confiar en
+    <b>EASY_COMP_SETUP</b>():</p>
+<p class="Pp"><b>Inicializando el componente de memoria</b></p>
+<pre>EASY_COMP_SETUP(mem,1,NULL);
+</pre>
+<p class="Pp">Cuando se necesita inicialización propia, hacerlo es un poco más
+    complejo:</p>
+<p class="Pp"><b>Inicializando el componente de red</b></p>
+<pre>#define SG_NETWORK_IO_NOW_IDX	0
+#define SG_NETWORK_IO_DIFF_IDX	1
+#define SG_NETWORK_IFACE_IDX	2
+#define SG_NETWORK_MAX_IDX	3
+EXTENDED_COMP_SETUP(network,SG_NETWORK_MAX_IDX,NULL);
+#ifdef LINUX
+static regex_t network_io_rx;
+#define RX_MATCH_COUNT (8+1)
+#endif
+sg_error
+sg_network_init_comp(unsigned id) {
+        GLOBAL_SET_ID(network,id);
+#ifdef LINUX
+        if( regcomp( &amp;network_io_rx, ..., REG_EXTENDED)!=0) {
+                return sg_set_error(SG_ERROR_PARSE, NULL);
+        }
+#endif
+        return SG_ERROR_NONE;
+}
+void
+sg_network_destroy_comp(void) {
+#ifdef LINUX
+        regfree(&amp;network_io_rx);
+#endif
+}
+EASY_COMP_CLEANUP_FN(network,SG_NETWORK_MAX_IDX)
+</pre>
+<section class="Ss">
+<h2 class="Ss" id='MACROS_PARA_TRABAJAR_CON_EL_GESTOR_DE_COMPONENTES'><a class='permalink' href='#MACROS_PARA_TRABAJAR_CON_EL_GESTOR_DE_COMPONENTES'>MACROS PARA TRABAJAR CON EL GESTOR DE COMPONENTES</a></h2>
+<p class="Pp">Para simplificar el trabajo con las funciones de gestión de
+    componentes, hay algunas macros preprocesador disponibles. Se muestran aquí
+    como si fueran funciones para facilitar la comprensión.</p>
+<p class="Pp">
+  <br/>
+  void <b>DEFAULT_INIT_COMP</b>
+  <br/>
+  (identifier <i>comp</i>, <i>...</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_SETUP</b>
+  <br/>
+  (identifier <i>comp</i>, size_t <i>nvect</i>, <i>...</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EXTENDED_COMP_SETUP</b>
+  <br/>
+  (identifier <i>comp</i>, size_t <i>nvect</i>, <i>...</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>GLOBAL_SET_ID</b>
+  <br/>
+  (identifier <i>comp</i>, unsigned int <i>id</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  struct sg_##comp##_glob *<b>GLOBAL_GET_TLS</b>
+  <br/>
+  (identifier <i>comp</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_INIT_FN</b>
+  <br/>
+  (identifier <i>comp</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_DESTROY_FN</b>
+  <br/>
+  (identifier <i>comp</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_CLEANUP_FN</b>
+  <br/>
+  (identifier <i>comp</i>, size_t <i>nvect</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_ACCESS</b>
+  <br/>
+  (identifier <i>fn</i>, identifier <i>comp</i>, identifier <i>stat</i>, size_t
+    <i>idx</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>MULTI_COMP_ACCESS</b>
+  <br/>
+  (identifier <i>fn</i>, identifier <i>comp</i>, identifier <i>stat</i>, size_t
+    <i>idx</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>EASY_COMP_DIFF</b>
+  <br/>
+  (identifier <i>fn</i>, identifier <i>getfn</i>, identifier <i>comp</i>,
+    identifier <i>stat</i>, size_t <i>diffidx</i>, size_t <i>nowidx</i>);
+  <br/>
+</p>
+<p class="Pp">
+  <br/>
+  void <b>MULTI_COMP_DIFF</b>
+  <br/>
+  (identifier <i>fn</i>, identifier <i>getfn</i>, identifier <i>comp</i>,
+    identifier <i>stat</i>, size_t <i>diffidx</i>, size_t <i>nowidx</i>);
+  <br/>
+</p>
+<p class="Pp"><b>EASY_COMP_SETUP</b>() se encarga de todo lo necesario para
+    instanciar una estructura de información de componente para el componente
+    especificado comp. La estructura de almacenamiento TLS creada contendrá nvect
+    elementos de puntero y eso es todo. Todas las rutinas de inicialización,
+    destrucción y limpieza se crean según sea necesario usando
+    <b>EASY_COMP_INIT_FN</b>(), <b>EASY_COMP_DESTROY_FN</b>() y
+    <b>EASY_COMP_CLEANUP_FN</b>(). Después de la cantidad de punteros de vector
+    requeridos a almacenar, se debe especificar la lista de mutex requeridos,
+    terminada con un puntero NULL.</p>
+<p class="Pp"><b>EXTENDED_COMP_SETUP</b>() se encarga de todo lo necesario para
+    instanciar una estructura de información de componente para el componente
+    especificado comp, pero requiere la definición de las rutinas de
+    inicialización, destrucción y limpieza. La estructura de almacenamiento TLS
+    creada contendrá nvect elementos de puntero y eso es todo. Después de la
+    cantidad de punteros de vector requeridos a almacenar, se debe especificar
+    la lista de mutex requeridos, terminada con un puntero NULL. Todas las
+    rutinas estándar se pueden crear semi-automáticamente usando
+    <b>EASY_COMP_INIT_FN</b>(), <b>EASY_COMP_DESTROY_FN</b>() y
+    <b>EASY_COMP_CLEANUP_FN</b>().</p>
+<p class="Pp"><b>DEFAULT_INIT_COMP</b>() simplemente declara los prototipos
+    para las rutinas de inicialización, destrucción y limpieza, define el buffer
+    de estado de inicialización, la lista de nombres de bloqueo y finalmente
+    rellena la estructura de inicialización del componente. Úselo cuando su
+    almacenamiento TLS contenga más que solo punteros de vector.</p>
+<p class="Pp"><b>GLOBAL_GET_TLS</b>() devuelve el puntero al *almacenamiento
+    local de hilos* del componente.</p>
+<p class="Pp"><b>GLOBAL_SET_ID</b>() almacena el identificador del componente,
+    requerido p.ej. para acceder a su TLS.</p>
+<p class="Pp"><b>EASY_COMP_INIT_FN</b>() define una rutina de inicialización de
+    componente por defecto. Almacena el identificador del componente y retorna
+    con SG_ERROR_NONE.</p>
+<p class="Pp"><b>EASY_COMP_DESTROY_FN</b>() define un destructor de componente
+    por defecto, llamado al final de todo el proceso (o cuando se llama al
+    último <b>sg_shutdown</b>()). El destructor por defecto no hace nada y
+    normalmente una rutina de inicialización individual requiere también un
+    destructor individual.</p>
+<p class="Pp"><b>EASY_COMP_CLEANUP_FN</b>() define una rutina de limpieza TLS
+    por defecto, siempre llamada cuando un hilo finaliza para liberar vectores
+    mantenidos en el *almacenamiento local de hilos*.</p>
+<p class="Pp"><b>EASY_COMP_ACCESS</b>() define los accesores a una estadística
+    específica que contiene un elemento proporcionado por el componente: las
+    funciones <b>fn</b>() y <b>fn##_r</b>(). La siguiente función debe existir:
+  <br/>
+  sg_error <b>fn##_int</b>
+  <br/>
+  (sg_vector *<i>name##_vect</i>);
+  <br/>
+  Accede al vector idx del TLS del componente comp y retorna</p>
+</div>
+</section>
+</article>
+                
+            </article>
+        </main>
+    </body>
+</html>
+<html>
+    <head>
+        <meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <title>sg_comp_destroy.3.en - libstatgrab</title>
+        <link rel='stylesheet' href='/css/style.css'>
+        <link rel='stylesheet' href='/css/man.css'>
+    </head>
+    <body>
+        <main class='container'>
+            <article class='man-page'>
+<section class='Sh'>
+<h1 class='Sh' id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Nm">sg_comp_destroy, EASY_COMP_DIFF, MULTI_COMP_ACCESS, MULTI_COMP_DIFF - component destroy and statistic access</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Pp"><b>#include &lt;statgrab.h&gt;</b></p>
+<p class="Pp">sg_error
+    <b>sg_comp_destroy</b>(sg_component **<i>cp</i>);</p>
+<p class="Pp">sg_error
+    <b>EASY_COMP_DIFF</b>(sg_vector **<i>nowidx</i>, sg_vector **<i>diffidx</i>,
+    sg_error (*<i>getfn</i>)(sg_vector **), sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+<p class="Pp">sg_error
+    <b>MULTI_COMP_ACCESS</b>(sg_component *<i>comp</i>, const char *<i>name</i>,
+    sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+<p class="Pp">sg_error
+    <b>MULTI_COMP_DIFF</b>(sg_vector **<i>nowidx</i>, sg_vector **<i>diffidx</i>,
+    sg_error (*<i>getfn</i>)(sg_vector **), sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <b>sg_comp_destroy</b>() function destroys the component
+    pointed to by <i>cp</i>. All owned statistics, entries, etc. are freed and
+    the component structure itself is freed.</p>
+<p class="Pp">The macros <b>EASY_COMP_DIFF</b>(), <b>MULTI_COMP_ACCESS</b>()
+    and <b>MULTI_COMP_DIFF</b>() are helpers to implement the component
+    specific statistics.</p>
+<p class="Pp"><b>EASY_COMP_DIFF</b>() is used for statistics that contain a
+    single entry. The current value is stored in the vector <i>nowidx</i> and
+    the value from <b>getfn</b>() is returned in the vector specified by
+    <i>diffidx</i>. If there is no current value, simply the result of
+    <b>getfn</b>() is returned.</p>
+<p class="Pp"><b>MULTI_COMP_ACCESS</b>() defines accessors to a specific
+    statistic component that contains more than one element. The following
+    function must exists:</p>
+<p class="Pp">sg_error
+    <b>fn##_int</b>(sg_vector **<i>name##_vect</i>);</p>
+<p class="Pp">It accesses the vector <i>idx</i> from TLS of component <i>comp</i>
+    and returns sg_<i>name</i>_stats. It manages all standard things like
+    memory and error management, return value etc.</p>
+<p class="Pp"><b>EASY_COMP_DIFF</b>() returns the difference between the two
+    statistic collection runs. The variant dealing with statgrab owned
+    statistics return the difference between the content currently in the vector
+    specified by nowidx and the resulting vector of <b>getfn</b>(). The result
+    is stored in the vector diffidx. If there is no current result, simply the
+    result of <b>getfn</b>() is returned.</p>
+<p class="Pp"><b>MULTI_COMP_ACCESS</b>() defines accessors to a specific
+    statistic containing 0..n elements provided by the component: the functions
+    <b>fn</b>() and the <b>fn##_r</b>(). The following function must exists:
+  <br/>
+  sg_error
+    <b>fn##_int</b>
+  <br/>
+  (sg_vector **<i>name##_vect</i>);
+  <br/>
+  It accesses the vector idx from TLS of component comp and returns
+    sg_##name##_stats. It manages all standard things like memory and error
+    anagement, return values, entries update, etc.</p>
+<p class="Pp"><b>MULTI_COMP_DIFF</b>() does the same as <b>EASY_COMP_DIFF</b>()
+    but for vectors with more than one element.</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>SEE ALSO</a></h1>
+<p class="Pp"><a href='/man/libstatgrab.3.en'>libstatgrab(3)</a> <a href='/man/sg_intro.3.en'>sg_intro(3)</a> <a href='/man/sg_set_error.3.en'>sg_set_error(3)</a>
+    <a href='/man/sg_comp_init.3.en'>sg_comp_init(3)</a> <a href='/man/sg_vector_create.3.en'>sg_vector_create(3)</a></p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='WEBSITE'><a class='permalink' href='#WEBSITE'>WEBSITE</a></h1>
+<p class="Pp">&#x27E8;<a href='https://libstatgrab.org/'>https://libstatgrab.org/</a>&#x27E9;</p>
+</section>
+</article>
+<aside id='sidebar'>
+<section class='search'>
+    <form action='/search' class='search direct-search' role='search'>
+    <input type='search' placeholder='Search manual page' name='q' value='' />
+    <input type='submit' name='go' value='Go' />
+</form>
+
+</section>
+<section class='package-info'>
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href='https://www.archlinux.org/packages/extra/x86_64/libstatgrab/'>extra/libstatgrab</a></dd>
+        <dt>Version:</dt>
+        <dd>0.92.1-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href='https://www.i-scream.org/libstatgrab'>https://www.i-scream.org/libstatgrab</a></dd>
+        <dt>Licenses:</dt>
+        <dd>LGPL, GPL</dd>
+        <dt>Manuals:</dt>
+        <dd><a href='/listing/extra/libstatgrab/'>/listing/extra/libstatgrab/</a></dd>
+    </dl>
+</section>
+<details>
+    <summary>Table of contents</summary>
+    <nav class='toc'>
+        <ul>
+        
+            <li><a href='#NAME'>NAME</a></li>
+        
+            <li><a href='#SYNOPSIS'>SYNOPSIS</a></li>
+        
+            <li><a href='#DESCRIPTION'>DESCRIPTION</a></li>
+        
+            <li><a href='#NOTES'>NOTES</a></li>
+        
+            <li><a href='#SEE_ALSO'>SEE ALSO</a></li>
+        
+            <li><a href='#WEBSITE'>WEBSITE</a></li>
+        
+        </ul>
+    </nav>
+</details>
+<nav class='other-formats'>
+    <p>Other formats:
+        
+            <a href='/man/sg_comp_destroy.3.en.txt'>txt</a>, 
+        
+            <a href='/man/sg_comp_destroy.3.en.raw'>raw</a>
+        
+    </p>
+</nav>
+</aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href='https://www.gnu.org/licenses/gpl-3.0.en.html'>GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>
+```
+
+```html
+<html>
+    <head>
+        <meta charset='utf-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1'>
+        <title>sg_comp_destroy.3.en - libstatgrab</title>
+        <link rel='stylesheet' href='/css/style.css'>
+        <link rel='stylesheet' href='/css/man.css'>
+    </head>
+    <body>
+        <main class='container'>
+            <article class='man-page'>
+<section class='Sh'>
+<h1 class='Sh' id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Nm">sg_comp_destroy, EASY_COMP_DIFF, MULTI_COMP_ACCESS, MULTI_COMP_DIFF - destrucción de componentes y acceso a estadísticas</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>#include &lt;statgrab.h&gt;</b></p>
+<p class="Pp">sg_error
+    <b>sg_comp_destroy</b>(sg_component **<i>cp</i>);</p>
+<p class="Pp">sg_error
+    <b>EASY_COMP_DIFF</b>(sg_vector **<i>nowidx</i>, sg_vector **<i>diffidx</i>,
+    sg_error (*<i>getfn</i>)(sg_vector **), sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+<p class="Pp">sg_error
+    <b>MULTI_COMP_ACCESS</b>(sg_component *<i>comp</i>, const char *<i>name</i>,
+    sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+<p class="Pp">sg_error
+    <b>MULTI_COMP_DIFF</b>(sg_vector **<i>nowidx</i>, sg_vector **<i>diffidx</i>,
+    sg_error (*<i>getfn</i>)(sg_vector **), sg_error (*<i>fn##_int</i>)(sg_vector **));</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La función <b>sg_comp_destroy</b>() destruye el componente
+    apuntado por <i>cp</i>. Todas las estadísticas, entradas, etc. de propiedad
+    se liberan y la propia estructura del componente se libera.</p>
+<p class="Pp">Las macros <b>EASY_COMP_DIFF</b>(), <b>MULTI_COMP_ACCESS</b>()
+    y <b>MULTI_COMP_DIFF</b>() son auxiliares para implementar las estadísticas
+    específicas del componente.</p>
+<p class="Pp"><b>EASY_COMP_DIFF</b>() se utiliza para estadísticas que contienen
+    una única entrada. El valor actual se almacena en el vector <i>nowidx</i> y
+    el valor de <b>getfn</b>() se devuelve en el vector especificado por
+    <i>diffidx</i>. Si no hay un valor actual, simplemente se devuelve el
+    resultado de <b>getfn</b>().</p>
+<p class="Pp"><b>MULTI_COMP_ACCESS</b>() define los accesores para un componente
+    de estadísticas específico que contiene más de un elemento. La siguiente
+    función debe existir:</p>
+<p class="Pp">sg_error
+    <b>fn##_int</b>(sg_vector **<i>name##_vect</i>);</p>
+<p class="Pp">Accede al vector <i>idx</i> del TLS del componente <i>comp</i> y
+    devuelve sg_<i>name</i>_stats. Gestiona todas las cosas estándar como la
+    gestión de memoria y errores, el valor de retorno, etc.</p>
+<p class="Pp"><b>EASY_COMP_DIFF</b>() devuelve la diferencia entre las dos
+    ejecuciones de recopilación de estadísticas. La variante que se ocupa de las
+    estadísticas propiedad de statgrab devuelve la diferencia entre el
+    contenido actual en el vector especificado por nowidx y el vector resultante
+    de <b>getfn</b>(). El resultado se almacena en el vector diffidx. Si no hay
+    un resultado actual, simplemente se devuelve el resultado de
+    <b>getfn</b>().</p>
+<p class="Pp"><b>MULTI_COMP_ACCESS</b>() define los accesores para una estadística
+    específica que contiene 0..n elementos proporcionados por el componente: las
+    funciones <b>fn</b>() y <b>fn##_r</b>(). La siguiente función debe
+    existir:</p>
+<p class="Pp">sg_error
+    <b>fn##_int</b>
+  <br/>
+  (sg_vector **<i>name##_vect</i>);
+  <br/>
+  Accede al vector idx del TLS del componente comp y devuelve
+    sg_##name##_stats. Gestiona todas las cosas estándar como la gestión de
+    memoria y errores, valores de retorno, actualización de entradas, etc.</p>
+<p class="Pp"><b>MULTI_COMP_DIFF</b>() hace lo mismo que <b>EASY_COMP_DIFF</b>()
+    pero para vectores con más de un elemento.</p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/libstatgrab.3.en'>libstatgrab(3)</a> <a href='/man/sg_intro.3.en'>sg_intro(3)</a> <a href='/man/sg_set_error.3.en'>sg_set_error(3)</a>
+    <a href='/man/sg_comp_init.3.en'>sg_comp_init(3)</a> <a href='/man/sg_vector_create.3.en'>sg_vector_create(3)</a></p>
+</section>
+<section class='Sh'>
+<h1 class='Sh' id='WEBSITE'><a class='permalink' href='#WEBSITE'>SITIO WEB</a></h1>
+<p class="Pp">&#x27E8;<a href='https://libstatgrab.org/'>https://libstatgrab.org/</a>&#x27E9;</p>
+</section>
+</article>
+<aside id='sidebar'>
+<section class='search'>
+    <form action='/search' class='search direct-search' role='search'>
+    <input type='search' placeholder='Buscar página de manual' name='q' value='' />
+    <input type='submit' name='go' value='Ir' />
+</form>
+
+</section>
+<section class='package-info'>
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href='https://www.archlinux.org/packages/extra/x86_64/libstatgrab/'>extra/libstatgrab</a></dd>
+        <dt>Versión:</dt>
+        <dd>0.92.1-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href='https://www.i-scream.org/libstatgrab'>https://www.i-scream.org/libstatgrab</a></dd>
+        <dt>Licencias:</dt>
+        <dd>LGPL, GPL</dd>
+        <dt>Manuales:</dt>
+        <dd><a href='/listing/extra/libstatgrab/'>/listing/extra/libstatgrab/</a></dd>
+    </dl>
+</section>
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class='toc'>
+        <ul>
+        
+            <li><a href='#NAME'>NOMBRE</a></li>
+        
+            <li><a href='#SYNOPSIS'>SINOPSIS</a></li>
+        
+            <li><a href='#DESCRIPTION'>DESCRIPCIÓN</a></li>
+        
+            <li><a href='#NOTES'>NOTAS</a></li>
+        
+            <li><a href='#SEE_ALSO'>VER TAMBIÉN</a></li>
+        
+            <li><a href='#WEBSITE'>SITIO WEB</a></li>
+        
+        </ul>
+    </nav>
+</details>
+<nav class='other-formats'>
+    <p>Otros formatos:
+        
+            <a href='/man/sg_comp_destroy.3.en.txt'>txt</a>, 
+        
+            <a href='/man/sg_comp_destroy.3.en.raw'>raw</a>
+        
+    </p>
+</nav>
+</aside>
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href='https://www.gnu.org/licenses/gpl-3.0.en.html'>GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

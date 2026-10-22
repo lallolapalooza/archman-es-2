@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>libucontext(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">libucontext(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libucontext/">libucontext</a></p>
+<p class="lic">Licencias: ISC</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">libucontext(3)</td>
+    <td class="head-vol">Manual de Funciones de Biblioteca</td>
+    <td class="head-rtitle">libucontext(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">libucontext - una biblioteca para intercambiar contextos en el espacio de usuario</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><b>#include &lt;libucontext/libucontext.h&gt;</b></p>
+<div class="Bd-indent">
+<pre>typedef struct {
+  /* depende de la arquitectura objetivo */
+} libucontext_mcontext_t;
+typedef struct {
+  void *ss_sp;
+  int ss_flags;
+  size_t ss_size;
+} libucontext_stack_t;
+typedef struct libucontext_ucontext {
+  unsigned int uc_flags;
+  struct libucontext_ucontext *uc_link;
+  libucontext_stack_t uc_stack;
+  libucontext_mcontext_t uc_mcontext;
+} libucontext_ucontext_t;</pre>
+</div>
+<p class="Pp"><b>int libucontext_getcontext(libucontext_ucontext_t</b>
+    *<i>ucp</i><b>);</b></p>
+<p class="Pp"><b>int libucontext_setcontext(const libucontext_ucontext_t</b>
+    *<i>ucp</i><b>);</b></p>
+<p class="Pp"><b>void libucontext_makecontext(libucontext_ucontext_t</b>
+    *<i>ucp</i><b>, void</b> <i>(*func)()</i><b>, int</b> <i>argc</i><b>,</b>
+    <i>...</i><b>);</b></p>
+<p class="Pp"><b>int libucontext_swapcontext(libucontext_ucontext_t</b>
+    *<i>oucp</i><b>, const libucontext_ucontext_t</b> *<i>ucp</i><b>);</b></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La biblioteca <b>libucontext</b> proporciona una implementación de las funciones ucontext de SysV. Estas se utilizan tradicionalmente para implementar el intercambio de contextos en el espacio de usuario. Esto se logra utilizando las funciones
+    <b>libucontext_getcontext</b>, <b>libucontext_setcontext</b>,
+    <b>libucontext_makecontext</b> y <b>libucontext_swapcontext</b> según corresponda.</p>
+<p class="Pp">La función <b>libucontext_getcontext</b> inicializa una estructura apuntada por <i>ucp</i> con el contexto de usuario actual.</p>
+<p class="Pp">La función <b>libucontext_setcontext</b> establece el contexto de usuario actual a la estructura apuntada por <i>ucp</i>. Descarta el contexto de usuario actual.</p>
+<p class="Pp">La función <b>libucontext_swapcontext</b> guarda el contexto de usuario actual en una estructura apuntada por <i>oucp</i> y luego establece el contexto de usuario actual al nuevo contexto en una estructura apuntada por <i>ucp</i>.</p>
+<p class="Pp">La función <b>libucontext_makecontext</b> modifica un contexto de usuario en una estructura apuntada por <i>ucp</i> para ejecutar una función apuntada por <i>func</i> y configura una lista de argumentos de <i>argc</i> valores.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ADVERTENCIAS'><a class='permalink' href='#ADVERTENCIAS'>ADVERTENCIAS</a></h1>
+<p class="Pp">En SysV, las funciones ucontext guardan y restauran las máscaras de señales. Sin embargo, la biblioteca <b>libucontext</b> no lo hace. En la práctica, esto no suele importar, ya que los usuarios de estas funciones rara vez cambian la máscara de señales entre contextos.</p>
+<p class="Pp">Otras implementaciones pueden o no guardar y restaurar registros de procesador adicionales que esta implementación no guarda y restaura. La biblioteca <b>libucontext</b> solo guarda y restaura los registros de propósito general. En la práctica, esto ha demostrado ser suficiente.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO'><a class='permalink' href='#EJEMPLO'>EJEMPLO</a></h1>
+<p class="Pp">Un ejemplo práctico que muestra la multitarea cooperativa. Este programa está destinado solo a fines ilustrativos y se ha escrito de manera que favorece la simplicidad sobre el rendimiento y la robustez:</p>
+<div class="Bd-indent">
+<pre>#include &lt;assert.h&gt;
+#include &lt;stddef.h&gt;
+#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;string.h&gt;
+#include &lt;time.h&gt;
+#include &lt;libucontext/libucontext.h&gt;
+libucontext_ucontext_t mainctx = {};
+libucontext_ucontext_t *curthr = &amp;mainctx;
+libucontext_ucontext_t *threads = NULL;
+size_t thrcount = 0;
+void
+yieldto(libucontext_ucontext_t *target)
+{
+	libucontext_ucontext_t *oldthr = curthr;
+	curthr = target;
+	libucontext_swapcontext(oldthr, curthr);
+}
+void
+yield(void)
+{
+	libucontext_ucontext_t *newthr;
+	/* establecemos uc_flags a un valor distinto de cero para indicar la finalización del hilo. */
+	do
+		newthr = &amp;threads[random() % thrcount];
+	while (newthr == curthr || newthr-&gt;uc_flags);
+	srandom(time(NULL));
+	yieldto(newthr);
+}
+void
+worker(size_t multiple)
+{
+	size_t accum = 1;
+	for (size_t i = 0; i &lt; 10; i++)
+	{
+		accum += (multiple * i);
+		printf(&quot;[%p] acumulado %zun&quot;, curthr, accum);
+		yield();
+	}
+	/* marcar el hilo como completado, para no volver aquí */
+	curthr-&gt;uc_flags = 1;
+}
+void
+create(size_t multiple)
+{
+	libucontext_ucontext_t *cursor;
+	thrcount += 1;
+	threads = realloc(threads, sizeof(*threads) * thrcount);
+	cursor = &amp;threads[thrcount - 1];
+	memset(cursor, '0', sizeof *cursor);
+	/* inicializar los valores del nuevo hilo a nuestro contexto actual */
+	libucontext_getcontext(cursor);
+	/* configurar uc_link */
+	cursor-&gt;uc_link = thrcount &gt; 1 ? &amp;threads[thrcount - 2] : &amp;mainctx;
+	/* configurar una pila */
+	cursor-&gt;uc_stack.ss_size = 8192;
+	cursor-&gt;uc_stack.ss_sp = calloc(1, cursor-&gt;uc_stack.ss_size);
+	/* configurar la llamada a la función */
+	libucontext_makecontext(cursor, worker, 1, multiple);
+}
+int
+main(int argc, const char *argv[])
+{
+	srandom(time(NULL));
+	libucontext_getcontext(&amp;mainctx);
+	for (size_t i = 1; i &lt; 4; i++)
+		create(i);
+	/* iniciar los hilos intercambiando al último */
+	yieldto(&amp;threads[thrcount - 1]);
+	return EXIT_SUCCESS;
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTORES'><a class='permalink' href='#AUTORES'>AUTORES</a></h1>
+<p class="Pp">Ariadne Conill &lt;ariadne@dereferenced.org&gt;</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-11-18</td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libucontext/">extra/libucontext</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.3.3-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/kaniini/libucontext">https://github.com/kaniini/libucontext</a></dd>
+        <dt>Licencias:</dt>
+        <dd>ISC</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libucontext/">/listing/extra/libucontext/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCIÓN">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ADVERTENCIAS">ADVERTENCIAS</a></li>
+        
+            <li><a href="#EJEMPLO">EJEMPLO</a></li>
+        
+            <li><a href="#AUTORES">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/libucontext.3.es.txt">txt</a>, 
+        
+            <a href="/man/libucontext.3.es.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

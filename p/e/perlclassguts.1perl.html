@@ -1,0 +1,837 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlclassguts(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlclassguts.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLCLASSGUTS(1perl)</td>
+    <td class="head-vol">Guía del programador de Perl</td>
+    <td class="head-rtitle">PERLCLASSGUTS(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">perlclassguts - Detalles internos de cómo funciona `feature 'class'` y la sintaxis de clases</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este documento proporciona información detallada sobre la forma en
+    que el intérprete de Perl implementa la sintaxis <span class="Li">&quot;feature
+    'class'&quot;</span> y su comportamiento general. No está destinado a ser una
+    guía para el usuario final sobre cómo usar la característica. Para eso,
+    consulte perlclass.</p>
+<p class="Pp">Se asume que el lector está familiarizado en general con los
+    detalles internos del intérprete de Perl. Para una visión más general de
+    estos detalles, consulte también perlguts.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DATA_STORAGE'><a class='permalink' href='#DATA_STORAGE'>ALMACENAMIENTO DE DATOS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Classes'><a class='permalink' href='#Classes'>Clases</a></h2>
+<p class="Pp">Una clase es fundamentalmente un paquete y existe en la tabla de
+    símbolos como un HV con una estructura auxiliar de la misma manera que un
+    paquete que no es de clase. Se distingue de un paquete que no es de clase
+    por el hecho de que la macro <span class="Li">HvSTASH_IS_CLASS()</span>
+    devolverá verdadero en él.</p>
+<p class="Pp">Información adicional relacionada con que sea una clase se almacena
+    en la estructura <span class="Li">&quot;struct xpvhv_aux&quot;</span> adjunta
+    al stash, en los siguientes campos:</p>
+<pre>HV          *xhv_class_superclass;
+CV          *xhv_class_initfields_cv;
+AV          *xhv_class_adjust_blocks;
+PADNAMELIST *xhv_class_fields;
+PADOFFSET    xhv_class_next_fieldix;
+HV          *xhv_class_param_map;</pre>
+<ul class="Bl-bullet">
+  <li><span class="Li">&quot;xhv_class_superclass&quot;</span> será
+      <span class="Li">&quot;NULL&quot;</span> para una clase sin superclase.
+      Apuntará directamente al stash de la clase padre si se ha establecido una
+      con el atributo de clase <span class="Li">:isa()</span>.</li>
+  <li><span class="Li">&quot;xhv_class_initfields_cv&quot;</span> contendrá un
+      <span class="Li">&quot;CV *&quot;</span> apuntando a una función que se
+      invocará como parte del constructor de esta clase o de cualquier subclase
+      de la misma. Este CV es responsable de inicializar todos los campos
+      definidos por esta clase para una nueva instancia. Este CV será una
+      función real anónima; es decir, aunque no tenga nombre ni GV, no es
+      un protosub y puede ser invocado directamente.</li>
+  <li><span class="Li">&quot;xhv_class_adjust_blocks&quot;</span> puede apuntar a
+      un AV que contiene punteros CV a cada uno de los bloques
+      <span class="Li">&quot;ADJUST&quot;</span> definidos en la clase. Si la
+      clase tiene una superclase, este array contendrá además punteros duplicados
+      de los CV de su clase padre. El AV se crea de forma diferida la primera vez
+      que se agrega un elemento; es válido que no exista, y este puntero será
+      <span class="Li">&quot;NULL&quot;</span> en ese caso.
+    <p class="Pp">Los CV se almacenan directamente, no a través de RVs. Cada CV
+        será una función real anónima.</p>
+  </li>
+  <li><span class="Li">&quot;xhv_class_fields&quot;</span> apuntará a un
+      <span class="Li">&quot;PADNAMELIST&quot;</span> que contiene
+      <span class="Li">&quot;PADNAME&quot;</span>s, cada uno siendo un campo definido
+      de la clase. Se almacenan en orden de declaración. Tenga en cuenta, sin
+      embargo, que el índice en este array no será necesariamente igual al
+      <span class="Li">&quot;fieldix&quot;</span> de cada campo, porque en el caso
+      de una subclase, el array comenzará en cero, pero el índice del primer campo
+      en él será distinto de cero si su clase padre contiene algún campo en
+      absoluto.
+    <p class="Pp">Para obtener más información sobre cómo se representan los
+        campos individuales, consulte "Campos".</p>
+  </li>
+  <li><span class="Li">&quot;xhv_class_next_fieldix&quot;</span> proporciona el
+      índice de campo que se asignará al próximo campo que se agregue a la
+      clase. Solo es útil en tiempo de compilación.</li>
+  <li><span class="Li">&quot;xhv_class_param_map&quot;</span> puede apuntar a un
+      HV que mapea nombres de atributos de campo <span class="Li">&quot;:param&quot;</span>
+      al índice de campo del campo con ese nombre. Este mapeo se copia de las
+      clases padre; cada clase contendrá la suma total de todos sus padres
+      además de los suyos propios.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Fields'><a class='permalink' href='#Fields'>Campos</a></h2>
+<p class="Pp">Un campo sigue siendo fundamentalmente una variable léxica declarada
+    en un ámbito y existe en la <span class="Li">&quot;PADNAMELIST&quot;</span> de
+    su CV correspondiente. Los métodos y otros CV similares a métodos pueden
+    capturarlos exactamente como lo hacen con léxicos regulares. Un campo se
+    distingue de otros tipos de entradas de pad porque la macro
+    <span class="Li">PadnameIsFIELD()</span> devolverá verdadero en él.</p>
+<p class="Pp">La información adicional relacionada con que sea un campo se
+    almacena en una estructura adicional accesible a través de la macro
+    <span class="Li">PadnameFIELDINFO()</span> en el padname. Esta estructura
+    tiene los siguientes campos:</p>
+<pre>PADOFFSET  fieldix;
+HV        *fieldstash;
+OP        *defop;
+SV        *paramname;
+bool       def_if_undef;
+bool       def_if_false;</pre>
+<ul class="Bl-bullet">
+  <li><span class="Li">&quot;fieldix&quot;</span> almacena el "índice de campo"
+      del campo; es decir, el índice en el array de campos de instancia donde se
+      almacenará el valor de este campo. Tenga en cuenta que el primer índice en
+      el array no está especialmente reservado. El primer campo en una clase
+      comenzará desde el índice de campo 0.</li>
+  <li><span class="Li">&quot;fieldstash&quot;</span> almacena un puntero al stash
+      de la clase que definió este campo. Esto es necesario en caso de que haya
+      varias clases definidas dentro del mismo ámbito; se utiliza para
+      desambiguar los campos de cada una.
+        <pre>{
+    class C1; field $x;
+    class C2; field $x;
+}
+</pre>
+  </li>
+  <li><span class="Li">&quot;defop&quot;</span> puede almacenar un puntero a un
+      árbol de operaciones de expresión de valor predeterminado para este
+      campo. Las expresiones de valor predeterminado son opcionales; este campo
+      puede ser <span class="Li">&quot;NULL&quot;</span>.</li>
+  <li><span class="Li">&quot;paramname&quot;</span> puede apuntar a un SV de cadena
+      regular que contiene el nombre del atributo <span class="Li">&quot;:param&quot;</span>
+      dado al campo. Si no hay ninguno, será <span class="Li">&quot;NULL&quot;</span>.</li>
+  <li>Uno de <span class="Li">&quot;def_if_undef&quot;</span> y
+      <span class="Li">&quot;def_if_false&quot;</span> será verdadero si la expresión
+      de valor predeterminado se estableció utilizando los operadores
+      <span class="Li">&quot;//=&quot;</span> o <span class="Li">&quot;||=&quot;</span>,
+      respectivamente.</li>
+</ul>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Methods'><a class='permalink' href='#Methods'>Métodos</a></h2>
+<p class="Pp">Un método sigue siendo fundamentalmente un CV y tiene la misma
+    representación básica que uno. Tiene un árbol de operaciones y un pad, y se
+    almacena a través de un GV en el stash de su paquete contenedor. Se distingue
+    de un CV que no es un método porque la macro <span class="Li">CvIsMETHOD()</span>
+    devuelve verdadero en él.</p>
+<p class="Pp">(Nota: Esta macro no debe confundirse con la que anteriormente se
+    llamaba <span class="Li">CvMETHOD()</span>. Esa no se relaciona con el
+    sistema de clases y se renombró a <span class="Li">CvNOWARN_AMBIGUOUS()</span>
+    para evitar esta confusión).</p>
+<p class="Pp">Actualmente no hay información adicional que necesite almacenarse
+    sobre un CV de método, por lo que la estructura no agrega nuevos campos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Instances'><a class='permalink' href='#Instances'>Instancias</a></h2>
+<p class="Pp">Las instancias de objetos están representadas por un tipo de SV
+    completamente nuevo, cuyo tipo base es <span class="Li">&quot;SVt_PVOBJ&quot;</span>.
+    Todavía debe ser bendecido en el stash de su clase y envuelto en un RV de la
+    manera habitual para los objetos clásicos.</p>
+<p class="Pp">Dado que son su propio tipo de contenedor único, distinto de los
+    hashes o arrays, la función principal <span class="Li">&quot;builtin::reftype&quot;</span>
+    devuelve un valor nuevo cuando se le pregunta sobre ellos. Ese valor es
+    <span class="Li">&quot;OBJECT&quot;</span>.</p>
+<p class="Pp">Internamente, un objeto de este tipo es un array de punteros SV cuyo
+    tamaño se fija en el momento de la creación (porque el número de campos en
+    una clase se conoce después de la compilación). Una instancia de objeto
+    almacena el índice de campo máximo dentro de ella (para la verificación básica
+    de errores en el acceso) y un array de tamaño fijo de punteros SV que
+    almacenan los valores de los campos individuales.</p>
+<p class="Pp">Los campos de tipo array y hash almacenan directamente punteros AV o
+    HV en el array; no se almacenan a través de un RV intermedio.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='API'><a class='permalink' href='#API'>API</a></h1>
+<p class="Pp">Las estructuras de datos descritas anteriormente son compatibles con las
+    siguientes funciones de la API.</p>
+<section class="Ss">
+<h2 class="Ss" id='Class_Manipulation'><a class='permalink' href='#Class_Manipulation'>Manipulación de Clases</a></h2>
+<p class="Pp"><i>class_setup_stash</i></p>
+<pre>void class_setup_stash(HV *stash);</pre>
+<p class="Pp">Llamada por el analizador al encontrar la palabra clave
+    <span class="Li">&quot;class&quot;</span>. Mejora el stash para que sea una
+    clase y lo prepara para recibir elementos específicos de la clase como
+    métodos y campos.</p>
+<p class="Pp"><i>class_seal_stash</i></p>
+<pre>vo</pre>
+</div>
+</section>
+</article>
+                
+            </article>
+            <aside id="content-right">
+                
+            </aside>
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+id class_seal_stash(HV *stash);
+```
+<p class="Pp">Llamada por el analizador al final de un bloque
+<span class="Li">&quot;class&quot;</span>, o para clases unitarias, su ámbito contenedor. Esta función realiza diversas actividades de finalización que son necesarias antes de que se puedan construir instancias de la clase, pero que no se pudieron realizar hasta que se conocieron todas las información sobre los miembros de la clase.</p>
+<p class="Pp">Cualquier adición o modificación de la clase bajo compilación debe realizarse entre estas dos llamadas a función. Las clases no pueden modificarse una vez que han sido selladas.</p>
+<p class="Pp"><i>class_add_field</i></p>
+```
+void class_add_field(HV *stash, PADNAME *pn);
+```
+<p class="Pp">Llamada por <i>pad.c</i> como parte de la definición de un nuevo nombre de campo en el pad actual. Tenga en cuenta que esta función *no* crea el nombre del pad; eso debe haberlo hecho ya <i>pad.c</i>. Esta función de la API simplemente informa a la clase que se ha creado el nuevo nombre del campo y que ahora está disponible para ella.</p>
+<p class="Pp"><i>class_add_ADJUST</i></p>
+```
+void class_add_ADJUST(HV *stash, CV *cv);
+```
+<p class="Pp">Llamada por el analizador una vez que ha analizado y construido un CV para un nuevo bloque <span class="Li">&quot;ADJUST&quot;</span>. Esto se agrega a la lista almacenada por la clase.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Field_Manipulation'><a class='permalink' href='#Field_Manipulation'>Manipulación de Campos</a></h2>
+<p class="Pp"><i>class_prepare_initfield_parse</i></p>
+```
+void class_prepare_initfield_parse();
+```
+<p class="Pp">Llamada por el analizador justo antes de analizar una expresión de inicialización para una variable de campo. Esto hace uso de un compcv suspendido para combinar todas las expresiones de inicialización de campos en el mismo CV.</p>
+<p class="Pp"><i>class_set_field_defop</i></p>
+```
+void class_set_field_defop(PADNAME *pn, OPCODE defmode, OP *defop);
+```
+<p class="Pp">Llamada por el analizador después de haber analizado una expresión de inicialización para el campo. Establece la expresión de predeterminación y el modo de aplicación. <span class="Li">&quot;defmode&quot;</span> debe ser cero, o uno de <span class="Li">&quot;OP_ORASSIGN&quot;</span> o <span class="Li">&quot;OP_DORASSIGN&quot;</span> dependiendo del modo de predeterminación.</p>
+<p class="Pp"><i>padadd_FIELD</i></p>
+```
+#define padadd_FIELD
+```
+<p class="Pp">Esta constante de bandera le dice a la familia de funciones
+<span class="Li">&quot;pad_add_name_*&quot;</span> que el nuevo nombre debe agregarse como un campo. No es necesario llamar
+<span class="Li">class_add_field()</span>; esto se hará automáticamente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Method_Manipulation'><a class='permalink' href='#Method_Manipulation'>Manipulación de Métodos</a></h2>
+<p class="Pp"><i>class_prepare_method_parse</i></p>
+```
+void class_prepare_method_parse(CV *cv);
+```
+<p class="Pp">Llamada por el analizador después de
+<span class="Li">start_subparse()</span> pero inmediatamente antes de hacer cualquier otra cosa. Esto prepara el
+<span class="Li">&quot;PL_compcv&quot;</span> para analizar un método; organizando que la prueba
+<span class="Li">&quot;CvIsMETHOD&quot;</span> sea verdadera, agregando el léxico
+<span class="Li">$self</span> y cualquier otra actividad que pueda ser requerida.</p>
+<p class="Pp"><i>class_wrap_method_body</i></p>
+```
+OP *class_wrap_method_body(OP *o);
+```
+<p class="Pp">Llamada por el analizador al final de analizar el cuerpo de un método en un optree, pero justo antes de envolverlo en el CV eventual. Esta función inserta ops adicionales en el optree para que el método funcione correctamente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Object_Instances'><a class='permalink' href='#Object_Instances'>Instancias de Objetos</a></h2>
+<p class="Pp"><i>SVt_PVOBJ</i></p>
+```
+#define SVt_PVOBJ
+```
+<p class="Pp">Una constante de tipo SV utilizada para la comparación con la macro
+<span class="Li">SvTYPE()</span>.</p>
+<p class="Pp"><i>ObjectMAXFIELD</i></p>
+```
+SSize_t ObjectMAXFIELD(sv);
+```
+<p class="Pp">Una macro similar a una función que obtiene el índice máximo de campo válido que se puede acceder desde la matriz
+<span class="Li">&quot;ObjectFIELDS&quot;</span>.</p>
+<p class="Pp"><i>ObjectFIELDS</i></p>
+```
+SV **ObjectFIELDS(sv);
+```
+<p class="Pp">Una macro similar a una función que obtiene la matriz de campos directamente de una instancia de objeto. Los campos se pueden acceder por su índice de campo, desde 0 hasta el índice máximo válido dado por
+<span class="Li">&quot;ObjectMAXFIELD&quot;</span>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPCODES'><a class='permalink' href='#OPCODES'>OPCODES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='OP_METHSTART'><a class='permalink' href='#OP_METHSTART'>OP_METHSTART</a></h2>
+```
+newUNOP_AUX(OP_METHSTART, ...);
+```
+<p class="Pp">Un <span class="Li">&quot;OP_METHSTART&quot;</span> es un
+<span class="Li">&quot;UNOP_AUX&quot;</span> que debe estar presente al inicio de un CV de método para que funcione correctamente. Esto es insertado por
+<span class="Li">class_wrap_method_body()</span>, e incluso aparece antes de cualquier fragmento de optree asociado con la verificación o extracción de argumentos de la firma.</p>
+<p class="Pp">Este op es responsable de desplazar el valor de
+<span class="Li">$self</span> de la lista de argumentos y enlazar cualquier variable de campo a la que el método requiera acceso en el pad. El vector AUX contendrá detalles de los emparejamientos de índice de campo/pad requeridos.</p>
+<p class="Pp">Este op también realiza comprobaciones de integridad en el valor invocante. Comprueba que sea definitivamente una referencia de objeto de un tipo de clase compatible. Si no lo es, se lanza una excepción.</p>
+<p class="Pp">Si el campo <span class="Li">&quot;op_private&quot;</span> incluye la bandera
+<span class="Li">&quot;OPpINITFIELDS&quot;</span>, esto indica que el op comienza el CV especial
+<span class="Li">&quot;xhv_class_initfields_cv&quot;</span>. En este caso, también debe tomar el segundo valor de la lista de argumentos, que debe ser un puntero HV simple ( *directamente*, no a través de RV), y enlazarlo al segundo slot del pad, donde el optree generado esperará encontrarlo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='OP_INITFIELD'><a class='permalink' href='#OP_INITFIELD'>OP_INITFIELD</a></h2>
+<p class="Pp">Un <span class="Li">&quot;OP_INITFIELD&quot;</span> solo se invoca como parte del CV
+<span class="Li">&quot;xhv_class_initfields_cv&quot;</span> durante la fase de construcción de una instancia. Este es el momento en que los SV individuales que componen los campos mutables de la instancia (incluidos AVs y HVs) se asignan realmente al array
+<span class="Li">&quot;ObjectFIELDS&quot;</span>. Las banderas privadas
+<span class="Li">&quot;OPpINITFIELD_AV&quot;</span> y
+<span class="Li">&quot;OPpINITFIELD_HV&quot;</span> indican si está creando un AV o un HV; si no se establece ninguna, se crea un SV.</p>
+<p class="Pp">Si el op tiene la bandera
+<span class="Li">&quot;OPf_STACKED&quot;</span> espera encontrar un valor de inicialización en la pila. Para SVs, este es el SV superior en la pila de datos. Para AVs y HVs, espera una lista marcada.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COMPILE-TIME_BEHAVIOUR'><a class='permalink' href='#COMPILE-TIME_BEHAVIOUR'>COMPORTAMIENTO EN TIEMPO DE COMPILACIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='&amp;quot;ADJUST&amp;quot;_Phasers'><a class='permalink' href='#&amp;quot;ADJUST&amp;quot;_Phasers'>Fasores &quot;ADJUST&quot;</a></h2>
+<p class="Pp">Durante el tiempo de compilación, el análisis de un fasor
+<span class="Li">&quot;ADJUST&quot;</span> se maneja de una manera fundamentalmente diferente a los fasores existentes de perl (<span class="Li">&quot;BEGIN&quot;</span>, etc...)</p>
+<p class="Pp">En lugar de tomar la ruta habitual, el tokenizador reconoce que la palabra clave
+<span class="Li">&quot;ADJUST&quot;</span> introduce un bloque fasor. El analizador luego analiza el cuerpo de este bloque de manera similar a como analizaría el cuerpo de un método (anónimo), creando un CV que no tiene un nombre GV. Luego se inserta directamente en la información de la clase llamando a
+<span class="Li">&quot;class_add_ADJUST&quot;</span>, omitiendo por completo la tabla de símbolos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Attributes'><a class='permalink' href='#Attributes'>Atributos</a></h2>
+<p class="Pp">Durante la compilación, los atributos tanto de clases como de campos se manejan de manera diferente a los atributos existentes de perl en subrutinas y variables léxicas.</p>
+<p class="Pp">El analizador todavía forma un optree
+<span class="Li">&quot;OP_LIST&quot;</span> de nodos
+<span class="Li">&quot;OP_CONST&quot;</span>, pero estos se pasan a las funciones
+<span class="Li">&quot;class_apply_attributes&quot;</span> o
+<span class="Li">&quot;class_apply_field_attributes&quot;</span>. En lugar de usar una búsqueda de clase para un método en la clase que se está analizando, se utiliza una lista interna fija de atributos conocidos para encontrar funciones para aplicar el atributo a la clase o al campo. En el futuro, esto puede admitir atributos de extensión proporcionados por el usuario, aunque en la actualidad solo reconoce los definidos por el propio núcleo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Field_Initializing_Expressions'><a class='permalink' href='#Field_Initializing_Expressions'>Expresiones de Inicialización de Campos</a></h2>
+<p class="Pp">Durante la compilación, el analizador utiliza un compcv suspendido al analizar la expresión de predeterminación para un campo. Todas las expresiones para todos los campos de la clase comparten el mismo compcv suspendido, que luego se compila en el mismo CV interno llamado por el constructor para inicializar todos los campos proporcionados por esa clase.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RUNTIME_BEHAVIOUR'><a class='permalink' href='#RUNTIME_BEHAVIOUR'>COMPORTAMIENTO EN TIEMPO DE EJECUCIÓN</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Constructor'><a class='permalink' href='#Constructor'>Constructor</a></h2>
+<p class="Pp">El constructor generado para una clase es en sí mismo un XSUB que realiza tres tareas en orden: crea el SV de instancia en sí, invoca los inicializadores de campo, luego invoca los CVs de bloque ADJUST. El constructor para cualquier clase siempre tiene la misma forma básica, independientemente de si la clase tiene una superclase o no.</p>
+<p class="Pp">Los inicializadores de campo se recopilan en un CV generado basado en optree llamado CV inicializador de campo. Este es el CV que contiene todos los fragmentos de optree para las expresiones de inicialización de campo. Cuando se invoca, el CV inicializador de campo puede realizar una llamada encadenada al inicializador de la superclase si existe, antes de invocar todos los ops de inicialización de campo individuales. El CV inicializador de campo se invoca con dos elementos en la pila; siendo el SV de instancia y un HV directo que contiene los parámetros del constructor. Tenga en cuenta: este HV se pasa *directamente*, no a través de una referencia RV. Esto está permitido porque tanto el llamador como el llamado son código generado directamente y no subrutinas puras de perl arbitrarias.</p>
+<p class="Pp">Los CVs de bloque ADJUST se recopilan en una única lista plana, fusionando también todos los definidos por la superclase. Se invocan todos en orden, después del CV inicializador de campo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='$self_Access_During_Methods'><a class='permalink' href='#$self_Access_During_Methods'>Acceso a $self Durante los Métodos</a></h2>
+<p class="Pp">Cuando se llama a
+<span class="Li">class_prepare_method_parse()</span>, se organiza para que el pad del cuerpo del nuevo CV comience con un léxico llamado
+<span class="Li">$self</span>. Debido a que el pad debe ser recién creado en este punto, tendrá el índice de pad de 1. La función verifica esto y aborta si no es así.</p>
+<p class="Pp">Debido a este hecho, el código</p>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>perlclassguts(1perl) — Arch Linux</title>
+        <link rel="stylesheet" href="/style.css">
+        <link rel="stylesheet" href="/highlight.css">
+        <link rel="stylesheet" href="/man.css">
+        <link rel="canonical" href="https://man.archlinux.org/man/perlclassguts.1perl.en">
+    </head>
+    <body>
+        
+        <main class="container">
+            <article>
+                <section class="Sh">
+    <h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+    <p class="Pp">perlclassguts - internals of class definitions</p>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+    <p class="Pp">This document describes the internal data structures and
+        mechanisms used to implement Perl classes and object-oriented programming.</p>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="DATA_STORAGE"><a class="permalink" href="#DATA_STORAGE">DATA
+        STORAGE</a></h1>
+    <p class="Pp">Class data is stored in a structure that is a hash-like
+        container (an <code class="Cm">HV</code>). This structure is known as
+        the Class Table.</p>
+    <p class="Pp">For each class, there is a global <code class="Cm">SV*</code>
+        which points to the Class Table <code class="Cm">HV</code>. These global
+        <code class="Cm">SV</code>s are stored in the interpreter's symbol
+        table.</p>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="API"><a class="permalink" href="#API">API</a></h1>
+    <p class="Pp">Internally, Perl uses a set of API calls to manage class
+        definitions and operations. These include functions for creating,
+        accessing, and modifying class data.</p>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="OPCODES"><a class="permalink" href="#OPCODES">OPCODES</a></h1>
+    <p class="Pp">Various opcodes are used to implement class-related operations.
+        These opcodes are executed by the Perl interpreter's virtual machine.</p>
+    <ul class="Bl-item">
+        <li><code class="Li">OP_XSUBANY</code>: Used for calling Perl
+            subroutines.</li>
+        <li><code class="Li">OP_INVOKE</code>: Handles method invocation.</li>
+        <li><code class="Li">OP_GV</code>: Global Variable, used to access symbol
+            table entries.</li>
+        <li><code class="Li">OP_CONST</code>: Represents a constant value.</li>
+        <li><code class="Li">OP_SETCVGV</code>: Sets a subroutine reference in a
+            global variable.</li>
+        <li><code class="Li">OP_CALL</code>: Generic call to a subroutine.</li>
+        <li><code class="Li">OP_RETURN</code>: Returns from a subroutine.</li>
+        <li><code class="Li">OP_LEAVE</code>: Exits a block.</li>
+        <li><code class="Li">OP_PADSV</code>: Stores a value in a pad slot.</li>
+        <li><code class="Li">OP_PADLIST</code>: Operates on a list of pad slots.</li>
+        <li><code class="Li">OP_RV2GV</code>: Converts a reference to a
+            global variable.</li>
+        <li><code class="Li">OP_GV2SV</code>: Converts a global variable to an
+            SV.</li>
+        <li><code class="Li">OP_SVREF</code>: Creates a reference to an SV.</li>
+        <li><code class="Li">OP_ENTER</code>: Enters a new scope.</li>
+        <li><code class="Li">OP_INITENV</code>: Initializes the environment.</li>
+        <li><code class="Li">OP_INITFRAME</code>: Initializes the frame.</li>
+        <li><code class="Li">OP_INITUNDEF</code>: Initializes an undefined value.</li>
+        <li><code class="Li">OP_INITHASH</code>: Initializes a hash.</li>
+        <li><code class="Li">OP_INITLIST</code>: Initializes a list.</li>
+        <li><code class="Li">OP_INITWHILE</code>: Initializes a while loop.</li>
+        <li><code class="Li">OP_INITLOOP</code>: Initializes a loop.</li>
+        <li><code class="Li">OP_INITBLOCK</code>: Initializes a block.</li>
+        <li><code class="Li">OP_INITDIE</code>: Initializes a die handler.</li>
+        <li><code class="Li">OP_INITWARN</code>: Initializes a warn handler.</li>
+        <li><code class="Li">OP_INITEXPR</code>: Initializes an expression.</li>
+        <li><code class="Li">OP_INITUNSHIFT</code>: Initializes an unshift.</li>
+        <li><code class="Li">OP_INITSHIFT</code>: Initializes a shift.</li>
+        <li><code class="Li">OP_INITPOP</code>: Initializes a pop.</li>
+        <li><code class="Li">OP_INITPUSH</code>: Initializes a push.</li>
+        <li><code class="Li">OP_INITGLOB</code>: Initializes a glob.</li>
+        <li><code class="Li">OP_INITCV</code>: Initializes a subroutine.</li>
+        <li><code class="Li">OP_INITREF</code>: Initializes a reference.</li>
+        <li><code class="Li">OP_INITREFS</code>: Initializes multiple references.</li>
+        <li><code class="Li">OP_INITREFS_LL</code>: Initializes multiple references
+            with list context.</li>
+        <li><code class="Li">OP_INITREFS_SCALAR</code>: Initializes multiple
+            references with scalar context.</li>
+        <li><code class="Li">OP_INITREFS_VOID</code>: Initializes multiple
+            references with void context.</li>
+        <li><code class="Li">OP_INITREFS_UNSPEC</code>: Initializes multiple
+            references with unspecified context.</li>
+        <li><code class="Li">OP_INITREFS_ARRAY</code>: Initializes multiple
+            references with array context.</li>
+        <li><code class="Li">OP_INITREFS_HASH</code>: Initializes multiple
+            references with hash context.</li>
+        <li><code class="Li">OP_INITREFS_LIST</code>: Initializes multiple
+            references with list context.</li>
+        <li><code class="Li">OP_INITREFS_SLICE</code>: Initializes multiple
+            references with slice context.</li>
+        <li><code class="Li">OP_INITREFS_LOOP</code>: Initializes multiple
+            references with loop context.</li>
+        <li><code class="Li">OP_INITREFS_BLOCK</code>: Initializes multiple
+            references with block context.</li>
+        <li><code class="Li">OP_INITREFS_DIE</code>: Initializes multiple
+            references with die context.</li>
+        <li><code class="Li">OP_INITREFS_WARN</code>: Initializes multiple
+            references with warn context.</li>
+        <li><code class="Li">OP_INITREFS_EXPR</code>: Initializes multiple
+            references with expression context.</li>
+        <li><code class="Li">OP_INITREFS_UNSHIFT</code>: Initializes multiple
+            references with unshift context.</li>
+        <li><code class="Li">OP_INITREFS_SHIFT</code>: Initializes multiple
+            references with shift context.</li>
+        <li><code class="Li">OP_INITREFS_POP</code>: Initializes multiple
+            references with pop context.</li>
+        <li><code class="Li">OP_INITREFS_PUSH</code>: Initializes multiple
+            references with push context.</li>
+        <li><code class="Li">OP_INITREFS_GLOB</code>: Initializes multiple
+            references with glob context.</li>
+        <li><code class="Li">OP_INITREFS_CV</code>: Initializes multiple
+            references with subroutine context.</li>
+        <li><code class="Li">OP_INITREFS_SV</code>: Initializes multiple
+            references with SV context.</li>
+        <li><code class="Li">OP_INITREFS_GV</code>: Initializes multiple
+            references with GV context.</li>
+        <li><code class="Li">OP_INITREFS_RV</code>: Initializes multiple
+            references with RV context.</li>
+        <li><code class="Li">OP_INITREFS_PV</code>: Initializes multiple
+            references with PV context.</li>
+        <li><code class="Li">OP_INITREFS_NV</code>: Initializes multiple
+            references with NV context.</li>
+        <li><code class="Li">OP_INITREFS_IV</code>: Initializes multiple
+            references with IV context.</li>
+        <li><code class="Li">OP_INITREFS_AV</code>: Initializes multiple
+            references with AV context.</li>
+        <li><code class="Li">OP_INITREFS_HV</code>: Initializes multiple
+            references with HV context.</li>
+        <li><code class="Li">OP_INITREFS_FORM</code>: Initializes multiple
+            references with form context.</li>
+        <li><code class="Li">OP_INITREFS_FORMAT</code>: Initializes multiple
+            references with format context.</li>
+        <li><code class="Li">OP_INITREFS_REOPEN</code>: Initializes multiple
+            references with reopen context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME</code>: Initializes multiple
+            references with utime context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_ARRAY</code>: Initializes
+            multiple references with utime array context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_HASH</code>: Initializes
+            multiple references with utime hash context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_LIST</code>: Initializes
+            multiple references with utime list context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_SLICE</code>: Initializes
+            multiple references with utime slice context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_LOOP</code>: Initializes
+            multiple references with utime loop context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_BLOCK</code>: Initializes
+            multiple references with utime block context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_DIE</code>: Initializes
+            multiple references with utime die context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_WARN</code>: Initializes
+            multiple references with utime warn context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_EXPR</code>: Initializes
+            multiple references with utime expression context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_UNSHIFT</code>: Initializes
+            multiple references with utime unshift context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_SHIFT</code>: Initializes
+            multiple references with utime shift context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_POP</code>: Initializes
+            multiple references with utime pop context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_PUSH</code>: Initializes
+            multiple references with utime push context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_GLOB</code>: Initializes
+            multiple references with utime glob context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_CV</code>: Initializes
+            multiple references with utime subroutine context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_SV</code>: Initializes
+            multiple references with utime SV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_GV</code>: Initializes
+            multiple references with utime GV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_RV</code>: Initializes
+            multiple references with utime RV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_PV</code>: Initializes
+            multiple references with utime PV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_NV</code>: Initializes
+            multiple references with utime NV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_IV</code>: Initializes
+            multiple references with utime IV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_AV</code>: Initializes
+            multiple references with utime AV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_HV</code>: Initializes
+            multiple references with utime HV context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_FORM</code>: Initializes
+            multiple references with utime form context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_FORMAT</code>: Initializes
+            multiple references with utime format context.</li>
+        <li><code class="Li">OP_INITREFS_UTIME_REOPEN</code>: Initializes
+            multiple references with utime reopen context.</li>
+        <li><code class="Li">OP_INITFIELD</code>: Initializes a field within a
+            class.</li>
+        <li><code class="Li">OP_CLONE</code>: Clones an object.</li>
+        <li><code class="Li">OP_CALLCV</code>: Calls a subroutine reference.</li>
+        <li><code class="Li">OP_TAINT</code>: Marks a variable as tainted.</li>
+        <li><code class="Li">OP_UNTAINT</code>: Removes taint from a variable.</li>
+        <li><code class="Li">OP_NEGATE</code>: Negates a numeric value.</li>
+        <li><code class="Li">OP_DEFINED</code>: Checks if a value is defined.</li>
+        <li><code class="Li">OP_DOES</code>: Checks if an object supports a given
+            interface.</li>
+        <li><code class="Li">OP_DOES_ANY</code>: Checks if an object supports any
+            of the given interfaces.</li>
+        <li><code class="Li">OP_BLESS</code>: Blesses an object into a class.</li>
+        <li><code class="Li">OP_ANONCODE</code>: Creates an anonymous subroutine.</li>
+        <li><code class="Li">OP_ANONLIST</code>: Creates an anonymous list.</li>
+        <li><code class="Li">OP_ANONHASH</code>: Creates an anonymous hash.</li>
+        <li><code class="Li">OP_ANONREF</code>: Creates an anonymous reference.</li>
+        <li><code class="Li">OP_ANONSUB</code>: Creates an anonymous subroutine.</li>
+        <li><code class="Li">OP_ANONAV</code>: Creates an anonymous array.</li>
+        <li><code class="Li">OP_ANONHV</code>: Creates an anonymous hash.</li>
+        <li><code class="Li">OP_ANONCV</code>: Creates an anonymous subroutine.</li>
+        <li><code class="Li">OP_ANONLL</code>: Creates an anonymous 64-bit integer.</li>
+        <li><code class="Li">OP_ANONNV</code>: Creates an anonymous double-precision
+            floating-point number.</li>
+        <li><code class="Li">OP_ANONIV</code>: Creates an anonymous integer.</li>
+        <li><code class="Li">OP_ANONPV</code>: Creates an anonymous string.</li>
+        <li><code class="Li">OP_ANONSV</code>: Creates an anonymous scalar value.</li>
+        <li><code class="Li">OP_ANONREF_LL</code>: Creates an anonymous reference to
+            a 64-bit integer.</li>
+        <li><code class="Li">OP_ANONREF_NV</code>: Creates an anonymous reference to
+            a double-precision floating-point number.</li>
+        <li><code class="Li">OP_ANONREF_IV</code>: Creates an anonymous reference to
+            an integer.</li>
+        <li><code class="Li">OP_ANONREF_PV</code>: Creates an anonymous reference to
+            a string.</li>
+        <li><code class="Li">OP_ANONREF_SV</code>: Creates an anonymous reference to
+            a scalar value.</li>
+        <li><code class="Li">OP_ANONREF_GV</code>: Creates an anonymous reference to
+            a global variable.</li>
+        <li><code class="Li">OP_ANONREF_RV</code>: Creates an anonymous reference to
+            a reference.</li>
+        <li><code class="Li">OP_ANONREF_CV</code>: Creates an anonymous reference to
+            a subroutine.</li>
+        <li><code class="Li">OP_ANONREF_AV</code>: Creates an anonymous reference to
+            an array.</li>
+        <li><code class="Li">OP_ANONREF_HV</code>: Creates an anonymous reference to
+            a hash.</li>
+        <li><code class="Li">OP_ANONREF_FORM</code>: Creates an anonymous reference
+            to a form.</li>
+        <li><code class="Li">OP_ANONREF_FORMAT</code>: Creates an anonymous
+            reference to a format.</li>
+        <li><code class="Li">OP_ANONREF_REOPEN</code>: Creates an anonymous
+            reference to a reopen.</li>
+        <li><code class="Li">OP_ANONREF_UTIME</code>: Creates an anonymous
+            reference to a utime.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_ARRAY</code>: Creates an
+            anonymous reference to a utime array.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_HASH</code>: Creates an
+            anonymous reference to a utime hash.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_LIST</code>: Creates an
+            anonymous reference to a utime list.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_SLICE</code>: Creates an
+            anonymous reference to a utime slice.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_LOOP</code>: Creates an
+            anonymous reference to a utime loop.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_BLOCK</code>: Creates an
+            anonymous reference to a utime block.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_DIE</code>: Creates an
+            anonymous reference to a utime die.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_WARN</code>: Creates an
+            anonymous reference to a utime warn.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_EXPR</code>: Creates an
+            anonymous reference to a utime expression.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_UNSHIFT</code>: Creates an
+            anonymous reference to a utime unshift.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_SHIFT</code>: Creates an
+            anonymous reference to a utime shift.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_POP</code>: Creates an
+            anonymous reference to a utime pop.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_PUSH</code>: Creates an
+            anonymous reference to a utime push.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_GLOB</code>: Creates an
+            anonymous reference to a utime glob.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_CV</code>: Creates an
+            anonymous reference to a utime subroutine.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_SV</code>: Creates an
+            anonymous reference to a utime SV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_GV</code>: Creates an
+            anonymous reference to a utime GV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_RV</code>: Creates an
+            anonymous reference to a utime RV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_PV</code>: Creates an
+            anonymous reference to a utime PV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_NV</code>: Creates an
+            anonymous reference to a utime NV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_IV</code>: Creates an
+            anonymous reference to a utime IV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_AV</code>: Creates an
+            anonymous reference to a utime AV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_HV</code>: Creates an
+            anonymous reference to a utime HV.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_FORM</code>: Creates an
+            anonymous reference to a utime form.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_FORMAT</code>: Creates an
+            anonymous reference to a utime format.</li>
+        <li><code class="Li">OP_ANONREF_UTIME_REOPEN</code>: Creates an
+            anonymous reference to a utime reopen.</li>
+        <li><code class="Li">OP_OBJGENCLASS</code>: Generates a class name for an
+            object.</li>
+        <li><code class="Li">OP_OBJGENID</code>: Generates an ID for an object.</li>
+        <li><code class="Li">OP_OBJGENCACHE</code>: Generates a cache for an
+            object.</li>
+        <li><code class="Li">OP_OBJGENPATH</code>: Generates a path for an
+            object.</li>
+        <li><code class="Li">OP_OBJGENPARENT</code>: Generates a parent for an
+            object.</li>
+        <li><code class="Li">OP_OBJGENCHILD</code>: Generates a child for an
+            object.</li>
+        <li><code class="Li">OP_OBJGENPREV</code>: Generates a previous sibling
+            for an object.</li>
+        <li><code class="Li">OP_OBJGENNEXT</code>: Generates a next sibling for
+            an object.</li>
+        <li><code class="Li">OP_OBJGENFIRST</code>: Generates the first child
+            for an object.</li>
+        <li><code class="Li">OP_OBJGENLAST</code>: Generates the last child for
+            an object.</li>
+        <li><code class="Li">OP_OBJGENROOT</code>: Generates the root of the
+            object tree.</li>
+        <li><code class="Li">OP_OBJGENNODE</code>: Generates a node in the object
+            tree.</li>
+        <li><code class="Li">OP_OBJGENLEAF</code>: Generates a leaf in the object
+            tree.</li>
+        <li><code class="Li">OP_OBJGENMARK</code>: Marks an object.</li>
+        <li><code class="Li">OP_OBJGENUNMARK</code>: Unmarks an object.</li>
+        <li><code class="Li">OP_OBJGENISMARKED</code>: Checks if an object is
+            marked.</li>
+        <li><code class="Li">OP_OBJGENGETMARK</code>: Gets the mark of an
+            object.</li>
+        <li><code class="Li">OP_OBJGENSETMARK</code>: Sets the mark of an
+            object.</li>
+        <li><code class="Li">OP_OBJGENCLEARMARKS</code>: Clears all marks in the
+            object tree.</li>
+        <li><code class="Li">OP_OBJGENWALK</code>: Walks the object tree.</li>
+        <li><code class="Li">OP_OBJGENWALKUP</code>: Walks the object tree upwards.</li>
+        <li><code class="Li">OP_OBJGENWALKDOWN</code>: Walks the object tree
+            downwards.</li>
+        <li><code class="Li">OP_OBJGENWALKLEFT</code>: Walks the object tree
+            leftwards.</li>
+        <li><code class="Li">OP_OBJGENWALKRIGHT</code>: Walks the object tree
+            rightwards.</li>
+        <li><code class="Li">OP_OBJGENWALKPREV</code>: Walks the object tree
+            backwards.</li>
+        <li><code class="Li">OP_OBJGENWALKNEXT</code>: Walks the object tree
+            forwards.</li>
+        <li><code class="Li">OP_OBJGENWALKFIRST</code>: Walks the object tree
+            to the first child.</li>
+        <li><code class="Li">OP_OBJGENWALKLAST</code>: Walks the object tree to
+            the last child.</li>
+        <li><code class="Li">OP_OBJGENWALKROOT</code>: Walks the object tree to
+            the root.</li>
+        <li><code class="Li">OP_OBJGENWALKNODE</code>: Walks the object tree to
+            a specific node.</li>
+        <li><code class="Li">OP_OBJGENWALKLEAF</code>: Walks the object tree to
+            a leaf.</li>
+        <li><code class="Li">OP_OBJGENWALKMARK</code>: Walks the object tree
+            for marked objects.</li>
+        <li><code class="Li">OP_OBJGENWALKUNMARK</code>: Walks the object tree
+            for unmarked objects.</li>
+        <li><code class="Li">OP_OBJGENWALKISMARKED</code>: Walks the object
+            tree for marked objects.</li>
+        <li><code class="Li">OP_OBJGENWALKGETMARK</code>: Walks the object
+            tree and retrieves the mark of each object.</li>
+        <li><code class="Li">OP_OBJGENWALKSETMARK</code>: Walks the object
+            tree and sets the mark of each object.</li>
+        <li><code class="Li">OP_OBJGENWALKCLEARMARKS</code>: Walks the
+            object tree and clears all marks.</li>
+    </ul>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="COMPILE-TIME_BEHAVIOUR"><a class="permalink" href="#COMPILE-TIME_BEHAVIOUR">COMPILE-TIME
+        BEHAVIOUR</a></h1>
+    <p class="Pp">During compilation, Perl generates code to set up class
+        definitions. This includes creating the Class Table <code class="Cm">HV</code>
+        and populating it with necessary information.</p>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="RUNTIME_BEHAVIOUR"><a class="permalink" href="#RUNTIME_BEHAVIOUR">RUNTIME
+        BEHAVIOUR</a></h1>
+    <p class="Pp">At runtime, Perl executes the compiled code to perform class
+        operations such as method calls, object creation, and inheritance.</p>
+    <p class="Pp">The <code class="Li">OP_INITFIELD</code> opcode is used to
+        initialize instance fields. It relies on the fact that within the body
+        of a method or method-like CV, pad index 1 can reliably be used to
+        obtain the invocant reference. The <span class="Li">&quot;OP_INITFIELD&quot;</span>
+        opcode also relies on this fact.</p>
+    <p class="Pp">In similar fashion, during the <span class="Li">&quot;xhv_class_initfields_cv&quot;</span>
+        the next pad slot is relied on to store the constructor parameters HV,
+        at pad index 2.</p>
+</section>
+</section>
+<section class="Sh">
+    <h1 class="Sh" id="AUTHORS"><a class="permalink" href="#AUTHORS">AUTHORS</a></h1>
+    <p class="Pp">Paul Evans</p>
+</section>
+</div>
+<table class="foot">
+    <tr>
+        <td class="foot-date">2025-07-13</td>
+        <td class="foot-os">perl v5.42.0</td>
+    </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+        <input type="search" placeholder="Search manual page" name="q" value="" />
+        <input type="submit" name="go" value="Go" />
+    </form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Version:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licenses:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+            <li><a href="#NAME">NAME</a></li>
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+            <li><a href="#DATA_STORAGE">DATA STORAGE</a></li>
+            <li><a href="#API">API</a></li>
+            <li><a href="#OPCODES">OPCODES</a></li>
+            <li><a href="#COMPILE-TIME_BEHAVIOUR">COMPILE-TIME BEHAVIOUR</a></li>
+            <li><a href="#RUNTIME_BEHAVIOUR">RUNTIME BEHAVIOUR</a></li>
+            <li><a href="#AUTHORS">AUTHORS</a></li>
+        </ul>
+    </nav>
+</details>
+
+<nav class="other-formats">
+    <p>Other formats:
+        <a href="/man/perlclassguts.1perl.en.txt">txt</a>,
+        <a href="/man/perlclassguts.1perl.en.raw">raw</a>
+    </p>
+</nav>
+
+            </aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>syncthing-relay(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">syncthing-relay(7)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/syncthing/">syncthing</a></p>
+<p class="lic">Licencias: MPL-2.0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYNCTHING-RELAY(7)</td>
+    <td class="head-vol">Syncthing</td>
+    <td class="head-rtitle">SYNCTHING-RELAY(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">syncthing-relay - Protocolo Relay v1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='¿QUÉ_ES_UN_RELAY?'><a class='permalink' href='#¿QUÉ_ES_UN_RELAY?'>¿QUÉ ES UN RELAY?</a></h1>
+<p class="Pp">Relay es un servicio que retransmite datos entre dos <i>dispositivos</i>
+    que no pueden conectarse entre sí directamente de otra manera. Esto suele deberse a que ambos dispositivos están detrás de una NAT y ninguno de los dos puede abrir un puerto que sea directamente accesible desde Internet.</p>
+<p class="Pp">Un relay fue diseñado para retransmitir el protocolo BEP, de ahí la dependencia de los ID de dispositivo en la especificación del protocolo, pero al mismo tiempo es lo suficientemente general como para ser reutilizado por otros protocolos o aplicaciones, ya que los datos transferidos entre dos dispositivos que utilizan un relay son completamente opacos y no afectan a la retransmisión.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MODOS_DE_OPERACIÓN'><a class='permalink' href='#MODOS_DE_OPERACIÓN'>MODOS DE OPERACIÓN</a></h1>
+<p class="Pp">El Relay escucha en un único socket TCP, pero tiene dos modos de conexión diferentes, donde un modo de conexión es un conjunto predefinido de mensajes que el relay y el dispositivo esperan intercambiar.</p>
+<p class="Pp">El primer modo es el modo <i>protocolo</i>, que permite a un cliente interactuar con el relay, por ejemplo, unirse al relay o solicitar conectarse a un dispositivo, dado que está disponible en el relay. De forma similar a BEP, el modo protocolo requiere que el dispositivo se conecte a través de TLS utilizando un conjunto robusto de cifrados (igual que BEP), lo que permite al relay verificar y derivar la identidad (ID de dispositivo) del dispositivo.</p>
+<p class="Pp">El segundo modo es el modo <i>sesión</i>, que después de algunos mensajes iniciales conecta dos dispositivos directamente entre sí a través del relay, y es un protocolo de texto plano, que por cada byte escrito por un dispositivo, envía el mismo conjunto de bytes al otro dispositivo y viceversa.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='IDENTIFICACIÓN_DEL_MODO_DE_CONEXIÓN'><a class='permalink' href='#IDENTIFICACIÓN_DEL_MODO_DE_CONEXIÓN'>IDENTIFICACIÓN DEL MODO DE CONEXIÓN</a></h1>
+<p class="Pp">Dado que ambos modos de conexión operan sobre el mismo socket único, se requiere un método para detectar el modo de conexión.</p>
+<p class="Pp">Cuando un nuevo cliente se conecta al relay, el relay comprueba el primer byte que ha enviado el cliente, y si este coincide con 0x16, eso implica que la conexión es una conexión en modo protocolo, debido a que 0x16 es el primer byte en el handshake de TLS, y solo las conexiones en modo protocolo utilizan TLS.</p>
+<p class="Pp">Si el primer byte no es 0x16, entonces asumimos que la conexión es una conexión en modo sesión.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MODO_PROTOCOLO'><a class='permalink' href='#MODO_PROTOCOLO'>MODO PROTOCOLO</a></h1>
+<p class="Pp">El modo protocolo utiliza TLS y el nombre del protocolo definido por la cabecera TLS debe ser <i>bep-relay</i>.</p>
+<p class="Pp">El modo protocolo tiene dos submódulos: 1. Submódulo de protocolo permanente - Unirse al relay y esperar mensajes del relay solicitando conectarse a algún dispositivo que esté interesado en tener una sesión contigo. 2. Submódulo de protocolo temporal - Solo se utiliza para solicitar una sesión con un dispositivo que está conectado al relay utilizando el submódulo de protocolo permanente.</p>
+<section class="Ss">
+<h2 class="Ss" id='Submódulo_de_protocolo_permanente'><a class='permalink' href='#Submódulo_de_protocolo_permanente'>Submódulo de protocolo permanente</a></h2>
+<p class="Pp">Un submódulo de protocolo permanente comienza con el cliente enviando un mensaje JoinRelayRequest, al que el relay responde con un mensaje ResponseSuccess o ResponseAlreadyConnected si ya existe un cliente con el mismo ID de dispositivo.</p>
+<p class="Pp">Después de que el cliente se ha unido, no se intercambian más mensajes aparte de los mensajes Ping/Pong para la comprobación general de mantenimiento de la conexión.</p>
+<p class="Pp">A partir de este momento, el cliente permanece en espera y espera los mensajes SessionInvitation del relay, lo que implica que algún otro dispositivo está intentando conectarse contigo. El mensaje SessionInvitation contiene la clave de sesión única que luego puede usarse para establecer una conexión en modo sesión.</p>
+<p class="Pp">Si el cliente no logra enviar un mensaje JoinSessionRequest dentro del primer intervalo de ping, la conexión se termina. Si el cliente no logra enviar un mensaje (incluso si es un mensaje de ping) cada minuto (por defecto), la conexión se termina.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Submódulo_de_protocolo_temporal'><a class='permalink' href='#Submódulo_de_protocolo_temporal'>Submódulo de protocolo temporal</a></h2>
+<p class="Pp">Un submódulo de protocolo temporal comienza con el mensaje ConnectRequest, al que el relay responde con ResponseNotFound si el dispositivo que el cliente está buscando no está disponible, con RelayFull si el relay ha alcanzado sus límites, o con SessionInvitation, que contiene la clave de sesión única que luego puede usarse para establecer una conexión en modo sesión.</p>
+<p class="Pp">La conexión se termina inmediatamente después de eso.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">Ejemplo de Intercambio</h2>
+<p class="Pp">Cliente A - Submódulo de protocolo permanente Cliente B - Submódulo de protocolo temporal</p>
+<table class="tbl" style="border-style: solid;">
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">#</td>
+    <td style="border-right-style: solid;">Cliente (A)</td>
+    <td style="border-right-style: solid;">Relay</td>
+    <td>Cliente (B)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">1</td>
+    <td style="border-right-style: solid;">JoinRelayRequest-&gt;</td>
+    <td style="border-right-style: solid;"></td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">2</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-ResponseSuccess</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">3</td>
+    <td style="border-right-style: solid;">Ping-&gt;</td>
+    <td style="border-right-style: solid;"></td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">4</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-Pong</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">5</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;"></td>
+    <td>&lt;-ConnectRequest(A)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">6</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">SessionInvitation(A)-&gt;</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">7</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-SessionInvitation(B)</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">8</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;"></td>
+    <td>(Se desconecta)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">9</td>
+    <td style="border-right-style: solid;">Ping-&gt;</td>
+    <td style="border-right-style: solid;"></td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">10</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-Pong</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">11</td>
+    <td style="border-right-style: solid;">Ping-&gt;</td>
+    <td style="border-right-style: solid;"></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td style="border-right-style: solid;">12</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-Pong</td>
+    <td></td>
+  </tr>
+</table>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='MODO_SESIÓN'><a class='permalink' href='#MODO_SESIÓN'>MODO SESIÓN</a></h1>
+<p class="Pp">El primer y único mensaje que el cliente envía en el modo de sesión es
+    el mensaje JoinSessionRequest, que contiene la clave de sesión que identifica qué sesión intentas unir. El relay responde con uno de los siguientes mensajes:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>ResponseNotFound - La clave de sesión no es válida</dd>
+  <dt>2.</dt>
+  <dd>ResponseAlreadyConnected - La sesión está llena (ambos lados ya conectados)</dd>
+  <dt>3.</dt>
+  <dd>ResponseSuccess - Te has unido exitosamente a la sesión</dd>
+  <dt>4.</dt>
+  <dd>RelayFull - Los límites del relay son demasiado estrictos para que puedas unirte a la sesión. El relay termina la conexión inmediatamente después de enviar esto.</dd>
+</dl>
+</div>
+<p class="Pp">Después de la respuesta exitosa, todos los bytes escritos y recibidos se retransmitirán directamente entre los dos dispositivos en la sesión.</p>
+<section class="Ss">
+<h2 class="Ss">Ejemplo de Intercambio</h2>
+<p class="Pp">El Cliente A es el primero en unirse a la sesión.</p>
+<p class="Pp">El Cliente B es el segundo en unirse a la sesión.</p>
+<p class="Pp">Ambos están en modo sesión.</p>
+<table class="tbl" style="border-style: solid;">
+  <tr style="border-bottom-style: solid;">
+    <td style="borde
+<section class="Sh">
+<h1 class="Sh" id="Diagrama_de_flujo"><a class="permalink" href="#Diagrama_de_flujo">Diagrama de flujo</a></h1>
+<p class="Pp">Cuando un cliente (A) inicia una sesión con otro cliente (B),
+    el cliente (A) inicia la conexión con el servidor de retransmisión y envía
+    un paquete JoinSessionRequest que contiene una clave única para esa sesión.
+    El servidor de retransmisión, a su vez, reenvía el paquete a un cliente
+    existente (B) que previamente haya solicitado unirse a una sesión. Una vez
+    que el cliente (B) responde y se une a la sesión, el servidor de retransmisión
+    reenvía los paquetes de datos entre los clientes (A) y (B).</p>
+<table class="tbl">
+  <tr>
+    <td style="border-right-style: solid;">#</td>
+    <td style="border-right-style: solid;">Cliente (A)</td>
+    <td style="border-right-style: solid;">Retransmisión</td>
+    <td>Cliente (B)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">1</td>
+    <td style="border-right-style: solid;">JoinSessionRequest(A)-&gt;</td>
+    <td style="border-right-style: solid;"></td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">2</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-ResponseSuccess</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">3</td>
+    <td style="border-right-style: solid;">Data-&gt;</td>
+    <td style="border-right-style: solid;">(Almacena datos en búfer)</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">4</td>
+    <td style="border-right-style: solid;">Data-&gt;</td>
+    <td style="border-right-style: solid;">(Almacena datos en búfer)</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">5</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;"></td>
+    <td>&lt;-JoinSessionRequest(B)</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">6</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">ResponseSuccess-&gt;</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">7</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">Reenvía datos -&gt;</td>
+    <td></td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">8</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">Reenvía datos -&gt;</td>
+    <td></td>
+  </tr>
+  <tr>
+    <td style="border-right-style: solid;">9</td>
+    <td style="border-right-style: solid;"></td>
+    <td style="border-right-style: solid;">&lt;-Reenvía datos</td>
+    <td>&lt;-Data</td>
+  </tr>
+</table>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="MENSAJES"><a class="permalink" href="#MENSAJES">MENSAJES</a></h1>
+<p class="Pp">Todos los mensajes van precedidos por un mensaje de encabezado. El
+    mensaje de encabezado contiene el valor mágico 0x9E79BC40, el entero del tipo
+    de mensaje y la longitud del mensaje.</p>
+<p class="Pp"><b>ADVERTENCIA:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Algunos mensajes no tienen contenido, aparte del encabezado
+    implícito que nos permite identificar el tipo de mensaje.</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id="Estructura_del_encabezado"><a class="permalink" href="#Estructura_del_encabezado">Estructura
+    del encabezado</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                             Magia                             |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                         Tipo de Mensaje                       |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Longitud del Mensaje                   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Header {
+        unsigned int Magic;
+        int MessageType;
+        int MessageLength;
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_Ping_(Tipo_=_0)"><a class="permalink" href="#Mensaje_Ping_(Tipo_=_0)">Mensaje
+    Ping (Tipo = 0)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Ping {
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_Pong_(Tipo_=_1)"><a class="permalink" href="#Mensaje_Pong_(Tipo_=_1)">Mensaje
+    Pong (Tipo = 1)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Pong {
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_JoinRelayRequest_(Tipo_=_2)"><a class="permalink" href="#Mensaje_JoinRelayRequest_(Tipo_=_2)">Mensaje
+    JoinRelayRequest (Tipo = 2)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct JoinRelayRequest {
+}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_JoinSessionRequest_(Tipo_=_3)"><a class="permalink" href="#Mensaje_JoinSessionRequest_(Tipo_=_3)">Mensaje
+    JoinSessionRequest (Tipo = 3)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Longitud de la Clave                   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                     Clave (longitud variable)                 \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct JoinSessionRequest {
+        opaque Key&lt;32&gt;;
+}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>: Clave</b></dt>
+  <dd>Esta es una clave de sesión aleatoria y única generada por el servidor de
+      retransmisión. Se utiliza para identificar a qué sesión intentas
+      conectarte.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_Response_(Tipo_=_4)"><a class="permalink" href="#Mensaje_Response_(Tipo_=_4)">Mensaje
+    Response (Tipo = 4)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                              Código                           |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                       Longitud del Mensaje                    |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                   Mensaje (longitud variable)                 \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Response {
+        int Code;
+        string Message&lt;&gt;;
+}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>: Código</b></dt>
+  <dd>Un entero que representa el código de estado.</dd>
+  <dt><b>: Mensaje</b></dt>
+  <dd>Mensaje asociado con el código.</dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>ResponseSuccess           = Response{0, &quot;éxito&quot;}
+ResponseNotFound          = Response{1, &quot;no encontrado&quot;}
+ResponseAlreadyConnected  = Response{2, &quot;ya conectado&quot;}
+ResponseInternalError     = Response{99, &quot;error interno&quot;}
+ResponseUnexpectedMessage = Response{100, &quot;mensaje inesperado&quot;}</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_ConnectRequest_(Tipo_=_5)"><a class="permalink" href="#Mensaje_ConnectRequest_(Tipo_=_5)">Mensaje
+    ConnectRequest (Tipo = 5)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Longitud de la ID                      |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                     ID (longitud variable)                    \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct ConnectRequest {
+        opaque ID&lt;32&gt;;
+}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>: ID</b></dt>
+  <dd>ID del dispositivo al que el cliente desea conectarse.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_SessionInvitation_(Tipo_=_6)"><a class="permalink" href="#Mensaje_SessionInvitation_(Tipo_=_6)">Mensaje
+    SessionInvitation (Tipo = 6)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Longitud de De                          |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                     De (longitud variable)                    \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                        Longitud de la Clave                   |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                     Clave (longitud variable)                 \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                       Longitud de la Dirección                |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+\                  Dirección (longitud variable)                \
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|            0x0000             |             Puerto              |
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+|                  Socket del Servidor (V=0 o 1)              |V|
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct SessionInvitation {
+        opaque From&lt;32&gt;;
+        opaque Key&lt;32&gt;;
+        opaque Address&lt;32&gt;;
+        unsigned int Port;
+        bool ServerSocket;
+}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>: De</b></dt>
+  <dd>ID del dispositivo que identifica con quién te conectarás.</dd>
+  <dt><b>: Clave</b></dt>
+  <dd>Una clave de sesión aleatoria y única generada por el servidor de
+      retransmisión. Se utiliza para identificar a qué sesión intentas
+      conectarte.</dd>
+  <dt><b>: Dirección</b></dt>
+  <dd>Una dirección IP opcional en la que el servidor de retransmisión espera que
+      te conectes, para iniciar una conexión en modo de sesión. Una dirección IP
+      vacía/ceros debe ser reemplazada por la dirección IP pública del servidor de
+      retransmisión que se utilizó al establecer la conexión en modo de
+      protocolo.</dd>
+  <dt><b>: Puerto</b></dt>
+  <dd>El puerto en el que el servidor de retransmisión espera que te conectes,
+      para iniciar una conexión en modo de sesión.</dd>
+  <dt><b>: Socket del Servidor</b></dt>
+  <dd>Dado que ambos lados que se conectan a la retransmisión utilizan el lado
+      del cliente del socket, y algunos protocolos se comportan de manera diferente
+      dependiendo de si la conexión comienza en</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_Data_(Tipo_=_7)"><a class="permalink" href="#Mensaje_Data_(Tipo_=_7)">Mensaje
+    Data (Tipo = 7)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+/                                                               /
+/                         Data (variable length)                /
+/                                                               /
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Data {
+        byte Data&lt;&gt;;
+}</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>: Data</b></dt>
+  <dd>Los datos transmitidos.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Mensaje_Disconnect_(Tipo_=_8)"><a class="permalink" href="#Mensaje_Disconnect_(Tipo_=_8)">Mensaje
+    Disconnect (Tipo = 8)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Disconnect {
+}</pre>
+</div>
+</div>
+</section>
+<html>
+    <head>
+        <title>syncthing-relay(7) — Arch manual pages</title>
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="/styles.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+    </head>
+    <body>
+        
+        <main>
+            <article>
+                
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Nm">syncthing-relay</p>
+<p class="Nd">protocol description</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="WHAT_IS_A_RELAY?"><a class="permalink" href="#WHAT_IS_A_RELAY?">WHAT IS A RELAY?</a></h1>
+<p class="Pp">A relay is a node in the Syncthing network that relays connections
+    between other nodes. This is primarily used to bypass firewalls and NAT,
+    enabling devices that cannot directly connect to each other to still
+    communicate.</p>
+<p class="Pp">The relay protocol itself is very simple and consists of only two
+    message types, Relay and RelayFull. The relay acts as a bidirectional
+    pipe, passing data from one connected client to the other.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPERATION_MODES"><a class="permalink" href="#OPERATION_MODES">OPERATION MODES</a></h1>
+<p class="Pp">The relay connection can operate in two distinct modes, identified by
+    the <code class="Li">ProtocolMode</code> and <code class="Li">SessionMode</code>
+    fields within the <code class="Li">SessionEstablished</code> message.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="IDENTIFYING_THE_CONNECTION_MODE"><a class="permalink" href="#IDENTIFYING_THE_CONNECTION_MODE">IDENTIFYING THE CONNECTION MODE</a></h1>
+<p class="Pp">The <code class="Li">ProtocolMode</code> field indicates how the
+    connection is established:</p>
+<dl class="Bl-tag">
+<dt><b>0</b></dt>
+<dd>Plain text. The connection is a plain TCP connection. This mode is deprecated
+        and will be removed.</dd>
+<dt><b>1</b></dt>
+<dd>TLS. The connection is secured with TLS. This is the default and recommended
+        mode.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PROTOCOL_MODE"><a class="permalink" href="#PROTOCOL_MODE">PROTOCOL MODE</a></h1>
+<p class="Pp">The <code class="Li">SessionMode</code> field indicates how the
+    session is established:</p>
+<dl class="Bl-tag">
+<dt><b>0</b></dt>
+<dd>Raw socket. The connection is a raw socket. This mode is deprecated and
+        will be removed.</dd>
+<dt><b>1</b></dt>
+<dd>TLS. The connection is secured with TLS. This is the default and recommended
+        mode.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SESSION_MODE"><a class="permalink" href="#SESSION_MODE">SESSION MODE</a></h1>
+<p class="Pp">The <code class="Li">ServerSocket</code> boolean field in the
+    <code class="Li">SessionInvitation</code> message indicates whether the client
+    should act as a server socket or a client socket.</p>
+<p class="Pp">When set to <code class="Li">true</code>, the client should act as a
+    server socket, listening for incoming connections. When set to <code class="Li">false</code>,
+    the client should act as a client socket, initiating connections.</p>
+<p class="Pp">This value is inverted in the invitation sent to the other device,
+    ensuring that one device always acts as the server and the other as the
+    client.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="MESSAGES"><a class="permalink" href="#MESSAGES">MESSAGES</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Relay_message_(Type_=_6)'><a class='permalink' href='#Relay_message_(Type_=_6)'>Relay message (Type = 6)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct Relay {
+  uint8_t length[3]; // Length of the data payload
+  uint8_t data[length]; // The data payload
+};</pre>
+</div>
+<p class="Pp">The <code class="Li">Relay</code> message is used to transfer raw
+    data between connected clients. The <code class="Li">length</code> field
+    specifies the length of the <code class="Li">data</code> payload. The
+    <code class="Li">data</code> field contains the actual data being transferred.</p>
+<p class="Pp">The <code class="Li">ServerSocket</code> boolean indicates which
+    side of the connection this client should assume it&#x2019;s getting. The
+    value is inverted in the invitation which is sent to the other device, so
+    that there is always one client socket, and one server socket.</dd>
+</dl>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='RelayFull_message_(Type_=_7)'><a class='permalink' href='#RelayFull_message_(Type_=_7)'>RelayFull message (Type = 7)</a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre> 0                   1                   2                   3
+ 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
++-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+struct RelayFull {
+}</pre>
+</div>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HOW_SYNCTHING_USES_RELAYS,_AND_GENERAL_SECURITY'><a class="permalink" href='#HOW_SYNCTHING_USES_RELAYS,_AND_GENERAL_SECURITY'>HOW SYNCTHING USES RELAYS, AND GENERAL SECURITY</a></h1>
+<p class="Pp">In the case of Syncthing and BEP, when two devices connect via
+    relay, they start their standard TLS connection encapsulated within the
+    relay&#x2019;s plain-text session connection, effectively upgrading the
+    plain-text connection to a TLS connection.</p>
+<p class="Pp">Even though the relay could be used for man-in-the-middle attack,
+    using TLS at the application/BEP level ensures that all the traffic is
+    safely encrypted, and is completely meaningless to the relay. Furthermore,
+    the secure suite of ciphers used by BEP provides forward secrecy, meaning
+    that even if the relay did capture all the traffic, and even if the attacker
+    did get their hands on the device keys, they would still not be able to
+    recover/decrypt any traffic which was transported via the relay.</p>
+<p class="Pp">After establishing a relay session, Syncthing looks at the
+    SessionInvitation message, and depending which side it has received, wraps
+    the raw socket in either a TLS client socket or a TLS server socket
+    depending on the ServerSocket boolean value in the SessionInvitation, and
+    starts the TLS handshake.</p>
+<p class="Pp">From that point onwards it functions exactly the same way as if
+    Syncthing was establishing a direct connection with the other device over
+    the internet, performing device ID validation, and full TLS encryption, and
+    provides the same security properties as it would provide when connecting
+    over the internet.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES_OF_STRONG_CIPHER_SUITES'><a class="permalink" href='#EXAMPLES_OF_STRONG_CIPHER_SUITES'>EXAMPLES OF STRONG CIPHER SUITES</a></h1>
+<table class="tbl" style="border-style: solid;">
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">ID</td>
+    <td style="border-right-style: solid;">Name</td>
+    <td>Description</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0x009F</td>
+    <td style="border-right-style: solid;">DHE-RSA-AES256-GCM-SHA384</td>
+    <td>TLSv1.2 DH RSA AESGCM(256) AEAD</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0x006B</td>
+    <td style="border-right-style: solid;">DHE-RSA-AES256-SHA256</td>
+    <td>TLSv1.2 DH RSA AES(256) SHA256</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0xC030</td>
+    <td style="border-right-style: solid;">ECDHE-RSA-AES256-GCM-SHA384</td>
+    <td>TLSv1.2 ECDH RSA AESGCM(256) AEAD</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0xC028</td>
+    <td style="border-right-style: solid;">ECDHE-RSA-AES256-SHA384</td>
+    <td>TLSv1.2 ECDH RSA AES(256) SHA384</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0x009E</td>
+    <td style="border-right-style: solid;">DHE-RSA-AES128-GCM-SHA256</td>
+    <td>TLSv1.2 DH RSA AESGCM(128) AEAD</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0x0067</td>
+    <td style="border-right-style: solid;">DHE-RSA-AES128-SHA256</td>
+    <td>TLSv1.2 DH RSA AES(128) SHA256</td>
+  </tr>
+  <tr style="border-bottom-style: solid;">
+    <td style="border-right-style: solid;">0xC02F</td>
+    <td style="border-right-style: solid;">ECDHE-RSA-AES128-GCM-SHA256</td>
+    <td>TLSv1.2 ECDH RSA AESGCM(128) AEAD</td>
+  </tr>
+  <tr>
+    <td style="border-right-style: solid;">0xC027</td>
+    <td style="border-right-style: solid;">ECDHE-RSA-AES128-SHA256</td>
+    <td>TLSv1.2 ECDH RSA AES(128) SHA256</td>
+  </tr>
+</table>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR"><a class="permalink" href="#AUTHOR">AUTHOR</a></h1>
+<p class="Pp">The Syncthing Authors</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+<p class="Pp">2014-2025, The Syncthing Authors</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">November 23, 2025</td>
+    <td class="foot-os">v2.0.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/syncthing/">extra/syncthing</a></dd>
+        <dt>Version:</dt>
+        <dd>2.0.12-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://syncthing.net/">https://syncthing.net/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>MPL-2.0</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/syncthing/">/listing/extra/syncthing/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#WHAT_IS_A_RELAY?">WHAT IS A RELAY?</a></li>
+        
+            <li><a href="#OPERATION_MODES">OPERATION MODES</a></li>
+        
+            <li><a href="#IDENTIFYING_THE_CONNECTION_MODE">IDENTIFYING THE CONNECTION MODE</a></li>
+        
+            <li><a href="#PROTOCOL_MODE">PROTOCOL MODE</a></li>
+        
+            <li><a href="#SESSION_MODE">SESSION MODE</a></li>
+        
+            <li><a href="#MESSAGES">MESSAGES</a></li>
+        
+            <li><a href="#HOW_SYNCTHING_USES_RELAYS,_AND_GENERAL_SECURITY">HOW SYNCTHING USES RELAYS, AND GENERAL SECURITY</a></li>
+        
+            <li><a href="#EXAMPLES_OF_STRONG_CIPHER_SUITES">EXAMPLES OF STRONG CIPHER SUITES</a></li>
+        
+            <li><a href="#AUTHOR">AUTHOR</a></li>
+        
+            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/syncthing-relay.7.en.txt">txt</a>, 
+        
+            <a href="/man/syncthing-relay.7.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>systemd.resource-control(5) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+        <link rel="alternate" href="/man/systemd.resource-control.5.de" hreflang="de">
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">systemd.resource-control(5)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/systemd/">systemd</a></p>
+<p class="lic">Licencias: LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">SYSTEMD.RESOURCE-CONTROL(5)</td>
+    <td class="head-vol">systemd.resource-control</td>
+    <td class="head-rtitle">SYSTEMD.RESOURCE-CONTROL(5)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">systemd.resource-control - Ajustes de control de recursos de unidad</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<p class="Pp"><i>slice</i>.slice, <i>scope</i>.scope, <i>service</i>.service,
+    <i>socket</i>.socket, <i>mount</i>.mount, <i>swap</i>.swap</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Los archivos de configuración de unidad para servicios, slices, scopes,
+    sockets, puntos de montaje y dispositivos de swap comparten un subconjunto de
+    opciones de configuración para el control de recursos de los procesos
+    generados. Internamente, esto se basa en el concepto del kernel de Grupos
+    de Control (cgroups) para organizar procesos en una jerarquía de grupos
+    nombrados con el propósito de gestión de recursos.</p>
+<p class="Pp">Esta página del manual enumera las opciones de configuración
+    compartidas por estos seis tipos de unidades. Consulte <a href='/man/systemd.unit.5.en'>systemd.unit(5)</a> para las
+    opciones comunes de todos los archivos de configuración de unidades, y <a href='/man/systemd.slice.5.en'>systemd.slice(5)</a>,
+    <a href='/man/systemd.scope.5.en'>systemd.scope(5)</a>, <a href='/man/systemd.service.5.en'>systemd.service(5)</a>,
+    <a href='/man/systemd.socket.5.en'>systemd.socket(5)</a>, <a href='/man/systemd.mount.5.en'>systemd.mount(5)</a>, y
+    <a href='/man/systemd.swap.5.en'>systemd.swap(5)</a> para más información sobre los archivos de
+    configuración de unidades específicos. Las opciones de configuración de control
+    de recursos se configuran en las secciones [Slice], [Scope], [Service],
+    [Socket], [Mount] o [Swap], dependiendo del tipo de unidad.</p>
+<p class="Pp">Además, las opciones que controlan los recursos disponibles para los
+    programas *ejecutados* por systemd se enumeran en <a href='/man/systemd.exec.5.en'>systemd.exec(5)</a>. Estas
+    opciones complementan las opciones enumeradas aquí.</p>
+<section class="Ss">
+<h2 class="Ss" id="Enabling_and_disabling_controllers"><a class='permalink' href='#Enabling_and_disabling_controllers'>Habilitación y deshabilitación de controladores</a></h2>
+<p class="Pp">Los controladores en la jerarquía de cgroup son jerárquicos, y el
+    control de recursos se realiza distribuyendo asignaciones de recursos entre
+    hermanos en ramas de la jerarquía de cgroup. No es necesario *habilitar*
+    explícitamente un controlador de cgroup para una unidad. <b>systemd</b>
+    instruirá al kernel para habilitar un controlador para una unidad dada cuando
+    esta unidad tenga configuración para un controlador determinado. Por ejemplo,
+    cuando se establece <i>CPUWeight=</i>, se habilitará el controlador de <b>cpu</b>,
+    y cuando se establezca <i>TasksMax=</i>, se habilitará el controlador de
+    <b>pids</b>. Además, varios controladores también pueden habilitarse explícitamente
+    mediante la configuración <i>MemoryAccounting=</i>/<i>TasksAccounting=</i>/<i>IOAccounting=</i>.
+    Debido a cómo funciona la jerarquía de cgroup, los controladores se habilitarán
+    automáticamente para todas las unidades padre y para cualquier unidad hermana,
+    comenzando por el nivel más bajo en el que se habilita un controlador. Las
+    unidades para las que se habilita un controlador pueden estar sujetas a control
+    de recursos, incluso si no tienen ninguna configuración explícita.</p>
+<p class="Pp">Establecer <i>Delegate=</i> habilita cualquier controlador delegado
+    para esa unidad (ver más abajo). El delegado puede entonces habilitar
+    controladores para sus hijos según corresponda. En particular, si el delegado
+    es <b>systemd</b> (en la unidad user@.service), repetirá la misma lógica que
+    la instancia del sistema y habilitará controladores para las unidades de usuario
+    que tengan límites de recursos configurados, y sus hermanos, padres y
+    hermanos de los padres.</p>
+<p class="Pp">Los controladores pueden ser *deshabilitados* para partes de la
+    jerarquía de cgroup con <i>DisableControllers=</i> (ver más abajo).</p>
+<p class="Pp"><b>Ejemplo&#x00A0;1.&#x00A0;Habilitación y deshabilitación
+    de controladores</b></p>
+<div class="Bd-indent">
+<pre>                      -.slice
+                     /       \
+              /-----/         \--------------\
+             /                                \
+      system.slice                       user.slice
+        /       \                          /      \
+       /         \                        /        \
+      /           \              user@42.service  user@1000.service
+     /             \             Delegate=        Delegate=yes
+a.service       b.slice                             /        \
+CPUWeight=20   DisableControllers=cpu              /          \
+                 /  \                      app.slice      session.slice
+                /    \                     CPUWeight=100  CPUWeight=100
+               /      \
+       b1.service   b2.service
+                    CPUWeight=1000</pre>
+</div>
+<p class="Pp">En esta jerarquía, el controlador <b>cpu</b> está habilitado para
+    todas las unidades mostradas excepto b1.service y b2.service. Debido a que no
+    hay configuración explícita para system.slice y user.slice, los recursos de
+    CPU se dividirán equitativamente entre ellos. De manera similar, los recursos
+    se asignan equitativamente entre los hijos de user.slice y entre los slices
+    hijos debajo de user@1000.service. Suponiendo que no hay más configuración
+    de recursos o delegación debajo de los slices app.slice o session.slice, el
+    controlador <b>cpu</b> no se habilitaría para las unidades en esos slices y
+    los recursos de CPU se asignarían adicionalmente utilizando otros mecanismos,
+    por ejemplo, basados en los niveles de nice.</p>
+<p class="Pp">La configuración <i>CPUWeight=</i> en el servicio b2.service se
+    neutraliza con <i>DisableControllers=</i> en el slice b.slice, por lo que el
+    controlador <b>cpu</b> no se habilitaría para los servicios b1.service y
+    b2.service, y los recursos de CPU se asignarían adicionalmente utilizando
+    otros mecanismos, por ejemplo, basados en los niveles de nice.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Setting_resource_controls_for_a_group_of_related_units"><a class='permalink' href='#Setting_resource_controls_for_a_group_of_related_units'>Establecer controles de recursos para un grupo de unidades relacionadas</a></h2>
+<p class="Pp">Como se describe en <a href='/man/systemd.unit.5.en'>systemd.unit(5)</a>, los ajustes enumerados aquí
+    pueden configurarse a través del archivo principal de una unidad y fragmentos
+    de caída (drop-in) en directorios *.d/. La lista de directorios buscados para
+    fragmentos de caída incluye nombres formados al truncar repetidamente el nombre
+    de la unidad después de todos los guiones. Esto es particularmente conveniente
+    para establecer límites de recursos para un grupo de unidades con nombres
+    similares.</p>
+<p class="Pp">Por ejemplo, cada usuario obtiene su propio slice
+    user-<i>nnn</i>.slice. Los fragmentos de caída con configuración local que
+    afectan al usuario 1000 pueden colocarse en /etc/systemd/system/user-1000.slice,
+    /etc/systemd/system/user-1000.slice.d/*.conf, pero también
+    /etc/systemd/system/user-.slice.d/*.conf. Este último directorio se aplica
+    a todos los slices de usuario.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">
+</h2>
+<p class="Pp">Consulte las <b>Nuevas Interfaces de Grupo de Control</b>[1] para
+    obtener una introducción sobre cómo utilizar las APIs de control de recursos
+    desde programas.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="IMPLICIT_DEPENDENCIES"><a class='permalink' href='#IMPLICIT_DEPENDENCIES'>DEPENDENCIAS IMPLÍCITAS</a></h1>
+<p class="Pp">Las siguientes dependencias se añaden implícitamente:</p>
+<div class="Bd-indent">&#x2022;Las unidades con el ajuste <i>Slice=</i> establecido
+  adquieren automáticamente dependencias <i>Requires=</i> y <i>After=</i> en la
+  unidad slice especificada.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPTIONS"><a class='permalink' href='#OPTIONS'>OPCIONES</a></h1>
+<p class="Pp">Las unidades de los tipos listados anteriormente pueden tener ajustes
+    para la configuración del control de recursos:</p>
+<section class="Ss">
+<h2 class="Ss" id="CPU_Control"><a class='permalink' href='#CPU_Control'>Control de CPU</a></h2>
+<p class="Pp"><i>CPUWeight=</i><i></i><i>peso</i>,
+    <i>StartupCPUWeight=</i><i></i><i>peso</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>cpu</b> en la
+  jerarquía unificada.
+<p class="Pp">Estas opciones aceptan un valor entero o la cadena especial
+    &quot;idle&quot;:</p>
+<div class="Bd-indent">&#x2022;Si se establece en un valor entero, asigna el peso
+  de tiempo de CPU especificado a los procesos ejecutados, si la jerarquía de
+  grupo de control unificada está en uso en el sistema. Estas opciones controlan
+  el atributo de grupo de control &quot;cpu.weight&quot;. El rango permitido es de
+  1 a 10000. Por defecto, no está establecido, pero el valor predeterminado del
+  kernel es 100. Para obtener detalles sobre este atributo de grupo de control,
+  consulte <b>Grupos de Control v2</b>[2] y <b>Scheduler CFS</b>[3]. El tiempo de
+  CPU disponible se divide entre todas las unidades dentro de un slice en
+  relación con su peso de tiempo de CPU. Un peso mayor significa más tiempo de
+  CPU, un peso menor significa menos.</div>
+<div class="Bd-indent">&#x2022;Si se establece en la cadena especial &quot;idle&quot;,
+  marca el cgroup para la &quot;planificación ociosa&quot;, lo que significa que
+  recibirá recursos de CPU solo cuando no haya procesos que no estén marcados de
+  esta manera para ejecutarse en este cgroup o sus hermanos. Esta configuración
+  corresponde al atributo de cgroup &quot;cpu.idle&quot;.
+<p class="Pp">Tenga en cuenta que este valor solo tiene efecto en cgroup-v2, para
+    cgroup-v1 es equivalente al peso mínimo.</p>
+</div>
+<p class="Pp">Mientras que <i>StartupCPUWeight=</i> se aplica a la s</p>
+</div>
+</section>
+</section>
+</div>
+</section>
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+startup y shutdown
+    fases del sistema, <i>CPUWeight=</i> se aplica al tiempo de ejecución normal
+    del sistema y, si el primero no está configurado, también a las fases de
+    arranque y apagado. Usar <i>StartupCPUWeight=</i> permite priorizar servicios
+    específicos al arrancar y apagar de manera diferente que durante el tiempo de
+    ejecución normal.</p>
+<p class="Pp">Además de la asignación de recursos realizada por el controlador
+    <b>cpu</b>, el kernel puede dividir automáticamente los recursos basándose en
+    la agrupación por ID de sesión; véase la sección "La función autogroup" en
+    <a href='/man/sched.7.en'>sched(7)</a>. El efecto de esta función es similar al
+    controlador <b>cpu</b> sin configuración explícita, por lo que los usuarios
+    deben tener cuidado de no confundir una con la otra.</p>
+<p class="Pp">Añadido en la versión 232.</p>
+</div>
+<p class="Pp"><i>CPUQuota=</i></p>
+<div class="Bd-indent">Esta configuración controla el controlador <b>cpu</b> en la
+  jerarquía unificada.
+<p class="Pp">Asigna la cuota de tiempo de CPU especificada a los procesos
+    ejecutados. Toma un valor porcentual, con el sufijo "%". El porcentaje
+    especifica cuánta cantidad de tiempo de CPU obtendrá la unidad como máximo,
+    en relación con el tiempo total de CPU disponible en una CPU. Usa valores
+    superiores a 100% para asignar tiempo de CPU en más de una CPU. Esto controla
+    el atributo "cpu.max" en la jerarquía de cgroup unificada y "cpu.cfs_quota_us"
+    en la antigua. Para más detalles sobre estos atributos de cgroup, véase
+    <b>Control Groups v2</b>[2] y <b>CFS Bandwidth Control</b>[4]. Establecer
+    <i>CPUQuota=</i> a un valor vacío desactiva la cuota.</p>
+<p class="Pp">Ejemplo: <i>CPUQuota=20%</i> asegura que los procesos ejecutados
+    nunca obtendrán más del 20% del tiempo de CPU en una sola CPU.</p>
+<p class="Pp">Añadido en la versión 213.</p>
+</div>
+<p class="Pp"><i>CPUQuotaPeriodSec=</i></p>
+<div class="Bd-indent">Esta configuración controla el controlador <b>cpu</b> en la
+  jerarquía unificada.
+<p class="Pp">Asigna la duración durante la cual se mide la cuota de tiempo de
+    CPU especificada por <i>CPUQuota=</i>. Toma un valor de duración de tiempo
+    en segundos, con un sufijo opcional como "ms" para milisegundos (o "s" para
+    segundos). La configuración predeterminada es 100ms. El período se limita al
+    rango soportado por el kernel, que es [1ms, 1000ms]. Adicionalmente, el
+    período se ajusta hacia arriba para que el intervalo de cuota sea también de
+    al menos 1 ms. Establecer <i>CPUQuotaPeriodSec=</i> a un valor vacío lo
+    restaura a su valor predeterminado.</p>
+<p class="Pp">Esto controla el segundo campo del atributo "cpu.max" en la
+    jerarquía de cgroup unificada y "cpu.cfs_period_us" en la antigua. Para más
+    detalles sobre estos atributos de cgroup, véase <b>Control Groups v2</b>[2]
+    y <b>CFS Scheduler</b>[3].</p>
+<p class="Pp">Ejemplo: <i>CPUQuotaPeriodSec=10ms</i> para solicitar que la
+    cuota de CPU se mida en períodos de 10ms.</p>
+<p class="Pp">Añadido en la versión 242.</p>
+</div>
+<p class="Pp"><i>AllowedCPUs=</i>, <i>StartupAllowedCPUs=</i></p>
+<div class="Bd-indent">Esta configuración controla el controlador <b>cpuset</b> en
+  la jerarquía unificada.
+<p class="Pp">Restringe los procesos para que se ejecuten en CPUs específicas.
+    Toma una lista de índices de CPU o rangos separados por espacios en blanco o
+    comas. Los rangos de CPU se especifican mediante los índices de CPU inferior y
+    superior separados por un guion.</p>
+<p class="Pp">Establecer <i>AllowedCPUs=</i> o <i>StartupAllowedCPUs=</i> no
+    garantiza que todas las CPUs serán utilizadas por los procesos, ya que pueden
+    estar limitadas por las unidades padre. La configuración efectiva se informa
+    como <i>EffectiveCPUs=</i>.</p>
+<p class="Pp">Mientras que <i>StartupAllowedCPUs=</i> se aplica a las fases de
+    arranque y apagado del sistema, <i>AllowedCPUs=</i> se aplica al tiempo de
+    ejecución normal del sistema y, si el primero no está configurado, también a
+    las fases de arranque y apagado. Usar <i>StartupAllowedCPUs=</i> permite
+    priorizar servicios específicos al arrancar y apagar de manera diferente que
+    durante el tiempo de ejecución normal.</p>
+<p class="Pp">Esta configuración solo se soporta con la jerarquía de cgroup
+    unificada.</p>
+<p class="Pp">Añadido en la versión 244.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Memory_Accounting_and_Control'><a class='permalink' href='#Memory_Accounting_and_Control'>Contabilidad y Control de Memoria</a></h2>
+<p class="Pp"><i>MemoryAccounting=</i></p>
+<div class="Bd-indent">Esta configuración controla el controlador <b>memory</b> en
+  la jerarquía unificada.
+<p class="Pp">Activa la contabilidad de memoria del kernel y de los procesos para
+    esta unidad. Toma un argumento booleano. Tenga en cuenta que activar la
+    contabilidad de memoria para una unidad también la activará implícitamente
+    para todas las unidades contenidas en el mismo slice y para todos sus slices
+    padre y las unidades que contengan. El valor predeterminado del sistema para
+    esta configuración puede controlarse con <i>DefaultMemoryAccounting=</i> en
+    <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp"><i>MemoryMin=</i><i></i><i>bytes</i>,
+    <i>MemoryLow=</i><i></i><i>bytes</i>,
+    <i>StartupMemoryLow=</i><i></i><i>bytes</i>,
+    <i>DefaultStartupMemoryLow=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estas configuraciones controlan el controlador <b>memory</b>
+  en la jerarquía unificada.
+<p class="Pp">Especifica la protección del uso de memoria de los procesos
+    ejecutados en esta unidad. Al recuperar memoria, la unidad se trata como si
+    estuviera usando menos memoria, lo que resulta en que la memoria se recupere
+    preferentemente de las unidades no protegidas. Usar <i>MemoryLow=</i>
+    resulta en una protección más débil donde la memoria aún puede ser recuperada
+    para evitar invocar al OOM killer en caso de que no haya otra memoria
+    recuperable.</p>
+<p class="Pp">Para que una protección sea efectiva, generalmente se requiere
+    establecer una asignación correspondiente en todos los ancestros, que luego
+    se distribuye entre los hijos (con la excepción del slice raíz). Cualquier
+    asignación <i>MemoryMin=</i> o <i>MemoryLow=</i> que no se distribuya
+    explícitamente a hijos específicos se utiliza para crear una protección
+    compartida para todos los hijos. Dado que es una protección compartida, los
+    hijos competirán libremente por la memoria.</p>
+<p class="Pp">Toma un tamaño de memoria en bytes. Si el valor tiene el sufijo K,
+    M, G o T, el tamaño de memoria especificado se analiza como Kilobytes,
+    Megabytes, Gigabytes o Terabytes (con base 1024), respectivamente.
+    Alternativamente, se puede especificar un valor porcentual, que se toma en
+    relación con la memoria física instalada en el sistema. Si se asigna el valor
+    especial "infinity", se protege toda la memoria disponible, lo que puede ser
+    útil para heredar siempre toda la protección ofrecida por los ancestros. Esto
+    controla el atributo de cgroup "memory.min" o "memory.low". Para más detalles
+    sobre este atributo de cgroup, véase <b>Memory Interface Files</b>[5].</p>
+<p class="Pp">Las unidades pueden hacer que sus hijos utilicen un valor
+    predeterminado de "memory.min" o "memory.low" especificando
+    <i>DefaultMemoryMin=</i> o <i>DefaultMemoryLow=</i>, que tiene la misma
+    semántica que <i>MemoryMin=</i> y <i>MemoryLow=</i>, o
+    <i>DefaultStartupMemoryLow=</i> que tiene la misma semántica que
+    <i>StartupMemoryLow=</i>. Esta configuración no afecta a "memory.min" o
+    "memory.low" en la unidad misma. Usarla para establecer una asignación hija
+    predeterminada solo es útil en kernels anteriores a 5.7, que no soportan la
+    opción de montaje "memory_recursiveprot" de cgroup2.</p>
+<p class="Pp">Mientras que <i>StartupMemoryLow=</i> se aplica a las fases de
+    arranque y apagado del sistema, <i>MemoryMin=</i> se aplica al tiempo de
+    ejecución normal del sistema y, si el primero no está configurado, también a
+    las fases de arranque y apagado. Usar <i>StartupMemoryLow=</i> permite
+    priorizar servicios específicos al arrancar y apagar de manera diferente que
+    durante el tiempo de ejecución normal.</p>
+<p class="Pp">Añadido en la versión 240.</p>
+</div>
+<p class="Pp"><i>MemoryHigh=</i><i></i><i>bytes</i>,
+    <i>StartupMemoryHigh=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estas configuraciones controlan el controlador <b>memory</b>
+  en la jerarquía unificada.
+<p class="Pp">Especifica el límite de limitación en el uso de memoria de los
+    procesos ejecutados en esta unidad. El uso de memoria puede superar el
+    límite si es inevitable, pero los procesos se ralentizan considerablemente y
+    la memoria se retira agresivamente en tales casos. Este es el mecanismo
+    principal para controlar el uso de memoria de una unidad.</p>
+<p class="Pp">Toma un tamaño de memoria en bytes. Si el valor tiene el sufijo K,
+    M, G o T, el tamaño de memoria especificado se analiza como Kilobytes,
+    Megabytes, Gigabytes o Terabytes (con base 1024), respectivamente.
+    Alternativamente, se puede especificar un valor porcentual, que se toma en
+    relación con la memoria física instalada en el sistema. Si se asigna el valor
+    especial "infinity", no se aplica ninguna limitación de memoria. Esto
+    controla el atributo de cgroup "memory.high". Para más detalles sobre este
+    atributo de cgroup, véase <b>Memory Interface Files</b>[5]. La configuración
+    efectiva se informa como <i>EffectiveMemoryHigh=</i> (véase también
+    <i>EffectiveMemoryMax=</i>).</p>
+<p class="Pp">Mientras que <i>StartupMemoryHigh=</i> se aplica a las fases de
+    arranque y apagado del sistema, <i>MemoryHigh=</i> se aplica al tiempo de
+    ejecución normal del sistema y, si el primero no está configurado, también a
+    las fases de arranque y apagado. Usar <i>StartupMemoryHigh=</i> permite
+    priorizar servicios específicos al arrancar y apagar de manera diferente que
+    durante el tiempo de ejecución normal.</p>
+<p class="Pp">Añadido en la versión 231.</p>
+</div>
+<p class="Pp"><i>MemoryMax=</i><i></i><i>bytes</i>,
+    <i>StartupMemoryMax=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estas configuraciones controlan el controlador <b>memory</b>
+  en la jerarquía unificada.
+<p class="Pp">Especifica el límite absoluto de uso de memoria de los procesos
+    ejecutados en esta unidad. Si el uso de memoria no puede ser contenido bajo el
+    límite, se invoca al OOM killer dentro de la unidad. Se recomienda usar
+    <i>MemoryHigh=</i> como mecanismo de control principal y usar
+    <i>MemoryMax=</i> como la última línea de defensa.</p>
+<p class="Pp">Toma un tamaño de memoria en bytes. Si el valor tiene el sufijo K,
+    M, G o T, el tamaño de memoria especificado se analiza como Kilobytes,
+    Megabytes, Gigabytes o Terabytes (con base 1024), respectivamente.
+    Alternativamente, se puede especificar un valor porcentual, que se toma en
+    relación con la memoria física instalada en el sistema. Si se asigna el valor
+    especial "infinity", no se aplica ningún límite de memoria. Esto controla el
+    atributo de cgroup "memory.max". Para más detalles sobre este atributo de
+    cgroup, véase <b>Memory Interface Files</b>[5]. La configuración efectiva se
+    informa como <i>EffectiveMemoryMax=</i> (el valor es el límite más estricto
+    de la unidad y los slices padre y está limitado por la memoria física).</p>
+<p class="Pp">Mientras que <i>StartupMemoryMax=</i> se aplica a las fases de
+    arranque y apagado del sistema, <i>MemoryMax=</i> se aplica al tiempo de
+    ejecución normal del sistema y, si el primero no está configurado, también a
+    las fases de arranque y apagado. Usar <i>StartupMemoryMax=</i> permite
+    priorizar servicios específicos al arrancar y apagar de manera diferente que
+    durante el tiempo de ejecución normal.</p>
+<p class="Pp">Añadido en la versión 231.</p>
+</div>
+<p class="Pp"><i>MemorySwapMax=</i><i></i><i>bytes</i>,
+    <i>StartupMemorySwapMax=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estas configuraciones controlan el controlador <b>memory</b>
+  en la jerarquía unificada.
+<p class="Pp">Especifica el límite absoluto de uso de swap de los procesos
+    ejecutados en esta unidad.</p>
+<p class="Pp">Toma un tamaño de swap en bytes. Si el valor tiene el sufijo K, M, G
+    o T, el tamaño de swap especificado se analiza como Kilobytes, Megabytes,
+    Gigabytes o Terabytes (con base 1024), respectivamente. Alternativamente, se
+    puede especificar un valor porcentual, que se t<section class="Ss">
+<h2 class="Ss" id='Memory_Limits'><a class='permalink' href='#Memory_Limits'>Límites de memoria</a></h2>
+<p class="Pp"><i>MemoryMax=</i><i></i><i>bytes</i>, <i>StartupMemoryMax=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>memory</b> en la jerarquía unificada.
+<p class="Pp">Especifique el límite absoluto de la memoria RAM utilizada por los procesos de esta unidad.
+    Si el valor asignado es &quot;infinity&quot;, no se aplica ningún límite. Estos ajustes controlan el atributo de grupo de control &quot;memory.max&quot;. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de memoria</b>[5].</p>
+<p class="Pp">Mientras que <i>StartupMemoryMax=</i> se aplica a las fases de inicio y apagado del sistema, <i>MemoryMax=</i> se aplica al funcionamiento normal del sistema y, si el primero no está establecido, también a las fases de inicio y apagado. El uso de <i>StartupMemoryMax=</i> permite priorizar servicios específicos al arrancar y apagar de manera diferente que durante el funcionamiento normal.</p>
+<p class="Pp">Añadido en la versión 232.</p>
+</div>
+<p class="Pp"><i>MemorySwapMax=</i><i></i><i>bytes</i>, <i>StartupMemorySwapMax=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>memory</b> en la jerarquía unificada.
+<p class="Pp">Especifique el límite absoluto del uso de swap de los procesos de esta unidad.
+    Si el valor asignado es el valor especial &quot;infinity&quot;, no se aplica ningún límite de swap. Estos ajustes controlan el atributo de grupo de control &quot;memory.swap.max&quot;. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de memoria</b>[5].</p>
+<p class="Pp">Mientras que <i>StartupMemorySwapMax=</i> se aplica a las fases de inicio y apagado del sistema, <i>MemorySwapMax=</i> se aplica al funcionamiento normal del sistema y, si el primero no está establecido, también a las fases de inicio y apagado. El uso de <i>StartupMemorySwapMax=</i> permite priorizar servicios específicos al arrancar y apagar de manera diferente que durante el funcionamiento normal.</p>
+<p class="Pp">Añadido en la versión 232.</p>
+</div>
+<p class="Pp"><i>MemoryZSwapMax=</i><i></i><i>bytes</i>,
+    <i>StartupMemoryZSwapMax=</i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>memory</b> en la jerarquía unificada.
+<p class="Pp">Especifique el límite absoluto del uso de zswap de los procesos de esta unidad. Zswap es una caché comprimida ligera para páginas de swap. Toma páginas que están en proceso de ser intercambiadas y trata de comprimirlas en un grupo de memoria basado en RAM asignado dinámicamente. Si se alcanza el límite especificado, no se almacenarán entradas de esta unidad en el grupo hasta que las entradas existentes se vuelvan a cargar o se escriban en el disco. Consulte la documentación del kernel sobre <b>Zswap</b>[6] para obtener más detalles.</p>
+<p class="Pp">Acepta un tamaño en bytes. Si el valor va seguido de K, M, G o T, el tamaño especificado se analiza como Kilobytes, Megabytes, Gigabytes o Terabytes (con base 1024), respectivamente. Si se asigna el valor especial &quot;infinity&quot;, no se aplica ningún límite. Estos ajustes controlan el atributo de grupo de control &quot;memory.zswap.max&quot;. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de memoria</b>[5].</p>
+<p class="Pp">Mientras que <i>StartupMemoryZSwapMax=</i> se aplica a las fases de inicio y apagado del sistema, <i>MemoryZSwapMax=</i> se aplica al funcionamiento normal del sistema y, si el primero no está establecido, también a las fases de inicio y apagado. El uso de <i>StartupMemoryZSwapMax=</i> permite priorizar servicios específicos al arrancar y apagar de manera diferente que durante el funcionamiento normal.</p>
+<p class="Pp">Añadido en la versión 253.</p>
+</div>
+<p class="Pp"><i>MemoryZSwapWriteback=</i></p>
+<div class="Bd-indent">Este ajuste controla el controlador <b>memory</b> en la jerarquía unificada.
+<p class="Pp">Acepta un argumento booleano. Si es verdadero, se permite que las páginas almacenadas en la caché de Zswap se escriban en el almacenamiento de respaldo, de lo contrario es falso. Por defecto es verdadero. Esto permite deshabilitar la escritura de páginas de swap para aplicaciones intensivas en E/S, manteniendo la capacidad de almacenar páginas comprimidas en Zswap. Consulte la documentación del kernel sobre <b>Zswap</b>[6] para obtener más detalles.</p>
+<p class="Pp">Añadido en la versión 256.</p>
+</div>
+<p class="Pp"><i>AllowedMemoryNodes=</i>, <i>StartupAllowedMemoryNodes=</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>cpuset</b> en la jerarquía unificada.
+<p class="Pp">Restringe que los procesos se ejecuten en nodos NUMA de memoria específicos. Acepta una lista de índices de nodos NUMA de memoria o rangos separados por espacios en blanco o comas. Los rangos de nodos NUMA de memoria se especifican por los índices de nodos NUMA inferior y superior separados por un guion.</p>
+<p class="Pp">Establecer <i>AllowedMemoryNodes=</i> o <i>StartupAllowedMemoryNodes=</i> no garantiza que todos los nodos NUMA de memoria sean utilizados por los procesos, ya que puede estar limitado por las unidades padre. La configuración efectiva se informa como <i>EffectiveMemoryNodes=</i>.</p>
+<p class="Pp">Mientras que <i>StartupAllowedMemoryNodes=</i> se aplica a las fases de inicio y apagado del sistema, <i>AllowedMemoryNodes=</i> se aplica al funcionamiento normal del sistema y, si el primero no está establecido, también a las fases de inicio y apagado. El uso de <i>StartupAllowedMemoryNodes=</i> permite priorizar servicios específicos al arrancar y apagar de manera diferente que durante el funcionamiento normal.</p>
+<p class="Pp">Este ajuste solo se admite con la jerarquía de grupos de control unificada.</p>
+<p class="Pp">Añadido en la versión 244.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Contabilidad_y_Control_de_Procesos'><a class='permalink' href='#Contabilidad_y_Control_de_Procesos'>Contabilidad y Control de Procesos</a></h2>
+<p class="Pp"><i>TasksAccounting=</i></p>
+<div class="Bd-indent">Este ajuste controla el controlador <b>pids</b> en la jerarquía unificada.
+<p class="Pp">Activa la contabilidad de tareas para esta unidad. Acepta un argumento booleano. Si está habilitado, el kernel realizará un seguimiento del número total de tareas en la unidad y sus descendientes. Este número incluye tanto hilos del kernel como procesos de espacio de usuario, contando cada hilo individualmente. Tenga en cuenta que activar la contabilidad de tareas para una unidad también la activará implícitamente para todas las unidades contenidas en la misma slice y para todas sus slices padre y las unidades contenidas en ellas. El valor predeterminado del sistema para este ajuste se puede controlar con <i>DefaultTasksAccounting=</i> en <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 227.</p>
+</div>
+<p class="Pp"><i>TasksMax=</i><i></i><i>N</i></p>
+<div class="Bd-indent">Este ajuste controla el controlador <b>pids</b> en la jerarquía unificada.
+<p class="Pp">Especifique el número máximo de tareas que se pueden crear en la unidad. Esto garantiza que el número de tareas contabilizadas para la unidad (ver arriba) se mantenga por debajo de un límite específico. Esto acepta un número absoluto de tareas o un valor porcentual que se toma en relación con el número máximo configurado de tareas en el sistema. Si se asigna el valor especial &quot;infinity&quot;, no se aplica ningún límite de tareas. Esto controla el atributo de grupo de control &quot;pids.max&quot;. Para obtener detalles sobre este atributo de grupo de control, consulte el <b>controlador pids</b>[7]. La configuración efectiva se informa como <i>EffectiveTasksMax=</i>.</p>
+<p class="Pp">El valor predeterminado del sistema para este ajuste se puede controlar con <i>DefaultTasksMax=</i> en <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 227.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Contabilidad_y_Control_de_E/S'><a class='permalink' href='#Contabilidad_y_Control_de_E/S'>Contabilidad y Control de E/S</a></h2>
+<p class="Pp"><i>IOAccounting=</i></p>
+<div class="Bd-indent">Este ajuste controla el controlador <b>io</b> en la jerarquía unificada.
+<p class="Pp">Activa la contabilidad de E/S de bloque para esta unidad, si la jerarquía de grupos de control unificada se utiliza en el sistema. Acepta un argumento booleano. Tenga en cuenta que activar la contabilidad de E/S de bloque para una unidad también la activará implícitamente para todas las unidades contenidas en la misma slice y para todas sus slices padre y las unidades contenidas en ellas. El valor predeterminado del sistema para este ajuste se puede controlar con <i>DefaultIOAccounting=</i> en <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+<p class="Pp"><i>IOWeight=</i><i></i><i>weight</i>,
+    <i>StartupIOWeight=</i><i></i><i>weight</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>io</b> en la jerarquía unificada.
+<p class="Pp">Establece el peso predeterminado general de E/S de bloque para los procesos ejecutados, si la jerarquía de grupos de control unificada se utiliza en el sistema. Acepta un único valor de peso (entre 1 y 10000) para establecer el peso de E/S de bloque predeterminado. Esto controla el atributo de grupo de control &quot;io.weight&quot;, que por defecto es 100. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de E/S</b>[8]. El ancho de banda de E/S disponible se distribuye entre todas las unidades dentro de una slice en relación con su peso de E/S de bloque. Un peso mayor significa más ancho de banda de E/S, un peso menor significa menos.</p>
+<p class="Pp">Mientras que <i>StartupIOWeight=</i> se aplica a las fases de inicio y apagado del sistema, <i>IOWeight=</i> se aplica al funcionamiento posterior del sistema y, si el primero no está establecido, también a las fases de inicio y apagado. Esto permite priorizar servicios específicos al arrancar y apagar de manera diferente que durante el funcionamiento.</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+<p class="Pp"><i>IODeviceWeight=</i><i></i><i>device</i><i>
+    </i><i></i><i>weight</i></p>
+<div class="Bd-indent">Este ajuste controla el controlador <b>io</b> en la jerarquía unificada.
+<p class="Pp">Establece el peso general de E/S de bloque específico del dispositivo para los procesos ejecutados, si la jerarquía de grupos de control unificada se utiliza en el sistema. Acepta un par separado por espacios de una ruta de archivo y un valor de peso entre 1 y 10000. (Ejemplo: &quot;/dev/sda 1000&quot;). La ruta del archivo puede especificarse como la ruta a un nodo de dispositivo de bloque o como cualquier otro archivo, en cuyo caso se determina el dispositivo de bloque subyacente del sistema de archivos del archivo. Esto controla el atributo de grupo de control &quot;io.weight&quot;, que por defecto es 100. Utilice esta opción varias veces para establecer pesos para varios dispositivos. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de E/S</b>[8].</p>
+<p class="Pp">El nodo de dispositivo especificado debe hacer referencia a un dispositivo de bloque que tenga un programador de E/S asociado, es decir, no debe hacer referencia a particiones o dispositivos de bloque de loopback, sino al dispositivo físico de origen. Cuando se especifica una ruta a un archivo o directorio normal, se intenta descubrir el dispositivo de origen correcto que respalda el sistema de archivos de la ruta especificada. Esto funciona correctamente solo para casos simples, donde el sistema de archivos está colocado directamente en una partición o dispositivo de bloque físico, o donde se utiliza cifrado simple 1:1 con dm-crypt/LUKS. Este descubrimiento no cubre almacenamiento complejo y en particular dispositivos de almacenamiento RAID y de gestión de volúmenes.</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+<p class="Pp"><i>IOReadBandwidthMax=</i><i></i><i>device</i><i>
+    </i><i></i><i>bytes</i>, <i>IOWriteBandwidthMax=</i><i></i><i>device</i><i>
+    </i><i></i><i>bytes</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>io</b> en la jerarquía unificada.
+<p class="Pp">Establece el límite máximo general de ancho de banda de E/S de bloque por dispositivo para los procesos ejecutados, si la jerarquía de grupos de control unificada se utiliza en el sistema. Este límite no es conservador de trabajo y los procesos ejecutados no pueden usar más, incluso si el dispositivo tiene capacidad inactiva. Acepta un par separado por espacios de una ruta de archivo y un valor de ancho de banda (en bytes por segundo) para especificar el ancho de banda específico del dispositivo. La ruta del archivo puede ser una ruta a un nodo de dispositivo de bloque, o como cualquier otro archivo en cuyo caso se utiliza el dispositivo de bloque subyacente del sistema de archivos del archivo. Si el ancho de banda va seguido de K, M, G o T, el ancho de banda especificado se analiza como Kilobytes, Megabytes, Gigabytes o Terabytes, respectivamente, con base 1000. (Ejemplo: &quot;/dev/disk/by-path/pci-0000:00:1f.2-scsi-0:0:0:0 5M&quot;). Esto controla los atributos de grupo de control &quot;io.max&quot;. Utilice esta opción varias veces para establecer límites de ancho de banda para varios dispositivos. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de E/S</b>[8].</p>
+<p class="Pp">Se aplican restricciones similares en el descubrimiento de dispositivos de bloque como para <i>IODeviceWeight=</i>, ver arriba.</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+<p class="Pp"><i>IOReadIOPSMax=</i><i></i><i>device</i><i>
+    </i><i></i><i>IOPS</i>, <i>IOWriteIOPSMax=</i><i></i><i>device</i><i>
+    </i><i></i><i>IOPS</i></p>
+<div class="Bd-indent">Estos ajustes controlan el controlador <b>io</b> en la jerarquía unificada.
+<p class="Pp">Establece el número máximo de E/S por segundo (IOPS) general de E/S de bloque por dispositivo para los procesos ejecutados, si la jerarquía de grupos de control unificada se utiliza en el sistema. Esto controla los atributos de grupo de control &quot;io.max&quot;. Para obtener detalles sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de E/S</b>[8].</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+</section>
+ond límite máximo
+    para los procesos ejecutados, si la jerarquía de control de grupo unificada se
+    utiliza en el sistema. Este límite no conserva el trabajo y a los procesos
+    ejecutados no se les permite utilizar más, incluso si el dispositivo tiene
+    capacidad inactiva. Toma un par separado por espacios de una ruta de archivo
+    y un valor de IOPS para especificar el IOPS específico del dispositivo. La
+    ruta del archivo puede ser una ruta a un nodo de dispositivo de bloque, o a
+    cualquier otro archivo, en cuyo caso se utiliza el dispositivo de bloque de
+    soporte del sistema de archivos del archivo. Si el IOPS va seguido de K, M,
+    G o T, el IOPS especificado se analiza como KiloIOPS, MegaIOPS, GigaIOPS o
+    TeraIOPS, respectivamente, con base 1000. (Ejemplo:
+    &quot;/dev/disk/by-path/pci-0000:00:1f.2-scsi-0:0:0:0 1K&quot;). Esto
+    controla los atributos de control "io.max". Utilice esta opción varias veces
+    para establecer límites de IOPS para varios dispositivos. Para más detalles
+    sobre este atributo de grupo de control, consulte <b>Archivos de interfaz de
+    IO</b>[8].</p>
+<p class="Pp">Se aplican restricciones similares en el descubrimiento de
+    dispositivos de bloque como para <i>IODeviceWeight=</i>, ver arriba.</p>
+<p class="Pp">Añadido en la versión 230.</p>
+</div>
+<p class="Pp"><i>IODeviceLatencyTargetSec=</i><i></i><i>device</i><i>
+    </i><i></i><i>target</i></p>
+<div class="Bd-indent">Esta configuración controla el controlador <b>io</b> en
+  la jerarquía unificada.
+<p class="Pp">Establece la latencia promedio de I/O objetivo por dispositivo para
+    los procesos ejecutados, si la jerarquía de control de grupo unificada se usa
+    en el sistema. Toma una ruta de archivo y un período de tiempo separados por
+    un espacio para especificar el objetivo de latencia específico del dispositivo.
+    (Ejemplo: &quot;/dev/sda 25ms&quot;). La ruta del archivo puede especificarse
+    como ruta a un nodo de dispositivo de bloque o como cualquier otro archivo, en
+    cuyo caso se determina el dispositivo de bloque de soporte del sistema de
+    archivos del archivo. Esto controla el atributo de control "io.latency".
+    Utilice esta opción varias veces para establecer el objetivo de latencia para
+    múltiples dispositivos. Para más detalles sobre este atributo de grupo de
+    control, consulte <b>Archivos de interfaz de IO</b>[8].</p>
+<p class="Pp">Implica &quot;IOAccounting=yes&quot;.</p>
+<p class="Pp">Estas configuraciones solo se admiten si se utiliza la jerarquía de
+    control de grupo unificada.</p>
+<p class="Pp">Se aplican restricciones similares en el descubrimiento de
+    dispositivos de bloque como para <i>IODeviceWeight=</i>, ver arriba.</p>
+<p class="Pp">Añadido en la versión 240.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Contabilidad_y_Control_de_Red'><a class='permalink' href='#Contabilidad_y_Control_de_Red'>Contabilidad y Control de Red</a></h2>
+<p class="Pp"><i>IPAccounting=</i></p>
+<div class="Bd-indent">Toma un argumento booleano. Si es verdadero, activa la
+  contabilidad del tráfico de red IPv4 e IPv6 para los paquetes enviados o
+  recibidos por la unidad. Cuando esta opción está activada, se contabilizan
+  todos los sockets IPv4 e IPv6 creados por cualquier proceso de la unidad.
+<p class="Pp">Cuando esta opción se utiliza en unidades de socket, se aplica a
+    todos los sockets IPv4 e IPv6 asociados a ella (incluidos los sockets de
+    escucha y los de conexión, cuando corresponda). Tenga en cuenta que para los
+    servicios activados por socket, la configuración de esta opción y los datos de
+    contabilidad de la unidad de servicio y la unidad de socket se mantienen
+    separados y se muestran por separado. No se realiza ninguna propagación de
+    la configuración y las estadísticas recopiladas, en ninguna dirección.
+    Además, cualquier tráfico enviado o recibido en cualquiera de los sockets de
+    la unidad de socket se contabiliza en la unidad de socket, y nunca en la
+    unidad de servicio que pueda haber activado, incluso si el socket es utilizado
+    por ella.</p>
+<p class="Pp">El valor predeterminado del sistema para esta configuración puede
+    controlarse con <i>DefaultIPAccounting=</i> en <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Tenga en cuenta que esta funcionalidad solo está disponible para
+    servicios del sistema, no para servicios por usuario.</p>
+<p class="Pp">Añadido en la versión 235.</p>
+</div>
+<p class="Pp"><i>IPAddressAllow=</i><i></i><i>DIRECCIÓN[/LONGITUD_DE_PREFIJO]...</i>,
+    <i>IPAddressDeny=</i><i></i><i>DIRECCIÓN[/LONGITUD_DE_PREFIJO]...</i></p>
+<div class="Bd-indent">Activa el filtrado de tráfico de red para paquetes IP
+  enviados y recibidos a través de sockets <b>AF_INET</b> y <b>AF_INET6</b>.
+  Ambas directivas toman una lista separada por espacios de direcciones IPv4 o
+  IPv6, cada una opcionalmente seguida de una longitud de prefijo de dirección en
+  bits después de un carácter "/". Si se omite el sufijo, la dirección se
+  considera una dirección de host, es decir, el filtro cubre toda la dirección
+  (32 bits para IPv4, 128 bits para IPv6).
+<p class="Pp">Las listas de acceso configuradas con esta opción se aplican a todos
+    los sockets creados por los procesos de esta unidad (o en el caso de unidades
+    de socket, asociadas a ella). Las listas se combinan implícitamente con
+    cualquier lista configurada para alguna de las unidades de slice padre de las
+    que esta unidad pueda ser miembro. Por defecto, ambas listas de acceso están
+    vacías. El tráfico de entrada y salida es filtrado por estas
+    configuraciones. En caso de tráfico de entrada, se verifica la dirección IP
+    de origen contra estas listas de acceso; en caso de tráfico de salida, se
+    verifica la dirección IP de destino. Las siguientes reglas se aplican en
+    orden:</p>
+<div class="Bd-indent">&#x2022;El acceso se concede cuando la dirección IP
+  verificada coincide con una entrada en la lista <i>IPAddressAllow=</i>.</div>
+<div class="Bd-indent">&#x2022;De lo contrario, el acceso se deniega cuando la
+  dirección IP verificada coincide con una entrada en la lista
+  <i>IPAddressDeny=</i>.</div>
+<div class="Bd-indent">&#x2022;De lo contrario, el acceso se concede.</div>
+<p class="Pp">Para implementar un firewall IP de lista blanca, se recomienda usar
+    una configuración <i>IPAddressDeny=</i><b>any</b> en una unidad de slice de
+    nivel superior (como la slice raíz -.slice o la slice que contiene todos los
+    servicios del sistema system.slice – consulte <a href='/man/systemd.special.7.en'>systemd.special(7)</a> para más detalles sobre estas unidades de
+    slice), más líneas individuales <i>IPAddressAllow=</i> por servicio que
+    permitan el acceso a la red a los servicios relevantes, y solo a ellos.</p>
+<p class="Pp">Tenga en cuenta que para los servicios activados por socket, la lista
+    de acceso IP configurada en la unidad de socket se aplica a todos los sockets
+    asociados directamente a ella, pero no a ningún socket creado por los
+    servicios activados en última instancia para ella. Por el contrario, la lista
+    de acceso IP configurada para el servicio no se aplica a ningún socket que se
+    pase al servicio a través de la activación por socket. Por lo tanto,
+    generalmente es una buena idea replicar las listas de acceso IP tanto en la
+    unidad de socket como en la de servicio. Sin embargo, puede tener sentido
+    mantener una lista más abierta y la otra más restringida, dependiendo del
+    caso de uso.</p>
+<p class="Pp">Si estas configuraciones se utilizan varias veces en la misma unidad,
+    las listas especificadas se combinan. Si se asigna una cadena vacía a estas
+    configuraciones, la lista de acceso específica se reinicia y se anulan todas
+    las configuraciones anteriores.</p>
+<p class="Pp">En lugar de especificaciones explícitas de direcciones IP o
+    longitudes de prefijo IPv4 o IPv6, se puede utilizar un pequeño conjunto de
+    nombres simbólicos. Los siguientes nombres están definidos:</p>
+<p class="Pp"><b>Tabla&#x00A0;1.&#x00A0;Nombres especiales de dirección/red</b></p>
+<table class="tbl" border="1" style="border-style: solid;">
+  <tr>
+    <td><b>Nombre Simbólico</b></td>
+    <td><b>Definición</b></td>
+    <td><b>Significado</b></td>
+  </tr>
+  <tr>
+    <td><b>any</b></td>
+    <td>0.0.0.0/0 ::/0</td>
+    <td>Cualquier host</td>
+  </tr>
+  <tr>
+    <td><b>localhost</b></td>
+    <td>127.0.0.0/8 ::1/128</td>
+    <td>Todas las direcciones del loopback local</td>
+  </tr>
+  <tr>
+    <td><b>link-local</b></td>
+    <td>169.254.0.0/16 fe80::/64</td>
+    <td>Todas las direcciones IP locales de enlace</td>
+  </tr>
+  <tr>
+    <td><b>multicast</b></td>
+    <td>224.0.0.0/4 ff00::/8</td>
+    <td>Todas las direcciones de multidifusión IP</td>
+  </tr>
+</table>
+<p class="Pp">Tenga en cuenta que estas configuraciones podrían no ser compatibles
+    en algunos sistemas (por ejemplo, si el soporte de eBPF para grupos de control
+    no está habilitado en el kernel subyacente o el administrador de contenedores).
+    Estas configuraciones no tendrán ningún efecto en ese caso. Si se desea
+    compatibilidad con tales sistemas, se recomienda no depender exclusivamente
+    de ellas para la seguridad IP.</p>
+<p class="Pp">Esta opción no se puede omitir anteponiendo "+" a la ruta del
+    ejecutable en la unidad de servicio, ya que se aplica a todo el grupo de
+    control.</p>
+<p class="Pp">Añadido en la versión 235.</p>
+</div>
+<p class="Pp"><i>SocketBindAllow=</i><i></i><i>regla-bind</i>,
+    <i>SocketBindDeny=</i><i></i><i>regla-bind</i></p>
+<div class="Bd-indent">Configura restricciones sobre la capacidad de los procesos
+  de la unidad para invocar <a href='/man/bind.2.en'>bind(2)</a> en un socket. Se pueden definir reglas de
+  permiso y denegación que restringen a qué direcciones se puede enlazar un
+  socket.
+<p class="Pp"><i>regla-bind</i> describe propiedades del socket como
+    <i>familia-direccion</i>, <i>protocolo-transporte</i> y
+    <i>puertos-ip</i>.</p>
+<p class="Pp"><i>regla-bind</i> := {
+    [<i>familia-direccion</i><b>:</b>][<i>protocolo-transporte</i><b>:</b>][<i>puertos-ip</i>]
+    | <b>any</b> }</p>
+<p class="Pp"><i>familia-direccion</i> := { <b>ipv4</b> | <b>ipv6</b> }</p>
+<p class="Pp"><i>protocolo-transporte</i> := { <b>tcp</b> | <b>udp</b> }</p>
+<p class="Pp"><i>puertos-ip</i> := { <i>puerto-ip</i> | <i>rango-puertos-ip</i>
+    }</p>
+<p class="Pp">Una <i>familia-direccion</i> opcional espera valores <b>ipv4</b>
+    o <b>ipv6</b>. Si no se especifica, una regla coincidirá para direcciones
+    IPv4 e IPv6 y se aplicará según otros campos del socket, por ejemplo,
+    <i>protocolo-transporte</i>, <i>puerto-ip</i>.</p>
+<p class="Pp">Un <i>protocolo-transporte</i> opcional espera nombres de protocolo
+    de transporte <b>tcp</b> o <b>udp</b>. Si no se especifica, una regla
+    coincidirá para cualquier protocolo de transporte.</p>
+<p class="Pp">Un valor <i>puerto-ip</i> opcional debe estar dentro del intervalo
+    1...65535 inclusive, es decir, el puerto dinámico <b>0</b> no está permitido.
+    Un rango de puertos secuenciales se describe mediante <i>rango-puertos-ip</i>
+    := <i>puerto-ip-bajo</i><b>-</b><i>puerto-ip-alto</i>, donde
+    <i>puerto-ip-bajo</i> es menor o igual que <i>puerto-ip-alto</i> y ambos
+    están dentro del intervalo 1...65535 inclusive.</p>
+<p class="Pp">Se puede utilizar el valor especial <b>any</b> para aplicar una
+    regla a cualquier familia de direcciones, protocolo de transporte y cualquier
+    puerto con un valor positivo.</p>
+<p class="Pp">Para permitir múltiples reglas, asigne <i>SocketBindAllow=</i> o
+    <i>SocketBindDeny=</i> varias veces. Para borrar las asignaciones
+    existentes, pase una asignación vacía de <i>SocketBindAllow=</i> o
+    <i>SocketBindDeny=</i>.</p>
+<p class="Pp">Para cada uno de <i>SocketBindAllow=</i> y <i>SocketBindDeny=</i>,
+    el número máximo de asignaciones permitidas es <b>128</b>.</p>
+<div class="Bd-indent">&#x2022;El enlace a un socket se permite cuando una dirección
+  de socket coincide con una entrada en la lista <i>SocketBindAllow=</i>.</div>
+<div class="Bd-indent">&#x2022;De lo contrario, el enlace se deniega cuando la
+  dirección del socket coincide con una entrada en la lista
+  <i>SocketBindDeny=</i>.</div>
+<div class="Bd-indent">&#x2022;De lo contrario, el enlace se permite.</div>
+<p class="Pp">La característica se implementa con ganchos BPF de cgroup
+    <b>cgroup/bind4</b> y <b>cgroup/bind6</b>.</p>
+<p class="Pp">Tenga en cuenta que estas configuraciones se aplican a cualquier
+    invocación de llamada al sistema <a href='/man/bind.2.en'>bind(2)</a> por parte de los procesos de la
+    unidad, independientemente del espacio de nombres de red en el que se
+    encuentren. O en otras palabras: cambiar el espacio de nombres de red no es
+    un mecanismo adecuado para escapar de estas restricciones en <b>bind()</b>.</p>
+<p class="Pp">Ejemplos:</p>
+<div class="Bd-indent">
+<pre>...
+# Permitir enlazar direcciones de socket IPv6 con un puerto mayor o igual a 10000.
+[Service]
+SocketBindAllow=ipv6:10000-65535
+SocketBindDeny=any
+...
+# Permitir enlazar direcciones de socket IPv4 e IPv6 con puertos 1234 y 4321.
+[Service]
+SocketBindAllow=1234
+SocketBindAllow=4321
+SocketBindDeny=any
+...
+# Denegar el enlace de direcciones de socket IPv6.
+[Service]
+SocketBindDeny=ipv6
+...
+# Denegar el enlace de direcciones de socket IPv4 e IPv6.
+[Service]
+SocketBindDeny=any
+...
+# Permitir el enlace solo sobre TCP
+[Service]
+SocketBindAllow=tcp
+SocketBindDeny=any
+...
+# Permitir el enlace o</pre>
+</div>{
+  "title": "systemd.resource-control",
+  "sections": [
+    {
+      "title": "Socket Options",
+      "subsections": [
+        {
+          "title": "SocketBindAllow=",
+          "content": "Permite a los procesos de esta unidad enlazar sockets que coincidan con los criterios especificados. Las reglas coinciden con protocolos, familias de direcciones y rangos de puertos. Las reglas se aplican en el orden en que aparecen, y la primera coincidencia determina si el enlace está permitido o denegado. El comportamiento por defecto es denegar todos los enlaces de sockets. Los protocolos de red se pueden especificar como \"any\", \"inet\" (para IPv4 e IPv6), \"ipv4\" (solo IPv4) o \"ipv6\" (solo IPv6). Los tipos de socket se pueden especificar como \"any\", \"stream\" (TCP), \"dgram\" (UDP), \"seqpacket\", \"raw\", \"rdm\". Si no se especifica, todos los tipos de socket coinciden. Los rangos de puertos se especifican como \"min-max\", \"min-\" o \"-max\".\n\nEjemplo 1: Permitir enlaces en cualquier dirección IP pero solo a través de TCP en el rango de puertos 10000-65535.\n```\n[Service]\nSocketBindAllow=inet:tcp:10000-65535\nSocketBindDeny=any\n```\n\nEjemplo 2: Permitir enlaces solo sobre IPv6/TCP\n```\n[Service]\nSocketBindAllow=ipv6:tcp\nSocketBindDeny=any\n```\n\nEjemplo 3: Permitir enlaces de puertos dentro del rango 10000-65535 sobre IPv4/UDP.\n```\n[Service]\nSocketBindAllow=ipv4:udp:10000-65535\nSocketBindDeny=any\n```\n\nEsta opción no puede ser eludida prefijando \"+\" a la ruta del ejecutable en la unidad de servicio, ya que se aplica a todo el grupo de control.\n\nAñadido en la versión 249."
+        },
+        {
+          "title": "SocketBindDeny=",
+          "content": "Deniega a los procesos de esta unidad enlazar sockets que coincidan con los criterios especificados. Las reglas se aplican de manera similar a SocketBindAllow=, pero para denegar enlaces. Por defecto, todos los enlaces de sockets están permitidos. El uso de esta opción para denegar explícitamente todos los enlaces de sockets (p. ej., `SocketBindDeny=any`) es una forma común de asegurar que solo se permitan enlaces explícitamente definidos con `SocketBindAllow=`.\n\nAñadido en la versión 249."
+        },
+        {
+          "title": "RestrictNetworkInterfaces=",
+          "content": "Toma una lista de nombres de interfaces de red separados por espacios. Esta opción restringe las interfaces de red que los procesos de esta unidad pueden usar. Por defecto, los procesos solo pueden usar las interfaces de red listadas (lista de permitidos). Si el primer carácter de la regla es \"~\", el efecto se invierte: los procesos solo pueden usar las interfaces de red no listadas (lista de denegados).\n\nEsta opción puede aparecer varias veces, en cuyo caso los nombres de las interfaces de red se fusionan. Si se asigna la cadena vacía, el conjunto se restablece, todas las asignaciones anteriores no tendrán efecto.\n\nSi especifica ambos tipos de esta opción (es decir, permitir y denegar listas), la primera encontrada tendrá prioridad y dictará la acción por defecto (permitir frente a denegar). Luego, las siguientes ocurrencias de esta opción añadirán o eliminarán los nombres de las interfaces de red listados del conjunto, dependiendo de su tipo y de la acción por defecto.\n\nLa interfaz de loopback (\"lo\") no se trata de ninguna manera especial, debe configurarse explícitamente en el archivo de la unidad.\n\nEjemplo 1: Lista de permitidos\n```\nRestrictNetworkInterfaces=eth1\nRestrictNetworkInterfaces=eth2\n```\nLos programas de la unidad solo podrán usar las interfaces de red eth1 y eth2.\n\nEjemplo 2: Lista de denegados\n```\nRestrictNetworkInterfaces=~eth1 eth2\n```\nLos programas de la unidad podrán usar cualquier interfaz de red excepto eth1 y eth2.\n\nEjemplo 3: Mixto\n```\nRestrictNetworkInterfaces=eth1 eth2\nRestrictNetworkInterfaces=~eth1\n```\nLos programas de la unidad solo podrán usar la interfaz de red eth2.\n\nEsta opción no puede ser eludida prefijando \"+\" a la ruta del ejecutable en la unidad de servicio, ya que se aplica a todo el grupo de control.\n\nAñadido en la versión 250."
+        },
+        {
+          "title": "NFTSet=",
+          "content": "Este ajuste proporciona un método para integrar IDs dinámicos de cgroup, de usuario y de grupo en reglas de firewall con conjuntos de <b>NFT</b>[9]. El beneficio de usar este ajuste es poder usar los IDs como selectores en las reglas de firewall fácilmente y esto, a su vez, permite un filtrado más detallado. Las reglas NFT para la coincidencia de cgroup utilizan IDs numéricos de cgroup, que cambian cada vez que se reinicia un servicio, lo que dificulta su uso en el entorno systemd de otra manera. Los IDs dinámicos y aleatorios utilizados por <i>DynamicUser=</i> también se pueden integrar con este ajuste.\n\nEsta opción espera una lista separada por espacios de definiciones de conjuntos NFT. Cada definición consta de una tupla separada por dos puntos del tipo de origen (uno de \"cgroup\", \"user\" o \"group\"), familia de direcciones NFT (uno de \"arp\", \"bridge\", \"inet\", \"ip\", \"ip6\" o \"netdev\"), nombre de tabla y nombre de conjunto. Los nombres de las tablas y conjuntos deben cumplir las restricciones léxicas de los nombres de tablas NFT. El tipo del elemento utilizado en el filtro NFT debe coincidir con el tipo implícito por la directiva (\"cgroup\", \"user\" o \"group\") como se muestra en la tabla siguiente. Cuando se crea un grupo de control o una unidad, el ID correspondiente se añadirá a los conjuntos NFT y se eliminará cuando se elimine el grupo de control o la unidad. <b>systemd</b> solo inserta elementos en (o elimina de) los conjuntos, por lo que las reglas NFT relacionadas, las tablas y los conjuntos deben prepararse en otro lugar de antemano. Los errores en la gestión de los conjuntos se ignorarán.\n\n<b>Tabla&#x00A0;2.&#x00A0;Valores de <i>tipo de origen</i> definidos</b>\n\n<table>\n  <tr>\n    <td><b>Tipo de origen</b></td>\n    <td><b>Descripción</b></td>\n    <td><b>Nombre de tipo NFT correspondiente</b></td>\n  </tr>\n  <tr>\n    <td>\"cgroup\"</td>\n    <td>ID de grupo de control</td>\n    <td>\"cgroupsv2\"</td>\n  </tr>\n  <tr>\n    <td>\"user\"</td>\n    <td>ID de usuario</td>\n    <td>\"meta skuid\"</td>\n  </tr>\n  <tr>\n    <td>\"group\"</td>\n    <td>ID de grupo</td>\n    <td>\"meta skgid\"</td>\n  </tr>\n</table>\n\nSi las reglas de firewall se reinstalan de tal manera que el contenido de los conjuntos NFT se destruye, el comando\n  <br/>\n  <b>systemctl daemon-reload</b> se puede utilizar para rellenar los conjuntos.\n\nEjemplo:\n```\n[Unit]\nNFTSet=cgroup:inet:filter:my_service user:inet:filter:serviceuser\n```\nReglas NFT correspondientes:\n```\ntable inet filter {\n        set my_service {\n                type cgroupsv2\n        }\n        set serviceuser {\n                typeof meta skuid\n        }\n        chain x {\n                socket cgroupv2 level 2 @my_service accept\n                drop\n        }\n        chain y {\n                meta skuid @serviceuser accept\n                drop\n        }\n}\n```\n\nEsta opción solo está disponible para servicios del sistema y no se admite para servicios que se ejecutan en instancias por usuario del gestor de servicios.\n\nAñadido en la versión 255."
+        }
+      ]
+    },
+    {
+      "title": "BPF Programs",
+      "subsections": [
+        {
+          "title": "IPIngressFilterPath=",
+          "content": "Añade filtros personalizados de tráfico de red implementados como programas BPF, que se aplican a todos los paquetes IP enviados y recibidos a través de sockets <b>AF_INET</b> y <b>AF_INET6</b>. Toma una ruta absoluta a un programa BPF fijado en el sistema de archivos virtual BPF (/sys/fs/bpf/).\n\nLos filtros configurados con esta opción se aplican a todos los sockets creados por los procesos de esta unidad (o en el caso de unidades de socket, asociados a ella). Los filtros se cargan además de cualquier filtro de las unidades de slice padre de las que esta unidad pueda ser miembro, así como de cualquier filtro <i>IPAddressAllow=</i> e <i>IPAddressDeny=</i> en cualquiera de estas unidades. Por defecto, no se especifican filtros.\n\nSi se utilizan estas opciones varias veces en la misma unidad, se adjuntan todos los programas especificados. Si se asigna una cadena vacía a estas opciones, la lista de programas se restablece y todos los programas especificados anteriormente se ignoran.\n\nSi la ruta <i>BPF_FS_PROGRAM_PATH</i> en la asignación <i>IPIngressFilterPath=</i> ya está siendo manejada por el hook de entrada <i>BPFProgram=</i>, p. ej., <i>BPFProgram=</i><b>ingress</b>:<i>BPF_FS_PROGRAM_PATH</i>, la asignación seguirá considerándose válida y el programa se adjuntará a un cgroup. Lo mismo ocurre para la ruta <i>IPEgressFilterPath=</i> y el hook <b>egress</b>.\n\nTenga en cuenta que para los servicios activados por socket, los programas de filtro IP configurados en la unidad de socket se aplican a todos los sockets asociados directamente a ella, pero no a ningún socket creado por los servicios finalmente activados para ella. Por el contrario, los programas de filtro IP configurados para el servicio no se aplican a ningún socket pasado al servicio a través de la activación de socket. Por lo tanto, generalmente es una buena idea replicar los programas de filtro IP tanto en la unidad de socket como en la de servicio, sin embargo, a menudo tiene sentido mantener una configuración más abierta y la otra más restringida, dependiendo del caso de uso.\n\nTenga en cuenta que estas opciones pueden no ser compatibles en algunos sistemas (por ejemplo, si el soporte de cgroup eBPF no está habilitado en el kernel subyacente o en el gestor de contenedores). Estas opciones harán fallar el servicio en ese caso. Si se desea compatibilidad con dichos sistemas, se recomienda adjuntar el filtro manualmente (requiere <i>Delegate=</i><b>yes</b>) en lugar de usar esta opción.\n\nAñadido en la versión 243."
+        },
+        {
+          "title": "IPEgressFilterPath=",
+          "content": "Añade filtros personalizados de tráfico de red implementados como programas BPF, que se aplican a todos los paquetes IP enviados y recibidos a través de sockets <b>AF_INET</b> y <b>AF_INET6</b>. Toma una ruta absoluta a un programa BPF fijado en el sistema de archivos virtual BPF (/sys/fs/bpf/).\n\nLos filtros configurados con esta opción se aplican a todos los sockets creados por los procesos de esta unidad (o en el caso de unidades de socket, asociados a ella). Los filtros se cargan además de cualquier filtro de las unidades de slice padre de las que esta unidad pueda ser miembro, así como de cualquier filtro <i>IPAddressAllow=</i> e <i>IPAddressDeny=</i> en cualquiera de estas unidades. Por defecto, no se especifican filtros.\n\nSi se utilizan estas opciones varias veces en la misma unidad, se adjuntan todos los programas especificados. Si se asigna una cadena vacía a estas opciones, la lista de programas se restablece y todos los programas especificados anteriormente se ignoran.\n\nSi la ruta <i>BPF_FS_PROGRAM_PATH</i> en la asignación <i>IPIngressFilterPath=</i> ya está siendo manejada por el hook de entrada <i>BPFProgram=</i>, p. ej., <i>BPFProgram=</i><b>ingress</b>:<i>BPF_FS_PROGRAM_PATH</i>, la asignación seguirá considerándose válida y el programa se adjuntará a un cgroup. Lo mismo ocurre para la ruta <i>IPEgressFilterPath=</i> y el hook <b>egress</b>.\n\nTenga en cuenta que para los servicios activados por socket, los programas de filtro IP configurados en la unidad de socket se aplican a todos los sockets asociados directamente a ella, pero no a ningún socket creado por los servicios finalmente activados para ella. Por el contrario, los programas de filtro IP configurados para el servicio no se aplican a ningún socket pasado al servicio a través de la activación de socket. Por lo tanto, generalmente es una buena idea replicar los programas de filtro IP tanto en la unidad de socket como en la de servicio, sin embargo, a menudo tiene sentido mantener una configuración más abierta y la otra más restringida, dependiendo del caso de uso.\n\nTenga en cuenta que estas opciones pueden no ser compatibles en algunos sistemas (por ejemplo, si el soporte de cgroup eBPF no está habilitado en el kernel subyacente o en el gestor de contenedores). Estas opciones harán fallar el servicio en ese caso. Si se desea compatibilidad con dichos sistemas, se recomienda adjuntar el filtro manualmente (requiere <i>Delegate=</i><b>yes</b>) en lugar de usar esta opción.\n\nAñadido en la versión 243."
+        },
+        {
+          "title": "BPFProgram=",
+          "content": "<i>BPFProgram=</i> permite adjuntar programas BPF personalizados al cgroup de una unidad. (Esto generaliza la funcionalidad expuesta a través de <i>IPEgressFilterPath=</i> e <i>IPIngressFilterPath=</i> para otros hooks.) Los hooks cgroup-bpf en forma de programas BPF cargados en el sistema de archivos BPF se adjuntan con flags de adjunción cgroup-bpf determinados por la unidad. Para más detalles sobre los tipos de adjunción y flags, consulte <b>bpf.h</b>[10]. Consulte también la <b>documentación general de BPF</b>[11].\n\nLa especificación del programa BPF consiste en un par del tipo de programa BPF y la ruta del programa en el sistema de archivos, con \":\" como separador: <i>type</i>:<i>program-path</i>.\n\nEl tipo de programa BPF es equivalente al tipo de adjunción BPF utilizado en\n    <a href='/man/bpftool.8.en'>bpftool(8)</a>. Puede ser uno de <b>egress</b>, <b>ingress</b>,\n    <b>sock_create</b>, <b>sock_ops</b>, <b>device</b>, <b>bind4</b>,\n    <b>bind6</b>, <b>connect4</b>, <b>connect6</b>, <b>post_bind4</b>,\n    <b>post_bind6</b>, <b>sendmsg4</b>, <b>sendmsg6</b>, <b>sysctl</b>, <b>recvmsg4</b>, <b>recvmsg6</b>, <b>getsockopt</b>, o\n  <b>setsockopt</b>.\n\nLa ruta del programa especificada debe ser una ruta absoluta que haga referencia a un inodo de programa BPF en el sistema de archivos bpffs (lo que generalmente significa que debe comenzar con /sys/fs/bpf/). Si un programa especificado no existe (es decir, aún no se ha subido al subsistema BPF del kernel), no se instalará pero la activación de la unidad continuará (se imprimirá una advertencia en los logs).\n\nEstablecer <i>BPFProgram=</i> a un valor vacío hace que las asignaciones anteriores no sean efectivas.\n\nAsignaciones múltiples del mismo par tipo/ruta de programa tienen el mismo efecto que una sola asignación: el programa se adjuntará solo una vez.\n\nSi el programa BPF <b>egress</b> fijado en la ruta <i>program-path</i> ya está siendo manejado por <i>IPEgressFilterPath=</i>, la asignación <i>BPFProgram=</i> se considerará válida y <i>BPFProgram=</i> se adjuntará a un cgroup. Similarmente para el hook <b>ingress</b> y la asignación <i>IPIngressFilterPath=</i>.\n\nLos programas BPF pasados con <i>BPFProgram=</i> se adjuntan al cgroup de una unidad con el flag de adjunción BPF <b>multi</b>, que permite adjunciones adicionales del mismo <i>type</i> dentro de la jerarquía de cgroup encabezada por el cgroup de la unidad.\n\nEjemplos:\n```\nBPFProgram=egress:/sys/fs/bpf/egress-hook\nBPFProgram=bind6:/sys/fs/bpf/sock-addr-hook\n```\n\nAñadido en la versión 249."
+        }
+      ]
+    },
+    {
+      "title": "Acceso a Dispositivos",
+      "subsections": [
+        {
+          "title": "DeviceAllow=",
+          "content": "Controla el acceso a nodos de dispositivos específicos por parte de los procesos ejecutados. Toma dos cadenas separadas por espacios: un especificador de nodo de dispositivo seguido de una combinación de <b>r</b>, <b>w</b>, <b>m</b> para controlar la lectura (<i>r</i>ead), escritura (<i>w</i>rite) o creación (<i>m</i>knod) de los nodos de dispositivos específicos por parte de la unidad, respectivamente. Esta funcionalidad se implementa utilizando filtrado eBPF.\n\nCuando se debe denegar el acceso a <i>todos</i> los dispositivos físicos, se puede usar <i>PrivateDevices=</i> en inste"
+        }
+      ]
+    }
+  ]
+}
+ ad. Véase <a href='/man/systemd.exec.5.en'>systemd.exec(5)</a>.</p>
+<p class="Pp">El especificador de nodo de dispositivo es una ruta a un nodo de dispositivo en el
+    sistema de archivos, comenzando con /dev/, o una cadena que comienza con
+    "char-" o "block-" seguida de un nombre de grupo de dispositivos, como
+    se enumera en /proc/devices. Este último es útil para permitir la lista de todos los
+    dispositivos actuales y futuros que pertenecen a un grupo de dispositivos específico a la vez. El grupo de
+    dispositivos se compara según las reglas de globbing de nombres de archivo, por lo que puede usar
+    los comodines "*" y "?". (¡Tenga en cuenta que dichos comodines de globbing no
+    están disponibles para las especificaciones de rutas de nodos de dispositivos!) Para
+    que coincidan los nodos de dispositivos por mayor/menor numérico, use rutas de nodos de dispositivos en los
+    directorios /dev/char/ y /dev/block/. Sin embargo, generalmente no se recomienda
+    hacer coincidir dispositivos por mayor/menor, ya que las asignaciones no son estables ni portátiles entre
+    sistemas o diferentes versiones del kernel.</p>
+<p class="Pp">Ejemplos: /dev/sda5 es una ruta a un nodo de dispositivo, que se refiere a un
+    dispositivo de bloque ATA o SCSI. "char-pts" y "char-alsa" son
+    especificadores para todos los pseudo TTYs y todos los dispositivos de sonido ALSA, respectivamente.
+    "char-cpu/*" es un especificador que coincide con todos los grupos de dispositivos relacionados con la CPU.</p>
+<p class="Pp">Tenga en cuenta que las listas de permitidos definidas de esta manera solo deben hacer referencia a
+    grupos de dispositivos que se puedan resolver en el momento en que se inicia la unidad. Cualquier
+    grupo de dispositivos que no se pueda resolver entonces no se agregará a la lista de permitidos de dispositivos. Para
+    solucionar esta limitación, considere extender las unidades de servicio con un par de
+    líneas <b>After=modprobe@xyz.service</b> y
+    <b>Wants=modprobe@xyz.service</b> que cargan el módulo del kernel necesario
+    que implementa el grupo de dispositivos si falta. Ejemplo:</p>
+<div class="Bd-indent">
+<pre>...
+[Unit]
+Wants=modprobe@loop.service
+After=modprobe@loop.service
+[Service]
+DeviceAllow=block-loop
+DeviceAllow=/dev/loop-control
+...</pre>
+</div>
+<p class="Pp">Esta opción no puede ser omitida prefijando "+" a la ruta del ejecutable
+    en la unidad de servicio, ya que se aplica a todo el grupo de control.</p>
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp"><i>DevicePolicy=auto|closed|strict</i></p>
+<div class="Bd-indent">Controla la política para permitir el acceso a dispositivos:
+<p class="Pp"><b>strict</b></p>
+<div class="Bd-indent">significa permitir solo los tipos de acceso que se especifican explícitamente.
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp"><b>closed</b></p>
+<div class="Bd-indent">además, permite el acceso a pseudo dispositivos estándar, incluidos /dev/null, /dev/zero, /dev/full, /dev/random y /dev/urandom.
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp"><b>auto</b></p>
+<div class="Bd-indent">además, permite el acceso a todos los dispositivos si no hay ningún
+    <i>DeviceAllow=</i> explícito presente. Este es el valor predeterminado.
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp">Esta opción no puede ser omitida prefijando "+" a la ruta del ejecutable
+    en la unidad de servicio, ya que se aplica a todo el grupo de control.</p>
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Control_Group_Management'><a class='permalink' href='#Control_Group_Management'>Gestión de Grupos de Control</a></h2>
+<p class="Pp"><i>Slice=</i></p>
+<div class="Bd-indent">El nombre de la unidad slice en la que colocar la unidad. El valor predeterminado
+    es system.slice para todas las unidades no instanciadas de todos los tipos de unidad (excepto para las
+    unidades slice mismas, véase más abajo). Las unidades de instancia se colocan por defecto en un
+    sub-slice de system.slice que se nombra según el nombre de la plantilla.
+<p class="Pp">Esta opción puede usarse para organizar las unidades de systemd en una jerarquía de
+    slices en las que cada uno podría tener configuraciones de recursos aplicadas.</p>
+<p class="Pp">Para unidades de tipo slice, el único valor aceptado para esta configuración
+    es el slice padre. Dado que el nombre de una unidad slice implica el slice padre,
+    es redundante establecer este parámetro directamente para las unidades slice.</p>
+<p class="Pp">Se debe tener especial cuidado al depender de la asignación de slice predeterminada
+    en unidades de servicio de plantilla que tienen establecido
+    <i>DefaultDependencies=no</i>, véase <a href='/man/systemd.service.5.en'>systemd.service(5)</a>,
+    sección "Dependencias Predeterminadas" para más detalles.</p>
+<p class="Pp">Añadido en la versión 208.</p>
+</div>
+<p class="Pp"><i>Delegate=</i></p>
+<div class="Bd-indent">Activa la delegación de una mayor partición de control de recursos
+    a los procesos de la unidad. Las unidades donde esto está habilitado pueden crear
+    y gestionar su propia subjerarquía privada de grupos de control por debajo del grupo de control de la unidad misma. Para
+    servicios no privilegiados (es decir, aquellos que usan la configuración
+    <i>User=</i>), el grupo de control de la unidad se hará accesible al usuario
+    relevante.
+<p class="Pp">Cuando está habilitado, el administrador de sistemas se abstendrá de manipular
+    grupos de control o mover procesos por debajo del grupo de control de la unidad, de modo que se establezca un
+    claro concepto de propiedad: el árbol de grupos de control a nivel del grupo de control de la unidad y superiores
+    (es decir, hacia el grupo de control raíz) es propiedad y está gestionado por el administrador de sistemas del host, mientras que el
+    árbol de grupos de control por debajo del grupo de control de la unidad es propiedad y está gestionado por la propia unidad.</p>
+<p class="Pp">Toma un argumento booleano o una lista (posiblemente vacía) de nombres de controladores de grupos de control. Si es verdadero, la delegación se activa y todos
+    los controladores compatibles se habilitan para la unidad, poniéndolos a disposición de los
+    procesos de la unidad para su gestión. Si es falso, la delegación se desactiva completamente
+    (y ningún controlador adicional se habilita). Si se establece en una lista de
+    controladores, la delegación se activa y se habilitan los controladores especificados para la unidad. Asignar la cadena vacía habilitará la delegación, pero restablecerá la lista de controladores, y todas las asignaciones anteriores a esta no tendrán efecto. Tenga en cuenta que es posible que se pongan a disposición controladores adicionales además de los especificados, dependiendo de la configuración de la unidad slice contenedora u otras unidades contenidas en ella. El valor predeterminado es falso.</p>
+<p class="Pp">Tenga en cuenta que la delegación de controladores a código menos privilegiado solo es segura en la jerarquía unificada de grupos de control. En consecuencia, el acceso a los controladores especificados no se concederá a servicios no privilegiados en la jerarquía heredada, incluso cuando se solicite.</p>
+<p class="Pp">Los siguientes nombres de controladores pueden especificarse: <b>cpu</b>,
+    <b>cpuset</b>, <b>io</b>, <b>memory</b>, <b>pids</b>, <b>bpf-firewall</b>,
+    <b>bpf-devices</b>, <b>bpf-foreign</b>, <b>bpf-socket-bind</b> y
+    <b>bpf-restrict-network-interfaces</b>.</p>
+<p class="Pp">Sin embargo, no todos estos controladores están disponibles en todos los kernels,
+    y algunos son específicos de la jerarquía unificada, mientras que otros son específicos de la jerarquía heredada. Tenga en cuenta también que el kernel puede admitir controladores adicionales que aún no se cubren aquí, ya que la delegación no es compatible en absoluto para ellos o no está definida claramente.</p>
+<p class="Pp">Tenga en cuenta que, debido a la naturaleza jerárquica de la jerarquía de cgroup,
+    todos los controladores que se deleguen estarán habilitados para las unidades padre y hermanas de la unidad con delegación.</p>
+<p class="Pp">Para más detalles sobre el modelo de delegación, consulte <b>APIs de Control de Grupos y Delegación</b>[12].</p>
+<p class="Pp">Añadido en la versión 218.</p>
+</div>
+<p class="Pp"><i>DelegateSubgroup=</i></p>
+<div class="Bd-indent">Coloca los procesos de la unidad en el subgrupo especificado del grupo de control de la unidad. Toma un nombre de grupo de control válido (¡no una ruta!) como parámetro, o una cadena vacía para desactivar esta función. El valor predeterminado es desactivado. El nombre del grupo de control debe ser utilizable como nombre de archivo y evitar conflictos con los archivos de atributos de grupo de control del kernel (es decir, cgroup.procs no es un nombre aceptable, ya que el kernel expone un archivo de atributo de grupo de control nativo con ese nombre). Esta opción no tiene ningún efecto a menos que la delegación de grupos de control esté activada a través de <i>Delegate=</i>, véase más arriba. Tenga en cuenta que esta configuración solo se aplica a los procesos "principales" de una unidad, es decir, para los servicios a <i>ExecStart=</i>, pero no para <i>ExecReload=</i> y similares. Si la delegación está activada, los últimos se colocan siempre dentro de un subgrupo llamado .control. El subgrupo especificado se crea automáticamente (y potencialmente la propiedad se transfiere al usuario/grupo configurado de la unidad) cuando se inicia un proceso en él.
+<p class="Pp">Esta opción es útil para evitar mover manualmente el proceso invocado a un subgrupo después de que se haya iniciado. Dado que ningún proceso debería residir en nodos internos del árbol de grupos de control, casi siempre es necesario ejecutar el proceso principal (de "supervisión") de una unidad que tiene delegación activada en un subgrupo.</p>
+<p class="Pp">Añadido en la versión 254.</p>
+</div>
+<p class="Pp"><i>DisableControllers=</i></p>
+<div class="Bd-indent">Desactiva los controladores para que no se habiliten para los hijos de una unidad. Si un controlador listado ya está en uso en su subárbol, el controlador se eliminará del subárbol. Esto se puede usar para evitar que la configuración en unidades secundarias pueda habilitar implícita o explícitamente un controlador. El valor predeterminado es vacío.
+<p class="Pp">Se pueden especificar varios controladores, separados por espacios. También puede pasar
+    <i>DisableControllers=</i> varias veces, en cuyo caso cada nueva instancia agrega otro controlador para deshabilitar. Pasar
+    <i>DisableControllers=</i> por sí solo sin ningún nombre de controlador presente restablece la lista de controladores deshabilitados.</p>
+<p class="Pp">Puede que no sea posible deshabilitar un controlador después de que se hayan iniciado las unidades, si la unidad o cualquier hijo de la unidad en cuestión delega controladores a sus hijos, ya que cualquier subárbol delegado de la jerarquía de cgroup no es gestionado por systemd.</p>
+<p class="Pp">Los siguientes nombres de controladores pueden especificarse: <b>cpu</b>,
+    <b>cpuset</b>, <b>io</b>, <b>memory</b>, <b>pids</b>, <b>bpf-firewall</b>,
+    <b>bpf-devices</b>, <b>bpf-foreign</b>, <b>bpf-socket-bind</b> y
+    <b>bpf-restrict-network-interfaces</b>.</p>
+<p class="Pp">Añadido en la versión 240.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Memory_Pressure_Control'><a class='permalink' href='#Memory_Pressure_Control'>Control de Presión de Memoria</a></h2>
+<p class="Pp"><i>ManagedOOMSwap=auto|kill</i>,
+    <i>ManagedOOMMemoryPressure=auto|kill</i></p>
+<div class="Bd-indent">Especifica cómo actuará <a href='/man/systemd-oomd.service.8.en'>systemd-oomd.service(8)</a> sobre los cgroups de esta unidad. El valor predeterminado es <b>auto</b>.
+<p class="Pp">Cuando se establece en <b>kill</b>, la unidad se convierte en un candidato para
+    ser monitorizado por <b>systemd-oomd</b>. Si el cgroup excede los límites establecidos por
+    <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a> o la configuración de la unidad, <b>systemd-oomd</b> seleccionará
+    un cgroup descendiente y enviará <b>SIGKILL</b> a todos los procesos
+    debajo de él. Puede encontrar más detalles sobre los candidatos y el comportamiento de la finalización en
+    <a href='/man/systemd-oomd.service.8.en'>systemd-oomd.service(8)</a> y <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a>.</p>
+<p class="Pp">Establecer cualquiera de estas propiedades en <b>kill</b> también resultará
+    en dependencias <i>After=</i> y <i>Wants=</i> en systemd-oomd.service
+    a menos que <i>DefaultDependencies=no</i>.</p>
+<p class="Pp">Cuando se establece en <b>auto</b>, <b>systemd-oomd</b> no utilizará activamente
+    los datos de este cgroup para monitorización y detección. Sin embargo, si un cgroup ancestro
+    tiene una de estas propiedades establecida en <b>kill</b>, una unidad con
+    <b>auto</b> aún puede ser un candidato para que <b>systemd-oomd</b> la
+    termine.</p>
+<p class="Pp">Añadido en la versión 247.</p>
+</div>
+<p class="Pp"><i>ManagedOOMMemoryPressureLimit=</i></p>
+<div class="Bd-indent">Anula el límite de presión de memoria predeterminado establecido por
+  <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a> para el cgroup de esta unidad. Toma un valor porcentual
+  entre 0% y 100%, inclusive. El valor predeterminado es 0%, lo que significa usar el valor predeterminado establecido por
+  <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 247.</p>
+</div>
+</section>
+/man/oomd.conf.5.en'>oomd.conf(5)</a>. Esta propiedad se ignora a menos que
+  <i>ManagedOOMMemoryPressure=</i><b>kill</b>.
+<p class="Pp">Añadido en la versión 247.</p>
+</div>
+<p class="Pp"><i>ManagedOOMMemoryPressureDurationSec=</i></p>
+<div class="Bd-indent">Anula la duración por defecto de la presión de memoria establecida por
+  <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a> para el cgroup de esta unidad. El valor especificado admite
+  una unidad de tiempo como "ms" o "µs", ver
+  <a href='/man/systemd.time.7.en'>systemd.time(7)</a> para detalles sobre la sintaxis permitida. Debe establecerse en
+  vacío o en un valor de al menos 1s. Por defecto es vacío, lo que significa que se utilizará el valor por defecto establecido por
+  <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a>. Esta propiedad se ignora a menos que
+  <i>ManagedOOMMemoryPressure=</i><b>kill</b>.
+<p class="Pp">Añadido en la versión 257.</p>
+</div>
+<p class="Pp"><i>ManagedOOMPreference=none|avoid|omit</i></p>
+<div class="Bd-indent">Permite despriorizar u omitir el cgroup de esta unidad como
+  candidato cuando <b>systemd-oomd</b> necesite actuar. Requiere soporte para atributos extendidos
+  (ver <a href='/man/xattr.7.en'>xattr(7)</a>) para poder usar <b>avoid</b> u <b>omit</b>.
+<p class="Pp">Al calcular candidatos para aliviar el uso de swap,
+    <b>systemd-oomd</b> solo respetará estos atributos extendidos si el
+    cgroup de la unidad pertenece a root.</p>
+<p class="Pp">Al calcular candidatos para aliviar la presión de memoria,
+    <b>systemd-oomd</b> solo respetará estos atributos extendidos si el
+    cgroup de la unidad pertenece a root, o si el propietario del cgroup de la unidad, y el propietario
+    del cgroup ancestro monitorizado son los mismos. Por ejemplo, si
+    <b>systemd-oomd</b> está calculando candidatos para -.slice, entonces los atributos extendidos
+    establecidos en los descendientes de
+    /user.slice/user-1000.slice/user@1000.service/ serán ignorados porque los
+    descendientes pertenecen al UID 1000, y -.slice pertenece al UID 0. Pero, si
+    se calculan candidatos para /user.slice/user-1000.slice/user@1000.service/,
+    entonces se respetarán los atributos extendidos establecidos en los descendientes.</p>
+<p class="Pp">Si esta propiedad se establece en <b>avoid</b>, el gestor de servicios lo comunicará
+    a <b>systemd-oomd</b>, que solo seleccionará este cgroup si no hay otros candidatos viables.</p>
+<p class="Pp">Si esta propiedad se establece en <b>omit</b>, el gestor de servicios lo comunicará
+    a <b>systemd-oomd</b>, que ignorará este cgroup como candidato y no realizará ninguna acción sobre él.</p>
+<p class="Pp">Se recomienda usar <b>avoid</b> y <b>omit</b> con moderación,
+    ya que pueden afectar negativamente al comportamiento de kill de
+    <b>systemd-oomd</b>. Tenga en cuenta también que estos atributos extendidos no se aplican recursivamente a los cgroups bajo el cgroup de esta unidad.</p>
+<p class="Pp">Por defecto es <b>none</b>, lo que significa que
+    <b>systemd-oomd</b> clasificará el cgroup de esta unidad según lo definido en
+  <a href='/man/systemd-oomd.service.8.en'>systemd-oomd.service(8)</a> y
+  <a href='/man/oomd.conf.5.en'>oomd.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 248.</p>
+</div>
+<p class="Pp"><i>MemoryPressureWatch=</i></p>
+<div class="Bd-indent">Controla la monitorización de la presión de memoria para los procesos invocados.
+  Acepta un booleano o uno de "auto" y "skip". Si es "no", indica al servicio que no supervise los eventos de presión de memoria, estableciendo la variable de entorno <i>$MEMORY_PRESSURE_WATCH</i> a la cadena literal /dev/null. Si es "yes", indica al servicio que supervise los eventos de presión de memoria. Esto habilita la contabilidad de memoria para el servicio y asegura que el archivo de atributo cgroup memory.pressure sea accesible para lectura y escritura por el usuario del servicio. Luego establece la variable de entorno <i>$MEMORY_PRESSURE_WATCH</i> para los procesos invocados por la unidad a la ruta del sistema de archivos de este archivo. La información del umbral configurada con
+  <i>MemoryPressureThresholdSec=</i> se codifica en la
+  variable de entorno <i>$MEMORY_PRESSURE_WRITE</i>. Si se establece el valor "auto", el protocolo se habilita si la contabilidad de memoria ya está habilitada para la unidad, y se deshabilita en caso contrario. Si se establece en "skip", la lógica ni se habilita ni se deshabilita y las dos variables de entorno no se establecen.
+<p class="Pp">Tenga en cuenta que los servicios son libres de usar las dos variables de entorno,
+    pero no hay problema si las ignoran. El manejo de la presión de memoria debe ser implementado individualmente en cada servicio y generalmente significa cosas diferentes para diferentes programas. Para más detalles sobre el manejo de la presión de memoria, ver
+    <b>Manejo de Presión de Memoria en systemd</b>[13].</p>
+<p class="Pp">Los servicios implementados usando <a href='/man/sd-event.3.en'>sd-event(3)</a> pueden usar
+  <a href='/man/sd_event_add_memory_pressure.3.en'>sd_event_add_memory_pressure(3)</a> para supervisar y manejar eventos de presión de memoria.</p>
+<p class="Pp">Si no se establece explícitamente, por defecto es la
+  configuración <i>DefaultMemoryPressureWatch=</i> en
+  <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>.</p>
+<p class="Pp">Añadido en la versión 254.</p>
+</div>
+<p class="Pp"><i>MemoryPressureThresholdSec=</i></p>
+<div class="Bd-indent">Establece el umbral de tiempo de presión de memoria para el monitor de presión de memoria, configurado a través de
+  <i>MemoryPressureWatch=</i>. Especifica la latencia máxima de asignación antes de que se señale un evento de presión de memoria al servicio, por ventana de 2 segundos. Si no se especifica, por defecto es la
+  configuración <i>DefaultMemoryPressureThresholdSec=</i> en
+  <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a> (que a su vez por defecto es 200ms). El valor especificado
+  espera una unidad de tiempo como "ms" o "µs", ver
+  <a href='/man/systemd.time.7.en'>systemd.time(7)</a> para detalles sobre la sintaxis permitida.
+<p class="Pp">Añadido en la versión 254.</p>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Coredump_Control'><a class='permalink' href='#Coredump_Control'>Control de Coredump</a></h2>
+<p class="Pp"><i>CoredumpReceive=</i></p>
+<div class="Bd-indent">Acepta un argumento booleano. Esta configuración se utiliza para habilitar el reenvío de coredumps para contenedores que pertenecen al cgroup de esta unidad. Las unidades con
+  <i>CoredumpReceive=yes</i> también deben configurarse con
+  <i>Delegate=yes</i>. Por defecto es false.
+<p class="Pp">Cuando <b>systemd-coredump</b> está manejando un coredump para un proceso de un contenedor, si el proceso líder del contenedor es un descendiente de un cgroup con
+  <i>CoredumpReceive=yes</i> y <i>Delegate=yes</i>, entonces
+  <b>systemd-coredump</b> intentará reenviar el coredump a
+  <b>systemd-coredump</b> dentro del contenedor. Ver también
+  <a href='/man/systemd-coredump.8.en'>systemd-coredump(8)</a>.</p>
+<p class="Pp">Añadido en la versión 255.</p>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='HISTORY'><a class='permalink' href='#HISTORY'>HISTORIA</a></h1>
+<p class="Pp">systemd 252</p>
+<div class="Bd-indent">Las opciones para controlar la Jerarquía de Control de Grupos Heredada (<b>Control Groups versión 1</b>[14]) ahora están completamente obsoletas:
+  <i>CPUShares=</i><i></i><i>weight</i>,
+  <i>StartupCPUShares=</i><i></i><i>weight</i>,
+  <i>MemoryLimit=</i><i></i><i>bytes</i>, <i>BlockIOAccounting=</i>,
+  <i>BlockIOWeight=</i><i></i><i>weight</i>,
+  <i>StartupBlockIOWeight=</i><i></i><i>weight</i>,
+  <i>BlockIODeviceWeight=</i><i></i><i>device</i><i> </i><i></i><i>weight</i>,
+  <i>BlockIOReadBandwidth=</i><i></i><i>device</i><i> </i><i></i><i>bytes</i>,
+  <i>BlockIOWriteBandwidth=</i><i></i><i>device</i><i> </i><i></i><i>bytes</i>.
+  Por favor, cambie a la jerarquía de cgroup unificada.</div>
+<p class="Pp">systemd 258</p>
+<div class="Bd-indent">La configuración <i>CPUAccounting=</i> está obsoleta, ya que
+  siempre está disponible en la jerarquía de cgroup unificada y dicha configuración no tiene efecto.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/systemd.1.en'>systemd(1)</a>, <a href='/man/systemd-system.conf.5.en'>systemd-system.conf(5)</a>,
+    <a href='/man/systemd.unit.5.en'>systemd.unit(5)</a>, <a href='/man/systemd.service.5.en'>systemd.service(5)</a>, <a href='/man/systemd.slice.5.en'>systemd.slice(5)</a>,
+    <a href='/man/systemd.scope.5.en'>systemd.scope(5)</a>, <a href='/man/systemd.socket.5.en'>systemd.socket(5)</a>, <a href='/man/systemd.mount.5.en'>systemd.mount(5)</a>,
+    <a href='/man/systemd.swap.5.en'>systemd.swap(5)</a>, <a href='/man/systemd.exec.5.en'>systemd.exec(5)</a>,
+    <a href='/man/systemd.directives.7.en'>systemd.directives(7)</a>, <a href='/man/systemd.special.7.en'>systemd.special(7)</a>,
+    <a href='/man/systemd-oomd.service.8.en'>systemd-oomd.service(8)</a>, La documentación para grupos de control y
+    controladores específicos en el kernel de Linux: <b>Grupos de Control v2</b>[2]</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>Nuevas Interfaces de Grupos de Control</dd>
+</dl>
+<div class="Bd-indent"><a href='https://systemd.io/CONTROL_GROUP_INTERFACE'>https://systemd.io/CONTROL_GROUP_INTERFACE</a></div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>Grupos de Control v2</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/cgroup-v2.html'>https://docs.kernel.org/admin-guide/cgroup-v2.html</a></div>
+<dl class="Bl-tag">
+  <dt> 3.</dt>
+  <dd>Planificador CFS</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/scheduler/sched-design-CFS.html'>https://docs.kernel.org/scheduler/sched-design-CFS.html</a></div>
+<dl class="Bl-tag">
+  <dt> 4.</dt>
+  <dd>Control de Ancho de Banda CFS</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/scheduler/sched-bwc.html'>https://docs.kernel.org/scheduler/sched-bwc.html</a></div>
+<dl class="Bl-tag">
+  <dt> 5.</dt>
+  <dd>Archivos de Interfaz de Memoria</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files'>https://docs.kernel.org/admin-guide/cgroup-v2.html#memory-interface-files</a></div>
+<dl class="Bl-tag">
+  <dt> 6.</dt>
+  <dd>Zswap</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/mm/zswap.html'>https://docs.kernel.org/admin-guide/mm/zswap.html</a></div>
+<dl class="Bl-tag">
+  <dt> 7.</dt>
+  <dd>Controlador pids</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/cgroup-v2.html#pid'>https://docs.kernel.org/admin-guide/cgroup-v2.html#pid</a></div>
+<dl class="Bl-tag">
+  <dt> 8.</dt>
+  <dd>Archivos de Interfaz IO</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/cgroup-v2.html#io-interface-files'>https://docs.kernel.org/admin-guide/cgroup-v2.html#io-interface-files</a></div>
+<dl class="Bl-tag">
+  <dt> 9.</dt>
+  <dd>NFT</dd>
+</dl>
+<div class="Bd-indent"><a href='https://netfilter.org/projects/nftables/index.html'>https://netfilter.org/projects/nftables/index.html</a></div>
+<dl class="Bl-tag">
+  <dt>10.</dt>
+  <dd>bpf.h</dd>
+</dl>
+<div class="Bd-indent"><a href='https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/include/uapi/linux/bpf.h'>https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/include/uapi/linux/bpf.h</a></div>
+<dl class="Bl-tag">
+  <dt>11.</dt>
+  <dd>Documentación BPF</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/bpf/'>https://docs.kernel.org/bpf/</a></div>
+<dl class="Bl-tag">
+  <dt>12.</dt>
+  <dd>APIs de Grupos de Control y Delegación</dd>
+</dl>
+<div class="Bd-indent"><a href='https://systemd.io/CGROUP_DELEGATION'>https://systemd.io/CGROUP_DELEGATION</a></div>
+<dl class="Bl-tag">
+  <dt>13.</dt>
+  <dd>Manejo de Presión de Memoria en systemd</dd>
+</dl>
+<div class="Bd-indent"><a href='https://systemd.io/MEMORY_PRESSURE'>https://systemd.io/MEMORY_PRESSURE</a></div>
+<dl class="Bl-tag">
+  <dt>14.</dt>
+  <dd>Grupos de Control versión 1</dd>
+</dl>
+<div class="Bd-indent"><a href='https://docs.kernel.org/admin-guide/cgroup-v1/index.html'>https://docs.kernel.org/admin-guide/cgroup-v1/index.html</a></div>
+</section>
+</div>
+<table class="fo<html>
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" type="text/css" href="/css/style.css">
+        <link rel="icon" type="image/png" href="/favicon.png">
+        <title>systemd.resource-control(5) — Arch Linux</title>
+    </head>
+    <body>
+        
+        <main>
+            <article>
+                
+<section class="title">
+    <h1>systemd.resource-control.5</h1>
+    <span>Februar 2024</span>
+</section>
+
+<section class="manual-content">
+    <h2 id="NAME">NAME</h2>
+<p>systemd.resource-control - Control group (cgroup) directives for service units</p>
+
+<h2 id="SYNOPSIS">SYNOPSIS</h2>
+<p><code>*.service</code></p>
+<p><code>Delegate=</code></p>
+<p><code>AllowedCPUs=</code>, <code>AllowedMemoryNodes=</code></p>
+<p><code>CPUShares=</code>, <code>CPUQuota=</code>, <code>CPUWeight=</code>, <code>CPUQuotaPeriodSec=</code></p>
+<p><code>IOWeight=</code>, <code>PIOBudget=</code>, <code>DevicePolicy=</code>, <code>DeviceAllow=</code></p>
+<p><code>MemoryLimit=</code>, <code>MemoryLimitRecursionDepth=</code>, <code>MemorySwapMax=</code></p>
+<p><code>DeviceReadIOPS=</code>, <code>DeviceWriteIOPS=</code>, <code>DeviceReadBPS=</code>, <code>DeviceWriteBPS=</code></p>
+<p><code>TaskStartToMemoryMax=</code></p>
+<p><code>AllowedCPUFeatures=</code></p>
+<p><code>AllowedCPUAllocations=</code></p>
+<p><code>TimerSlackNSec=</code></p>
+
+<h2 id="DESCRIPTION">DESCRIPTION</h2>
+<p>This man page describes the directives used to control the resource usage of
+service units. These directives are typically used in <code>.service</code> unit files,
+but some may also appear in other unit types such as <code>.scope</code> units.</p>
+<p>These directives primarily configure parameters for Linux Control Groups (cgroups),
+which are a mechanism for limiting, accounting for, and isolating resource usage
+(CPU, memory, disk I/O, network, etc.) of process groups.</p>
+<p>The directives described here are a subset of the available cgroup configuration
+options. For a comprehensive list and detailed explanations, refer to the
+cgroups documentation for your specific kernel version.</p>
+
+<h2 id="IMPLICIT_DEPENDENCIES">IMPLICIT DEPENDENCIES</h2>
+<p>Setting resource control directives may implicitly pull in other units or
+dependencies. For example, using cgroup v2 features might require certain kernel
+configurations or systemd versions.</p>
+
+<h2 id="OPTIONS">OPTIONS</h2>
+<p>The following directives can be used to control resource usage:</p>
+
+<dl>
+    <dt><code>Delegate=</code> (boolean)</dt>
+    <dd>
+        Controls whether the unit is allowed to delegate its control group
+        subtree to child processes. If true, child processes can create their
+        own cgroups. Defaults to false.
+    </dd>
+
+    <dt><code>AllowedCPUs=</code> (string)</dt>
+    <dd>
+        Specifies a list of CPUs or CPU sets that the unit's processes are
+        allowed to run on. Example: "0,2-4,8".
+    </dd>
+
+    <dt><code>AllowedMemoryNodes=</code> (string)</dt>
+    <dd>
+        Specifies a list of NUMA memory nodes that the unit's processes are
+        allowed to allocate memory from. Example: "0,2,4-8".
+    </dd>
+
+    <dt><code>CPUShares=</code> (integer)</dt>
+    <dd>
+        Sets the relative CPU time weight for the unit. Higher values mean
+        more CPU time. Defaults to 1024.
+    </dd>
+
+    <dt><code>CPUQuota=</code> (string)</dt>
+    <dd>
+        Sets a hard limit on the amount of CPU time the unit's processes can
+        use. Can be specified as a percentage (e.g., "50%") or a quota
+        per period (e.g., "20000" for 20ms per 100ms period).
+    </dd>
+
+    <dt><code>CPUWeight=</code> (integer)</dt>
+    <dd>
+        Similar to <code>CPUShares=</code>, but uses a different scale (1-1000).
+        Defaults to 100.
+    </dd>
+
+    <dt><code>CPUQuotaPeriodSec=</code> (time)</dt>
+    <dd>
+        Specifies the period duration for <code>CPUQuota=</code>. Defaults to
+        100ms.
+    </dd>
+
+    <dt><code>IOWeight=</code> (integer)</dt>
+    <dd>
+        Sets the relative I/O bandwidth weight for the unit. Higher values
+        mean more I/O bandwidth. Scales from 1 to 1000. Defaults to 100.
+    </dd>
+
+    <dt><code>PIOBudget=</code> (string)</dt>
+    <dd>
+        Sets a hard limit on the amount of I/O the unit's processes can perform
+        within a given period. Specified in bytes per second. Example: "100M".
+    </dd>
+
+    <dt><code>DevicePolicy=</code> (string)</dt>
+    <dd>
+        Controls access to devices. Possible values: "strict", "closed", "mixed",
+        "auto". Defaults to "auto".
+    </dd>
+
+    <dt><code>DeviceAllow=</code> (string)</dt>
+    <dd>
+        Allows access to a specific device. Format: "type major:minor rwm".
+        Example: "char-device 1:3 rwm" for /dev/null.
+    </dd>
+
+    <dt><code>MemoryLimit=</code> (memory size)</dt>
+    <dd>
+        Sets a hard limit on the amount of memory the unit's processes can
+        use. Example: "512M".
+    </dd>
+
+    <dt><code>MemoryLimitRecursionDepth=</code> (integer)</dt>
+    <dd>
+        Sets the memory limit recursion depth. Defaults to 0 (no limit).
+    </dd>
+
+    <dt><code>MemorySwapMax=</code> (memory size)</dt>
+    <dd>
+        Sets a hard limit on the amount of swap the unit's processes can use.
+        Example: "1G".
+    </dd>
+
+    <dt><code>DeviceReadIOPS=</code> (iops)</dt>
+    <dd>
+        Sets a limit on the number of IO operations per second for reading
+        from a specific device.
+    </dd>
+
+    <dt><code>DeviceWriteIOPS=</code> (iops)</dt>
+    <dd>
+        Sets a limit on the number of IO operations per second for writing
+        to a specific device.
+    </dd>
+
+    <dt><code>DeviceReadBPS=</code> (bytes)</dt>
+    <dd>
+        Sets a limit on the number of bytes per second for reading from a
+        specific device.
+    </dd>
+
+    <dt><code>DeviceWriteBPS=</code> (bytes)</dt>
+    <dd>
+        Sets a limit on the number of bytes per second for writing to a
+        specific device.
+    </dd>
+
+    <dt><code>TaskStartToMemoryMax=</code> (memory size)</dt>
+    <dd>
+        Sets the maximum memory a task is allowed to consume when it starts.
+        Example: "100M".
+    </dd>
+
+    <dt><code>AllowedCPUFeatures=</code> (string)</dt>
+    <dd>
+        Specifies a list of CPU features that the unit's processes are
+        allowed to use. Example: "sse4.2".
+    </dd>
+
+    <dt><code>AllowedCPUAllocations=</code> (string)</dt>
+    <dd>
+        Allows specifying cpu.shares, cpu.cfs_period_us, and
+        cpu.cfs_quota_us in a single directive.
+    </dd>
+
+    <dt><code>TimerSlackNSec=</code> (time)</dt>
+    <dd>
+        Sets the timer slack for the unit. Controls the maximum latency
+        allowed for timers.
+    </dd>
+</dl>
+
+<h2 id="HISTORY">HISTORY</h2>
+<p>The resource control directives have evolved with cgroup versions and
+systemd releases. Many of these options are direct mappings to underlying
+cgroup parameters.</p>
+
+<h2 id="SEE_ALSO">SEE ALSO</h2>
+<p><a href="systemd.unit(5)">systemd.unit(5)</a>, <a href="systemd.service(5)">systemd.service(5)</a>, <a href="cgroups(7)">cgroups(7)</a></p>
+
+<h2 id="NOTES">NOTES</h2>
+<p>The effectiveness and availability of these directives depend on the cgroup
+version used by the kernel and the specific configuration of systemd.</p>
+<p>For detailed information on cgroup parameters and their behavior, consult
+the official Linux kernel documentation for cgroups.</p>
+<p>When using cgroup v2, some directive names and their behavior might differ
+or be consolidated compared to cgroup v1.</p>
+<p></p>
+<table class="foot-table">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os">systemd 258.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/systemd/">core/systemd</a></dd>
+        <dt>Version:</dt>
+        <dd>258.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.github.com/systemd/systemd">https://www.github.com/systemd/systemd</a></dd>
+        <dt>Licenses:</dt>
+        <dd>LGPL-2.1-or-later, CC0-1.0, GPL-2.0-or-later, MIT-0</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/systemd/">/listing/core/systemd/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+        
+            <li><a href="#IMPLICIT_DEPENDENCIES">IMPLICIT DEPENDENCIES</a></li>
+        
+            <li><a href="#OPTIONS">OPTIONS</a></li>
+        
+            <li><a href="#HISTORY">HISTORY</a></li>
+        
+            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+        
+            <li><a href="#NOTES">NOTES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+<nav class="other-languages">
+    <p>In other languages:</p>
+    <ul>
+    
+        <li><a href="/man/systemd.resource-control.5.de">de</a></li>
+    
+    </ul>
+</nav>
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/systemd.resource-control.5.en.txt">txt</a>, 
+        
+            <a href="/man/systemd.resource-control.5.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

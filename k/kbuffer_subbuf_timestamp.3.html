@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>kbuffer_subbuf_timestamp(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">kbuffer_subbuf_timestamp(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libtraceevent/">libtraceevent</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LIBTRACEEVENT(3)</td>
+    <td class="head-vol">Manual de libtraceevent</td>
+    <td class="head-rtitle">LIBTRACEEVENT(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">kbuffer_timestamp, kbuffer_subbuf_timestamp - Funciones que leen
+    diversos datos de un descriptor kbuffer</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;kbuffer.h&gt;</b>
+unsigned long long <b>kbuffer_timestamp</b>(struct kbuffer *<i>kbuf</i>);
+unsigned long long <b>kbuffer_subbuf_timestamp</b>(struct kbuffer *<i>kbuf</i>, void *<i>subbuf</i>);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">La función <b>kbuffer_timestamp()</b> devuelve la marca de tiempo
+    del evento actual de <i>kbuf</i>.</p>
+<p class="Pp">La función <b>kbuffer_subbuf_timestamp()</b> devuelve la marca de
+    tiempo para el sub-buffer que se cargó en <i>kbuf</i>. Esto suele ser (pero
+    no se garantiza que sea) la marca de tiempo del primer evento en el
+    sub-buffer.</p>
+<p class="Pp">La función <b>kbuffer_start_of_data()</b> devuelve el desplazamiento
+    de dónde comienza el delta</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp"><b>kbuffer_read_event()</b> devuelve el evento en el que se
+    encuentra actualmente el descriptor <i>kbuf</i>, o NULL si se ha pasado el
+    último evento (mediante <b>kbuffer_next_event()</b>).</p>
+<p class="Pp"><b>kbuffer_next_event()</b> devuelve el siguiente evento después
+    del evento actual o NULL si no hay más eventos.</p>
+<p class="Pp"><b>kbuffer_read_at_offset()</b> devuelve el evento en un
+    <i>desplazamiento</i> dado desde el inicio del sub-buffer almacenado en
+    <i>kbuf</i>, o NULL si no existe ningún evento. Nota: <i>desplazamiento</i>
+    solo necesita ser un desplazamiento que apunte al registro, o que esté al
+    inicio del mismo. No tiene por qué estar exactamente al principio del
+    registro.</p>
+<p class="Pp"><b>kbuffer_missed_events()</b> devuelve 0 si no hubo eventos
+    perdidos antes del sub-buffer cargado. Devuelve -1 si hubo un número
+    desconocido de eventos perdidos, o si se conoce el número de eventos
+    perdidos, se devolverá ese número.</p>
+<p class="Pp"><b>kbuffer_event_size()</b> devuelve el tamaño de la carga útil de
+    datos del evento actual de <i>kbuf</i>.</p>
+<p class="Pp"><b>kbuffer_curr_size()</b> devuelve el tamaño del registro
+    completo del evento actual de <i>kbuf</i>. Esto incluye el tamaño de los
+    metadatos de ese registro.</p>
+<p class="Pp"><b>kbuf_curr_offset()</b> devuelve el desplazamiento del registro
+    actual desde el principio del sub-buffer de <i>kbuf</i>.</p>
+<p class="Pp"><b>kbuf_curr_index()</b> devuelve el índice del registro actual
+    desde el principio de la sección de datos de <i>kbuf</i>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLE'><a class='permalink' href='#EXAMPLE'>EJEMPLO</a></h1>
+<div class="Bd-indent">
+<pre>#include &lt;stdio.h&gt;
+#include &lt;stdlib.h&gt;
+#include &lt;fcntl.h&gt;
+#include &lt;unistd.h&gt;
+#include &lt;sys/stat.h&gt;
+#include &lt;kbuffer.h&gt;
+int main (int argc, char **argv)
+{
+        unsigned long long ts;
+        struct kbuffer *kbuf;
+        struct stat st;
+        char *buf;
+        void *event;
+        int save_offset = -1;
+        int record_size;
+        int offset;
+        int index;
+        int size;
+        int ret;
+        int fd;
+        int i = 0;
+        if (argc &lt; 2) {
+                printf(&quot;uso: %s página de sub-buffer raw\n&quot;, argv[0]);
+                printf(&quot; Intenta: dd count=1 bs=4096 if=/sys/kernel/tracing/per_cpu/cpu0/trace_pipe_raw of=/tmp/file\n&quot;);
+                exit(0);
+        }
+        if (stat(argv[1], &amp;st) &lt; 0) {
+                perror(&quot;stat&quot;);
+                exit(-1);
+        }
+        buf = malloc(st.st_size);
+        if (!buf) {
+                perror(&quot;Asignando buffer&quot;);
+                exit(-1);
+        }
+        fd = open(argv[1], O_RDONLY);
+        if (fd &lt; 0) {
+                perror(argv[1]);
+                exit(-1);
+        }
+        ret = read(fd, buf, st.st_size);
+        if (ret &lt; 0) {
+                perror(&quot;Leyendo buffer&quot;);
+                exit(-1);
+        }
+        close(fd);
+        kbuf = kbuffer_alloc(KBUFFER_ENDIAN_SAME_AS_HOST,
+                             KBUFFER_LSIZE_SAME_AS_HOST);
+        if (!kbuf) {
+                perror(&quot;Creando kbuffer&quot;);
+                exit(-1);
+        }
+        ret = kbuffer_load_subbuffer(kbuf, buf);
+        if (ret &lt; 0) {
+                perror(&quot;Cargando sub buffer&quot;);
+                exit(-1);
+        }
+        if (kbuffer_subbuffer_size(kbuf) &gt; st.st_size) {
+                fprintf(stderr, &quot;kbuffer es más grande que el tamaño raw %d &gt; %ld\n&quot;,
+                        kbuffer_subbuffer_size(kbuf), st.st_size);
+                exit(-1);
+        }
+        ret = kbuffer_missed_events(kbuf);
+        if (ret) {
+                if (ret &gt; 0)
+                        printf(&quot;Perdidos %d eventos antes de este buffer\n&quot;, ret);
+                else
+                        printf(&quot;Perdido un número desconocido de eventos antes de este buffer\n&quot;);
+        }
+        do {
+                event = kbuffer_read_event(kbuf, &amp;ts);
+                if (event) {
+                        record_size = kbuffer_curr_size(kbuf);
+                        offset = kbuffer_curr_offset(kbuf);
+                        index = kbuffer_curr_index(kbuf);
+                        size = kbuffer_event_size(kbuf);
+                        if (i == 20)
+                                save_offset = offset;
+                        printf(&quot; evento %3d ts:%lld\ttamaño_registro:%d tamaño:%d\tindice:%d desplazamiento:%d\n&quot;,
+                               i++, ts, record_size, size, index, offset);
+                        event = kbuffer_next_event(kbuf, NULL);
+                }
+        } while (event);
+        if (!event)
+                printf(&quot;Buffer de sub-eventos finalizado\n&quot;);
+        if (save_offset &gt; 0) {
+                event = kbuffer_read_at_offset(kbuf, save_offset, &amp;ts);
+                if (!event) {
+                        fprintf(stderr, &quot;Curioso, no se puede encontrar el evento 20 en el desplazamiento %d\n&quot;, save_offset);
+                        exit(-1);
+                }
+                record_size = kbuffer_curr_size(kbuf);
+                offset = kbuffer_curr_offset(kbuf);
+                index = kbuffer_curr_index(kbuf);
+                size = kbuffer_event_size(kbuf);
+                printf(&quot;\n evento 20 guardado ts:%lld\ttamaño_registro:%d tamaño:%d\tindice:%d desplazamiento:%d\n\n&quot;,
+                       ts, record_size, size, index, offset);
+        }
+        kbuffer_free(kbuf);
+        return 0;
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='FILES'><a class='permalink' href='#FILES'>ARCHIVOS</a></h1>
+<div class="Bd-indent">
+<pre><b>event-parse.h</b>
+        Archivo de cabecera para incluir con el fin de tener acceso a las APIs de la biblioteca.
+<b>-ltraceevent</b>
+        Opción del enlazador para añadir al compilar un programa que utiliza la biblioteca.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/libtraceevent.3.en'>libtraceevent(3)</a>, <a href='/man/trace-cmd.1.en'>trace-cmd(1)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHOR'><a class='permalink' href='#AUTHOR'>AUTOR</a></h1>
+<div class="Bd-indent">
+<pre><b>Steven Rostedt</b> &lt;<b>rostedt@goodmis.org</b>[1]&gt;, autor de <b>libtraceevent</b>.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTING_BUGS'><a class='permalink' href='#REPORTING_BUGS'>REPORTE DE ERRORES</a></h1>
+<p class="Pp">Reportar errores a
+  &lt;<b>linux-trace-devel@vger.kernel.org</b>[2]&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENSE'><a class='permalink' href='#LICENSE'>LICENCIA</a></h1>
+<p class="Pp">libtraceevent es Software Libre bajo licencia GNU LGPL 2.1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RESOURCES'><a class='permalink' href='#RESOURCES'>RECURSOS</a></h1>
+<p class="Pp"><a href='https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/'>https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>rostedt@goodmis.org</dd>
+</dl>
+<div class="Bd-indent">mailto:rostedt@goodmis.org</div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>linux-trace-devel@vger.kernel.org</dd>
+</dl>
+<div class="Bd-indent">mailto:linux-trace-devel@vger.kernel.org</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">11/16/2025</td>
+    <td class="foot-os">libtraceevent</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libtraceevent/">extra/libtraceevent</a></dd>
+        <dt>Versión:</dt>
+        <dd>1:1.8.6-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/about/">https://git.kernel.org/pub/scm/libs/libtrace/libtraceevent.git/about/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libtra</a></dd>
+    </dl>
+</section>
+
+            </aside>
+        </main>
+    </body>
+</html>
+ceevent/"&gt;/listing/extra/libtraceevent/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DEVUELTO</a></li>
+        
+            <li><a href="#EXAMPLE">EJEMPLO</a></li>
+        
+            <li><a href="#FILES">ARCHIVOS</a></li>
+        
+            <li><a href="#SEE_ALSO">VÉASE TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHOR">AUTOR</a></li>
+        
+            <li><a href="#REPORTING_BUGS">INFORME DE ERRORES</a></li>
+        
+            <li><a href="#LICENSE">LICENCIA</a></li>
+        
+            <li><a href="#RESOURCES">RECURSOS</a></li>
+        
+            <li><a href="#NOTES">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/kbuffer_subbuf_timestamp.3.en.txt">txt</a>, 
+        
+            <a href="/man/kbuffer_subbuf_timestamp.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               licencia, excepto por el contenido de las páginas de manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

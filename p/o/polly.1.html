@@ -1,0 +1,973 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>polly(1) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">polly(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/polly/">polly</a></p>
+<p class="lic">Licencias: Apache-2.0 WITH LLVM-exception</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">POLLY(1)</td>
+    <td class="head-vol">Polly</td>
+    <td class="head-rtitle">POLLY(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">polly - Polly</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="NOTAS_DE_LA_VERSIÓN_NOTAS_DE_LA_VERSIÓN"><a class='permalink' href='#NOTAS_DE_LA_VERSIÓN_NOTAS_DE_LA_VERSIÓN'>NOTAS DE LA VERSIÓN NOTAS DE LA VERSIÓN</a></h1>
+<p class="Pp">En Polly 21 se han incorporado los siguientes cambios importantes.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="LA_ARQUITECTURA"><a class='permalink' href='#LA_ARQUITECTURA'>LA ARQUITECTURA</a></h1>
+<p class="Pp">Polly es un optimizador de bucles para LLVM. A partir de LLVM-IR,
+    detecta y extrae núcleos de bucles interesantes. Para cada núcleo se deriva
+    un modelo matemático que describe con precisión los cálculos individuales y
+    los accesos a memoria en los núcleos. Dentro de Polly, se realizan diversas
+    análisis y transformaciones de código sobre este modelo matemático. Una vez
+    derivadas y aplicadas todas las optimizaciones, se regenera el LLVM-IR
+    optimizado y se inserta en el módulo LLVM-IR. [imagen]</p>
+<section class="Ss">
+<h2 class="Ss" id="Polly_en_la_tubería_de_pases_de_LLVM"><a class='permalink' href='#Polly_en_la_tubería_de_pases_de_LLVM'>Polly en la tubería de pases de LLVM</a></h2>
+<p class="Pp">La tubería de pases estándar de LLVM, tal como se usa en el modo
+    -O1/-O2/-O3 de clang/opt, consiste en una secuencia de pases que pueden
+    agruparse en diferentes fases conceptuales. La primera fase, que aquí
+    llamamos <b>Canonicación</b>, es una fase de canonicación escalar que
+    contiene pases como -mem2reg, -instcombine, -cfgsimplify, o el desenrollado
+    temprano de bucles. Su objetivo es eliminar y simplificar el IR dado tanto
+    como sea posible, centrándose principalmente en optimizaciones escalares.
+    La segunda fase consta de tres grupos conceptuales que se ejecutan en el
+    llamado <b>ciclo de Inliner</b>. Este es nuevamente un conjunto de pases de
+    <b>Simplificación Escalar</b>, un conjunto de <b>Optimizaciones de
+    Bucles Simples</b> y el propio <b>Inliner</b>. Aunque estos pases constituyen
+    la mayor parte de la tubería de pases de LLVM, el objetivo principal de
+    estos pases sigue siendo la canonicación sin perder información semántica
+    que complique análisis posteriores. Como parte del ciclo de inliner, el
+    inliner de LLVM intenta paso a paso insertar funciones en línea, ejecuta pases
+    de canonicación para explotar oportunidades de simplificación recién
+    expuestas y luego intenta insertar las funciones further simplificadas.
+    Algunas optimizaciones de bucles simples se ejecutan como parte del ciclo
+    de inliner. Aunque realizan algunas optimizaciones, su objetivo principal
+    sigue siendo la simplificación del código del programa. El movimiento de
+    código invariante del bucle es una de esas optimizaciones que, además de ser
+    beneficiosa para el rendimiento del programa, nos permite mover el cálculo
+    fuera de los bucles y, en el mejor de los casos, eliminar ciertos bucles por
+    completo. Solo después de que el ciclo de inliner haya finalizado, se ejecuta
+    una última fase de <b>Especialización de Destino</b>, donde la complejidad
+    del IR se incrementa deliberadamente para aprovechar las características
+    específicas del destino que maximizan el rendimiento de ejecución en el
+    dispositivo al que nos dirigimos. Una de las optimizaciones principales en
+    esta fase es la vectorización, pero también el desenrollado de bucles
+    específicos del destino, o algunas transformaciones de bucles (por ejemplo,
+    distribución) que exponen más oportunidades de vectorización. [imagen]</p>
+<p class="Pp">Polly puede ejecutarse conceptualmente en tres posiciones
+    diferentes en la tubería de pases. Como optimizador temprano antes de la
+    tubería de pases estándar de LLVM, como optimizador posterior como parte de
+    la secuencia de especialización de destino, y teóricamente también con las
+    optimizaciones de bucles en el ciclo de inliner. Solo discutimos las dos
+    primeras opciones, ya que ejecutar Polly en el bucle de inserción en línea
+    probablemente perturbará el inliner y, en consecuencia, no es una buena
+    idea.</p>
+<p class="Pp">Ejecutar Polly temprano antes de la tubería de pases estándar tiene
+    el beneficio de que el LLVM-IR procesado por Polly todavía está muy cerca del
+    código de entrada original. Por lo tanto, es menos probable que las
+    transformaciones aplicadas por LLVM cambien el IR de maneras no fácilmente
+    comprensibles para el programador. Como resultado, la retroalimentación del
+    usuario es probablemente mejor y es menos probable que los núcleos que en C
+    parecen un ajuste perfecto para Polly hayan sido transformados de manera que
+    Polly ya no pueda manejarlos. Por otro lado, los códigos que requieren
+    inserción en línea para ser optimizados no se beneficiarán si Polly se
+    programa en esta posición. El conjunto adicional de pases de canonicación
+    requeridos resultará en un pequeño pero general aumento del tiempo de
+    compilación y algunos cambios aleatorios en el rendimiento en tiempo de
+    ejecución debido a un IR ligeramente diferente que pasa por los optimizadores.
+    Para forzar a Polly a ejecutarse temprano en la tubería de pases, use la
+    opción <i>-polly-position=early</i> (por defecto hoy). [imagen]</p>
+<p class="Pp">Ejecutar Polly justo antes del vectorizador tiene el beneficio de
+    que se ha ejecutado todo el ciclo de inlining y, como resultado, incluso el
+    código C++ fuertemente basado en plantillas podría beneficiarse teóricamente
+    de Polly (se necesita más trabajo para que Polly sea realmente efectivo aquí).
+    Como el IR que se pasa a Polly ya ha sido canonizado, tampoco es necesario
+    ejecutar pases de canonicación adicionales. El tiempo de compilación general
+    apenas se ve afectado por Polly, ya que la detección de núcleos de bucles es
+    generalmente muy rápida y las optimizaciones y pases de limpieza reales solo
+    se ejecutan en funciones que contienen núcleos de bucles que vale la pena
+    optimizar. Sin embargo, debido a las muchas optimizaciones que LLVM ejecuta
+    antes de Polly, el IR que llega a Polly a menudo tiene dependencias escalares
+    adicionales que hacen que Polly sea mucho menos eficiente. Para forzar a
+    Polly a ejecutarse antes del vectorizador en la tubería de pases, use la
+    opción <i>-polly-position=before-vectorizer</i>. Esta posición aún no es la
+    predeterminada para Polly, pero se está trabajando para que sea efectiva
+    incluso en presencia de dependencias escalares. Una vez que este trabajo se
+    complete, Polly probablemente usará esta posición por defecto. [imagen]</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="USAR_POLLY_CON_CLANG"><a class='permalink' href='#USAR_POLLY_CON_CLANG'>USAR POLLY CON CLANG</a></h1>
+<p class="Pp">Esta documentación discute cómo se puede usar Polly en Clang para
+    optimizar automáticamente el código C/C++ durante la compilación.</p>
+<p class="Pp"><b>Advertencia:</b></p>
+<div class="Bd-indent">
+<div class="Bd-indent">Advertencia: clang/LLVM/Polly deben estar sincronizados
+    (compilados desde la misma revisión).</div>
+</div>
+<section class="Ss">
+<h2 class="Ss" id="Hacer_disponible_Polly_desde_Clang"><a class='permalink' href='#Hacer_disponible_Polly_desde_Clang'>Hacer disponible Polly desde Clang</a></h2>
+<p class="Pp">Polly está disponible a través de clang, opt y bugpoint, si Polly
+    se clonó en tools/polly antes de la compilación. No se necesita ninguna
+    configuración adicional.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Optimización_con_Polly"><a class='permalink' href='#Optimización_con_Polly'>Optimización con Polly</a></h2>
+<p class="Pp">Optimizar con Polly es tan fácil como agregar -O3 -mllvm -polly a
+    sus indicadores del compilador (Polly no está disponible a menos que las
+    optimizaciones estén habilitadas, como -O1, -O2, -O3; no se recomienda
+    optimizar para tamaño con -Os o -Oz).</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang -O3 -mllvm -polly file.c</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Generación_automática_de_código_OpenMP"><a class='permalink' href='#Generación_automática_de_código_OpenMP'>Generación automática de código OpenMP</a></h2>
+<p class="Pp">Para detectar automáticamente bucles paralelos y generar código
+    OpenMP para ellos, también necesita agregar -mllvm -polly-parallel -lgomp a
+    sus CFLAGS.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang -O3 -mllvm -polly -mllvm -polly-parallel -lgomp file.c</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Cambio_del_backend_OpenMP"><a class='permalink' href='#Cambio_del_backend_OpenMP'>Cambio del backend OpenMP</a></h2>
+<p class="Pp">El siguiente interruptor CL permite elegir el backend OpenMP de
+    Polly:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="polly"><a class="permalink" href="#polly"><b>-polly-omp-backend[=BACKEND]</b></a></dt>
+  <dd>elegir el backend OpenMP; BACKEND puede ser 'GNU' (el predeterminado) o
+      'LLVM';</dd>
+</dl>
+</div>
+</div>
+</div>
+<p class="Pp">Los backends OpenMP pueden ser influenciados aún más usando los
+    siguientes interruptores CL:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="polly~2"><a class="permalink" href="#polly~2"><b>-polly-num-threads[=NUM]</b></a></dt>
+  <dd>establecer el número de hilos a usar; NUM puede ser cualquier entero
+      positivo (predeterminado: 0, que es igual a automático/tiempo de ejecución
+      OMP);</dd>
+  <dt id="polly~3"><a class="permalink" href="#polly~3"><b>-polly-scheduling[=SCHED]</b></a></dt>
+  <dd>establecer el tipo de programación OpenMP; SCHED puede ser 'static',
+      'dynamic', 'guided' o 'runtime' (el predeterminado);</dd>
+  <dt id="polly~4"><a class="permalink" href="#polly~4"><b>-polly-scheduling-chunksize[=CHUNK]</b></a></dt>
+  <dd>establecer el tamaño del fragmento (para el tipo de programación
+      seleccionado); CHUNK puede ser cualquier entero estrictamente positivo
+      (de lo contrario, se establecerá por defecto en 1);</dd>
+</dl>
+</div>
+</div>
+</div>
+<p class="Pp">Tenga en cuenta que en el momento de escribir esto, el backend GNU
+    solo puede usar los modificadores <i>polly-num-threads</i> y
+    <i>polly-scheduling</i>, donde este último también debe establecerse en
+    "runtime".</p>
+<p class="Pp">Ejemplo: Usar backend alternativo con programación dinámica, cuatro
+    hilos y tamaño de fragmento de uno (modificadores adicionales).</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>-mllvm -polly-omp-backend=LLVM -mllvm -polly-num-threads=4
+-mllvm -polly-scheduling=dynamic -mllvm -polly-scheduling-chunksi</pre>
+</div>
+</div>
+</section>
+</section>
+</div>
+</section>
+                
+            </article>
+            
+            <aside id="content-right">
+                
+            </aside>
+        </main>
+        <footer>
+            
+            
+        </footer>
+    </body>
+</html>
+ze=1</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Generación_automática_de_código_vectorial'><a class='permalink' href='#Automatic_Vector_code_generation'>Generación automática de código vectorial</a></h2>
+<p class="Pp">La generación automática de código vectorial se puede habilitar agregando `-mllvm -polly-vectorizer=stripmine` a tus CFLAGS.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang -O3 -mllvm -polly -mllvm -polly-vectorizer=stripmine file.c</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Aislar_los_pases_de_Polly'><a class='permalink' href='#Isolate_the_Polly_passes'>Aislar los pases de Polly</a></h2>
+<p class="Pp">Los pases de análisis y transformación de Polly se ejecutan junto con muchos otros pases del pipeline del gestor de pases. Algunos de los pases que se ejecutan antes de Polly son esenciales para su funcionamiento, por ejemplo, la canonicalización de bucles. Por lo tanto, Polly no puede optimizar código directamente de la salida `-O0` de clang.</p>
+<p class="Pp">Para obtener el LLVM-IR que Polly ve en el pipeline de optimización, use el comando:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang file.c -c -O3 -mllvm -polly -mllvm -polly-dump-before-file=before-polly.ll</pre>
+</div>
+</div>
+<p class="Pp">Esto escribe un archivo 'before-polly.ll' que contiene el LLVM-IR tal como se pasa a Polly, después de la transformación SSA, la canonicalización de bucles, el inline y otros pases.</p>
+<p class="Pp">A partir de ahí, cualquier pase de Polly se puede ejecutar sobre 'before-polly.ll' usando la herramienta 'opt'. Para averiguar qué pases de Polly están activos en el pipeline estándar, consulte la salida de</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang file.c -c -O3 -mllvm -polly -mllvm -debug-pass=Arguments</pre>
+</div>
+</div>
+<p class="Pp">Los pases de Polly son aquellos que se encuentran entre '-polly-detect' y '-polly-codegen'. Los pases de análisis se pueden omitir. En el momento de escribir esto, el pipeline de pases de Polly por defecto es:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>opt before-polly.ll -polly-simplify -polly-optree -polly-delicm -polly-simplify -polly-prune-unprofitable -polly-opt-isl -polly-codegen</pre>
+</div>
+</div>
+<p class="Pp">Tenga en cuenta que esto utiliza el gestor de pases antiguo/heredado de LLVM.</p>
+<p class="Pp">Como complemento, aquí hay otros métodos que generan IR adecuado para el procesamiento con Polly a partir de código fuente C/C++/Objective C. El método anterior es el recomendado.</p>
+<p class="Pp">Lo siguiente genera LLVM-IR sin optimizar (`-O0`, que es el valor predeterminado) y ejecuta los pases de canonicalización en él (`-polly-canonicalize`). Esto /no/ incluye todos los pases que se ejecutan antes de Polly en el pipeline de pases predeterminado. La opción `-disable-O0-optnone` es necesaria porque de lo contrario clang agrega un atributo `optnone` a todas las funciones, de modo que la mayoría de los pases de optimización la omiten. Esto está destinado a evitar que las compilaciones LTO optimicen estas funciones en la fase de enlace de todos modos.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang file.c -c -O0 -Xclang -disable-O0-optnone -emit-llvm -S -o - | opt -polly-canonicalize -S</pre>
+</div>
+</div>
+<p class="Pp">La opción `-disable-llvm-passes` deshabilita todos los pases de LLVM, incluso aquellos que se ejecutan en `-O0`. Pasar `-O1` (o cualquier nivel de optimización que no sea `-O0`) evita que se agregue el atributo `optnone`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang file.c -c -O1 -Xclang -disable-llvm-passes -emit-llvm -S -o - | opt -polly-canonicalize -S</pre>
+</div>
+</div>
+<p class="Pp">Como alternativa, Polly se puede insertar al principio del pipeline de pases y luego volcar su salida. Esto ejecuta implícitamente los pases `-polly-canonicalize`.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang file.c -c -O3 -mllvm -polly -mllvm -polly-position=early -mllvm -polly-dump-before-file=before-polly.ll</pre>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Opciones_adicionales'><a class='permalink' href='#Further_options'>Opciones adicionales</a></h2>
+<p class="Pp">Polly admite opciones adicionales que son principalmente útiles para el desarrollo o el análisis de Polly. Las opciones relevantes se pueden agregar a clang anexando `-mllvm -option-name` a las CFLAGS o a la línea de comandos de clang.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Limitar_Polly_a_una_sola_función'><a class='permalink' href='#Limit_Polly_to_a_single_function'>Limitar Polly a una sola función</a></h2>
+<p class="Pp">Para limitar la ejecución de Polly a una sola función, use la opción `-polly-only-func=nombre_funcion`.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Deshabilitar_generación_de_LLVM-IR'><a class='permalink' href='#Disable_LLVM-IR_generation'>Deshabilitar generación de LLVM-IR</a></h2>
+<p class="Pp">Polly normalmente regenera LLVM-IR a partir de la representación Poliedral. Para ver solo los efectos de la transformación de preparación, pero para deshabilitar la generación de código de Polly, agregue la opción `polly-no-codegen`.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Vista_gráfica_de_los_SCoPs'><a class='permalink' href='#Graphical_view_of_the_SCoPs'>Vista gráfica de los SCoPs</a></h2>
+<p class="Pp">Polly puede usar graphviz para mostrar los SCoPs que detecta en un programa. Las opciones relevantes son `-polly-show`, `-polly-show-only`, `-polly-dot` y `-polly-dot-only`. Las opciones `show` ejecutan automáticamente dotty u otro visor de graphviz para mostrar los scops gráficamente. Las opciones `dot` almacenan para cada función un archivo dot que resalta los SCoPs detectados. Si se agrega 'only' al final de la opción, se muestran los bloques básicos sin las sentencias que contienen.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Cambiar/Deshabilitar_el_Optimizador'><a class='permalink' href='#Change/Disable_the_Optimizer'>Cambiar/Deshabilitar el Optimizador</a></h2>
+<p class="Pp">Polly utiliza por defecto el optimizador de planificación isl. El optimizador isl optimiza la localidad de datos y el paralelismo utilizando el algoritmo Pluto. Para deshabilitar completamente el optimizador, use la opción `-polly-optimizer=none`.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Deshabilitar_el_tiling_en_el_optimizador'><a class='permalink' href='#Disable_tiling_in_the_optimizer'>Deshabilitar el tiling en el optimizador</a></h2>
+<p class="Pp">Por defecto, ambos optimizadores realizan tiling, si es posible. En caso de que esto no se desee, se puede usar la opción `-polly-tiling=false` para deshabilitarlo. (Esta opción deshabilita el tiling para ambos optimizadores).</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Importar_/_Exportar'><a class='permalink' href='#Import_/_Export'>Importar / Exportar</a></h2>
+<p class="Pp">Las banderas `-polly-import` y `-polly-export` permiten la exportación y reimportación de la representación poliedral. Al exportar, modificar y reimportar la representación poliedral, se pueden aplicar transformaciones calculadas externamente. Esto permite optimizadores externos o la optimización manual de SCoPs específicos.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Ver_Diagnósticos_de_Polly_con_opt-viewer'><a class='permalink' href='#Viewing_Polly_Diagnostics_with_opt-viewer'>Ver Diagnósticos de Polly con opt-viewer</a></h2>
+<p class="Pp">La bandera `-fsave-optimization-record` generará archivos `.opt.yaml` al compilar su programa. Estos archivos yaml contienen información sobre cada observación emitida. Asegúrese de tener Python 2.7 con los paquetes Python PyYaml y Pygments. Para ejecutar opt-viewer:</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>llvm/tools/opt_viewer/opt_viewer.py -source-dir /ruta/al/src/del/programa/ \
+   /ruta/al/src/del/programa/foo.opt.yaml \
+   /ruta/al/src/del/programa/bar.opt.yaml \
+   -o ./salida</pre>
+</div>
+</div>
+<p class="Pp">Incluya todos los archivos yaml (use *.opt.yaml al especificar qué archivos yaml ver) para ver todos los diagnósticos de su programa en opt-viewer. Compile con PGO <a href='https://clang.llvm.org/docs/UsersManual.html#profiling-with-instrumentation'>https://clang.llvm.org/docs/UsersManual.html#profiling-with-instrumentation</a> para ver información de Hotness en opt-viewer. Los archivos html resultantes se pueden ver en un navegador de internet.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='CÓMO_USAR_MANUALMENTE_LAS_PIEZAS_INDIVIDUALES_DE_POLLY'><a class='permalink' href='#HOW_TO_MANUALLY_USE_THE_INDIVIDUAL_PIECES_OF_POLLY'>CÓMO USAR MANUALMENTE LAS PIEZAS INDIVIDUALES DE POLLY</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Ejecutar_manualmente_los_pases_individuales_de_Polly'><a class='permalink' href='#Execute_the_individual_Polly_passes_manually'>Ejecutar manualmente los pases individuales de Polly</a></h2>
+<p class="Pp">Este ejemplo presenta los pases individuales que intervienen al optimizar código con Polly. Mostramos cómo ejecutarlos individualmente y explicamos para cada uno qué análisis se realiza o qué transformación se aplica. En este ejemplo, la transformación poliedral es proporcionada por el usuario para mostrar cuánta mejora de rendimiento se puede esperar de un optimizador automático óptimo.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='1.<b>Crear</b><b>LLVM-IR</b><b>a_partir_del</b><b>código</b><b>C</b>'><a class='permalink' href='#1._&lt;b&gt;Create&lt;/b&gt;_&lt;b&gt;LLVM-IR&lt;/b&gt;_&lt;b&gt;from&lt;/b&gt;_&lt;b&gt;the&lt;/b&gt;_&lt;b&gt;C&lt;/b&gt;_&lt;b&gt;code&lt;/b&gt;'>1. <b>Crear</b> <b>LLVM-IR</b> <b>a partir del</b> <b>código</b> <b>C</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">Polly trabaja sobre LLVM-IR. Por lo tanto, es necesario
+  traducir los archivos fuente a LLVM-IR. Si se deben optimizar más de un archivo, los archivos se pueden combinar en un solo archivo con llvm-link.
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>clang -S -emit-llvm matmul.c -Xclang -disable-O0-optnone -o matmul.ll</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='2.<b>Preparar</b><b>el</b><b>LLVM-IR</b><b>para</b><b>Polly</b>'><a class='permalink' href='#2._&lt;b&gt;Prepare&lt;/b&gt;_&lt;b&gt;the&lt;/b&gt;_&lt;b&gt;LLVM-IR&lt;/b&gt;_&lt;b&gt;for&lt;/b&gt;_&lt;b&gt;Polly&lt;/b&gt;'>2. <b>Preparar</b> <b>el</b> <b>LLVM-IR</b> <b>para</b> <b>Polly</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">Polly solo puede trabajar con código que coincide con una
+  forma canónica. Para traducir el LLVM-IR a esta forma, utilizamos un conjunto
+  de pases de canonicalización. Se programan utilizando '-polly-canonicalize'.
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>opt -S -polly-canonicalize matmul.ll -o matmul.preopt.ll</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='3.<b>Mostrar</b><b>los</b><b>SCoPs</b><b>detectados</b><b>por</b><b>Polly</b><b>(opcional)</b>'><a class='permalink' href='#3._&lt;b&gt;Show&lt;/b&gt;_&lt;b&gt;the&lt;/b&gt;_&lt;b&gt;SCoPs&lt;/b&gt;_&lt;b&gt;detected&lt;/b&gt;_&lt;b&gt;by&lt;/b&gt;_&lt;b&gt;Polly&lt;/b&gt;_&lt;b&gt;(optional)&lt;/b&gt;'>3. <b>Mostrar</b> <b>los</b> <b>SCoPs</b> <b>detectados</b> <b>por</b> <b>Polly</b> <b>(opcional)</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">Para entender si Polly pudo detectar SCoPs, imprimimos
+  la estructura de los SCoPs detectados. En nuestro ejemplo se detectan dos SCoPs.
+  Uno en 'init_array' y el otro en 'main'.
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -basic-aa -polly-ast -analyze matmul.preopt.ll -polly-process-unprofitable -polly-use-llvm-names</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>:: isl ast :: init_array :: %for.cond1.preheader---%for.end19
+if (1)
+    for (int c0 = 0; c0 &lt;= 1535; c0 += 1)
+      for (int c1 = 0; c1 &lt;= 1535; c1 += 1)
+        Stmt_for_body3(c0, c1);
+else
+    {  /* código original */ }
+:: isl ast :: main :: %for.cond1.preheader---%for.end30
+if (1)
+    for (int c0 = 0; c0 &lt;= 1535; c0 += 1)
+      f
+or (int c1 = 0; c1 <= 1535; c1 += 1) {
+        Stmt_for_body3(c0, c1);
+        for (int c2 = 0; c2 <= 1535; c2 += 1)
+          Stmt_for_body8(c0, c1, c2);
+      }
+else
+    {  /* código original */ }</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='4._<b>Resalta</b>   <b>los</b> <b>SCoPs</b> <b>detectados</b> <b>en</b> <b>los</b> <b>CFGs</b>   <b>del</b> <b>programa</b> <b>(requiere</b>   <b>graphviz/dotty)</b>'><a class='permalink' href='#4._<b>Resalta</b>   <b>los</b> <b>SCoPs</b> <b>detectados</b> <b>en</b> <b>los</b> <b>CFGs</b>   <b>del</b> <b>programa</b> <b>(requiere</b>   <b>graphviz/dotty)</b>'>4. <b>Resalta</b>   <b>los</b> <b>SCoPs</b> <b>detectados</b> <b>en</b> <b>los</b> <b>CFGs</b>   <b>del</b> <b>programa</b> <b>(requiere</b>   <b>graphviz/dotty)</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">Polly puede usar graphviz para mostrar gráficamente un CFG en el que
+  se resaltan los SCoPs detectados. También puede crear archivos '.dot' que pueden
+  ser traducidos por la utilidad 'dot' a varios formatos gráficos.
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -polly-use-llvm-names -basic-aa -view-scops -disable-output matmul.preopt.ll
+$ opt -polly-use-llvm-names -basic-aa -view-scops-only -disable-output matmul.preopt.ll</pre>
+</div>
+</div>
+<p class="Pp">La salida para las diferentes funciones:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+  <li>view-scops : main
+      <a href='http://polly.llvm.org/experiments/matmul/scops.main.dot.png'>http://polly.llvm.org/experiments/matmul/scops.main.dot.png</a>,
+      init_array
+      <a href='http://polly.llvm.org/experiments/matmul/scops.init_array.dot.png'>http://polly.llvm.org/experiments/matmul/scops.init_array.dot.png</a>,
+      print_array
+      <a href='http://polly.llvm.org/experiments/matmul/scops.print_array.dot.png'>http://polly.llvm.org/experiments/matmul/scops.print_array.dot.png</a></li>
+  <li>view-scops-only : main-scopsonly
+      <a href='http://polly.llvm.org/experiments/matmul/scopsonly.main.dot.png'>http://polly.llvm.org/experiments/matmul/scopsonly.main.dot.png</a>,
+      init_array-scopsonly
+      <a href='http://polly.llvm.org/experiments/matmul/scopsonly.init_array.dot.png'>http://polly.llvm.org/experiments/matmul/scopsonly.init_array.dot.png</a>,
+      print_array-scopsonly
+      <a href='http://polly.llvm.org/experiments/matmul/scopsonly.print_array.dot.png'>http://polly.llvm.org/experiments/matmul/scopsonly.print_array.dot.png</a></li>
+</ul>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='5._<b>Ver</b>   <b>la</b> <b>representación</b> <b>polihédrica</b> <b>de</b> <b>los</b>   <b>SCoPs</b>'><a class='permalink' href='#5._<b>Ver</b>   <b>la</b> <b>representación</b> <b>polihédrica</b> <b>de</b> <b>los</b>   <b>SCoPs</b>'>5. <b>Ver</b>   <b>la</b> <b>representación</b> <b>polihédrica</b> <b>de</b> <b>los</b>   <b>SCoPs</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -polly-use-llvm-names -basic-aa -polly-scops -analyze matmul.preopt.ll -polly-process-unprofitable</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>[...]Imprimiendo análisis 'Polly - Crear descripción polihédrica de Scops' para la región: 'for.cond1.preheader =&gt; for.end19' en la función 'init_array':
+    Función: init_array
+    Región: %for.cond1.preheader---%for.end19
+    Profundidad máxima de bucle:  2
+        Accesos invariantes: {
+        }
+        Contexto:
+        {  :  }
+        Contexto asumido:
+        {  :  }
+        Contexto inválido:
+        {  : 1 = 0 }
+        Arrays {
+            float MemRef_A[*][1536]; // Tamaño de elemento 4
+            float MemRef_B[*][1536]; // Tamaño de elemento 4
+        }
+        Arrays (Límites como pw_affs) {
+            float MemRef_A[*][ { [] -&gt; [(1536)] } ]; // Tamaño de elemento 4
+            float MemRef_B[*][ { [] -&gt; [(1536)] } ]; // Tamaño de elemento 4
+        }
+        Grupos de alias (0):
+            n/a
+        Sentencias {
+            Stmt_for_body3
+                Dominio :=
+                    { Stmt_for_body3[i0, i1] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535 };
+                Planificación :=
+                    { Stmt_for_body3[i0, i1] -&gt; [i0, i1] };
+                MustWriteAccess :=      [Tipo de reducción: NINGUNO] [Escalar: 0]
+                    { Stmt_for_body3[i0, i1] -&gt; MemRef_A[i0, i1] };
+                MustWriteAccess :=      [Tipo de reducción: NINGUNO] [Escalar: 0]
+                    { Stmt_for_body3[i0, i1] -&gt; MemRef_B[i0, i1] };
+        }
+[...]Imprimiendo análisis 'Polly - Crear descripción polihédrica de Scops' para la región: 'for.cond1.preheader =&gt; for.end30' en la función 'main':
+    Función: main
+    Región: %for.cond1.preheader---%for.end30
+    Profundidad máxima de bucle:  3
+    Accesos invariantes: {
+    }
+    Contexto:
+    {  :  }
+    Contexto asumido:
+    {  :  }
+    Contexto inválido:
+    {  : 1 = 0 }
+    Arrays {
+        float MemRef_C[*][1536]; // Tamaño de elemento 4
+        float MemRef_A[*][1536]; // Tamaño de elemento 4
+        float MemRef_B[*][1536]; // Tamaño de elemento 4
+    }
+    Arrays (Límites como pw_affs) {
+        float MemRef_C[*][ { [] -&gt; [(1536)] } ]; // Tamaño de elemento 4
+        float MemRef_A[*][ { [] -&gt; [(1536)] } ]; // Tamaño de elemento 4
+        float MemRef_B[*][ { [] -&gt; [(1536)] } ]; // Tamaño de elemento 4
+    }
+    Grupos de alias (0):
+        n/a
+    Sentencias {
+        Stmt_for_body3
+            Dominio :=
+                { Stmt_for_body3[i0, i1] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535 };
+            Planificación :=
+                { Stmt_for_body3[i0, i1] -&gt; [i0, i1, 0, 0] };
+            MustWriteAccess :=  [Tipo de reducción: NINGUNO] [Escalar: 0]
+                { Stmt_for_body3[i0, i1] -&gt; MemRef_C[i0, i1] };
+        Stmt_for_body8
+            Dominio :=
+                { Stmt_for_body8[i0, i1, i2] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535 and 0 &lt;= i2 &lt;= 1535 };
+            Planificación :=
+                { Stmt_for_body8[i0, i1, i2] -&gt; [i0, i1, 1, i2] };
+            ReadAccess :=       [Tipo de reducción: NINGUNO] [Escalar: 0]
+                { Stmt_for_body8[i0, i1, i2] -&gt; MemRef_C[i0, i1] };
+            ReadAccess :=       [Tipo de reducción: NINGUNO] [Escalar: 0]
+                { Stmt_for_body8[i0, i1, i2] -&gt; MemRef_A[i0, i2] };
+            ReadAccess :=       [Tipo de reducción: NINGUNO] [Escalar: 0]
+                { Stmt_for_body8[i0, i1, i2] -&gt; MemRef_B[i2, i1] };
+            MustWriteAccess :=  [Tipo de reducción: NINGUNO] [Escalar: 0]
+                { Stmt_for_body8[i0, i1, i2] -&gt; MemRef_C[i0, i1] };
+    }</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='6._<b>Muestra</b>   <b>las</b> <b>dependencias</b> <b>para</b> <b>los</b> <b>SCoPs</b>'><a class='permalink' href='#6._<b>Muestra</b>   <b>las</b> <b>dependencias</b> <b>para</b> <b>los</b> <b>SCoPs</b>'>6. <b>Muestra</b>   <b>las</b> <b>dependencias</b> <b>para</b> <b>los</b> <b>SCoPs</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -basic-aa -polly-use-llvm-names -polly-dependences -analyze matmul.preopt.ll -polly-process-unprofitable</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>[...]Imprimiendo análisis 'Polly - Calcular dependencias' para la región: 'for.cond1.preheader =&gt; for.end19' en la función 'init_array':
+        Dependencias RAW:
+                {  }
+        Dependencias WAR:
+                {  }
+        Dependencias WAW:
+                {  }
+        Dependencias de reducción:
+                n/a
+        Cierre transitivo de dependencias de reducción:
+                {  }
+[...]Imprimiendo análisis 'Polly - Calcular dependencias' para la región: 'for.cond1.preheader =&gt; for.end30' en la función 'main':
+        Dependencias RAW:
+                { Stmt_for_body3[i0, i1] -&gt; Stmt_for_body8[i0, i1, 0] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535; Stmt_for_body8[i0, i1, i2] -&gt; Stmt_for_body8[i0, i1, 1 + i2] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535 and 0 &lt;= i2 &lt;= 1534 }
+        Dependencias WAR:
+                {  }
+        Dependencias WAW:
+                { Stmt_for_body3[i0, i1] -&gt; Stmt_for_body8[i0, i1, 0] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535; Stmt_for_body8[i0, i1, i2] -&gt; Stmt_for_body8[i0, i1, 1 + i2] : 0 &lt;= i0 &lt;= 1535 and 0 &lt;= i1 &lt;= 1535 and 0 &lt;= i2 &lt;= 1534 }
+        Dependencias de reducción:
+                n/a
+        Cierre transitivo de dependencias de reducción:
+                {  }</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='7._<b>Exportar</b>   <b>archivos</b> <b>jscop</b>'><a class='permalink' href='#7._<b>Exportar</b>   <b>archivos</b> <b>jscop</b>'>7. <b>Exportar</b>   <b>archivos</b> <b>jscop</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -basic-aa -polly-use-llvm-names -polly-export-jscop matmul.preopt.ll -polly-process-unprofitable</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>[...]Escribiendo JScop '%for.cond1.preheader---%for.end19' en la función 'init_array' a './init_array___%for.cond1.preheader---%for.end19.jscop'.
+Escribiendo JScop '%for.cond1.preheader---%for.end30' en la función 'main' a './main___%for.cond1.preheader---%for.end30.jscop'.</pre>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='8._<b>Importar</b>   <b>los</b> <b>archivos</b> <b>jscop</b> <b>modificados</b> <b>e</b> <b>imprimir</b>   <b>la</b> <b>estructura</b> <b>SCoP</b> <b>actualizada</b>   <b>(opcional)</b>'><a class='permalink' href='#8._<b>Importar</b>   <b>los</b> <b>archivos</b> <b>jscop</b> <b>modificados</b> <b>e</b> <b>imprimir</b>   <b>la</b> <b>estructura</b> <b>SCoP</b> <b>actualizada</b>   <b>(opcional)</b>'>8. <b>Importar</b>   <b>los</b> <b>archivos</b> <b>jscop</b> <b>modificados</b> <b>e</b> <b>imprimir</b>   <b>la</b> <b>estructura</b> <b>SCoP</b> <b>actualizada</b>   <b>(opcional)</b></a></h2>
+<div class="Bd-indent">
+<div class="Bd-indent">Polly puede volver a importar archivos jscop, en los que las programaciones
+  de las sentencias se han modificado. Estas programaciones cambiadas se utilizan para describir
+  transformaciones. Es posible importar diferentes archivos jscop proporcionando
+  el postfijo del archivo jscop que se está importando.
+<p class="Pp">Aplicamos tres transformaciones diferentes en el SCoP de la función principal.
+    Los archivos jscop que describen estas transformaciones están escritos a mano
+    (y disponibles en docs/experiments/matmul).</p>
+<p class="Pp"><b>Sin Polly</b></p>
+<p class="Pp">Como línea de base, no llamamos a ninguna generación de código de Polly,
+    sino que aplicamos solo las optimizaciones normales -O3.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>$ opt -basic-aa -polly-use-llvm-names matmul.preopt.ll -polly-import-jscop -polly-ast -analyze -polly-process-unprofitable</pre>
+</div>
+</div>
+<div class="Bd-indent">
+<div class="Bd-indent">
+<pre>[...]
+:: isl ast :: main :: %for.cond1.preheader---%for.end30
+if (1)
+    for (int c0 = 0; c0 <= 1535; c0 += 1)
+      for (int c1 = 0; c1 <= 1535; c1 += 1) {
+        Stmt_for_body3(c0, c1);
+        for (int c3 = 0; c3 <= 1535; c3 += 1)
+          S[
+  {
+    "part": "Loop Interchange (and Fission to allow the interchange)",
+    "command": "$ opt -basic-aa -polly-use-llvm-names matmul.preopt.ll -polly-import-jscop -polly-import-jscop-postfix=interchanged -polly-ast -analyze -polly-process-unprofitable",
+    "output": ":: isl ast :: main :: %for.cond1.preheader---%for.end30\nif (1)\n    {\n      for (int c1 = 0; c1 <= 1535; c1 += 1)\n        for (int c2 = 0; c2 <= 1535; c2 += 1)\n          Stmt_for_body3(c1, c2);\n      for (int c1 = 0; c1 <= 1535; c1 += 1)\n        for (int c2 = 0; c2 <= 1535; c2 += 1)\n          for (int c3 = 0; c3 <= 1535; c3 += 1)\n            Stmt_for_body8(c1, c3, c2);\n    }\nelse\n    {\n      /* original code */\n    }\n[...]"
+  },
+  {
+    "part": "Interchange + Tiling",
+    "command": "$ opt -basic-aa -polly-use-llvm-names matmul.preopt.ll -polly-import-jscop -polly-import-jscop-postfix=interchanged+tiled -polly-ast -analyze -polly-process-unprofitable",
+    "output": ":: isl ast :: main :: %for.cond1.preheader---%for.end30\nif (1)\n    {\n      for (int c1 = 0; c1 <= 1535; c1 += 1)\n        for (int c2 = 0; c2 <= 1535; c2 += 1)\n          Stmt_for_body3(c1, c2);\n      for (int c1 = 0; c1 <= 1535; c1 += 64)\n        for (int c2 = 0; c2 <= 1535; c2 += 64)\n          for (int c3 = 0; c3 <= 1535; c3 += 64)\n            for (int c4 = c1; c4 <= c1 + 63; c4 += 1)\n              for (int c5 = c3; c5 <= c3 + 63; c5 += 1)\n                for (int c6 = c2; c6 <= c2 + 63; c6 += 1)\n                  Stmt_for_body8(c4, c6, c5);\n    }\nelse\n    {\n      /* original code */\n    }\n[...]"
+  },
+  {
+    "part": "Interchange + Tiling + Strip-mining to prepare vectorization",
+    "command": "$ opt -basic-aa -polly-use-llvm-names matmul.preopt.ll -polly-import-jscop -polly-import-jscop-postfix=interchanged+tiled -polly-ast -analyze -polly-process-unprofitable",
+    "output": ":: isl ast :: main :: %for.cond1.preheader---%for.end30\nif (1)\n    {\n      for (int c1 = 0; c1 <= 1535; c1 += 1)\n        for (int c2 = 0; c2 <= 1535; c2 += 1)\n          Stmt_for_body3(c1, c2);\n      for (int c1 = 0; c1 <= 1535; c1 += 64)\n        for (int c2 = 0; c2 <= 1535; c2 += 64)\n          for (int c3 = 0; c3 <= 1535; c3 += 64)\n            for (int c4 = c1; c4 <= c1 + 63; c4 += 1)\n              for (int c5 = c3; c5 <= c3 + 63; c5 += 1)\n                for (int c6 = c2; c6 <= c2 + 63; c6 += 4)\n                  for (int c7 = c6; c7 <= c6 + 3; c7 += 1)\n                    Stmt_for_body8(c4, c7, c5);\n    }\nelse\n    {\n      /* original code */\n    }\n[...]"
+  }
+]
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>polly(1) — Arch manual pages</title>
+        <link rel="stylesheet" href="/css/main.css">
+        <link rel="stylesheet" href="/css/theme.css">
+        <link rel="stylesheet" href="/css/man.css">
+        <link rel="icon" href="/favicon.ico" type="image/x-icon">
+    </head>
+    <body>
+        
+        <main>
+            <article class="man-page">
+                
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Nm">polly</p>
+<p class="Nd">an optimizining backend for the LLVM compiler</p>
+</section>
+
+<section class="Sh">
+<h1 class="Sh" id="RELEASE_NOTES_RELEASE_NOTES"><a class="permalink" href="#RELEASE_NOTES_RELEASE_NOTES">RELEASE NOTES RELEASE NOTES</a></h1>
+<p class="Pp">This section details how to debug Polly.</p>
+<section class="Ss">
+<h2 class="Ss" id="Debugging_a_pass_that_introduces_a_bug"><a class="permalink" href="#Debugging_a_pass_that_introduces_a_bug">Debugging a pass that introduces a bug</a></h2>
+<p class="Pp">Bugpoint is a tool that can help to find bugs in LLVM. It can be
+    used to find bugs in Polly by specifying Polly passes and their arguments.</p>
+<p class="Pp">If you know that Polly introduces a bug, but you do not know
+    which pass is responsible, you can instruct bugpoint to track down the
+    offending pass. This can be done using the
+    <code>-opt-args</code> flag:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt>&#x2022;</dt>
+    <dd><b>$ bugpoint -O3 file.ll -opt-args -polly</b> will allow bugpoint to
+        track down the pass which causes the crash.</dd>
+</dl>
+</div>
+<p class="Pp">To do this manually:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li><b>$ opt -O3 -polly -debug-pass=Arguments</b> to get all passes that are
+        run by default. <b>-debug-pass=Arguments</b> will list all passes that
+        have run.</li>
+    <li>Bisect down to the pass that changes it.</li>
+</ul>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Debugging_regressions_introduced_at_some_unknown_earlier_point"><a class="permalink" href="#Debugging_regressions_introduced_at_some_unknown_earlier_point">Debugging
+    regressions introduced at some unknown earlier point</a></h2>
+<p class="Pp">In case of a regression in performance or correctness (e.g., an
+    earlier version of Polly behaved as expected and a later version does not),
+    bisecting over the version history is the standard approach to identify the
+    commit that introduced the regression.</p>
+<p class="Pp">LLVM has a single repository that contains all projects. It can be
+    cloned at: <a href="https://github.com/llvm/llvm-project">https://github.com/llvm/llvm-project</a>. How to bisect on a
+    git repository is explained here
+    <a href="https://www.metaltoad.com/blog/beginners-guide-git-bisect-process-elimination">https://www.metaltoad.com/blog/beginners-guide-git-bisect-process-elimination</a>.
+    The bisect process can also be automated as explained here:
+    <a href="https://www.metaltoad.com/blog/mechanizing-git-bisect-bug-hunting-lazy">https://www.metaltoad.com/blog/mechanizing-git-bisect-bug-hunting-lazy</a>.
+    An LLVM specific run script is available here:
+    <a href="https://gist.github.com/dcci/891cd98d80b1b95352a407d80914f7cf">https://gist.github.com/dcci/891cd98d80b1b95352a407d80914f7cf</a>.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="THE_ARCHITECTURE"><a class="permalink" href="#THE_ARCHITECTURE">THE ARCHITECTURE</a></h1>
+<p class="Pp">This section describes Polly's architecture.</p>
+<section class="Ss">
+<h2 class="Ss" id="High-Performance_Generalized_Matrix_Multiplication"><a class="permalink" href="#High-Performance_Generalized_Matrix_Multiplication">High-Performance
+    Generalized Matrix Multiplication</a></h2>
+<p class="Pp">Polly automatically detects and optimizes generalized matrix
+    multiplication, the computation C &#x2190; &#x03B1; &#x2297; C &#x2295;
+    &#x03B2; &#x2297; A &#x2297; B, where A, B, and C are three appropriately
+    sized matrices, &#x2295; and &#x2297; operations are originating from the
+    corresponding matrix semiring, and &#x03B1; and &#x03B2; are constants, and
+    beta is not equal to zero. It allows to obtain the highly optimized form
+    structured similar to the expert implementation of GEMM that can be found in
+    GotoBLAS and its successors. The performance evaluation of GEMM is shown in
+    the following figure.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">[image]</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Compile_Time_Impact_of_Polly"><a class="permalink" href="#Compile_Time_Impact_of_Polly">Compile
+    Time Impact of Polly</a></h2>
+<p class="Pp">Clang+LLVM+Polly are compiled using Clang on a Intel(R) Core(TM)
+    i7-7700 based system. The experiment is repeated twice: with and without
+    Polly enabled in order to measure its compile time impact.</p>
+<p class="Pp">The following versions are used:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li>Polly (git hash 0db98a4837b6f233063307bb9184374175401922)</li>
+    <li>Clang (git hash 3e1d04a92b51ed36163995c96c31a0e4bbb1561d)</li>
+    <li>LLVM git hash 0265ec7ebad69a47f5c899d95295b5eb41aba68e)</li>
+</ul>
+</div>
+<p class="Pp">ninja <a href="https://ninja-build.org/">https://ninja-build.org/</a> is used as the build
+    system.</p>
+<p class="Pp">For both cases the whole compilation was performed five times. The
+    compile times in seconds are shown in the following table.</p>
+<table class="tbl" style="border-style: solid;">
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">Polly Disabled</td>
+        <td>Polly Enabled</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">964</td>
+        <td>977</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">964</td>
+        <td>980</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">967</td>
+        <td>981</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">967</td>
+        <td>981</td>
+    </tr>
+    <tr>
+        <td style="border-right-style: solid;">968</td>
+        <td>982</td>
+    </tr>
+</table>
+<p class="Pp">The median compile time without Polly enabled is 967 seconds and
+    with Polly enabled it is 981 seconds. The overhead is 1.4%.</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt>&#x2022;</dt>
+    <dd>A list of Polly passes
+        <a href="http://polly.llvm.org/documentation/passes.html">http://polly.llvm.org/documentation/passes.html</a></dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li>Index &lt;&gt;</li>
+    <li>Search Page &lt;&gt;</li>
+</ul>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="USING_POLLY_WITH_CLANG"><a class="permalink" href="#USING_POLLY_WITH_CLANG">USING POLLY WITH CLANG</a></h1>
+<p class="Pp">This section describes how to use Polly with Clang.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="HOW_TO_MANUALLY_USE_THE_INDIVIDUAL_PIECES_OF_POLLY"><a class="permalink" href="#HOW_TO_MANUALLY_USE_THE_INDIVIDUAL_PIECES_OF_POLLY">HOW TO MANUALLY USE THE INDIVIDUAL PIECES OF POLLY</a></h1>
+<p class="Pp">This section describes how to manually use the individual pieces of
+    Polly.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="TIPS_AND_TRICKS_ON_USING_AND_CONTRIBUTING_TO_POLLY"><a class="permalink" href="#TIPS_AND_TRICKS_ON_USING_AND_CONTRIBUTING_TO_POLLY">TIPS AND TRICKS ON USING AND CONTRIBUTING TO POLLY</a></h1>
+<p class="Pp">This section provides tips and tricks on using and contributing to
+    Polly.</p>
+<p class="Pp">If you observe a bug in Polly, you can use <a href="bugpoint.1.html">bugpoint(1)</a>
+    to narrow down the scope of the bug. If you know that Polly makes a change, but
+    you wish to isolate which pass makes a change, the steps are as follows:</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt>&#x2022;</dt>
+    <dd><b>$ bugpoint -O3 file.ll -opt-args -polly</b> will allow bugpoint to
+        track down the pass which causes the crash.</dd>
+</dl>
+</div>
+<p class="Pp">To do this manually:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li><b>$ opt -O3 -polly -debug-pass=Arguments</b> to get all passes that are
+        run by default. <b>-debug-pass=Arguments</b> will list all passes that
+        have run.</li>
+    <li>Bisect down to the pass that changes it.</li>
+</ul>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="PERFORMANCE"><a class="permalink" href="#PERFORMANCE">PERFORMANCE</a></h1>
+<p class="Pp">This section discusses the performance aspects of Polly.</p>
+<section class="Ss">
+<h2 class="Ss" id="High-Performance_Generalized_Matrix_Multiplication-1"><a class="permalink" href="#High-Performance_Generalized_Matrix_Multiplication-1">High-Performance
+    Generalized Matrix Multiplication</a></h2>
+<p class="Pp">Polly automatically detects and optimizes generalized matrix
+    multiplication, the computation C &#x2190; &#x03B1; &#x2297; C &#x2295;
+    &#x03B2; &#x2297; A &#x2297; B, where A, B, and C are three appropriately
+    sized matrices, &#x2295; and &#x2297; operations are originating from the
+    corresponding matrix semiring, and &#x03B1; and &#x03B2; are constants, and
+    beta is not equal to zero. It allows to obtain the highly optimized form
+    structured similar to the expert implementation of GEMM that can be found in
+    GotoBLAS and its successors. The performance evaluation of GEMM is shown in
+    the following figure.</p>
+<div class="Bd-indent">
+<div class="Bd-indent">[image]</div>
+</div>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Compile_Time_Impact_of_Polly-1"><a class="permalink" href="#Compile_Time_Impact_of_Polly-1">Compile
+    Time Impact of Polly</a></h2>
+<p class="Pp">Clang+LLVM+Polly are compiled using Clang on a Intel(R) Core(TM)
+    i7-7700 based system. The experiment is repeated twice: with and without
+    Polly enabled in order to measure its compile time impact.</p>
+<p class="Pp">The following versions are used:</p>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li>Polly (git hash 0db98a4837b6f233063307bb9184374175401922)</li>
+    <li>Clang (git hash 3e1d04a92b51ed36163995c96c31a0e4bbb1561d)</li>
+    <li>LLVM git hash 0265ec7ebad69a47f5c899d95295b5eb41aba68e)</li>
+</ul>
+</div>
+<p class="Pp">ninja <a href="https://ninja-build.org/">https://ninja-build.org/</a> is used as the build
+    system.</p>
+<p class="Pp">For both cases the whole compilation was performed five times. The
+    compile times in seconds are shown in the following table.</p>
+<table class="tbl" style="border-style: solid;">
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">Polly Disabled</td>
+        <td>Polly Enabled</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">964</td>
+        <td>977</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">964</td>
+        <td>980</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">967</td>
+        <td>981</td>
+    </tr>
+    <tr style="border-bottom-style: solid;">
+        <td style="border-right-style: solid;">967</td>
+        <td>981</td>
+    </tr>
+    <tr>
+        <td style="border-right-style: solid;">968</td>
+        <td>982</td>
+    </tr>
+</table>
+<p class="Pp">The median compile time without Polly enabled is 967 seconds and
+    with Polly enabled it is 981 seconds. The overhead is 1.4%.</p>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+    <dt>&#x2022;</dt>
+    <dd>A list of Polly passes
+        <a href="http://polly.llvm.org/documentation/passes.html">http://polly.llvm.org/documentation/passes.html</a></dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<ul class="Bl-bullet">
+    <li>Index &lt;&gt;</li>
+    <li>Search Page &lt;&gt;</li>
+</ul>
+</div>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Author"><a class="permalink" href="#Author">Author</a></h1>
+<p class="Pp">Author name not set</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="Copyright"><a class="permalink" href="#Copyright">Copyright</a></h1>
+<p class="Pp">2010-2025, The Polly Team</p>
+</section>
+</article>
+<aside id="sidebar">
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/polly/">extra/polly</a></dd>
+        <dt>Version:</dt>
+        <dd>21.1.6-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://polly.llvm.org/">https://polly.llvm.org/</a></dd>
+        <dt>Licenses:</dt>
+        <dd>Apache-2.0 WITH LLVM-exception</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/extra/polly/">/listing/extra/polly/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NAME</a></li>
+        
+            <li><a href="#RELEASE_NOTES_RELEASE_NOTES">RELEASE NOTES RELEASE NOTES</a></li>
+        
+            <li><a href="#THE_ARCHITECTURE">THE ARCHITECTURE</a></li>
+        
+            <li><a href="#USING_POLLY_WITH_CLANG">USING POLLY WITH CLANG</a></li>
+        
+            <li><a href="#HOW_TO_MANUALLY_USE_THE_INDIVIDUAL_PIECES_OF_POLLY">HOW TO MANUALLY USE THE INDIVIDUAL PIECES OF POLLY</a></li>
+        
+            <li><a href="#TIPS_AND_TRICKS_ON_USING_AND_CONTRIBUTING_TO_POLLY">TIPS AND TRICKS ON USING AND CONTRIBUTING TO POLLY</a></li>
+        
+            <li><a href="#PERFORMANCE">PERFORMANCE</a></li>
+        
+            <li><a href="#Author">Author</a></li>
+        
+            <li><a href="#Copyright">Copyright</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Other formats:
+        
+            <a href="/man/polly.1.en.txt">txt</a>, 
+        
+            <a href="/man/polly.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+</aside>
+        </main>
+        <footer>
+            
+            <p>The website is available under the terms of the <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>
+               license, except for the contents of the manual pages, which have their own license
+               specified in the corresponding Arch Linux package.
+            </p>
+        </footer>
+    </body>
+</html>

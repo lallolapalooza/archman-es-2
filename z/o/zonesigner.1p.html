@@ -1,0 +1,1196 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>zonesigner(1p) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">zonesigner(1p)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">ZONESIGNER(1)</td>
+    <td class="head-vol">Documentación Perl Contribuida por Usuarios</td>
+    <td class="head-rtitle">ZONESIGNER(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">zonesigner - Genera claves de cifrado y firma una zona DNS</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINOPSIS</a></h1>
+<pre>zonesigner [opciones] &lt;archivo-zona&gt; &lt;archivo-zona-firmada&gt;
+# ejemplos para empezar inmediatamente:
+# primera ejecución en una zona para example.com:
+zonesigner -genkeys -endtime +2678400 example.com
+# futuras ejecuciones antes de la hora de expiración (reutiliza las mismas claves):
+zonesigner -endtime +2678400 example.com</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este script combina en un solo comando muchas acciones que son
+    requeridas para firmar una zona DNS. Genera las claves KSK y ZSK requeridas,
+    añade los datos de las claves a un archivo de registro de zona, firma el
+    archivo de zona y ejecuta verificaciones para asegurar que todo funcionó
+    correctamente. También mantiene registros sobre las claves y cómo se firmó
+    la zona para facilitar la resigneación futura de la zona.</p>
+<p class="Pp">Los registros de firma de zona específicos de <b>zonesigner</b> se
+    mantienen en archivos <i>keyrec</i>. Usando archivos <i>keyrec</i>, definidos
+    y mantenidos por DNSSEC-Tools, <b>zonesigner</b> puede recopilar
+    automáticamente muchas de las opciones utilizadas para firmar y generar una
+    zona y sus claves previamente. Esto permite que la zona se mantenga usando
+    las mismas longitudes de clave y tiempos de expiración, por ejemplo, sin que
+    un administrador necesite rastrear manualmente estos campos.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='QUICK_START'><a class='permalink' href='#QUICK_START'>INICIO   RÁPIDO</a></h1>
+<p class="Pp">Los siguientes son ejemplos que permitirán un inicio rápido en el uso
+    de <b>zonesigner</b>:</p>
+<dl class="Bl-tag">
+  <dt id="first"><a class="permalink" href="#first">primera ejecución en
+    example.com</a></dt>
+  <dd>El siguiente comando generará claves y firmará el archivo de zona para
+      example.com, dando una fecha de expiración de 31 días en el futuro. El
+      archivo de zona se llama <b>example.com</b> y el archivo de zona firmado
+      se llamará <b>example.com.signed</b>.
+        <pre>zonesigner -genkeys -endtime +2678400 example.com
+</pre>
+  </dd>
+  <dt id="subsequent"><a class="permalink" href="#subsequent">ejecuciones posteriores en
+    example.com</a></dt>
+  <dd>El siguiente comando volverá a firmar el archivo de zona de example.com,
+      pero no generará nuevas claves. Los archivos y todos los argumentos de
+      generación de claves y firma de zona permanecerán iguales.
+        <pre>zonesigner example.com
+</pre>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='USING_ZONESIGNER'><a class='permalink' href='#USING_ZONESIGNER'>USANDO   ZONESIGNER</a></h1>
+<p class="Pp"><b>zonesigner</b> se usa de esta manera:</p>
+<pre>zonesigner [opciones] &lt;archivo-zona&gt; &lt;archivo-zona-firmada&gt;</pre>
+<p class="Pp">El argumento <i>archivo-zona</i> es obligatorio.</p>
+<p class="Pp"><i>archivo-zona</i> es el nombre del archivo de zona desde el cual
+    se creará un archivo de zona firmado. Si no se proporciona la opción
+    <b>-zone</b>, entonces <i>archivo-zona</i> se usará como el nombre de la zona
+    que se firmará. Las claves generadas toman este nombre como base.</p>
+<p class="Pp">Una vez que <b>zonesigner</b> ha creado un conjunto de claves para
+    una zona y ha firmado la zona, puede ser utilizado para resigne la zona a
+    medida que el archivo de zona cambia. Cuando se ejecuta sin ninguna opción,
+    <b>zonesigner</b> consultará el keyrec de la zona para encontrar el conjunto
+    apropiado de claves y luego firmará la zona especificada con ellas.</p>
+<p class="Pp">El archivo de zona se modifica para tener comandos
+    <b>include</b>, que incluirán las claves KSK y ZSK. Estas líneas se colocan
+    al final del archivo y no deben ser modificadas por el usuario. Si el archivo
+    de zona ya incluye algún archivo de clave, esas inclusiones serán eliminadas.
+    Estas líneas se distinguen por comenzar con "$INCLUDE" y terminar con
+    ".key". Solo las líneas de inclusión reales son eliminadas; cualquier línea
+    de comentario relacionada se deja intacta.</p>
+<p class="Pp">Se utiliza un archivo intermedio para firmar la zona.
+    <i>archivo-zona</i> se copia al archivo intermedio y se modifica en
+    preparación para firmar el archivo de zona. Varias líneas <span class="Li">$INCLUDE</span>
+    se añadirán al final del archivo y el número de serie de la SOA se incrementará.</p>
+<p class="Pp"><i>signed-zone</i> es el nombre del archivo de zona firmado. Si no
+    se proporciona en la línea de comandos, el nombre de archivo de zona firmado
+    por defecto es el <i>archivo-zona</i> con ".signed" añadido. Por lo tanto,
+    ejecutar <b>zonesigner example.com</b> resultará en que la zona firmada se
+    almacene en <i>example.com.signed</i>.</p>
+<p class="Pp">A menos que se especifiquen las opciones <b>-genkeys</b>,
+    <b>-genksk</b>, <b>-genzsk</b> o <b>-newpubksk</b>, las últimas claves
+    generadas para una zona en particular se usarán en ejecuciones posteriores
+    de <b>zonesigner</b>. Los registros DS se incluirán en las operaciones de
+    firma a menos que se utilice la opción <b>-nogends</b>.</p>
+<p class="Pp"><b>zonesigner</b> puede usarse con un administrador de rollover,
+    como <b>rollerd</b>, para proporcionar una gestión automatizada de una zona,
+    sus claves y la firma de la zona. Si un archivo de zona administrado por
+    <b>rollerd</b> cambia mientras <b>rollerd</b> está esperando que comience
+    un rollover de zona o que se complete una fase de rollover, <b>zonesigner</b>
+    puede usarse para firmar la zona con el conjunto de claves apropiado;
+    <b>rollerd</b> no se verá afectado por esto.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='KEYREC_FILES'><a class='permalink' href='#KEYREC_FILES'>ARCHIVOS   KEYREC</a></h1>
+<p class="Pp">Los archivos <i>keyrec</i> retienen información sobre operaciones
+    anteriores de generación de claves y firma de zona. Si no se especifica un
+    archivo <i>keyrec</i> (a través de la opción <b>-krfile</b>), se utilizará un
+    archivo <i>keyrec</i> por defecto. Si este por defecto no está especificado
+    en el archivo de configuración de DNSSEC-Tools del sistema, el nombre del
+    archivo será el nombre de la zona con ".krf" añadido. Si se proporciona la
+    opción <b>-nokrfile</b>, no se consultará ni se guardará ningún archivo
+    <i>keyrec</i>.</p>
+<p class="Pp">Cada <i>keyrec</i> contiene un conjunto de entradas
+    "clave/valor", una por línea. El ejemplo 4 a continuación contiene el
+    contenido de un archivo <i>keyrec</i> de muestra.</p>
+<p class="Pp">Los archivos <i>keyrec</i> contienen tres tipos de entradas:
+    <i>keyrec</i> de zona, <i>keyrec</i> de conjunto y <i>keyrec</i> de clave. Los
+    <i>keyrec</i> de zona contienen información específica sobre la zona, como el
+    número de ZSK utilizadas para firmar la zona, la hora de finalización de la
+    zona y los nombres de los conjuntos de claves de firma (nombres de
+    <i>keyrec</i> de conjunto). Los <i>keyrec</i> de conjunto contienen listas de
+    nombres de <i>keyrec</i> de clave utilizados para un propósito específico,
+    como las claves ZSK actuales o las claves ZSK publicadas. Los <i>keyrec</i> de
+    clave contienen información sobre las claves generadas en sí mismas, como el
+    algoritmo de cifrado, la longitud de la clave y la vida útil de la clave.</p>
+<p class="Pp">A medida que la zona avanza en el rollover de claves, se generarán
+    nuevas claves criptográficas para la zona. Los diversos parámetros de clave
+    (por ejemplo, la longitud de la clave y el algoritmo criptográfico) serán los
+    mismos que los parámetros utilizados previamente para generar claves para esa
+    zona. El comando <b>keymod</b> permite modificar estos parámetros de clave
+    según cambien las necesidades. Si se modifica un parámetro en particular, como
+    la longitud KSK que cambia de 1024 a 2048, entonces las claves
+    *futuras* reflejarán ese cambio; las claves actuales y pasadas no se
+    modificarán.</p>
+<section class="Ss">
+<h2 class="Ss" id='Keyrec_Files_and_RFC5011_KSK_Revocation'><a class='permalink' href='#Keyrec_Files_and_RFC5011_KSK_Revocation'>Archivos Keyrec y Revocación KSK RFC5011</a></h2>
+<p class="Pp">Si el procesamiento RFC5011 está habilitado, hay un manejo especial
+    del <i>keyrec</i> de conjunto de la zona de claves KSK revocadas. El campo
+    "kskrev" en el <i>keyrec</i> de la zona apunta a un <i>keyrec</i> de conjunto,
+    marcado como de tipo "kskrev". Este <i>keyrec</i> de conjunto, a su vez,
+    apunta a un número de otros <i>keyrec</i> de conjunto, todos los cuales
+    también están marcados como de tipo "kskrev". El grupo de todas las claves
+    KSK revocadas se encuentra consultando ese conjunto subsidiario de <i>keyrec</i>
+    de conjunto "kskrev". Cuando las edades de estas claves revocadas exceden sus
+    períodos de revocación, se marcan como obsoletas ("kskobs"). Si esto sucede
+    como parte de un rollover normal, estas claves revocadas y los <i>keyrec</i>
+    de conjunto son eliminados de la cadena de <i>keyrec</i> activos y
+    revocados. Si esto le sucede a una clave que forma parte de un conjunto
+    más grande de claves, se elimina de ese conjunto de firma y se coloca en su
+    propio nuevo conjunto de firma.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENTROPY'><a class='permalink' href='#ENTROPY'>ENTROPÍA</a></h1>
+<p class="Pp">En algunos sistemas, la implementación del generador de números
+    pseudoaleatorios requiere actividad del teclado. Esta actividad del teclado
+    se utiliza para llenar un búfer en el generador de números aleatorios del
+    sistema. Si <b>zonesigner</b> parece colgado, es posible que tenga que añadir
+    entropía al generador de números aleatorios golpeando teclas al azar hasta
+    que el programa se complete. La visualización de este mensaje está controlada
+    por el parámetro de archivo de configuración <b>entropy_msg</b>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DETERMINING_OPTION_VALUES'><a class='permalink' href='#DETERMINING_OPTION_VALUES'>DETERMINANDO   VALORES DE OPCIONES</a></h1>
+<p class="Pp"><b>zonesigner</b> comprueba cuatro lugares para determinar los
+    valores de las opciones. En orden descendente de precedencia, estos lugares
+    son:</p>
+<pre>opciones de línea de comandos
+archivo keyrec
+archivo de configuración de DNSSEC-Tools
+valores predeterminados de zonesigner</pre>
+<p class="Pp">Cada uno se comprueba hasta que se encuentra un valor. Ese valor se
+    utiliza entonces</p>
+</div>
+</section>
+                
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<p class="Pp"><b>zonesigner</b> [<b>-options</b>] <i>zone</i></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <b>zonesigner</b> utility automates the process of signing DNSSEC
+    zones. It is intended to be used in a semi-automated or fully automated fashion.
+    It is designed to handle the complexities of key rollovers, time-based
+    key-signing policies, and other DNSSEC-specific operational tasks.</p>
+<p class="Pp">The utility reads configuration options from a number of sources,
+    with the command line options taking precedence, followed by the DNSSEC-Tools
+    configuration file, followed by the <i>keyrec</i> file, followed by defaults.
+    This allows for fine-grained control over the signing process.</p>
+<p class="Pp">The order of precedence for options is as follows:</p>
+<ol class="Bl-enum">
+    <li>Command line options</li>
+    <li><i>keyrec</i> file</li>
+    <li>DNSSEC-Tools configuration file</li>
+    <li>Defaults</li>
+</ol>
+<p class="Pp">When <b>zonesigner</b> is invoked, it attempts to determine the
+    appropriate keys to use for signing the zone. It consults the <i>keyrec</i>
+    file to find the status of existing keys (e.g., current, published, obsolete).
+    If new keys need to be generated or existing keys rolled over, <b>zonesigner</b>
+    can perform these actions based on the provided options.</p>
+<p class="Pp">The process involves generating or selecting keys, signing the zone
+    data with these keys, and updating the <i>keyrec</i> file to reflect the
+    new state of the keys. Obsolete keys are typically archived to prevent them
+    from being used in future signings.</p>
+<p class="Pp">The utility supports various rollover strategies for both Key Signing
+    Keys (KSKs) and Zone Signing Keys (ZSKs), including pre-publish and post-publish
+    methods. It also handles the complexities of RFC5011 KSK revocation.</p>
+<p class="Pp">The <b>-krfile</b> option allows specifying a custom <i>keyrec</i>
+    file, overriding the default behavior of using the <i>keyrec</i> file located
+    in the same directory as the zone file. The <i>keyrec</i> file stores metadata
+    about the keys used for signing a zone, including their status, lifespan, and
+    rollover information.</p>
+<p class="Pp">The precedence rules ensure that specific command-line arguments can
+    override settings in configuration files or the <i>keyrec</i> file for a
+    particular execution of <b>zonesigner</b>. For instance, if a specific KSK
+    length is provided via the <b>-ksklength</b> command-line option, that value
+    will be used, even if a different length is specified in the <i>keyrec</i>
+    file or the DNSSEC-Tools configuration file. This value is then stored back
+    into the <i>keyrec</i> file for subsequent <b>zonesigner</b> executions.</p>
+<section class="Ss">
+<h2 class="Ss" id='Example'><a class='permalink' href='#Example'>Example</a></h2>
+<p class="Pp">For example, the KSK length has the following values:</p>
+<pre>-ksklength command line option:     8192
+keyrec file:                        1024
+DNSSEC-Tools configuration file:     512
+zonesigner defaults:                2048</pre>
+<p class="Pp">If all are present, then the KSK length will be 8192.</p>
+<p class="Pp">If the <b>-ksklength</b> command line option wasn't given, the KSK
+    length will be 1024.</p>
+<p class="Pp">If the KSK length wasn't given in the configuration file, it will
+    be 8192.</p>
+<p class="Pp">If the KSK length wasn't in the <i>keyrec</i> file or the
+    configuration file, the KSK length will be 8192.</p>
+<p class="Pp">If the <b>-ksklength</b> command line option wasn't given and the
+    KSK length wasn't in the configuration file, it'll be 1024.</p>
+<p class="Pp">If the command line option wasn't given, the KSK length wasn't in
+    the <i>keyrec</i> file, and it wasn't in the configuration file, then the
+    KSK length will be 512.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='OPTIONS'><a class='permalink' href='#OPTIONS'>OPTIONS</a></h1>
+<p class="Pp">Three types of options may be given, based on the command for
+    which they are intended. These commands are <b>dnssec-keygen</b>,
+    <b>dnssec-signzone</b>, and <b>zonesigner</b>.</p>
+<section class="Ss">
+<h2 class="Ss"><b>zonesigner</b>-specific Options</h2>
+<dl class="Bl-tag">
+  <dt id="archivedir"><a class="permalink" href="#archivedir"><b>-archivedir</b></a></dt>
+  <dd>The key archive directory. If a key archive directory hasn't been
+      specified (on the command line or in the DNSSEC-Tools configuration file)
+      and the <b>-nosave</b> option was <b>not</b> given, then <b>zonesigner</b>
+      will leave the keys in the current directory.
+    <p class="Pp">When the files are saved into the archive directory, the
+        existing file names are prepended with a timestamp. The timestamp
+        indicates when the files are archived.</p>
+    <p class="Pp">This directory <b>may not</b> be the root directory.</p>
+  </dd>
+  <dt id="droprevoked"><a class="permalink" href="#droprevoked"><b>-droprevoked</b></a></dt>
+  <dd>Explicitly obsolete currently revoked KSKs and remove them from the
+      signing set before resigning. This is mutually exclusive from
+      <b>-nodroprevoked</b>. If neither <b>-droprevoked</b> nor
+      <b>-nodroprevoked</b> are given, then <b>-droprevoked</b> functionality is
+      assumed..</dd>
+  <dt id="dsdir"><a class="permalink" href="#dsdir"><b>-dsdir</b></a></dt>
+  <dd>Specify a directory for storing dssets. This directory will be created if
+      it does not exist.
+    <p class="Pp">The directory must be writable and <b>may not</b> be the root
+        directory.</p>
+  </dd>
+  <dt id="genkeys"><a class="permalink" href="#genkeys"><b>-genkeys</b></a></dt>
+  <dd>Generate new KSKs and ZSKs for the zone.</dd>
+  <dt id="genksk"><a class="permalink" href="#genksk"><b>-genksk</b></a></dt>
+  <dd>Generate new Current KSKs for the zone. Any existing Current KSKs will be
+      marked as obsolete. If this option is not given, the last KSKs generated
+      for this zone will be used.</dd>
+  <dt id="genzsk"><a class="permalink" href="#genzsk"><b>-genzsk</b></a></dt>
+  <dd>Generate new ZSKs for the zone. By default, the last ZSKs generated for
+      this zone will be used.</dd>
+  <dt id="help"><a class="permalink" href="#help"><b>-help</b></a></dt>
+  <dd>Display a usage message.</dd>
+  <dt id="intermediate"><a class="permalink" href="#intermediate"><b>-intermediate</b></a></dt>
+  <dd>Filename to use for the temporary zone file. The zone file will be copied
+      to this file and then the key names appended.</dd>
+  <dt id="keydirectory"><a class="permalink" href="#keydirectory"><b>-keydirectory</b></a></dt>
+  <dd>The directory in which KSK and ZSK keys will be stored. The default is to
+      store the keys in the directory in which <b>zonesigner</b> is executed.
+    <p class="Pp">This directory <b>may not</b> be the root directory.</p>
+  </dd>
+  <dt id="krfile"><a class="permalink" href="#krfile"><b>-krfile</b></a></dt>
+  <dd><i>keyrec</i> file to use in processing options. See the man page for
+      <b>Net::DNS::SEC::Tools::tooloptions.pm</b> for more details about this
+      file.</dd>
+  <dt id="ksignset"><a class="permalink" href="#ksignset"><b>-ksignset</b></a></dt>
+  <dd>The name of the KSK signing set to use. If the signing set does not exist,
+      then this must be used in conjunction with either <b>-genkeys</b> or
+      <b>-genksk</b>. The name may contain alphanumerics, underscores, hyphens,
+      periods, and commas.
+    <p class="Pp">The name may contain alphanumerics, underscores, hyphens,
+        periods, and commas. The default signing set name is
+        &quot;<i>zone</i>-signset-<i>N</i>&quot;, where <i>zone</i> is the zone
+        being signed and <i>N</i> is a number.</p>
+    <p class="Pp">If <b>-ksignset</b> is not specified, then <b>zonesigner</b>
+        will use the default and increment the number for subsequent signing
+        sets.</p>
+  </dd>
+  <dt id="kskcount"><a class="permalink" href="#kskcount"><b>-kskcount</b></a></dt>
+  <dd>The number of KSK keys to generate and with which to sign the zone. The
+      default is to use a single KSK key.</dd>
+  <dt id="kskdirectory"><a class="permalink" href="#kskdirectory"><b>-kskdirectory</b></a></dt>
+  <dd>The directory in which KSK keys will be stored. The default is to store
+      the keys in the directory in which <b>zonesigner</b> is executed.
+    <p class="Pp">This directory <b>may not</b> be the root directory.</p>
+  </dd>
+  <dt id="ksklife"><a class="permalink" href="#ksklife"><b>-ksklife</b></a></dt>
+  <dd>The time between KSK rollovers. This is measured in seconds.</dd>
+  <dt id="newpubksk"><a class="permalink" href="#newpubksk"><b>-newpubksk</b></a></dt>
+  <dd>Generate new Published KSKs for the zone. Any existing Published KSKs will
+      be marked as obsolete.</dd>
+  <dt id="nodroprevoked"><a class="permalink" href="#nodroprevoked"><b>-nodroprevoked</b></a></dt>
+  <dd>Explicitly turn off obsoleting currently revoked KSKs and remove them from
+      the signing set before resigning. This is mutually exclusive from
+      <b>-droprevoked</b>. If neither <b>-droprevoked</b> nor
+      <b>-nodroprevoked</b> are given, then <b>-droprevoked</b> functionality is
+      assumed..</dd>
+  <dt id="nokrfile"><a class="permalink" href="#nokrfile"><b>-nokrfile</b></a></dt>
+  <dd>No <i>keyrec</i> file will be consulted or created.</dd>
+  <dt id="norfc5011"><a class="permalink" href="#norfc5011"><b>-norfc5011</b></a></dt>
+  <dd>Disable RFC5011 KSK revocation when rolling or replacing existing KSK key
+      sets. By default, <b>zonesigner</b> performs RFC5011 KSK revocation and
+      this option supersedes this behavior and any option setting within the
+      <i>keyrec</i> file.</dd>
+  <dt id="nosave"><a class="permalink" href="#nosave"><b>-nosave</b></a></dt>
+  <dd>Do not save obsolete keys to the key archive directory. The default
+      behavior is to save obsolete keys.</dd>
+  <dt id="phase"><a class="permalink" href="#phase"><b>-phase</b></a></dt>
+  <dd>Specify an rollover option based on the rollover phase, as opposed to
+      using the option naming the specific action to be performed. The purpose
+      of this option is to bring clarity and greater understanding to how
+      <b>zonesigner</b> is used in the rollover process.
+    <p class="Pp">The following are the mappings between the <b>-phase</b>
+        options and the action options.</p>
+        <pre>Phase Option             Action-based Option
+-phase ksk2              -newpubksk
+-phase ksk4              -rollksk
+-phase zsk2              -usezskpub
+-phase zsk4b             -rollzsk
+-phase zsk4b             (no option)
+</pre>
+    <p class="Pp"><b>Warning</b>: The <b>-phase</b> option should only be used
+        if you know what you're doing.</p>
+  </dd>
+  <dt id="rollksk"><a class="permalink" href="#rollksk"><b>-rollksk</b></a></dt>
+  <dd>Force a rollover of the KSK keys. The Current KSK keys are marked as
+      Obsolete and the Published KSK keys are marked as Current. The zone is
+      then signed with the new set of Current KSK keys. If the zone's
+      <i>keyrec</i> does not list a Current or Published KSK, an error message
+      is printed and <b>zonesigner</b> stops execution.
+    <p class="Pp">The zone's <i>keyrec</i> file is updated to show the new key
+        state.</p>
+    <p class="Pp">The <i>keyrec</i>s of the KSK keys are adjusted as
+      follows:</p>
+        <pre>The Current KSK keys are marked as Obsolete.
+The Published KSK keys are marked as Current.
+The Obsolete KSK keys are moved to the archive directory.
+</pre>
+    <p class="Pp">If RFC5011 processing is enabled, then the KSK rollover
+        sequence is modified as follows:</p>
+        <pre>The Current KSK keys are marked as Revoked.
+The Published KSK keys are marked as Current.
+The Revoked KSK keys are checked to see if they are still
+within their revocation period.  If not, they are marked
+as Obsolete.
+The Obsolete KSK keys are moved to the archive directory.
+</pre>
+    <p class="Pp"><b>Warning</b>: The timing of key-rolling is critical. Great
+        care must be taken when using this option. In the future, <b>rollerd</b>
+        will automate the KSK rollover process and may be used to safely take
+        care of this aspect of DNSSEC management.</p>
+    <p class="Pp"><b>Warning</b>: Using the <b>-rollksk</b> option should only
+        be used if you know what you're doing.</p>
+    <p class="Pp"><b>Warning</b>: This is may be a <i>temporary</i> method of
+        KSK rollover. It <i>may</i> be changed in the future.</p>
+  </dd>
+  <dt id="rollmgr"><a class="permalink" href="#rollmgr"><b>-rollmgr</b></a></dt>
+  <dd>The zone's rollover manager. This indicates that the zone is under control
+      of a rollover manager. If a user wishes to sign a zone in the middle of a
+      rollover wait phase, this field helps <b>zonesigner</b> and the rollover
+      manager to determine how best to handle the zone-signing operation.</dd>
+  <dt id="rollzsk"><a class="permalink" href="#rollzsk"><b>-rollzsk</b></a></dt>
+  <dd>Force a rollover of the ZSK keys using the Pre-Publish Key Rollover
+      method. The rollover process adjusts the keys used to sign the specified
+      zone, generates new keys, signs the zone with the appropriate keys, and
+      updates the <i>keyrec</i> file. The Pre-Publish Key Rollover process is
+      described in the DNSSEC Operational Practices document.
+    <p class="Pp">Three sets of ZSK keys are used in the rollover process:
+        Current, Published, and New. Current ZSKs are those which are used to
+        sign the zone. Published ZSKs are available in the zone data, and
+        therefore in cached zone data, but are not yet used to sign the zone.
+        New ZSKs are not available in zone data nor yet used to sign the zone,
+        but are waiting in the wings for future use.</p>
+    <p class="Pp">The <i>keyrec</i>s of the ZSK keys are adjusted as
+      follows:</p>
+        <pre>The Current ZSK keys are marked as obsolete.
+The Published ZSK keys are marked as Current.
+The New ZSK keys, if they exist, are marked as Published.
+Another set of ZSK keys are generated, which will be
+    marked as the New ZSK keys.
+The Published ZSK keys' zsklife field is copied to the
+    new ZSK keys' keyrecs.
+The obsolete ZSK keys are moved to the archive directory.
+</pre>
+    <p class="Pp">The quick summary of proper ZSK rolling (which <b>rollerd</b>
+        does for you if you use it):</p>
+        <pre>- wait 2 * max(TTL in zone)
+- run zonesigner using -usezskpub
+- wait 2 * max(TTL in zone)
+- run zonesigner using -rollzsk
+- wait 2 * max(TTL in zone)
+</pre>
+    <p class="Pp"><b>Warning</b>: The timing of key-rolling is critical. Great
+</dd>
+</dl>
+</section>
+</section>
+     se debe tener cuidado al usar esta opción. <b>rollerd</b> automatiza el
+        proceso de cambio y puede utilizarse para gestionar de forma segura este
+        aspecto de la gestión de DNSSEC. El uso de la opción <b>-rollzsk</b> solo
+        debe utilizarse si sabe lo que está haciendo.</p>
+  </dd>
+  <dt id="showkeycmd"><a class="permalink" href="#showkeycmd"><b>-showkeycmd</b></a></dt>
+  <dd>Muestra el comando real de generación de claves (con opciones y
+      argumentos) que se ejecuta. Este es un pequeño subconjunto de la salida
+      del nivel 3 de verbosidad.</dd>
+  <dt id="showsigncmd"><a class="permalink" href="#showsigncmd"><b>-showsigncmd</b></a></dt>
+  <dd>Muestra el comando real de firma de zona (con opciones y argumentos) que
+      se ejecuta. Este es un pequeño subconjunto de la salida del nivel 3 de
+      verbosidad.</dd>
+  <dt id="signonly"><a class="permalink" href="#signonly"><b>-signonly</b></a></dt>
+  <dd>Firma la zona sin realizar ninguna operación de generación o cambio de
+      claves. Las claves utilizadas en la firma más reciente de la zona por
+      <b>zonesigner</b> serán las claves utilizadas para esta firma.</dd>
+  <dt id="signset"><a class="permalink" href="#signset"><b>-signset</b></a></dt>
+  <dd>El nombre del conjunto de firma ZSK a utilizar como conjunto de firma ZSK
+      Actual. La zona se firma y el conjunto de firma dado se convierte en el
+      nuevo conjunto de firma ZSK Actual de la zona. Si el conjunto de firma no
+      existe, entonces debe utilizarse junto con <b>-genkeys</b> o
+      <b>-genzsk</b>.
+    <p class="Pp">El nombre puede contener alfanuméricos, guiones bajos, guiones,
+        puntos y comas. El nombre del conjunto de firma predeterminado es
+        &quot;<i>zona</i>signset-<i>N</i>&quot;, donde <i>zona</i> es la zona que
+        se está firmando y <i>N</i> es un número.</p>
+    <p class="Pp">Si no se especifica <b>-signset</b>, entonces
+        <b>zonesigner</b> utilizará el predeterminado e incrementará el número
+        para los conjuntos de firma posteriores.</p>
+  </dd>
+  <dt id="threshold"><a class="permalink" href="#threshold"><b>-threshold</b></a></dt>
+  <dd>Firma la zona si se cumple una condición de umbral. Dependiendo de cómo se
+      especifique el umbral, puede ser relativo a la última vez que se firmó la
+      zona o a la fecha de caducidad de la zona.
+    <p class="Pp"><i>tiempo-umbral</i> es el valor del umbral, dado como un
+        valor numérico, con un especificador de unidad opcional. La unidad puede
+        ser 's', 'm', 'h' o 'd', para segundos, minutos, horas o días. Si no se
+        proporciona la unidad, el valor está en segundos. El valor del umbral debe
+        tener el prefijo '-' o el prefijo '+' para indicar qué umbral medir. El
+        valor del umbral <i>+10d</i> se refiere a diez días antes de la fecha de
+        caducidad de una zona.</p>
+    <p class="Pp">Si se utiliza el prefijo '-', la zona se volverá a firmar si
+        <b>zonesigner</b> se ejecuta no más de <i>tiempo-umbral</i> después de la
+        última vez que se firmó la zona. El <i>tiempo-umbral</i> se determina
+        restando el valor del umbral de la medianoche siguiente. Si esto pusiera
+        el tiempo del umbral en el futuro, entonces se calcula a partir del
+        momento actual.</p>
+    <p class="Pp">Si se utiliza el prefijo '+', la zona se volverá a firmar si
+        <b>zonesigner</b> se ejecuta no más de <i>tiempo-umbral</i> antes de la
+        fecha de caducidad de la zona. El <i>tiempo-umbral</i> se determina
+        restando el valor del umbral de la medianoche anterior. Si esto pusiera
+        el <i>tiempo-umbral</i> en el pasado, entonces se calcula a partir del
+        momento actual.</p>
+  </dd>
+  <dt id="useboth"><a class="permalink" href="#useboth"><b>-useboth</b></a></dt>
+  <dd>Utiliza las ZSK actuales y publicadas existentes para firmar la zona.</dd>
+  <dt id="usezskpub"><a class="permalink" href="#usezskpub"><b>-usezskpub</b></a></dt>
+  <dd>Utiliza las ZSK publicadas existentes para firmar la zona.</dd>
+  <dt id="Version"><a class="permalink" href="#Version"><b>-Version</b></a></dt>
+  <dd>Muestra la información de la versión de <b>zonesigner</b> y del paquete
+      DNSSEC-Tools.</dd>
+  <dt id="verbose"><a class="permalink" href="#verbose"><b>-verbose</b></a></dt>
+  <dd>Se proporcionará una salida detallada. Cuantas más instancias de
+      <b>-verbose</b> se proporcionen en la línea de comandos, se lograrán
+      niveles adicionales de verbosidad.
+        <pre>nivel       salida
+-----       ------
+  1         operaciones que se están realizando
+              (por ejemplo, generación de archivos de claves, firma de zona) 
+  2         detalles sobre operaciones y algunos resultados de operaciones
+              (por ejemplo, nombres de nuevas claves, número de serie de la zona)
+  3         parámetros de las operaciones y detalles adicionales
+              (por ejemplo, longitudes de clave, algoritmo de cifrado,
+              comandos ejecutados)
+</pre>
+    <p class="Pp">Los niveles más altos de verbosidad son acumulativos.
+        Especificar dos instancias de <b>-verbose</b> proporcionará la salida
+        de los primero y segundo niveles de salida.</p>
+  </dd>
+  <dt id="xc"><a class="permalink" href="#xc"><b>-xc</b></a></dt>
+  <dd>Muestra un mensaje asociado con un valor de salida de <b>zonesigner</b>.
+      Esta opción está destinada a ser utilizada por aquellos programas que
+      desean que <b>zonesigner</b> se ejecute en silencio, pero necesitan una
+      descripción de por qué <b>zonesigner</b> ha salido con un error.
+    <p class="Pp">A continuación, se muestran los códigos de salida y sus
+        mensajes asociados.</p>
+  </dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>0 - ejecución exitosa</dt>
+  <dd></dd>
+  <dt>1 - -rfc5011 y -norfc5011 no pueden especificarse juntos</dt>
+  <dd></dd>
+  <dt>2 - -droprevoked y -nodroprevoked no pueden especificarse juntos</dt>
+  <dd></dd>
+  <dt>3 - -keydirectory y -kskdirectory no pueden especificarse juntos</dt>
+  <dd></dd>
+  <dt>4 - -keydirectory y -zskdirectory no pueden especificarse juntos</dt>
+  <dd></dd>
+  <dt>5 - el recuento de KSK debe ser positivo</dt>
+  <dd></dd>
+  <dt>6 - el recuento de ZSK debe ser positivo</dt>
+  <dd></dd>
+  <dt>7 - no se especificó ningún directorio de archivo de claves</dt>
+  <dd></dd>
+  <dt>8 - el directorio de archivo de claves no es un directorio</dt>
+  <dd></dd>
+  <dt>9 - el directorio de archivo de claves no debe ser /</dt>
+  <dd></dd>
+  <dt>10 - -savekeys y -nosave no pueden especificarse juntos</dt>
+  <dd></dd>
+  <dt>11 - se especificó incorrectamente un directorio KSK o ZSK</dt>
+  <dd></dd>
+  <dt>12 - uno de los directorios KSK o ZSK especificados no es un
+    directorio</dt>
+  <dd></dd>
+  <dt>13 - ninguno de los directorios KSK ni ZSK puede ser el directorio raíz</dt>
+  <dd></dd>
+  <dt>14 - el archivo de zona, el archivo de salida y el archivo
+        intermedio deben tener nombres distintos</dt>
+  <dd></dd>
+  <dt>15 - el archivo de zona no existe</dt>
+  <dd></dd>
+  <dt>16 - el archivo de zona está vacío</dt>
+  <dd></dd>
+  <dt>17 - el archivo de zona ya está firmado</dt>
+  <dd></dd>
+  <dt>18 - el conjunto de firma especificado no existe</dt>
+  <dd></dd>
+  <dt>19 - el conjunto de firma ZSK Actual especificado no existe</dt>
+  <dd></dd>
+  <dt>20 - el conjunto de firma ZSK Publicado especificado no existe</dt>
+  <dd></dd>
+  <dt>21 - el nombre del nuevo conjunto de firma especificado ya existe</dt>
+  <dd></dd>
+  <dt>22 - el conjunto de firma KSK especificado ya existe</dt>
+  <dd></dd>
+  <dt>23 - no se especificó ningún conjunto de firma KSK</dt>
+  <dd></dd>
+  <dt>24 - el conjunto de firma KSK Actual especificado no existe</dt>
+  <dd></dd>
+  <dt>25 - el conjunto de firma KSK Publicado especificado no existe</dt>
+  <dd></dd>
+  <dt>26 - no se pudo generar el archivo de clave KSK</dt>
+  <dd></dd>
+  <dt>27 - el registro de clave ZSK no existe en el archivo de registro</dt>
+  <dd></dd>
+  <dt>28 - no se pudo generar el archivo de clave ZSK</dt>
+  <dd></dd>
+  <dt>29 - no se pudieron archivar las claves porque el directorio de archivo de
+        claves no es un directorio</dt>
+  <dd></dd>
+  <dt>30 - el repositorio KSK no es un directorio</dt>
+  <dd></dd>
+  <dt>31 - el repositorio ZSK no es un directorio</dt>
+  <dd></dd>
+  <dt>32 - no se pudo actualizar el número de serie en el archivo de zona</dt>
+  <dd></dd>
+  <dt>33 - el contenido modificado del archivo de zona está vacío</dt>
+  <dd></dd>
+  <dt>34 - no se pudo firmar la zona</dt>
+  <dd></dd>
+  <dt>35 - no se han creado KSK Publicadas</dt>
+  <dd></dd>
+  <dt>36 - la zona no tiene ZSK Publicadas para cambiar a ZSK Actual</dt>
+  <dd></dd>
+  <dt>37 - no hay claves definidas para un conjunto de firma particular para la
+        zona</dt>
+  <dd></dd>
+  <dt>38 - no existe registro de clave para el conjunto de firma requerido</dt>
+  <dd></dd>
+  <dt>39 - error en el archivo de registro de clave: un registro de clave de
+        conjunto de firma particular no es un registro de clave de conjunto</dt>
+  <dd></dd>
+  <dt>40 - el conjunto de firma especificado no contiene ninguna clave</dt>
+  <dd></dd>
+  <dt>41 - no existe registro de clave para una clave particular</dt>
+  <dd></dd>
+  <dt>42 - el registro de clave de la clave especificada tiene un tipo inesperado</dt>
+  <dd></dd>
+  <dt>43 - se imprimió el mensaje de uso</dt>
+  <dd></dd>
+  <dt>44 - se proporcionó un código de salida inválido a -xc</dt>
+  <dd></dd>
+  <dt>45 - named-checkzone devolvió un error</dt>
+  <dd></dd>
+  <dt>46 - no se pudo crear el directorio de archivo dsset</dt>
+  <dd></dd>
+  <dt>47 - el directorio de archivo dsset no es un directorio</dt>
+  <dd></dd>
+  <dt>48 - el directorio de archivo dsset no es escribible</dt>
+  <dd></dd>
+  <dt>49 - el directorio de archivo dsset no debe ser /</dt>
+  <dd></dd>
+  <dt>50 - umbral inválido</dt>
+  <dd></dd>
+  <dt>51 - formato de fecha de finalización inválido</dt>
+  <dd></dd>
+</dl>
+</div>
+<div class="Bd-indent">
+<p class="Pp">Se imprimirá un mensaje de error si se proporciona un código de
+    salida no válido.</p>
+</div>
+<dl class="Bl-tag">
+  <dt id="Cthulhu"><a class="permalink" href="#Cthulhu"><b>-Cthulhu</b></a></dt>
+  <dd>Esta opción es solo para uso interno y nunca debe ser utilizada por un
+      usuario. Si se ignora esta advertencia, se pueden visitar horrores
+      arcano indefinibles e innombrables en sus archivos de zona. No usar.</dd>
+  <dt id="zone"><a class="permalink" href="#zone"><b>-zone</b></a></dt>
+  <dd>Nombre de la zona que se firmará. Este nombre de zona puede proporcionarse
+      con esta opción o como el primer argumento de línea de comandos que no sea
+      una opción. En este último caso, si el argumento contiene separadores de
+      directorio, se utilizará el último elemento de la ruta para el nombre de la
+      zona.</dd>
+  <dt id="zskcount"><a class="permalink" href="#zskcount"><b>-zskcount</b></a></dt>
+  <dd>El número de claves ZSK que se generarán y con las cuales se firmará la
+      zona. El valor predeterminado es utilizar una única clave ZSK.</dd>
+  <dt id="zskdirectory"><a class="permalink" href="#zskdirectory"><b>-zskdirectory</b></a></dt>
+  <dd>El directorio en el que se almacenarán las claves ZSK. El valor
+      predeterminado es almacenar las claves en el directorio en el que se
+      ejecuta <b>zonesigner</b>.
+    <p class="Pp">Este directorio <b>no puede</b> ser el directorio raíz.</p>
+  </dd>
+  <dt id="zsklife"><a class="permalink" href="#zsklife"><b>-zsklife</b></a></dt>
+  <dd>El tiempo entre los cambios de ZSK. Esto se mide en segundos.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss">Opciones específicas de <b>dnssec-keygen</b></h2>
+<dl class="Bl-tag">
+  <dt id="algorithm"><a class="permalink" href="#algorithm"><b>-algorithm</b></a></dt>
+  <dd>Algoritmo criptográfico utilizado para generar las claves de la zona. El
+      valor predeterminado es RSASHA1. El valor de la opción se pasa a
+      <b>dnssec-keygen</b> como el indicador <b>-a</b>. Consulte la página del
+      manual de <b>dnssec-keygen</b> para determinar los valores legales.</dd>
+  <dt id="kgopts"><a class="permalink" href="#kgopts"><b>-kgopts</b></a></dt>
+  <dd>Se pueden especificar opciones adicionales para <b>dnssec-keygen</b>
+      utilizando esta opción. Las opciones adicionales se pasan como un único
+      valor de cadena como argumento a la opción <b>-kgopts</b>.</dd>
+  <dt id="ksklength"><a class="permalink" href="#ksklength"><b>-ksklength</b></a></dt>
+  <dd>Longitud en bits de la clave KSK de la zona. El valor predeterminado es
+      2048.</dd>
+  <dt id="nsec3optout"><a class="permalink" href="#nsec3optout"><b>-nsec3optout</b></a></dt>
+  <dd>Cuando se establecen este indicador y el indicador <i>-usensec3</i>, la
+      zona se firmará utilizando la compatibilidad Opt-Out descrita en RFC5155. Un
+      resumen rápido es que solo se firmarán los subdominios con DS válidos o
+      claves públicas disponibles y el resto no. Esto reduce en gran medida los
+      requisitos computacionales y de memoria de zonas extremadamente grandes con
+      muchos hijos no firmados.</dd>
+  <dt id="random"><a class="permalink" href="#random"><b>-random</b></a><<div class="manual-content">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Nm">zonesigner</p>
+<p class="Nd">wrapper around dnssec-signzone and other tools to simplify DNSSEC zone signing</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<dl class="Bl-tag">
+  <dt><b>zonesigner</b> [<b>-options</b>] <i>zonename</i> [<i>signedzone</i>]</dt>
+  <dt><b>zonesigner</b> [<b>-options</b>] <b>-krfile</b> <i>keyrec</i> <i>zonename</i> [<i>signedzone</i>]</dt>
+  <dt><b>zonesigner</b> [<b>-options</b>] <b>-intermediate</b> <i>signedzone</i> <i>zonename</i></dt>
+  <dt><b>zonesigner</b> [<b>-options</b>] <b>-krfile</b> <i>keyrec</i> <b>-intermediate</b> <i>signedzone</i> <i>zonename</i></dt>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp"><b>zonesigner</b> is a wrapper around <a href="/man/dnssec-signzone.8.en">dnssec-signzone(8)</a> and other DNSSEC-Tools utilities. Its goal is to simplify the process of signing DNSSEC zones by providing a higher-level interface. It handles the creation of necessary keys (if they don't exist), the signing of the zone, and the creation of DS records.</p>
+<p class="Pp">In addition to signing the zone, <b>zonesigner</b> can also handle the creation of a <i>keyrec</i> file. The <i>keyrec</i> file is a human-readable, object-oriented configuration file that stores information about the zone's keys and signing parameters. It is used by DNSSEC-Tools utilities to manage keys and signing operations.</p>
+<p class="Pp">If a <i>keyrec</i> file is not specified, <b>zonesigner</b> will create one based on the provided options and the zone name. If the <i>signedzone</i> argument is not provided, the signed zone file will be created in the current directory, named after the zone name with the suffix <b>.signed</b>.</p>
+<p class="Pp">The <b>-intermediate</b> option is used to sign an intermediate zone file, typically one that has already been signed by another tool or process. This is useful for scenarios where zones are signed in multiple stages.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="QUICK_START"><a class="permalink" href="#QUICK_START">QUICK START</a></h1>
+<p class="Pp">To sign a zone named <b>example.com</b> with the signed zone file named <b>db.example.com.signed</b>, and to generate keys if they don't exist:</p>
+<pre># zonesigner example.com db.example.com.signed</pre>
+<p class="Pp">This command will:</p>
+<ul class="Bl-bullet">
+  <li>Generate a Zone Signing Key (ZSK) and a Key Signing Key (KSK) if they
+      don't already exist.</li>
+  <li>Create a <i>keyrec</i> file named <b>example.com.krf</b>.</li>
+  <li>Sign the zone file <b>example.com</b> (or <b>db.example.com</b> if the
+      former doesn't exist) using the generated keys.</li>
+  <li>Create the signed zone file <b>db.example.com.signed</b>.</li>
+  <li>Generate DS records for the zone.</li>
+</ul>
+<p class="Pp">To sign a zone using an existing <i>keyrec</i> file:</p>
+<pre># zonesigner -krfile example.com.krf example.com db.example.com.signed</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="USING_ZONESIGNER"><a class="permalink" href="#USING_ZONESIGNER">USING ZONESIGNER</a></h1>
+<p class="Pp"><b>zonesigner</b> accepts a number of options that are passed to the underlying DNSSEC-Tools utilities, such as <a href="/man/dnssec-signzone.8.en">dnssec-signzone(8)</a>, <a href="/man/dnssec-keygen.8.en">dnssec-keygen(8)</a>, and <a href="/man/named-checkzone.8.en">named-checkzone(8)</a>. These options allow fine-grained control over the signing process.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss">General Options</h2>
+<dl class="Bl-tag">
+  <dt id="d"><a class="permalink" href="#d"><b>-d</b> <i>directory</i></a></dt>
+  <dd>Sets the directory in which keys and other signing-related files are
+      stored. Defaults to the current directory.</dd>
+  <dt id="f"><a class="permalink" href="#f"><b>-f</b> <i>file</i></a></dt>
+  <dd>Specifies the zone file to be signed. If not specified, <b>zonesigner</b>
+      will look for a file named after the <i>zonename</i> argument.</dd>
+  <dt id="g"><a class="permalink" href="#g"><b>-g</b></a></dt>
+  <dd>Generates DS records for the zone. This is the default behavior.</dd>
+  <dt id="g"><a class="permalink" href="#g-2"><b>-g</b> <i>keytype</i></a></dt>
+  <dd>Generates keys of the specified <i>keytype</i>. Valid keytypes are
+      <b>all</b>, <b>ksk</b>, and <b>zsk</b>. Defaults to <b>all</b>.</dd>
+  <dt id="i"><a class="permalink" href="#i"><b>-i</b></a></dt>
+  <dd>Signs the zone using the intermediate zone file specified as the
+      <i>signedzone</i> argument. This option is mutually exclusive with
+      providing a standard <i>signedzone</i> argument.</dd>
+  <dt id="k"><a class="permalink" href="#k"><b>-k</b> <i>file</i></a></dt>
+  <dd>Specifies the key record file (<i>keyrec</i>) to be used for signing. If
+      not specified, <b>zonesigner</b> will attempt to create one or use
+      default key generation parameters.</dd>
+  <dt id="l"><a class="permalink" href="#l"><b>-l</b> <i>lifetime</i></a></dt>
+  <dd>Sets the default key lifetime in seconds. The default is 15768000 seconds
+      (approximately 6 months).</dd>
+  <dt id="n"><a class="permalink" href="#n"><b>-n</b> <i>name</i></a></dt>
+  <dd>Specifies the DNSSEC signing algorithm to be used. Defaults to
+      <b>rsasha1</b>.</dd>
+  <dt id="r"><a class="permalink" href="#r"><b>-r</b> <i>source</i></a></dt>
+  <dd>Source of randomness used to generate the zone's keys. This is assumed to
+      be a file, for example <b>/dev/urandom</b>.</dd>
+  <dt id="u"><a class="permalink" href="#u"><b>-u</b></a></dt>
+  <dd>Signs the zone using <i>NSEC3</i> (see RFC5155) proof-of-non-existence
+      records rather than <i>NSEC</i> records. The keys used to sign the zone
+      must support the use of NSEC3 or else zone-signing will fail. Zonesigner
+      will automatically generate new keys of the correct type if one of the
+      <i>-genkeys</i> or similar options is used.</dd>
+  <dt id="z"><a class="permalink" href="#z"><b>-z</b> <i>length</i></a></dt>
+  <dd>Bit length of the zone's ZSK key. The default is 1024.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss"><b>dnssec-signzone</b>-specific Options</h2>
+<dl class="Bl-tag">
+  <dt id="endtime"><a class="permalink" href="#endtime"><b>-endtime</b></a></dt>
+  <dd>Time that the zone expires, as measured from the current time. If given as
+      a number, it is a count of seconds. If it is given as a number followed by
+      's', 'm', 'h', or 'd', then it is the number of seconds, minutes, hours,
+      or days. The default value is 2764800 seconds (32 days.)</dd>
+  <dt id="gends"><a class="permalink" href="#gends"><b>-gends</b></a></dt>
+  <dd>Force <b>dnssec-signzone</b> to generate DS records for the zone. This
+      option is translated into <b>-g</b> when passed to <b>dnssec-signzone</b>.
+    <p class="Pp">This option is obsolete. DS records are generated by default.
+        Use the <b>-nogends</b> option if DS records should not be
+      generated.</p>
+  </dd>
+  <dt id="ksdir"><a class="permalink" href="#ksdir"><b>-ksdir</b></a></dt>
+  <dd>Specify a directory for storing keysets. This is passed to
+      <b>dnssec-signzone</b> as the <b>-d</b> option.</dd>
+  <dt id="nogends"><a class="permalink" href="#nogends"><b>-nogends</b></a></dt>
+  <dd>Prevent <b>dnssec-signzone</b> from generating DS records for the
+    zone.</dd>
+  <dt id="szopts"><a class="permalink" href="#szopts"><b>-szopts</b></a></dt>
+  <dd>Additional options for <b>dnssec-signzone</b> may be specified using this
+      option. The additional options are passed as a single string value as an
+      argument to the <b>-szopts</b> option.
+    <p class="Pp">The default value for this option is &quot;-i local&quot;, set
+        in <b>defaults.pm</b>. This value has been found to greatly improve the
+        amount of time it takes <b>named-checkzone</b> to run.</p>
+  </dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Other_Options'><a class='permalink' href='#Other_Options'>Other   Options</a></h2>
+<dl class="Bl-tag">
+  <dt id="zcopts"><a class="permalink" href="#zcopts"><b>-zcopts</b></a></dt>
+  <dd>Additional options for <b>named-checkzone</b> may be specified using this
+      option. The additional options are passed as a single string value as an
+      argument to the <b>-zcopts</b> option.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EXAMPLES</a></h1>
+<p class="Pp">Example 1.</p>
+<p class="Pp">In the first example, an existing <i>keyrec</i> file is used to
+    assist in signing the example.com domain. Zone data are stored in
+    <b>example.com</b>, and the keyrec is in <b>example.krf</b>. The final
+    signed zone file will be <b>db.example.com.signed</b>. Using this
+  execution:</p>
+<pre># zonesigner -krfile example.krf example.com db.example.com.signed</pre>
+<p class="Pp">the following files are created:</p>
+<pre>Kexample.com.+005+45842.private
+Kexample.com.+005+45842.key
+Kexample.com.+005+50186.private
+Kexample.com.+005+50186.key
+Kexample.com.+005+59143.private
+Kexample.com.+005+59143.key
+dsset-example.com.
+keyset-example.com.
+db.example.com.signed</pre>
+<p class="Pp">The first six files are the KSK and ZSK keys required for the
+    zone. The next two files are created by the zone-signing process. The last
+    file is the final signed zone file.</p>
+<p class="Pp">Example 2.</p>
+<p class="Pp">In the second example, an existing <i>keyrec</i> file is used to
+    assist in signing the example.com domain. Zone data are stored in
+    <b>example.com</b>, and the keyrec is in <b>example.krf</b>. The generated
+    keys, an intermediate zone file, and final signed zone file will use
+    <b>example.com</b> as a base. Using this execution:</p>
+<pre># zonesigner -krfile example.krf -intermediate example.zs example.com</pre>
+<p class="Pp">the following files are created:</p>
+<pre>Kdb.example.com.+005+12354.key
+Kdb.example.com.+005+12354.private
+Kdb.example.com.+005+82197.key
+Kdb.example.com.+005+82197.private
+Kdb.example.com.+005+55888.key
+Kdb.example.com.+005+55888.private
+dsset-db.example.com.
+keyset-db.example.com.
+example.zs
+example.com.signed</pre>
+<p class="Pp">The first six files are the KSK and ZSK keys required for the
+    zone. The next two files are created by the zone-signing process. The second
+    last file is an intermediate file that will be signed. The last file is file
+    is the final signed zone.</p>
+<p class="Pp">Example 3.</p>
+<p class="Pp">In the third example, no <i>keyrec</i> file is specified for the
+    signing of the example.com domain. In addition to files created as shown in
+    previous examples, a new <i>keyrec</i> file is created. The new
+    <i>keyrec</i> file uses the domain name as its base. Using this
+  execution:</p>
+<pre># zonesigner example.com db.example.com</pre>
+<p class="Pp">the following <i>keyrec</i> file is created:</p>
+<pre>example.com.krf</pre>
+<p class="Pp">The signed zone file is created in:</p>
+<pre>db.example.com</pre>
+<p class="Pp">Example 4.</p>
+<p class="Pp">This example shows a <i>keyrec</i> file generated by
+    <b>zonesigner</b>.</p>
+<p class="Pp">The command executed is:</p>
+<pre># zonesigner example.com db.example.com</pre>
+<p class="Pp">The generated <i>keyrec</i> file contains six <i>keyrec</i>s: a
+    zone <i>keyrec</i>, two set <i>keyrec</i>s, one KSK <i>keyrec</i>, and two
+    ZSK <i>keyrec</i>s.</p>
+<pre>zone        &quot;example.com&quot;
+    zonefile        &quot;example.com&quot;
+    signedzone      &quot;db.example.com&quot;
+    endtime         &quot;+2764800&quot;
+    kskcur          &quot;example.com.signset-24&quot;
+    kskdirectory    &quot;.&quot;
+    zskcur          &quot;example.com.signset-42&quot;
+    zskpub          &quot;example.com.signset-43&quot;
+    zskdirectory    &quot;.&quot;
+    keyrec_type     &quot;zone&quot;
+    keyrec_signsecs &quot;1115166642&quot;
+    keyrec_signdate &quot;Wed May  4 00:30:42 2005&quot;
+set         &quot;example.com.signset-24&quot;
+    zonename        &quot;example.com&quot;
+    keys            &quot;Kexample.com.+005+24082&quot;
+    keyrec_setsecs  &quot;1110000042&quot;
+    keyrec_setdate  &quot;Sat Mar  5 05:20:42 2005&quot;
+set         &quot;example.com.signset-42&quot;
+    zonename        &quot;example.com&quot;
+    keys            &quot;Kexample.com.+005+53135&quot;
+    keyrec_setsecs  &quot;1115166640&quot;
+    keyrec_setdate  &quot;Wed May  4 00:30:40 2005&quot;
+set         &quot;example.com.signset-43&quot;
+    zonename        &quot;example.com&quot;
+    keys            &quot;Kexample.com.+005+13531&quot;
+    keyrec_setsecs  &quot;1115166641&quot;
+    keyrec_setdate  &quot;Wed May  4 00:30:41 2005&quot;
+key         &quot;Kexample.com.+005+24082&quot;
+    zonename        &quot;example.com&quot;
+    keyrec_type     &quot;kskcur&quot;
+    algorithm       &quot;rsasha1&quot;
+    random          &quot;/dev/urandom&quot;
+    keypath         &quot;./Kexample.com.+005+24082.key&quot;
+    ksklength       &quot;2048&quot;
+    ksklife         &quot;15768000&quot;
+    keyrec_gensecs  &quot;1110000042&quot;
+    keyrec_gendate  &quot;Sat Mar  5 05:20:42 2005&quot;
+key         &quot;Kexample.com.+005+53135&quot;
+    zonename        &quot;example.com&quot;
+    keyrec_type     &quot;zskcur&quot;
+    algorithm       &quot;rsasha1&quot;
+    random          &quot;/dev/urandom&quot;
+    keypath         &quot;./Kexample.com.+005+53135.key&quot;
+    zsklength       &quot;1024&quot;
+    zsklife         &quot;604800&quot;
+    keyrec_gensecs  &quot;1115166638&quot;
+    keyrec_gendate  &quot;Wed May  4 00:30:38 2005&quot;
+key         &quot;Kexample.com.+005+13531&quot;
+    zonename        &quot;example.com&quot;
+    keyrec_type     &quot;zskpub&quot;
+    algorithm       &quot;rsasha1&quot;
+    random          &quot;/dev/urandom&quot;
+    keypath         &quot;./Kexample.com.+005+13531.key&quot;
+    zsklength       &quot;1024&quot;
+    zsklife         &quot;604800&quot;
+    keyrec_gensecs  &quot;1115166638&quot;
+    keyrec_gendate  &quot;Wed May  4 00:30:38 2005&quot;</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="NOTES"><a class="permalink" href="#NOTES">NOTES</a></h1>
+<dl class="Bl-tag">
+  <dt>1. One Zone in a <i>keyrec</i> File</dt>
+  <dd>There is a bug in the signing-set code that necessitates only storing one
+      zone in a <i>keyrec</i> file.</dd>
+  <dt>2. SOA Serial Numbers</dt>
+  <dd>Serial numbers in SOA records are merely incremented in this version.
+      Future plans are to allow for more flexible serial number
+    manipulation.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="COPYRIGHT"><a class="permalink" href="#COPYRIGHT">COPYRIGHT</a></h1>
+<p class="Pp">Copyright 2004-2014 SPARTA, Inc. All rights reserved. See the
+    COPYING file included with the DNSSEC-Tools package for details.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR"><a class="permalink" href="#AUTHOR">AUTHOR</a></h1>
+<p class="Pp">Wayne Morrison, tewok@tislabs.com</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE   ALSO</a></h1>
+<p class="Pp"><a href='/man/keymod.8.en'>keymod(8)</a>, <a href='/man/lskrf.1.en'>lskrf(1)</a>, <a href='/man/rollerd.1.en'>rollerd(1)</a></p>
+<p class="Pp"><a href='/man/dnssec-keygen.8.en'>dnssec-keygen(8)</a>, <a href='/man/dnssec-signzone.8.en'>dnssec-signzone(8)</a></p>
+<p class="Pp"><a href='/man/Net::DNS::SEC::Tools::conf.pm.3.en'>Net::DNS::SEC::Tools::conf.pm(3)</a>,
+    <a href='/man/Net::DNS::SEC::Tools::defaults.pm.3.en'>Net::DNS::SEC::Tools::defaults.pm(3)</a>,
+    <a href='/man/Net::DNS::SEC::Tools::keyrec.pm.3.en'>Net::DNS::SEC::Tools::keyrec.pm(3)</a>,
+    <a href='/man/Net::DNS::SEC::Tools::tooloptions.pm.3.en'>Net::DNS::SEC::Tools::tooloptions.pm(3)</a></p>
+<p class="Pp"><a href='/man/keyrec.5.en'>keyrec(5)</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-08-31</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <title>zonesigner(1p) - Arch Linux</title>
+        <link rel="stylesheet" href="/css/style.css">
+        <link rel="stylesheet" href="/css/man.css">
+    </head>
+    <body>
+        
+        <main>
+            <aside>
+                <nav>
+                    <details>
+                        <summary>Tabla de contenidos</summary>
+                        <ul>
+                            <li><a href="#NAME">NAME</a></li>
+                            <li><a href="#SYNOPSIS">SYNOPSIS</a></li>
+                            <li><a href="#DESCRIPTION">DESCRIPTION</a></li>
+                            <li><a href="#OPTIONS">OPTIONS</a></li>
+                            <li><a href="#KEYREC_FILES">KEYREC FILES</a></li>
+                            <li><a href="#ENTROPY">ENTROPY</a></li>
+                            <li><a href="#DETERMINING_OPTION_VALUES">DETERMINING OPTION VALUES</a></li>
+                            <li><a href="#OPTIONS">OPTIONS</a></li>
+                            <li><a href="#EXAMPLES">EXAMPLES</a></li>
+                            <li><a href="#NOTES">NOTES</a></li>
+                            <li><a href="#COPYRIGHT">COPYRIGHT</a></li>
+                            <li><a href="#AUTHOR">AUTHOR</a></li>
+                            <li><a href="#SEE_ALSO">SEE ALSO</a></li>
+                        </ul>
+                    </details>
+                </nav>
+
+                <nav class="other-formats">
+                    <p>Otros formatos:
+                        <a href="/man/zonesigner.1p.en.txt">txt</a>,
+                        <a href="/man/zonesigner.1p.en.raw">raw</a>
+                    </p>
+                </nav>
+            </aside>
+            <article>
+                <h1>zonesigner(1p)</h1>
+                <p><b>zonesigner</b> - firma zonas DNSSEC</p>
+
+                <h2>NAME</h2>
+                <p>zonesigner - firma zonas DNSSEC</p>
+
+                <h2>SYNOPSIS</h2>
+                <p><code>zonesigner</code> [<code>-c</code> &lt; Cadena de confianza &gt;] [<code>-d</code> &lt; Directorio &gt;] [<code>-D</code> &lt; Directorio de destino &gt;] [<code>-e</code> &lt; tsig-alg &gt;] [<code>-E</code> &lt; archivo-entrada &gt;] [<code>-f</code> &lt; archivo-salida &gt;] [<code>-g</code> &lt; archivo de clave &gt;] [<code>-G</code> &lt; archivo de clave &gt;] [<code>-h</code>] [<code>-i</code> &lt; algoritmo &gt;] [<code>-k</code> &lt; archivo de clave &gt;] [<code>-K</code> &lt; archivo de clave &gt;] [<code>-l</code> &lt; nivel de registro &gt;] [<code>-m</code> &lt; modo &gt;] [<code>-p</code> &lt; período de propagación &gt;] [<code>-q</code>] [<code>-r</code> &lt; archivo de clave &gt;] [<code>-R</code> &lt; archivo de clave &gt;] [<code>-s</code> &lt; archivo de clave &gt;] [<code>-S</code> &lt; archivo de clave &gt;] [<code>-t</code> &lt; tsig-alg &gt;] [<code>-T</code> &lt; archivo de clave &gt;] [<code>-u</code> &lt; tsig-alg &gt;] [<code>-v</code>] [<code>-w</code> &lt; archivo de clave &gt;] [<code>-W</code> &lt; archivo de clave &gt;] [<code>-x</code> &lt; archivo de clave &gt;] [<code>-X</code> &lt; archivo de clave &gt;] [<code>-y</code> &lt; archivo de clave &gt;] [<code>-Y</code> &lt; archivo de clave &gt;] [<code>-z</code> &lt; archivo de clave &gt;] [<code>-Z</code> &lt; archivo de clave &gt;] [<code>-?</code>] &lt; zona &gt;</p>
+
+                <h2>DESCRIPTION</h2>
+                <p><code>zonesigner</code> es una utilidad para firmar zonas DNSSEC. Puede firmar una zona DNS en formato BIND de forma segura, protegiendo la integridad de los datos y autenticando su origen.</p>
+
+                <h2>OPTIONS</h2>
+                <dl>
+                    <dt><code>-c</code> &lt; Cadena de confianza &gt;</dt>
+                    <dd>Especifica la cadena de confianza a utilizar para la validación.</dd>
+
+                    <dt><code>-d</code> &lt; Directorio &gt;</dt>
+                    <dd>Especifica el directorio donde se encuentran los archivos de zona.</dd>
+
+                    <dt><code>-D</code> &lt; Directorio de destino &gt;</dt>
+                    <dd>Especifica el directorio donde se guardarán los archivos de zona firmados.</dd>
+
+                    <dt><code>-e</code> &lt; tsig-alg &gt;</dt>
+                    <dd>Algoritmo TSIG a utilizar para la autenticación de transacciones.</dd>
+
+                    <dt><code>-E</code> &lt; archivo-entrada &gt;</dt>
+                    <dd>Especifica el archivo de entrada de la zona.</dd>
+
+                    <dt><code>-f</code> &lt; archivo-salida &gt;</dt>
+                    <dd>Especifica el archivo de salida de la zona firmada.</dd>
+
+                    <dt><code>-g</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de firma de claves (KSK).</dd>
+
+                    <dt><code>-G</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la KSK.</dd>
+
+                    <dt><code>-h</code></dt>
+                    <dd>Muestra un mensaje de ayuda.</dd>
+
+                    <dt><code>-i</code> &lt; algoritmo &gt;</dt>
+                    <dd>Algoritmo de firma a utilizar (por ejemplo, RSASHA256).</dd>
+
+                    <dt><code>-k</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de firma de registro (ZSK).</dd>
+
+                    <dt><code>-K</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la ZSK.</dd>
+
+                    <dt><code>-l</code> &lt; nivel de registro &gt;</dt>
+                    <dd>Establece el nivel de registro (debug, info, warning, error).</dd>
+
+                    <dt><code>-m</code> &lt; modo &gt;</dt>
+                    <dd>Modo de operación (por ejemplo, sign, publish).</dd>
+
+                    <dt><code>-p</code> &lt; período de propagación &gt;</dt>
+                    <dd>Período de propagación para los registros RRSIG.</dd>
+
+                    <dt><code>-q</code></dt>
+                    <dd>Modo silencioso.</dd>
+
+                    <dt><code>-r</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada del Rol de DNSKEY.</dd>
+
+                    <dt><code>-R</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública del Rol de DNSKEY.</dd>
+
+                    <dt><code>-s</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de firma de firma (SIG).</dd>
+
+                    <dt><code>-S</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la SIG.</dd>
+
+                    <dt><code>-t</code> &lt; tsig-alg &gt;</dt>
+                    <dd>Algoritmo TSIG a utilizar para la autenticación de la zona.</dd>
+
+                    <dt><code>-T</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la clave de marca de tiempo (TSIG).</dd>
+
+                    <dt><code>-u</code> &lt; tsig-alg &gt;</dt>
+                    <dd>Algoritmo TSIG a utilizar para la autenticación de la zona de confianza.</dd>
+
+                    <dt><code>-v</code></dt>
+                    <dd>Muestra la versión del programa.</dd>
+
+                    <dt><code>-w</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de marca de tiempo (TSIG).</dd>
+
+                    <dt><code>-W</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la clave de marca de tiempo (TSIG).</dd>
+
+                    <dt><code>-x</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de seguridad de la zona (ZSK).</dd>
+
+                    <dt><code>-X</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la ZSK.</dd>
+
+                    <dt><code>-y</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de firma de la zona (ZSK).</dd>
+
+                    <dt><code>-Y</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la ZSK.</dd>
+
+                    <dt><code>-z</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave privada de la clave de firma de la zona (KSK).</dd>
+
+                    <dt><code>-Z</code> &lt; archivo de clave &gt;</dt>
+                    <dd>Archivo de clave pública de la KSK.</dd>
+
+                    <dt><code>-?</code></dt>
+                    <dd>Muestra un mensaje de ayuda.</dd>
+
+                    <dt>&lt; zona &gt;</dt>
+                    <dd>El nombre de la zona a firmar (por ejemplo, "example.com").</dd>
+                </dl>
+
+                <h2>KEYREC FILES</h2>
+                <p><code>zonesigner</code> utiliza archivos de clave (keyrec files) para almacenar las claves DNSSEC. Estos archivos contienen información sobre el algoritmo, la clave pública y la clave privada.</p>
+
+                <h2>ENTROPY</h2>
+                <p>Se requiere una fuente de entropía adecuada para la generación segura de claves. <code>zonesigner</code> puede utilizar el dispositivo <code>/dev/random</code> o <code>/dev/urandom</code> para obtener entropía.</p>
+
+                <h2>DETERMINING OPTION VALUES</h2>
+                <p>Los valores de las opciones, como los algoritmos y los nombres de archivo, deben determinarse cuidadosamente para garantizar una operación correcta y segura.</p>
+
+                <h2>OPTIONS</h2>
+                <p>Consulte la sección <code>OPTIONS</code> para obtener una descripción detallada de todas las opciones disponibles.</p>
+
+                <h2>EXAMPLES</h2>
+                <p><code>zonesigner -i RSASHA256 -g Kexample.com.+008.private -k Kexample.com.+008.private example.com</code></p>
+                <p>Este comando firma la zona "example.com" utilizando el algoritmo RSASHA256 y las claves especificadas.</p>
+
+                <h2>NOTES</h2>
+                <p>Es crucial gestionar las claves DNSSEC de forma segura. Se recomienda almacenar las claves privadas en un lugar seguro y utilizar contraseñas fuertes.</p>
+
+                <h2>COPYRIGHT</h2>
+                <p>Copyright (C) 2023 The Arch Linux Development Team</p>
+
+                <h2>AUTHOR</h2>
+                <p>Este manual ha sido generado por el equipo de Arch Linux.</p>
+
+                <h2>SEE ALSO</h2>
+                <p><code>dnssec-tools</code>(1), <code>bind9</code>(8)</p>
+            </article>
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

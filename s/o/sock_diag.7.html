@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>sock_diag(7) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+        <link rel="alternate" href="/man/sock_diag.7.fr" hreflang="fr">
+    
+        <link rel="alternate" href="/man/sock_diag.7.ru" hreflang="ru">
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">sock_diag(7)</h1>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">sock_diag(7)</td>
+    <td class="head-vol">Manual de información miscelánea</td>
+    <td class="head-rtitle">sock_diag(7)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">sock_diag - obtener información sobre sockets</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;sys/socket.h&gt;</b>
+<b>#include &lt;linux/sock_diag.h&gt;</b>
+<b>#include &lt;linux/unix_diag.h&gt;</b> /* para sockets de dominio UNIX */
+<b>#include &lt;linux/inet_diag.h&gt;</b> /* para sockets IPv4 e IPv6 */</pre>
+<pre><b>diag_socket = socket(AF_NETLINK, </b><i>tipo_socket</i><b>, NETLINK_SOCK_DIAG);</b></pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCIÓN'><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">El subsistema netlink sock_diag proporciona un mecanismo para obtener
+    información sobre sockets de varias familias de direcciones del kernel. Este
+    subsistema puede ser utilizado para obtener información sobre sockets
+    individuales o solicitar una lista de sockets.</p>
+<p class="Pp">En la solicitud, el llamante puede especificar información adicional
+    que le gustaría obtener sobre el socket, por ejemplo, información de memoria o
+    información específica de la familia de direcciones.</p>
+<p class="Pp">Al solicitar una lista de sockets, el llamante puede especificar
+    filtros que serán aplicados por el kernel para seleccionar un subconjunto de
+    sockets a reportar. Por ahora, solo existe la capacidad de filtrar sockets por
+    estado (conectado, escuchando, etc.).</p>
+<p class="Pp">Tenga en cuenta que sock_diag solo reporta aquellos sockets que
+    tienen un nombre; es decir, sockets enlazados explícitamente con <a href='/man/bind.2.en'>bind(2)</a> o
+    sockets que fueron enlazados automáticamente a una dirección (por ejemplo,
+    mediante <a href='/man/connect.2.en'>connect(2)</a>). Este es el mismo conjunto de sockets
+    que está disponible a través de <i>/proc/net/unix</i>, <i>/proc/net/tcp</i>,
+    <i>/proc/net/udp</i>, y similares.</p>
+<section class="Ss">
+<h2 class="Ss" id='Solicitud'><a class='permalink' href='#Solicitud'>Solicitud</a></h2>
+<p class="Pp">La solicitud comienza con un encabezado <i>struct nlmsghdr</i>
+    descrito en <a href='/man/netlink.7.en'>netlink(7)</a> con el campo
+    <i>nlmsg_type</i> establecido a <b>SOCK_DIAG_BY_FAMILY</b>. Le sigue un
+    encabezado específico para la familia de direcciones que comienza con una
+    parte común compartida por todas las familias de direcciones:</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct sock_diag_req {
+    __u8 sdiag_family;
+    __u8 sdiag_protocol;
+};</pre>
+<p class="Pp">Los campos de esta estructura son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="sdiag_family"><a class="permalink" href="#sdiag_family"><i>sdiag_family</i></a></dt>
+  <dd>Una familia de direcciones. Debe establecerse en la constante <b>AF_*</b>
+      apropiada.</dd>
+  <dt id="sdiag_protocol"><a class="permalink" href="#sdiag_protocol"><i>sdiag_protocol</i></a></dt>
+  <dd>Depende de <i>sdiag_family</i>. Debe establecerse en la constante
+      <b>IPPROTO_*</b> apropiada para <b>AF_INET</b> y <b>AF_INET6</b>, y en 0
+      en caso contrario.</dd>
+</dl>
+<p class="Pp">Si el campo <i>nlmsg_flags</i> del encabezado <i>struct nlmsghdr</i>
+    tiene la bandera <b>NLM_F_DUMP</b> establecida, significa que se está
+    solicitando una lista de sockets; de lo contrario, es una consulta sobre un
+    socket individual.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Respuesta'><a class='permalink' href='#Respuesta'>Respuesta</a></h2>
+<p class="Pp">La respuesta comienza con un encabezado <i>struct nlmsghdr</i>
+    y le sigue una matriz de objetos específicos para la familia de direcciones. La
+    matriz debe accederse con las macros estándar <b>NLMSG_*</b> de la API de
+    <a href='/man/netlink.3.en'>netlink(3)</a>.</p>
+<p class="Pp">Cada objeto es una lista NLA (atributos netlink) que debe
+    accederse con las macros <b>RTA_*</b> de la API de <a href='/man/rtnetlink.3.en'>rtnetlink(3)</a>.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Sockets_de_dominio_UNIX'><a class='permalink' href='#Sockets_de_dominio_UNIX'>Sockets de dominio UNIX</a></h2>
+<p class="Pp">Para los sockets de dominio UNIX, la solicitud se representa en la
+    siguiente estructura:</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct unix_diag_req {
+    __u8    sdiag_family;
+    __u8    sdiag_protocol;
+    __u16   pad;
+    __u32   udiag_states;
+    __u32   udiag_ino;
+    __u32   udiag_show;
+    __u32   udiag_cookie[2];
+};</pre>
+<p class="Pp">Los campos de esta estructura son los siguientes:</p>
+<dl class="Bl-tag">
+  <dt id="sdiag_family~2"><a class="permalink" href="#sdiag_family~2"><i>sdiag_family</i></a></dt>
+  <dd>La familia de direcciones; debe establecerse en <b>AF_UNIX</b>.</dd>
+</dl>
+<p class="Pp"><i>sdiag_protocol</i></p>
+<dl class="Bl-tag">
+  <dt><i>pad</i></dt>
+  <dd>Estos campos deben establecerse en 0.</dd>
+  <dt id="udiag_states"><a class="permalink" href="#udiag_states"><i>udiag_states</i></a></dt>
+  <dd>Esta es una máscara de bits que define un filtro de estados de sockets. Solo
+      se reportarán aquellos sockets cuyos estados estén en esta máscara. Se
+      ignora al consultar un socket individual. Los valores soportados son:</dd>
+</dl>
+<div class="Bd-indent">1 &lt;&lt; <b>TCP_ESTABLISHED</b>
+<p class="Pp">1 &lt;&lt; <b>TCP_LISTEN</b></p>
+</div>
+<dl class="Bl-tag">
+  <dt id="udiag_ino"><a class="permalink" href="#udiag_ino"><i>udiag_ino</i></a></dt>
+  <dd>Este es un número de inodo al consultar un socket individual. Se ignora al
+      consultar una lista de sockets.</dd>
+  <dt id="udiag_show"><a class="permalink" href="#udiag_show"><i>udiag_show</i></a></dt>
+  <dd>Este es un conjunto de banderas que definen qué tipo de información
+      reportar. Cada tipo de información solicitada se reporta como un atributo
+      netlink como se describe a continuación:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="UDIAG_SHOW_NAME"><a class="permalink" href="#UDIAG_SHOW_NAME"><b>UDIAG_SHOW_NAME</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_NAME</b>. La carga útil asociada con este atributo es la ruta
+      del archivo a la que el socket fue enlazado (una secuencia de bytes de hasta
+      el tamaño <b>UNIX_PATH_MAX</b>).</dd>
+  <dt id="UDIAG_SHOW_VFS"><a class="permalink" href="#UDIAG_SHOW_VFS"><b>UDIAG_SHOW_VFS</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_VFS</b>. La carga útil asociada con este atributo se representa
+      en la siguiente estructura:</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <br/>
+    <pre>struct unix_diag_vfs {
+    __u32 udiag_vfs_dev;
+    __u32 udiag_vfs_ino;
+};
+</pre>
+    <br/>
+  </dd>
+  <dt></dt>
+  <dd>Los campos de esta estructura son los siguientes:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="udiag_vfs_dev"><a class="permalink" href="#udiag_vfs_dev"><i>udiag_vfs_dev</i></a></dt>
+  <dd>El número de dispositivo del inodo del socket correspondiente en disco.</dd>
+  <dt id="udiag_vfs_ino"><a class="permalink" href="#udiag_vfs_ino"><i>udiag_vfs_ino</i></a></dt>
+  <dd>El número de inodo del inodo del socket correspondiente en disco.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="UDIAG_SHOW_PEER"><a class="permalink" href="#UDIAG_SHOW_PEER"><b>UDIAG_SHOW_PEER</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_PEER</b>. La carga útil asociada con este atributo es un valor
+      __u32 que es el número de inodo del par. Este atributo se reporta solo para
+      sockets conectados.</dd>
+  <dt id="UDIAG_SHOW_ICONS"><a class="permalink" href="#UDIAG_SHOW_ICONS"><b>UDIAG_SHOW_ICONS</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_ICONS</b>. La carga útil asociada con este atributo es una matriz
+      de valores __u32 que son los números de inodo de los sockets que han pasado
+      la llamada <a href='/man/connect.2.en'>connect(2)</a>, pero aún no han sido procesados con
+      <a href='/man/accept.2.en'>accept(2)</a>. Este atributo se reporta solo para sockets
+      en escucha.</dd>
+  <dt id="UDIAG_SHOW_RQLEN"><a class="permalink" href="#UDIAG_SHOW_RQLEN"><b>UDIAG_SHOW_RQLEN</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_RQLEN</b>. La carga útil asociada con este atributo se
+      representa en la siguiente estructura:</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <br/>
+    <pre>struct unix_diag_rqlen {
+    __u32 udiag_rqueue;
+    __u32 udiag_wqueue;
+};
+</pre>
+    <br/>
+  </dd>
+  <dt></dt>
+  <dd>Los campos de esta estructura son los siguientes:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="udiag_rqueue"><a class="permalink" href="#udiag_rqueue"><i>udiag_rqueue</i></a></dt>
+  <dd>Para sockets en escucha: el número de conexiones pendientes. El tamaño de la
+      matriz asociada con el atributo de respuesta <b>UNIX_DIAG_ICONS</b> es
+      igual a este valor.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>Para sockets establecidos: la cantidad de datos en la cola entrante.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt id="udiag_wqueue"><a class="permalink" href="#udiag_wqueue"><i>udiag_wqueue</i></a></dt>
+  <dd>Para sockets en escucha: el tamaño del backlog, que es igual al valor pasado
+      como segundo argumento a <a href='/man/listen.2.en'>listen(2)</a>.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>Para sockets establecidos: la cantidad de memoria disponible para enviar.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="UDIAG_SHOW_MEMINFO"><a class="permalink" href="#UDIAG_SHOW_MEMINFO"><b>UDIAG_SHOW_MEMINFO</b></a></dt>
+  <dd>El atributo reportado en respuesta a esta solicitud es
+      <b>UNIX_DIAG_MEMINFO</b>. La carga útil asociada con este atributo es una
+      matriz de valores __u32 descrita a continuación en la subsección &quot;Información de
+      memoria del socket&quot;.</dd>
+</dl>
+<p class="Pp">Los siguientes atributos son reportados ba</p>
+</div>
+</section>
+</div>
+</section>
+
+            </article>
+            
+        </main>
+        <footer>
+            
+        </footer>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NAME</a></h1>
+<p class="Nm">ss - show socket information</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SYNOPSIS</a></h1>
+<p class="Nm">ss [ <b>-a</b><b>-h</b><b>-m</b><b>-n</b><b>-o</b><b>-p</b><b>-t</b><b>-u</b><b>-x</b> ] [ <i>filter</i> ]</p>
+<p class="Nm">ss <a href="#OPTIONS">[<i>OPTIONS</i></a>] [<a href="#FILTER">[<i>FILTER</i></a>]</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPTION</a></h1>
+<p class="Pp">This utility is used to investigate sockets. It can display information
+    about both TCP and UDP, SCTP, and UNIX domain sockets that are used by the
+    system. The ss utility is intended as a simpler, more informative replacement
+    for programs like <i>netstat</i>(8). The output of ss can be quite verbose,
+    so this manual page omits some of the less common options and detailed
+    explanations of the output fields.</p>
+<section class="Ss">
+<h2 class="Ss" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPTIONS</a></h2>
+<dl class="Bl-tag">
+  <dt id="A" class="button"><b>-a</b>, <b>--all</b></dt>
+  <dd>Display all sockets. Without this option only active sockets are
+      displayed.</dd>
+  <dt id="h" class="button"><b>-h</b>, <b>--help</b></dt>
+  <dd>Print a help message and exit.</dd>
+  <dt id="m" class="button"><b>-m</b>, <b>--memory</b></dt>
+  <dd>Show socket memory usage.</dd>
+  <dt id="n" class="button"><b>-n</b>, <b>--numeric</b></dt>
+  <dd>Do not try to resolve service names.</dd>
+  <dt id="o" class="button"><b>-o</b>, <b>--options</b></dt>
+  <dd>Display timer information.</dd>
+  <dt id="p" class="button"><b>-p</b>, <b>--processes</b></dt>
+  <dd>Display the process (pid/name) owning the socket.</dd>
+  <dt id="t" class="button"><b>-t</b>, <b>--tcp</b></dt>
+  <dd>Display TCP sockets.</dd>
+  <dt id="u" class="button"><b>-u</b>, <b>--udp</b></dt>
+  <dd>Display UDP sockets.</dd>
+  <dt id="x" class="button"><b>-x</b>, <b>--unix</b></dt>
+  <dd>Display UNIX domain sockets.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="FILTER"><a class="permalink" href="#FILTER">FILTER</a></h2>
+<p class="Pp">A filter is a boolean expression allowing to select sockets to
+    display. It is composed of one or more of the following primitives, combined
+    with boolean operators:</p>
+<dl class="Bl-tag">
+  <dt><b><a href="#FAMILY"><i>family</i></a></b></dt>
+  <dd>Selects sockets of a given address family.</dd>
+  <dt><b><a href="#STATE"><i>state</i></a></b></dt>
+  <dd>Selects sockets in a specific state.</dd>
+  <dt><b><a href="#PORT"><i>port</i></a></b></dt>
+  <dd>Selects sockets with a specific port.</dd>
+  <dt><b><a href="#HOST"><i>host</i></a></b></dt>
+  <dd>Selects sockets with a specific address.</dd>
+</dl>
+<p class="Pp">The available operators are:</p>
+<dl class="Bl-tag">
+  <dt><b>and</b>, <b>or</b>, <b>not</b></dt>
+  <dd>Boolean operators.</dd>
+  <dt><b>(</b> <i>expression</i> <b>)</b></dt>
+  <dd>Group expressions.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="address_family_and_protocol"><a class="permalink" href="#address_family_and_protocol">Address family and protocol</a></h2>
+<p class="Pp">The address family and protocol are specified using the following
+    constants:</p>
+<dl class="Bl-tag">
+  <dt id="AF_UNIX"><a class="permalink" href="#AF_UNIX"><b>AF_UNIX</b></a></dt>
+  <dd>UNIX domain sockets.</dd>
+  <dt id="AF_INET"><a class="permalink" href="#AF_INET"><b>AF_INET</b></a></dt>
+  <dd>IPv4 sockets.</dd>
+  <dt id="AF_INET6"><a class="permalink" href="#AF_INET6"><b>AF_INET6</b></a></dt>
+  <dd>IPv6 sockets.</dd>
+  <dt id="IPPROTO_TCP"><a class="permalink" href="#IPPROTO_TCP"><b>IPPROTO_TCP</b></a></dt>
+  <dd>TCP protocol.</dd>
+  <dt id="IPPROTO_UDP"><a class="permalink" href="#IPPROTO_UDP"><b>IPPROTO_UDP</b></a></dt>
+  <dd>UDP protocol.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Socket_state"><a class="permalink" href="#Socket_state">Socket state</a></h2>
+<p class="Pp">The state of a TCP socket is described by the following constants:</p>
+<dl class="Bl-tag">
+  <dt id="TCP_ESTABLISHED"><a class="permalink" href="#TCP_ESTABLISHED"><b>TCP_ESTABLISHED</b></a></dt>
+  <dd>The socket is established.</dd>
+  <dt id="TCP_LISTEN"><a class="permalink" href="#TCP_LISTEN"><b>TCP_LISTEN</b></a></dt>
+  <dd>The socket is listening for incoming connections.</dd>
+  <dt id="TCP_CLOSE_WAIT"><a class="permalink" href="#TCP_CLOSE_WAIT"><b>TCP_CLOSE_WAIT</b></a></dt>
+  <dd>The remote end has shut down; waiting for the local end to close.</dd>
+  <dt id="TCP_SYN_SENT"><a class="permalink" href="#TCP_SYN_SENT"><b>TCP_SYN_SENT</b></a></dt>
+  <dd>The local end has initiated a connection.</dd>
+  <dt id="TCP_SYN_RECV"><a class="permalink" href="#TCP_SYN_RECV"><b>TCP_SYN_RECV</b></a></dt>
+  <dd>The local end received initial connection request.</dd>
+  <dt id="TCP_FIN_WAIT1"><a class="permalink" href="#TCP_FIN_WAIT1"><b>TCP_FIN_WAIT1</b></a></dt>
+  <dd>The local end has closed the connection, and the socket is waiting for a
+      FIN from the remote end.</dd>
+  <dt id="TCP_FIN_WAIT2"><a class="permalink" href="#TCP_FIN_WAIT2"><b>TCP_FIN_WAIT2</b></a></dt>
+  <dd>The socket is waiting for a FIN from the remote end.</dd>
+  <dt id="TCP_CLOSING"><a class="permalink" href="#TCP_CLOSING"><b>TCP_CLOSING</b></a></dt>
+  <dd>Both sides have initiated a connection shutdown.</dd>
+  <dt id="TCP_LAST_ACK"><a class="permalink" href="#TCP_LAST_ACK"><b>TCP_LAST_ACK</b></a></dt>
+  <dd>The local end has shut down; it is waiting for all outstanding data to be
+      sent and for an ACK from the remote end.</dd>
+  <dt id="TCP_TIME_WAIT"><a class="permalink" href="#TCP_TIME_WAIT"><b>TCP_TIME_WAIT</b></a></dt>
+  <dd>The local end has shut down and the socket is waiting for all outstanding
+      data to be sent and acknowledged.</dd>
+</dl>
+<p class="Pp">The state of a UNIX domain socket is described by the following
+    constants:</p>
+<dl class="Bl-tag">
+  <dt id="UNIX_LISTEN"><a class="permalink" href="#UNIX_LISTEN"><b>UNIX_LISTEN</b></a></dt>
+  <dd>The socket is listening for incoming connections.</dd>
+  <dt id="UNIX_CONNECTED"><a class="permalink" href="#UNIX_CONNECTED"><b>UNIX_CONNECTED</b></a></dt>
+  <dd>The socket is connected.</dd>
+  <dt id="UNIX_DISCONNECTED"><a class="permalink" href="#UNIX_DISCONNECTED"><b>UNIX_DISCONNECTED</b></a></dt>
+  <dd>The socket is disconnected.</dd>
+</dl>
+<p class="Pp">The state of a UDP socket is described by the following constants:</p>
+<dl class="Bl-tag">
+  <dt id="UDP_BOUND"><a class="permalink" href="#UDP_BOUND"><b>UDP_BOUND</b></a></dt>
+  <dd>The socket is bound to an address and port.</dd>
+  <dt id="UDP_CONNECTED"><a class="permalink" href="#UDP_CONNECTED"><b>UDP_CONNECTED</b></a></dt>
+  <dd>The socket is connected to a remote address and port.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Socket_options"><a class="permalink" href="#Socket_options">Socket options</a></h2>
+<p class="Pp">The following options can be used to filter sockets based on specific
+    criteria:</p>
+<dl class="Bl-tag">
+  <dt id="UNIX_DIAG_QUERY_V0"><a class="permalink" href="#UNIX_DIAG_QUERY_V0"><b>UNIX_DIAG_QUERY_V0</b></a></dt>
+  <dd>Query for UNIX domain sockets.</dd>
+  <dt id="UNIX_DIAG_SHUTDOWN"><a class="permalink" href="#UNIX_DIAG_SHUTDOWN"><b>UNIX_DIAG_SHUTDOWN</b></a></dt>
+  <dd>The payload associated with this attribute is __u8 value which represents
+      bits of <a href='/man/shutdown.2.en'>shutdown(2)</a> state.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="udiag_cookie"><a class="permalink" href="#udiag_cookie"><i>udiag_cookie</i></a></h2>
+<p class="Pp">This is an array of opaque identifiers that could be used along with
+    <i>udiag_ino</i> to specify an individual socket. It is ignored when
+    querying for a list of sockets, as well as when all its elements are set
+    to -1.</p>
+<p class="Pp">The response to a query for UNIX domain sockets is represented as
+    an array of</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct unix_diag_msg {
+    __u8    udiag_family;
+    __u8    udiag_type;
+    __u8    udiag_state;
+    __u8    pad;
+    __u32   udiag_ino;
+    __u32   udiag_cookie[2];
+};</pre>
+<p class="Pp">followed by netlink attributes.</p>
+<p class="Pp">The fields of this structure are as follows:</p>
+<dl class="Bl-tag">
+  <dt id="udiag_family"><a class="permalink" href="#udiag_family"><i>udiag_family</i></a></dt>
+  <dd>This field has the same meaning as in <i>struct unix_diag_req</i>.</dd>
+  <dt id="udiag_type"><a class="permalink" href="#udiag_type"><i>udiag_type</i></a></dt>
+  <dd>This is set to one of <b>SOCK_PACKET</b>, <b>SOCK_STREAM</b>, or
+      <b>SOCK_SEQPACKET</b>.</dd>
+  <dt id="udiag_state"><a class="permalink" href="#udiag_state"><i>udiag_state</i></a></dt>
+  <dd>This is set to one of <b>TCP_LISTEN</b> or <b>TCP_ESTABLISHED</b>.</dd>
+  <dt id="pad"><a class="permalink" href="#pad"><i>pad</i></a></dt>
+  <dd>This field is set to 0.</dd>
+  <dt id="udiag_ino~2"><a class="permalink" href="#udiag_ino~2"><i>udiag_ino</i></a></dt>
+  <dd>This is the socket inode number.</dd>
+  <dt id="udiag_cookie~2"><a class="permalink" href="#udiag_cookie~2"><i>udiag_cookie</i></a></dt>
+  <dd>This is an array of opaque identifiers that could be used in subsequent
+      queries.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='IPv4_and_IPv6_sockets'><a class='permalink' href='#IPv4_and_IPv6_sockets'>IPv4   and IPv6 sockets</a></h2>
+<p class="Pp">For IPv4 and IPv6 sockets, the request is represented in the
+    following structure:</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct inet_diag_req_v2 {
+    __u8    sdiag_family;
+    __u8    sdiag_protocol;
+    __u8    idiag_ext;
+    __u8    pad;
+    __u32   idiag_states;
+    struct inet_diag_sockid id;
+};</pre>
+<p class="Pp">where <i>struct inet_diag_sockid</i> is defined as follows:</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct inet_diag_sockid {
+    __be16  idiag_sport;
+    __be16  idiag_dport;
+    __be32  idiag_src[4];
+    __be32  idiag_dst[4];
+    __u32   idiag_if;
+    __u32   idiag_cookie[2];
+};</pre>
+<p class="Pp">The fields of <i>struct inet_diag_req_v2</i> are as follows:</p>
+<dl class="Bl-tag">
+  <dt id="sdiag_family~3"><a class="permalink" href="#sdiag_family~3"><i>sdiag_family</i></a></dt>
+  <dd>This should be set to either <b>AF_INET</b> or <b>AF_INET6</b> for IPv4 or
+      IPv6 sockets respectively.</dd>
+  <dt id="sdiag_protocol~2"><a class="permalink" href="#sdiag_protocol~2"><i>sdiag_protocol</i></a></dt>
+  <dd>This should be set to one of <b>IPPROTO_TCP</b>, <b>IPPROTO_UDP</b>, or
+      <b>IPPROTO_UDPLITE</b>.</dd>
+  <dt id="idiag_ext"><a class="permalink" href="#idiag_ext"><i>idiag_ext</i></a></dt>
+  <dd>This is a set of flags defining what kind of extended information to
+      report. Each requested kind of information is reported back as a netlink
+      attribute as described below:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="INET_DIAG_TOS"><a class="permalink" href="#INET_DIAG_TOS"><b>INET_DIAG_TOS</b></a></dt>
+  <dd>The payload associated with this attribute is a __u8 value which is the
+      TOS of the socket.</dd>
+  <dt id="INET_DIAG_TCLASS"><a class="permalink" href="#INET_DIAG_TCLASS"><b>INET_DIAG_TCLASS</b></a></dt>
+  <dd>The payload associated with this attribute is a __u8 value which is the
+      TClass of the socket. IPv6 sockets only. For LISTEN and CLOSE sockets,
+      this is followed by <b>INET_DIAG_SKV6ONLY</b> attribute with associated
+      __u8 payload value meaning whether the socket is IPv6-only or not.</dd>
+  <dt id="INET_DIAG_MEMINFO"><a class="permalink" href="#INET_DIAG_MEMINFO"><b>INET_DIAG_MEMINFO</b></a></dt>
+  <dd>The payload associated with this attribute is represented in the following
+      structure:</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <br/>
+    <pre>struct inet_diag_meminfo {
+    __u32 idiag_rmem;
+    __u32 idiag_wmem;
+    __u32 idiag_fmem;
+    __u32 idiag_tmem;
+};
+</pre>
+    <br/>
+  </dd>
+  <dt></dt>
+  <dd>The fields of this structure are as follows:</dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt id="idiag_rmem"><a class="permalink" href="#idiag_rmem"><i>idiag_rmem</i></a></dt>
+  <dd>The amount of data in the receive queue.</dd>
+  <dt id="idiag_wmem"><a class="permalink" href="#idiag_wmem"><i>idiag_wmem</i></a></dt>
+  <dd>The amount of data that is queued by TCP but not yet sent.</dd>
+  <dt id="idiag_fmem"><a class="permalink" href="#idiag_fmem"><i>idiag_fmem</i></a></dt>
+  <dd>The amount of memory scheduled for future use (TCP only).</dd>
+  <dt id="idiag_tmem"><a class="permalink" href="#idiag_tmem"><i>idiag_tmem</i></a></dt>
+  <dd>The amount of data in send queue.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="INET_DIAG_SKMEMINFO"><a class="permalink" href="#INET_DIAG_SKMEMINFO"><b>INET_DIAG_SKMEMINFO</b></a></dt>
+  <dd>The payload associated with this attribute is an array of __u32 values
+      described below in the subsection &quot;Socket memory
+    information&quot;.</dd>
+  <dt id="INET_DIAG_INFO"><a class="permalink" href="#INET_DIAG_INFO"><b>INET_DIAG_INFO</b></a></dt>
+  <dd>The payload associated with this attribute is specific to the address
+      family. For TCP sockets, it is an object of type <i>struct
+    tcp_info</i>.</dd>
+  <dt id="INET_DIAG_CONG"><a class="permalink" href="#INET_DIAG_CONG"><b>INET_DIAG_CONG</b></a></dt>
+  <dd>The payload associated with this attribute is a string that describes the
+      congestion control algorithm used. For TCP sockets only.</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="pad~2"><a class="permalink" href="#pad~2"><i>pad</i></a></dt>
+  <dd>This should be set to 0.</dd>
+  <dt id="idiag_states"><a class="permalink" href="#idiag_states"><i>idiag_states</i></a></dt>
+  <dd>This is a bit mask that defines a filter of socket states. Only those
+      sockets whose states are in this mask will be reported. Ignored when
+      querying for an individual socket.</dd>
+  <dt id="id"><a class="permalink" href="#id"><i>id</i></a></dt>
+  <dd>This is a socket ID object that is used in dump requests, in queries about
+      individual sockets, and is reported back in each response. Unlike UNIX
+      domain sockets, IPv4 and IPv6 sockets are identified using addresses and
+      ports. All values are in network byte order.</dd>
+</dl>
+<p class="Pp">The fields of <i>struct inet_diag_sockid</i> are as follows:</p>
+<dl class="Bl-tag">
+  <dt id="idiag_sport"><a class="permalink" href="#idiag_sport"><i>idiag_sport</i></a></dt>
+  <dd>The source port.</dd>
+  <dt id="idiag_dport"><a class="permalink" href="#idiag_dport"><i>idiag_dport</i></a></dt>
+  <dd>The destination port.</dd>
+  <dt id="idiag_src"><a class="permalink" href="#idiag_src"><i>idiag_src</i></a></dt>
+  <dd>The source address.</dd>
+  <dt id="idiag_dst"><a class="permalink" href="#idiag_dst"><i>idiag_dst</i></a></dt>
+  <dd>The destination address.</dd>
+  <dt id="idiag_if"><a class="permalink" href="#idiag_if"><i>idiag_if</i></a></dt>
+  <dd>The interface number the socket is bound to.</dd>
+  <dt id="idiag_cookie"><a class="permalink" href="#idiag_cookie"><i>idiag_cookie</i></a></dt>
+  <dd>This is an array of opaque identifiers that could be used along with other
+      fields of this structure to specify an individual socket. It is ignored
+      when querying for a list of sockets, as well as when all its elements are
+      set to -1.</dd>
+</dl>
+<p class="Pp">The response to a query for IPv4 or IPv6 sockets is represented as
+    an array of</p>
+<p class="Pp">
+  <br/>
+</p>
+<pre>struct inet_diag_msg {
+    __u8    idiag_family;
+    __u8    idiag_state;
+    __u8    idiag_timer;
+    __u8    idiag_retrans;
+    struct inet_diag_sockid id;
+    __u32   idiag_expires;
+    __u32   idiag_rqueue;
+    __u32   idiag_wqueue;
+    __u32   idiag_uid;
+    __u32   idiag_inode;
+};</pre>
+<p class="Pp">followed by netlink attributes.</p>
+<p class="Pp">The fields of this structure are as follows:</p>
+<dl class="Bl-tag">
+  <dt id="idiag_family"><a class="permalink" href="#idiag_family"><i>idiag_family</i></a></dt>
+  <dd>This is the same field as in <i>struct inet_diag_req_v2</i>.</dd>
+  <dt id="idiag_state"><a class="permalink" href="#idiag_state"><i>idiag_state</i></a></dt>
+  <dd>This denotes socket state as in <i>struct inet_diag_req_v2</i>.</dd>
+  <dt id="idiag_timer"><a class="permalink" href="#idiag_timer"><i>idiag_timer</i></a></dt>
+  <dd>For TCP sockets, this field describes the type of timer that is currently
+      active for the socket. It is set to one of the following constants:</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt><b>0</b></dt>
+  <dd>no timer is active</dd>
+  <dt><b>1</b></dt>
+  <dd>a retransmit timer</dd>
+  <dt><b>2</b></dt>
+  <dd>a keep-alive timer</dd>
+  <dt><b>3</b></dt>
+  <dd>a TIME_WAIT timer</dd>
+  <dt><b>4</b></dt>
+  <dd>a zero window probe timer</dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>For non-TCP sockets, this field is set to 0.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt id="idiag_retrans"><a class="permalink" href="#idiag_retrans"><i>idiag_retrans</i></a></dt>
+  <dd>For <i>idiag_timer</i> values 1, 2, and 4, this field contains the number
+      of retransmits. For other <i>idiag_timer</i> values, this field is set to
+      0.</dd>
+  <dt id="idiag_expires"><a class="permalink" href="#idiag_expires"><i>idiag_expires</i></a></dt>
+  <dd>For TCP sockets that have an active timer, this field describes its
+      expiration time in milliseconds. For other sockets, this field is set to
+      0.</dd>
+  <dt id="idiag_rqueue"><a class="permalink" href="#idiag_rqueue"><i>idiag_rqueue</i></a></dt>
+  <dd>For listening sockets: the number of pending connections.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>For other sockets: the amount of data in the incoming queue.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt id="idiag_wqueue"><a class="permalink" href="#idiag_wqueue"><i>idiag_wqueue</i></a></dt>
+  <dd>For listening sockets: the backlog size.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>For other sockets: the amount of memory available for sending.</dd>
+</dl>
+<dl class="Bl-tag">
+  <dt id="idiag_uid"><a class="permalink" href="#idiag_uid"><i>idiag_uid</i></a></dt>
+  <dd>This is the socket owner UID.</dd>
+  <dt id="idiag_inode"><a class="permalink" href="#idiag_inode"><i>idiag_inode</i></a></dt>
+  <dd>This is the socket inode number.</dd>
+</dl>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Socket_memory_information'><a class='permalink' href='#Socket_memory_information'>Socket   memory information</a></h2>
+<p class="Pp">The payload associated with <b>UNIX_DIAG_MEMINFO</b> and
+    <b>INET_DIAG_SKMEMINFO</b> netlink attributes is an array of the following
+    __u32 values:</p>
+<dl class="Bl-tag">
+  <dt id="SK_MEMINFO_RMEM_ALLOC"><a class="permalink" href="#SK_MEMINFO_RMEM_ALLOC"><b>SK_MEMINFO_RMEM_ALLOC</b></a></dt>
+  <dd>The amount of data in receive queue.</dd>
+  <dt id="SK_MEMINFO_RCVBUF"><a class="permalink" href="#SK_MEMINFO_RCVBUF"><b>SK_MEMINFO_RCVBUF</b></a></dt>
+  <dd>The receive socket buffer as set by <b>SO_RCVBUF</b>.</dd>
+  <dt id="SK_MEMINFO_WMEM_ALLOC"><a class="permalink" href="#SK_MEMINFO_WMEM_ALLOC"><b>SK_MEMINFO_WMEM_ALLOC</b></a></dt>
+  <dd>The amount of data that is queued by TCP but not yet sent.</dd>
+  <dt id="SK_MEMINFO_WND"><a class="permalink" href="#SK_MEMINFO_WND"><b>SK_MEMINFO_WND</b></a></dt>
+  <dd>The current send window size.</dd>
+  <dt id="SK_MEMINFO_Forward_xmit"><a class="permalink" href="#SK_MEMINFO_Forward_xmit"><b>SK_MEMINFO_Forward</b>
+      xmit</a></dt>
+  <dd>The amount of data currently being transmitted.</dd>
+  <dt id="SK_MEMINFO_Forward_xmit_alloc"><a class="permalink" href="#SK_MEMINFO_Forward_xmit_alloc"><b>SK_MEMINFO_Forward</b>
+      xmit alloc</a></dt>
+  <dd>The total amount of memory allocated for transmission.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="EXAMPLES"><a class="permalink" href="#EXAMPLES">EXAMPLES</a></h1>
+<p class="Pp">To display all TCP sockets:</p>
+<div class="Bd-indent">
+<pre>ss -t -a</pre>
+</div>
+<p class="Pp">To display all listening TCP sockets:</p>
+<div class="Bd-indent">
+<pre>ss -t -l</pre>
+</div>
+<p class="Pp">To display process information for all TCP sockets:</p>
+<div class="Bd-indent">
+<pre>ss -t -p</pre>
+</div>
+<p class="Pp">To display all UDP sockets:</p>
+<div class="Bd-indent">
+<pre>ss -u -a</pre>
+</div>
+<p class="Pp">To display all UNIX domain sockets:</p>
+<div class="Bd-indent">
+<pre>ss -x -a</pre>
+</div>
+<p class="Pp">To display all established TCP sockets:</p>
+<div class="Bd-indent">
+<pre>ss -t state established</pre>
+</div>
+<p class="Pp">To display all TCP sockets with remote port 80:</p>
+<div class="Bd-indent">
+<pre>ss -t dport = :80</pre>
+</div>
+<p class="Pp">To display all TCP sockets with local port 22:</p>
+<div class="Bd-indent">
+<pre>ss -t sport = :22</pre>
+</div>
+<p class="Pp">To display all TCP sockets with local address 192.168.0.1:</p>
+<div class="Bd-indent">
+<pre>ss -t src 192.168.0.1</pre>
+</div>
+<p class="Pp">To display all TCP sockets with remote address 192.168.0.2:</p>
+<div class="Bd-indent">
+<pre>ss -t dst 192.168.0.2</pre>
+</div>
+<p class="Pp">To display all TCP sockets with local address 192.168.0.1 and
+    remote port 80:</p>
+<div class="Bd-indent">
+<pre>ss -t src 192.168.0.1 dst :80</pre>
+</div>
+<p class="Pp">To display all TCP sockets with local port 80 or remote port
+    22:</p>
+<div class="Bd-indent">
+<pre>ss -t sport = :80 or dport = :22</pre>
+</div>
+<p class="Pp">To display all TCP sockets that are not in the ESTABLISHED
+    state:</p>
+<div class="Bd-indent">
+<pre>ss -t not state established</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SEE_ALSO"><a class="permalink" href="#SEE_ALSO">SEE ALSO</a></h1>
+<p class="Pp"><a href="/man/netstat.8.en"><span class="Nm">netstat</span>(8)</a>,
+    <a href="/man/ip.8.en"><span class="Nm">ip</span>(8)</a>, <a href="/man/tcp.7.en"><span class="Nm">tcp</span>(7)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="AUTHOR"><a class="permalink" href="#AUTHOR">AUTHOR</a></h1>
+<p class="Pp">This man page was written by Jiri Benc <jiri@ucw.cz>.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">The <b>NETLINK_SOCK_DIAG</b> generic netlink family is used to
+    query socket information. Currently, it supports the following protocols:</p>
+<dl class="Bl-tag">
+<dt id="AF_UNIX"><a class="permalink" href="#AF_UNIX"><b>AF_UNIX</b></a></dt>
+<dd>Unix domain sockets. See <a href='/man/unix.7.en'>unix(7)</a>.</dd>
+<dt id="AF_INET"><a class="permalink" href="#AF_INET"><b>AF_INET</b></a></dt>
+<dd>IP sockets. See <a href='/man/ip.7.en'>ip(7)</a>.</dd>
+<dt id="AF_INET6"><a class="permalink" href="#AF_INET6"><b>AF_INET6</b></a></dt>
+<dd>IP v6 sockets. See <a href='/man/ipv6.7.en'>ipv6(7)</a>.</dd>
+</dl>
+<p class="Pp">The <b>SOCK_DIAG_BY_FAMILY</b> request is used to dump socket
+    information for a given address family. The request structure is
+    <b>struct sock_diag_req</b>, defined in
+    <code class="Nm">&lt;linux/sock_diag.h&gt;</code>.</p>
+<div class="Bd-h">
+<pre>struct sock_diag_req {
+    __u8    sdiag_family;
+    __u8    sdiag_protocol;
+    __u16   __pad;
+    __u32   udiag_states;
+    __u32   udiag_show;
+};</pre>
+</div>
+<p class="Pp">The <b>sdiag_family</b> field specifies the address family (e.g.,
+    <b>AF_UNIX</b>, <b>AF_INET</b>, <b>AF_INET6</b>). The <b>sdiag_protocol</b>
+    field can be used to filter by protocol within the address family, or set
+    to 0 to dump all protocols. The <b>udiag_states</b> field is used for
+    protocols that have connection states (e.g., TCP states) and can be set to
+    -1 to dump all states.</p>
+<p class="Pp">The <b>udiag_show</b> field is a bitmask to request specific
+    information about the sockets. The following flags are supported:</p>
+<dl class="Bl-tag">
+<dt id="UDG_SHOW_PEER"><a class="permalink" href="#UDG_SHOW_PEER"><b>UDG_SHOW_PEER</b></a></dt>
+<dd>Show peer address information.</dd>
+<dt id="UDG_SHOW_NAME"><a class="permalink" href="#UDG_SHOW_NAME"><b>UDG_SHOW_NAME</b></a></dt>
+<dd>Show socket name (path for AF_UNIX).</dd>
+<dt id="UDG_SHOW_UID"><a class="permalink" href="#UDG_SHOW_UID"><b>UDG_SHOW_UID</b></a></dt>
+<dd>Show socket owner's UID.</dd>
+<dt id="UDG_SHOW_TIMEOUT"><a class="permalink" href="#UDG_SHOW_TIMEOUT"><b>UDG_SHOW_TIMEOUT</b></a></dt>
+<dd>Show socket timeouts.</dd>
+</dl>
+<p class="Pp">The response messages contain a header of type
+    <b>SOCK_DIAG_BY_FAMILY</b> followed by a protocol-specific message. For
+    <b>AF_UNIX</b> sockets, the message is of type
+    <code class="Nm">struct unix_diag_msg</code>.</p>
+<div class="Bd-h">
+<pre>struct unix_diag_msg {
+    __u8    udiag_family;
+    __u8    udiag_state;
+    __u16   __pad;
+    __u32   udiag_ino;
+};</pre>
+</div>
+<p class="Pp">The message is followed by attributes containing additional
+    information. The following attributes are supported for
+    <b>AF_UNIX</b>:</p>
+<dl class="Bl-tag">
+<dt id="UNIX_DIAG_NAME"><a class="permalink" href="#UNIX_DIAG_NAME"><b>UNIX_DIAG_NAME</b></a></dt>
+<dd>The socket name (path). The payload is a null-terminated string.</dd>
+<dt id="UNIX_DIAG_PEER"><a class="permalink" href="#UNIX_DIAG_PEER"><b>UNIX_DIAG_PEER</b></a></dt>
+<dd>The inode number of the peer socket.</dd>
+<dt id="UNIX_DIAG_UID"><a class="permalink" href="#UNIX_DIAG_UID"><b>UNIX_DIAG_UID</b></a></dt>
+<dd>The UID of the socket owner.</dd>
+<dt id="UNIX_DIAG_STATE"><a class="permalink" href="#UNIX_DIAG_STATE"><b>UNIX_DIAG_STATE</b></a></dt>
+<dd>The socket state. This is currently unused for AF_UNIX.</dd>
+<dt id="UNIX_DIAG_FREE"><a class="permalink" href="#UNIX_DIAG_FREE"><b>UNIX_DIAG_FREE</b></a></dt>
+<dd>Amount of memory in the socket's receive queue.</dd>
+<dt id="UNIX_DIAG_MEMINFO"><a class="permalink" href="#UNIX_DIAG_MEMINFO"><b>UNIX_DIAG_MEMINFO</b></a></dt>
+<dd>Socket memory information. The payload is a
+        <code class="Nm">struct unix_diag_meminfo</code>.</dd>
+</dl>
+<div class="Bd-h">
+<pre>struct unix_diag_meminfo {
+    __u32   idiag_mem;
+    __u32   idiag_maxmem;
+    __u32   idiag_hiwat;
+    __u32   idiag_lowat;
+    __u32   idiag_mmap_send;
+    __u32   idiag_mmap_recv;
+    __u32   idiag_wmem_alloc;
+    __u32   idiag_rmem_alloc;
+    __u32   idiag_wmem_queued;
+    __u32   idiag_rmem_queued;
+    __u32   idiag_optmem;
+    __u32   idiag_backlog;
+};</pre>
+</div>
+<p class="Pp">The following constants are used for the fields in
+    <code class="Nm">struct unix_diag_meminfo</code>:</p>
+<dl class="Bl-tag">
+<dt id="SK_MEMINFO_RMEM_ALLOC"><a class="permalink" href="#SK_MEMINFO_RMEM_ALLOC"><b>SK_MEMINFO_RMEM_ALLOC</b></a></dt>
+<dd>The amount of memory allocated for the receive queue.</dd>
+<dt id="SK_MEMINFO_RMEM_QUEUED"><a class="permalink" href="#SK_MEMINFO_RMEM_QUEUED"><b>SK_MEMINFO_RMEM_QUEUED</b></a></dt>
+<dd>The amount of data queued by the receiver, but not yet processed.</dd>
+<dt id="SK_MEMINFO_WMEM_ALLOC"><a class="permalink" href="#SK_MEMINFO_WMEM_ALLOC"><b>SK_MEMINFO_WMEM_ALLOC</b></a></dt>
+<dd>The amount of data in send queue.</dd>
+<dt id="SK_MEMINFO_SNDBUF"><a class="permalink" href="#SK_MEMINFO_SNDBUF"><b>SK_MEMINFO_SNDBUF</b></a></dt>
+<dd>The send socket buffer as set by <b>SO_SNDBUF</b>.</dd>
+<dt id="SK_MEMINFO_FWD_ALLOC"><a class="permalink" href="#SK_MEMINFO_FWD_ALLOC"><b>SK_MEMINFO_FWD_ALLOC</b></a></dt>
+<dd>The amount of memory scheduled for future use (TCP only).</dd>
+<dt id="SK_MEMINFO_WMEM_QUEUED"><a class="permalink" href="#SK_MEMINFO_WMEM_QUEUED"><b>SK_MEMINFO_WMEM_QUEUED</b></a></dt>
+<dd>The amount of data queued by TCP, but not yet sent.</dd>
+<dt id="SK_MEMINFO_OPTMEM"><a class="permalink" href="#SK_MEMINFO_OPTMEM"><b>SK_MEMINFO_OPTMEM</b></a></dt>
+<dd>The amount of memory allocated for the socket's service needs (e.g.,
+      socket filter).</dd>
+<dt id="SK_MEMINFO_BACKLOG"><a class="permalink" href="#SK_MEMINFO_BACKLOG"><b>SK_MEMINFO_BACKLOG</b></a></dt>
+<dd>The amount of packets in the backlog (not yet processed).</dd>
+</dl>
+</section>

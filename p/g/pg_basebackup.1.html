@@ -1,0 +1,700 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>pg_basebackup(1) — Arch manual pages</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">pg_basebackup(1)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/postgresql/">postgresql</a></p>
+<p class="lic">Licencias: PostgreSQL</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PG_BASEBACKUP(1)</td>
+    <td class="head-vol">PostgreSQL 18.1 Documentation</td>
+    <td class="head-rtitle">PG_BASEBACKUP(1)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id="NAME"><a class="permalink" href="#NAME">NOMBRE</a></h1>
+<p class="Pp">pg_basebackup - tomar una copia de seguridad base de un clúster de PostgreSQL</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="SYNOPSIS"><a class="permalink" href="#SYNOPSIS">SINOPSIS</a></h1>
+<p class="Pp HP"><b>pg_basebackup</b> [<i>opción</i>...]</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPTION"><a class="permalink" href="#DESCRIPTION">DESCRIPCIÓN</a></h1>
+<p class="Pp">pg_basebackup se utiliza para tomar una copia de seguridad base de un
+    clúster de bases de datos PostgreSQL en ejecución. La copia de seguridad se
+    realiza sin afectar a otros clientes de la base de datos y se puede utilizar
+    tanto para la recuperación ante fallos puntual (véase la Sección 25.3) como
+    punto de partida para un servidor standby de log-shipping o streaming
+    replication (véase la Sección 26.2).</p>
+<p class="Pp">pg_basebackup puede tomar una copia de seguridad base completa o
+    incremental. Cuando se utiliza para tomar una copia de seguridad completa,
+    realiza una copia exacta de los archivos del clúster de base de datos.
+    Cuando se utiliza para tomar una copia de seguridad incremental, algunos
+    archivos que habrían sido parte de una copia de seguridad completa pueden ser
+    reemplazados por versiones incrementales de los mismos archivos, que contienen
+    solo aquellos bloques que han sido modificados desde la copia de seguridad de
+    referencia. Una copia de seguridad incremental no se puede usar directamente;
+    en su lugar, se debe usar <a href='/man/pg_combinebackup.1.en'>pg_combinebackup(1)</a> primero para
+    combinarla con las copias de seguridad anteriores de las que depende.
+    Consulte la Sección 25.3.3 para obtener más información sobre las copias de
+    seguridad incrementales y la Sección 25.3.5 para conocer los pasos para
+    recuperarse de una copia de seguridad.</p>
+<p class="Pp">En cualquier modo, pg_basebackup se asegura de que el servidor se
+    ponga y se saque del modo de copia de seguridad automáticamente. Las copias
+    de seguridad siempre se toman de todo el clúster de bases de datos; no es
+    posible respaldar bases de datos u objetos de base de datos individuales.
+    Para copias de seguridad selectivas, se debe usar otra herramienta como
+    <a href='/man/pg_dump.1.en'>pg_dump(1)</a>.</p>
+<p class="Pp">La copia de seguridad se realiza a través de una conexión PostgreSQL
+    regular que utiliza el protocolo de replicación. La conexión debe realizarse
+    con un ID de usuario que tenga permisos de REPLICACIÓN (véase la Sección
+    21.2) o que sea un superusuario, y pg_hba.conf debe permitir la conexión de
+    replicación. El servidor también debe estar configurado con max_wal_senders
+    suficientemente alto para proporcionar al menos un walsender para la copia
+    de seguridad más uno para el streaming de WAL (si se utiliza).</p>
+<p class="Pp">Puede haber múltiples <b>pg_basebackup</b> ejecutándose al mismo
+    tiempo, pero generalmente es mejor desde el punto de vista del rendimiento
+    realizar solo una copia de seguridad y copiar el resultado.</p>
+<p class="Pp">pg_basebackup puede realizar una copia de seguridad base no solo
+    desde un servidor primario sino también desde un standby. Para tomar una
+    copia de seguridad desde un standby, configure el standby para que pueda
+    aceptar conexiones de replicación (es decir, establezca
+    <i>max_wal_senders</i> y hot_standby, y configure su pg_hba.conf
+    adecuadamente). También necesitará habilitar full_page_writes en el
+    primario.</p>
+<p class="Pp">Tenga en cuenta que existen algunas limitaciones al tomar una
+    copia de seguridad desde un standby:</p>
+<div class="Bd-indent">&#x2022;El archivo de historial de copias de seguridad no se
+  crea en el clúster de bases de datos respaldado.</div>
+<div class="Bd-indent">&#x2022;pg_basebackup no puede forzar al standby a cambiar a un
+  nuevo archivo WAL al final de la copia de seguridad. Cuando se usa -X none, si
+  la actividad de escritura en el primario es baja, pg_basebackup puede tener
+  que esperar mucho tiempo hasta que el último archivo WAL requerido para la
+  copia de seguridad sea cambiado y archivado. En este caso, puede ser útil
+  ejecutar <b>pg_switch_wal</b> en el primario para activar un cambio inmediato
+  del archivo WAL.</div>
+<div class="Bd-indent">&#x2022;Si el standby se promueve a primario durante la copia de
+  seguridad, la copia de seguridad falla.</div>
+<div class="Bd-indent">&#x2022;Todos los registros WAL requeridos para la copia de seguridad
+  deben contener suficientes escrituras de página completa, lo que requiere que
+  habilite <i>full_page_writes</i> en el primario.</div>
+<p class="Pp">Cada vez que pg_basebackup está tomando una copia de seguridad
+    base, la vista pg_stat_progress_basebackup del servidor informará el
+    progreso de la copia de seguridad. Consulte la Sección 27.4.6 para obtener
+    más detalles.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="OPTIONS"><a class="permalink" href="#OPTIONS">OPCIONES</a></h1>
+<p class="Pp">Las siguientes opciones de línea de comandos controlan la ubicación y
+    el formato de la salida:</p>
+<p class="Pp"><b>-D </b><b></b><i>directorio</i>
+  <br/>
+  <b>--pgdata=</b><b></b><i>directorio</i></p>
+<div class="Bd-indent">Establece el directorio de destino para escribir la
+  salida. pg_basebackup creará este directorio (y cualquier directorio padre
+  faltante) si no existe. Si ya existe, debe estar vacío.
+<p class="Pp">Cuando la copia de seguridad está en formato tar, el directorio de
+    destino puede especificarse como - (guion), haciendo que el archivo tar se
+    escriba en stdout.</p>
+<p class="Pp">Esta opción es obligatoria.</p>
+</div>
+<p class="Pp"><b>-F </b><b></b><i>formato</i>
+  <br/>
+  <b>--format=</b><b></b><i>formato</i></p>
+<div class="Bd-indent">Selecciona el formato para la salida. <i>formato</i> puede
+  ser uno de los siguientes:
+<p class="Pp">p
+  <br/>
+  plain</p>
+<div class="Bd-indent">Escribe la salida como archivos planos, con la misma
+  estructura que el directorio de datos del servidor de origen y los tablespaces.
+  Cuando el clúster no tiene tablespaces adicionales, toda la base de datos se
+  colocará en el directorio de destino. Si el clúster contiene tablespaces
+  adicionales, el directorio de datos principal se colocará en el directorio de
+  destino, pero todos los demás tablespaces se colocarán en la misma ruta
+  absoluta que tienen en el servidor de origen. (Véase <b>--tablespace-mapping</b>
+  para cambiar eso.)
+<p class="Pp">Este es el formato predeterminado.</p>
+</div>
+<p class="Pp">t
+  <br/>
+  tar</p>
+<div class="Bd-indent">Escribe la salida como archivos tar en el directorio de
+  destino. El contenido del directorio de datos principal se escribirá en un
+  archivo llamado base.tar, y cada tablespace adicional se escribirá en un
+  archivo tar separado con el nombre del OID de ese tablespace.
+<p class="Pp">Si el directorio de destino se especifica como - (guion), el contenido
+    tar se escribirá en la salida estándar, adecuado para canalizarlo (por
+    ejemplo) a gzip. Esto solo está permitido si el clúster no tiene tablespaces
+    adicionales y no se utiliza streaming de WAL.</p>
+</div>
+</div>
+<p class="Pp"><b>-i </b><b></b><i>archivo_manifiesto_antiguo</i>
+  <br/>
+  <b>--incremental=</b><b></b><i>archivo_manifiesto_antiguo</i></p>
+<div class="Bd-indent">Realiza una copia de seguridad incremental. El manifiesto de
+  copia de seguridad para la copia de seguridad de referencia debe ser
+  proporcionado y se cargará en el servidor, que responderá enviando la copia de
+  seguridad incremental solicitada.</div>
+<p class="Pp"><b>-R</b>
+  <br/>
+  <b>--write-recovery-conf</b></p>
+<div class="Bd-indent">Crea un archivo standby.signal
+<p class="Pp">y anexa la configuración de conexión al archivo
+    postgresql.auto.conf en el directorio de destino (o dentro del archivo de
+    archivo base cuando se usa el formato tar). Esto facilita la configuración
+    de un servidor standby utilizando los resultados de la copia de seguridad.</p>
+<p class="Pp">El archivo postgresql.auto.conf registrará la configuración de
+    conexión y, si se especifica, la ranura de replicación que está utilizando
+    pg_basebackup, de modo que la replicación en streaming y la sincronización de
+    ranuras de replicación lógica utilizarán la misma configuración más adelante.
+    El nombre de la base de datos se registrará solo si el nombre de la base de
+    datos se especificó explícitamente en la cadena de conexión o en la variable
+    de entorno.</p>
+</div>
+<p class="Pp"><b>-t </b><b></b><i>destino</i>
+  <br/>
+  <b>--target=</b><b></b><i>destino</i></p>
+<div class="Bd-indent">Instruye al servidor dónde colocar la copia de seguridad
+  base. El destino predeterminado es client, que especifica que la copia de
+  seguridad debe enviarse a la máquina donde se está ejecutando pg_basebackup.
+  Si el destino se establece en server:/algún/ruta en su lugar, la copia de
+  seguridad se almacenará en la máquina donde se encuentra el servidor en el
+  directorio /algún/ruta. Almacenar una copia de seguridad en el servidor
+  requiere privilegios de superusuario o tener privilegios del rol
+  pg_write_server_files. Si el destino se establece en blackhole, el contenido
+  se descarta y no se almacena en ningún lugar. Esto solo debe usarse con fines de
+  prueba, ya que no obtendrá una copia de seguridad real.
+<p class="Pp">Dado que el streaming de WAL es implementado por pg_basebackup en
+    lugar del servidor, esta opción no se puede usar junto con -Xstream. Dado que
+    ese es el valor predeterminado, cuando se especifica esta opción, también
+    debe especificar -Xfetch o -Xnone.</p>
+</div>
+<p class="Pp"><b>-T </b><b></b><i>directorio_antiguo</i><b>=</b><b></b><i>directorio_nuevo</i>
+  <br/>
+  <b>--tablespace-mapping=</b><b></b><i>directorio_antiguo</i><b>=</b><b></b><i>directorio_nuevo</i></p>
+<div class="Bd-indent">Reubica el tablespace en el directorio <i>directorio_antiguo</i>
+  a <i>directorio_nuevo</i> durante la copia de seguridad. Para ser efectivo,
+  <i>directorio_antiguo</i> debe coincidir exactamente con la especificación de
+  ruta del tablespace tal como está definido en el servidor fuente. (Pero no es
+  un error si no hay un tablespace en <i>directorio_antiguo</i> en el servidor
+  fuente.) Mientras tanto, <i>directorio_nuevo</i> es un directorio en el
+  sistema de archivos del host receptor. Al igual que con el directorio de
+  destino principal, <i>directorio_nuevo</i> no necesita existir previamente,
+  pero si existe debe estar vacío. Tanto <i>directorio_antiguo</i> como
+  <i>directorio_nuevo</i> deben ser rutas absolutas. Si alguna de las rutas
+  necesita contener un signo igual (=), preceda eso con una barra invertida.
+  Esta opción se puede especificar varias veces para varios tablespaces.
+<p class="Pp">Si un tablespace se reubica de esta manera, los enlaces simbólicos
+    dentro del directorio de datos principal se actualizan para apuntar a la
+    nueva ubicación. Por lo tanto, el nuevo directorio de datos está listo para
+    ser utilizado para una nueva instancia de servidor con todos los tablespaces
+    en las ubicaciones actualizadas.</p>
+<p class="Pp">Actualmente, esta opción solo funciona con el formato de salida
+    plain; se ignora si se selecciona el formato tar.</p>
+</div>
+<p class="Pp"><b>--waldir=</b><b></b><i>directorio_wal</i></p>
+</div>
+</section>
+            </article>
+        </main>
+    </body>
+</html>
+<div class="Bd-indent">Establece el directorio donde se escribirán los archivos WAL (write-ahead log).
+  Por defecto, los archivos WAL se colocarán en el subdirectorio pg_wal del
+  directorio de destino, pero esta opción se puede usar para colocarlos en otro lugar.
+  <i>waldir</i> debe ser una ruta absoluta. Al igual que con el directorio de destino principal,
+  <i>waldir</i> no necesita existir previamente, pero si existe, debe estar vacío.
+  Esta opción solo se puede especificar cuando la copia de seguridad está en formato plano (plain).</div>
+<p class="Pp"><b>-X </b><b></b><i>método</i>
+  <br/>
+  <b>--wal-method=</b><b></b><i>método</i></p>
+<div class="Bd-indent">Incluye los archivos WAL (write-ahead log) necesarios en la
+  copia de seguridad. Esto incluirá todos los write-ahead logs generados durante la copia de seguridad.
+  A menos que se especifique el método "none", es posible iniciar un postmaster en
+  el directorio de destino sin necesidad de consultar el archivo WAL, lo que hace que la salida sea una copia de seguridad completamente independiente.
+<p class="Pp">Los siguientes <i>método</i>s para recopilar los write-ahead logs
+    son compatibles:</p>
+<p class="Pp">n
+  <br/>
+  none</p>
+<div class="Bd-indent">No incluye los write-ahead logs en la copia de seguridad.</div>
+<p class="Pp">f
+  <br/>
+  fetch</p>
+<div class="Bd-indent">Los archivos write-ahead log se recopilan al final de la
+  copia de seguridad. Por lo tanto, es necesario que el parámetro wal_keep_size del servidor de origen
+  se establezca lo suficientemente alto como para que los datos del log requeridos no se eliminen antes del final de la copia de seguridad. Si los datos del log requeridos se han reciclado antes de que sea hora de transferirlos, la copia de seguridad fallará y será inutilizable.
+<p class="Pp">Cuando se utiliza el formato tar, los archivos write-ahead log se incluirán en el archivo base.tar.</p>
+</div>
+<p class="Pp">s
+  <br/>
+  stream</p>
+<div class="Bd-indent">Transmite los datos de write-ahead log mientras se realiza la copia de seguridad. Este método abrirá una segunda conexión al servidor y comenzará a transmitir el write-ahead log en paralelo mientras ejecuta la copia de seguridad. Por lo tanto, requerirá dos conexiones de replicación, no solo una. Siempre que el cliente pueda seguir el ritmo de los datos del write-ahead log, el uso de este método no requiere que se guarden write-ahead logs adicionales en el servidor de origen.
+<p class="Pp">Cuando se utiliza el formato tar, los archivos write-ahead log se escribirán en un archivo separado llamado pg_wal.tar (si el servidor es una versión anterior a la 10, el archivo se llamará pg_xlog.tar).</p>
+<p class="Pp">Este valor es el predeterminado.</p>
+</div>
+</div>
+<p class="Pp"><b>-z</b>
+  <br/>
+  <b>--gzip</b></p>
+<div class="Bd-indent">Habilita la compresión gzip del archivo tar de salida, con el
+  nivel de compresión predeterminado. La compresión solo está disponible cuando se utiliza el formato tar, y el sufijo .gz se agregará automáticamente a todos los nombres de archivo tar.</div>
+<p class="Pp"><b>-Z </b><b></b><i>nivel</i>
+  <br/>
+  <b>-Z
+    [{cliente|servidor}-]</b><b></b><i>método</i><b>[:</b><b></b><i>detalle</i><b>]</b>
+  <br/>
+  <b>--compress=</b><b></b><i>nivel</i>
+  <br/>
+  <b>--compress=[{cliente|servidor}-]</b><b></b><i>método</i><b>[:</b><b></b><i>detalle</i><b>]</b></p>
+<div class="Bd-indent">Solicita la compresión de la copia de seguridad. Si se incluye cliente o servidor, especifica dónde se realizará la compresión.
+  Comprimir en el servidor reducirá el ancho de banda de transferencia, pero aumentará el consumo de CPU del servidor. El valor predeterminado es cliente, excepto cuando se utiliza --target. En ese caso, la copia de seguridad no se está enviando al cliente, por lo que solo la compresión del servidor es sensata. Cuando se utiliza -Xstream, que es el valor predeterminado, la compresión del lado del servidor no se aplicará al WAL. Para comprimir el WAL, use la compresión del lado del cliente o especifique -Xfetch.
+<p class="Pp">El método de compresión se puede establecer en gzip, lz4, zstd, none para ninguna compresión o un entero (ninguna compresión si es 0, gzip si es mayor que 0). Opcionalmente, se puede especificar una cadena de detalle de compresión. Si la cadena de detalle es un entero, especifica el nivel de compresión. De lo contrario, debe ser una lista separada por comas de elementos, cada uno de la forma <i>palabra clave</i> o <i>palabra clave=valor</i>. Actualmente, las palabras clave admitidas son level, long y workers. La cadena de detalle no se puede utilizar cuando el método de compresión se especifica como un entero simple.</p>
+<p class="Pp">Si no se especifica ningún nivel de compresión, se utilizará el nivel de compresión predeterminado. Si solo se especifica un nivel sin mencionar un algoritmo, se utilizará la compresión gzip si el nivel es mayor que 0 y no se utilizará compresión si el nivel es 0.</p>
+<p class="Pp">Cuando se utiliza el formato tar con gzip, lz4 o zstd, el sufijo .gz, .lz4 o .zst, respectivamente, se agregará automáticamente a todos los nombres de archivo tar. Cuando se utiliza el formato plano, la compresión del lado del cliente no se puede especificar, pero aún es posible solicitar la compresión del lado del servidor. Si esto se hace, el servidor comprimirá la copia de seguridad para su transmisión, y el cliente la descomprimirá y extraerá.</p>
+<p class="Pp">Cuando esta opción se utiliza en combinación con -Xstream, pg_wal.tar se comprimirá usando gzip si se selecciona la compresión gzip del lado del cliente, pero no se comprimirá si se selecciona cualquier otro algoritmo de compresión o si se selecciona la compresión del lado del servidor.</p>
+</div>
+<p class="Pp">Las siguientes opciones de línea de comandos controlan la generación de la copia de seguridad y la invocación del programa:</p>
+<p class="Pp"><b>-c {fast|spread}</b>
+  <br/>
+  <b>--checkpoint={fast|spread}</b></p>
+<div class="Bd-indent">Establece el modo de punto de control en rápido (inmediato) o distribuido (predeterminado) (ver Sección 25.3.4).</div>
+<p class="Pp"><b>-C</b>
+  <br/>
+  <b>--create-slot</b></p>
+<div class="Bd-indent">Especifica que la ranura de replicación nombrada por la opción --slot debe crearse antes de iniciar la copia de seguridad. Se genera un error si la ranura ya existe.</div>
+<p class="Pp"><b>-l </b><b></b><i>etiqueta</i>
+  <br/>
+  <b>--label=</b><b></b><i>etiqueta</i></p>
+<div class="Bd-indent">Establece la etiqueta para la copia de seguridad. Si no se especifica ninguna, se utilizará el valor predeterminado "pg_basebackup base backup".</div>
+<p class="Pp"><b>-n</b>
+  <br/>
+  <b>--no-clean</b></p>
+<div class="Bd-indent">Por defecto, cuando <b>pg_basebackup</b> se interrumpe con un error, elimina cualquier directorio que haya podido crear antes de descubrir que no puede completar el trabajo (por ejemplo, el directorio de destino y el directorio de write-ahead log). Esta opción inhibe la limpieza y, por lo tanto, es útil para la depuración.
+<p class="Pp">Tenga en cuenta que los directorios de tablespace tampoco se limpian de ninguna manera.</p>
+</div>
+<p class="Pp"><b>-N</b>
+  <br/>
+  <b>--no-sync</b></p>
+<div class="Bd-indent">Por defecto, <b>pg_basebackup</b> esperará a que todos los archivos se escriban de forma segura en el disco. Esta opción hace que <b>pg_basebackup</b> regrese sin esperar, lo que es más rápido, pero significa que una posterior caída del sistema operativo puede dejar la copia de seguridad base corrupta. En general, esta opción es útil para pruebas, pero no debe utilizarse al crear una instalación de producción.</div>
+<p class="Pp"><b>-P</b>
+  <br/>
+  <b>--progress</b></p>
+<div class="Bd-indent">Habilita la presentación de informes de progreso. Activar esto proporcionará un informe de progreso aproximado durante la copia de seguridad. Dado que la base de datos puede cambiar durante la copia de seguridad, esto es solo una aproximación y puede que no termine exactamente en el 100%. En particular, cuando el registro WAL se incluye en la copia de seguridad, la cantidad total de datos no se puede estimar con anticipación, y en este caso, el tamaño objetivo estimado aumentará una vez que supere la estimación total sin WAL.</div>
+<p class="Pp"><b>-r </b><b></b><i>tasa</i>
+  <br/>
+  <b>--max-rate=</b><b></b><i>tasa</i></p>
+<div class="Bd-indent">Establece la tasa de transferencia máxima a la que se recopilan los datos del servidor de origen. Esto puede ser útil para limitar el impacto de pg_basebackup en el servidor. Los valores están en kilobytes por segundo. Utilice un sufijo M para indicar megabytes por segundo. También se acepta un sufijo k, que no tiene ningún efecto. Los valores válidos están entre 32 kilobytes por segundo y 1024 megabytes por segundo.
+<p class="Pp">Esta opción siempre afecta la transferencia del directorio de datos. La transferencia de archivos WAL solo se ve afectada si el método de recopilación es fetch.</p>
+</div>
+<p class="Pp"><b>-S </b><b></b><i>slotname</i>
+  <br/>
+  <b>--slot=</b><b></b><i>slotname</i></p>
+<div class="Bd-indent">Esta opción solo se puede usar junto con -X stream. Hace que la transmisión WAL utilice la ranura de replicación especificada. Si la copia de seguridad base está destinada a ser utilizada como un standby de replicación en streaming utilizando una ranura de replicación, el standby debe usar el mismo nombre de ranura de replicación que primary_slot_name. Esto asegura que el servidor primario no elimine ningún dato WAL necesario durante el tiempo transcurrido entre el final de la copia de seguridad base y el inicio de la replicación en streaming en el nuevo standby.
+<p class="Pp">La ranura de replicación especificada debe existir a menos que también se utilice la opción <b>-C</b>.</p>
+<p class="Pp">Si esta opción no se especifica y el servidor admite ranuras de replicación temporales (versión 10 y posteriores), entonces se utiliza automáticamente una ranura de replicación temporal para la transmisión WAL.</p>
+</div>
+<p class="Pp"><b>--sync-method=</b><b></b><i>método</i></p>
+<div class="Bd-indent">Cuando se establece en fsync, que es el valor predeterminado,
+  <b>pg_basebackup</b> abrirá y sincronizará recursivamente todos los archivos en el directorio de copia de seguridad. Cuando se utiliza el formato plano, la búsqueda de archivos seguirá los enlaces simbólicos para el directorio WAL y cada tablespace configurado.
+<p class="Pp">En Linux, syncfs puede usarse en su lugar para pedir al sistema operativo que sincronice todo el sistema de archivos que contiene el directorio de copia de seguridad. Cuando se utiliza el formato plano, <b>pg_basebackup</b> también sincronizará los sistemas de archivos que contienen los archivos WAL y cada tablespace. Consulte recovery_init_sync_method para obtener información sobre las advertencias a tener en cuenta al usar syncfs.</p>
+<p class="Pp">Esta opción no tiene ningún efecto cuando se utiliza <b>--no-sync</b>.</p>
+</div>
+<p class="Pp"><b>-v</b>
+  <br/>
+  <b>--verbose</b></p>
+<div class="Bd-indent">Habilita el modo detallado. Mostrará algunos pasos adicionales durante el inicio y el cierre, además de mostrar el nombre exacto del archivo que se está procesando actualmente si el informe de progreso también está habilitado.</div>
+<p class="Pp"><b>--manifest-checksums=</b><b></b><i>algoritmo</i></p>
+<div class="Bd-indent">Especifica el algoritmo de suma de verificación que se aplicará a cada archivo incluido en el manifiesto de copia de seguridad. Actualmente, los algoritmos disponibles son NONE, CRC32C, SHA224, SHA256, SHA384 y SHA512. El valor predeterminado es CRC32C.
+<p class="Pp">Si se selecciona NONE, el manifiesto de copia de seguridad no contendrá ninguna suma de verificación. De lo contrario, contendrá una suma de verificación de cada archivo en la copia de seguridad utilizando el algoritmo especificado. Además, el manifiesto siempre contendrá una suma de verificación SHA256 de su propio contenido. Los algoritmos SHA son significativamente más intensivos en CPU que CRC32C, por lo que seleccionar uno de ellos puede aumentar el tiempo necesario para completar la copia de seguridad.</p>
+<p class="Pp">El uso de una función hash SHA proporciona un resumen criptográficamente seguro de cada archivo para los usuarios que deseen verificar que la copia de seguridad no ha sido manipulada, mientras que el algoritmo CRC-32C proporciona una suma de verificación que se calcula mucho más rápido; es bueno para detectar errores debido a cambios accidentales, pero no es resistente a modificaciones maliciosas. Tenga en cuenta que, para ser útil contra un adversario que tenga acceso a la copia de seguridad, el manifiesto de copia de seguridad tendría que almacenarse de forma segura en otro lugar o verificarse de otra manera para que no se haya modificado desde que se tomó la copia de seguridad.</p>
+<p class="Pp"><a href='/man/pg_verifybackup.1.en'>pg_verifybackup(1)</a> se puede usar para verificar la integridad de una copia de seguridad contra el manifiesto de copia de seguridad.</p>
+</div>
+<p class="Pp"><b>--manifest-force-encode</b></p>
+<div class="Bd-indent">Fuerza que todos los nombres de archivo en el manifiesto de copia de seguridad se codifiquen en hexadecimal. Si esta opción no se especifica, solo los nombres de archivo que no son UTF8 se codifican en hexadecimal. Esta opción está destinada principalmente a probar que las herramientas que leen un archivo de manifiesto de copia de seguridad funcionen correctamente.</div>
+handle this case.</div>
+<p class="Pp"><b>--no-estimate-size</b></p>
+<div class="Bd-indent">Evita que el servidor estime la cantidad total de datos de
+  copia de seguridad que se transmitirán, lo que resulta en que la columna
+  backup_total en la vista pg_stat_progress_basebackup sea siempre NULL.
+<p class="Pp">Sin esta opción, la copia de seguridad comenzará enumerando el
+    tamaño de toda la base de datos y luego volverá a enviar el contenido real.
+    Esto puede hacer que la copia de seguridad tarde un poco más, y en particular,
+    tardará más antes de que se envíe el primer dato. Esta opción es útil para
+    evitar dicho tiempo de estimación si es demasiado largo.</p>
+<p class="Pp">Esta opción no está permitida cuando se usa <b>--progress</b>.</p>
+</div>
+<p class="Pp"><b>--no-manifest</b></p>
+<div class="Bd-indent">Deshabilita la generación de un manifiesto de copia de
+  seguridad. Si esta opción no se especifica, el servidor generará y enviará un
+  manifiesto de copia de seguridad que se puede verificar usando <a href='/man/pg_verifybackup.1.en'>pg_verifybackup(1)</a>. El
+  manifiesto es una lista de todos los archivos presentes en la copia de
+  seguridad, con la excepción de cualquier archivo WAL que pueda incluirse.
+  También almacena el tamaño, la hora de la última modificación y una suma de
+  verificación opcional para cada archivo.</div>
+<p class="Pp"><b>--no-slot</b></p>
+<div class="Bd-indent">Evita la creación de una ranura de replicación temporal
+  para la copia de seguridad.
+<p class="Pp">Por defecto, si se selecciona la transmisión de registros pero no
+    se proporciona un nombre de ranura con la opción <b>-S</b>, se crea una
+    ranura de replicación temporal (si es compatible con el servidor de origen).</p>
+<p class="Pp">El propósito principal de esta opción es permitir tomar una copia
+    de seguridad base cuando el servidor no tiene ranuras de replicación libres.
+    Usar una ranura de replicación es casi siempre preferible, ya que evita que
+    el WAL necesario sea eliminado por el servidor durante la copia de
+    seguridad.</p>
+</div>
+<p class="Pp"><b>--no-verify-checksums</b></p>
+<div class="Bd-indent">Deshabilita la verificación de sumas de verificación, si
+  están habilitadas en el servidor del que se toma la copia de seguridad base.
+<p class="Pp">Por defecto, se verifican las sumas de verificación y las fallas de
+    suma de verificación resultarán en un estado de salida distinto de cero. Sin
+    embargo, la copia de seguridad base no se eliminará en tal caso, como si se
+    hubiera utilizado la opción <b>--no-clean</b>. Las fallas de verificación
+    de suma de verificación también se informarán en la vista
+    pg_stat_database.</p>
+</div>
+<p class="Pp">Las siguientes opciones de línea de comandos controlan la conexión
+    al servidor de origen:</p>
+<p class="Pp"><b>-d </b><b></b><i>connstr</i>
+  <br/>
+  <b>--dbname=</b><b></b><i>connstr</i></p>
+<div class="Bd-indent">Especifica los parámetros utilizados para conectarse al
+  servidor, como una cadena de conexión; estos anularán cualquier opción de
+  línea de comandos conflictiva.
+<p class="Pp">Esta opción se llama --dbname por consistencia con otras
+    aplicaciones cliente, pero debido a que pg_basebackup no se conecta a
+    ninguna base de datos en particular del clúster, cualquier nombre de base
+    de datos incluido en la cadena de conexión será ignorado por el servidor.
+    Sin embargo, un nombre de base de datos proporcionado de esa manera anula el
+    nombre de base de datos predeterminado (replication) a efectos de buscar la
+    contraseña de la conexión de replicación en ~/.pgpass. De manera similar,
+    middleware o proxies utilizados para conectarse a PostgreSQL podrían utilizar
+    el nombre para fines como el enrutamiento de conexiones. El nombre de la base
+    de datos también puede ser utilizado por la sincronización de ranuras de
+    replicación lógica.</p>
+</div>
+<p class="Pp"><b>-h </b><b></b><i>host</i>
+  <br/>
+  <b>--host=</b><b></b><i>host</i></p>
+<div class="Bd-indent">Especifica el nombre del host de la máquina en la que se
+  ejecuta el servidor. Si el valor comienza con una barra, se utiliza como
+  directorio para un socket de dominio Unix. El valor predeterminado se toma de
+  la variable de entorno <b>PGHOST</b>, si está configurada, de lo contrario, se
+  intenta una conexión de socket de dominio Unix.</div>
+<p class="Pp"><b>-p </b><b></b><i>port</i>
+  <br/>
+  <b>--port=</b><b></b><i>port</i></p>
+<div class="Bd-indent">Especifica el puerto TCP o la extensión del archivo de
+  socket de dominio Unix local en el que el servidor está escuchando
+  conexiones. El valor predeterminado es la variable de entorno <b>PGPORT</b>,
+  si está configurada, o un valor predeterminado compilado.</div>
+<p class="Pp"><b>-s </b><b></b><i>interval</i>
+  <br/>
+  <b>--status-interval=</b><b></b><i>interval</i></p>
+<div class="Bd-indent">Especifica el número de segundos entre paquetes de estado
+  enviados de vuelta al servidor de origen. Valores más pequeños permiten un
+  monitoreo más preciso del progreso de la copia de seguridad desde el servidor.
+  Un valor de cero deshabilita las actualizaciones de estado periódicas por
+  completo, aunque se enviará una actualización cuando sea solicitada por el
+  servidor, para evitar desconexiones basadas en tiempo de espera. El valor
+  predeterminado es 10 segundos.</div>
+<p class="Pp"><b>-U </b><b></b><i>username</i>
+  <br/>
+  <b>--username=</b><b></b><i>username</i></p>
+<div class="Bd-indent">Especifica el nombre de usuario con el que conectarse.</div>
+<p class="Pp"><b>-w</b>
+  <br/>
+  <b>--no-password</b></p>
+<div class="Bd-indent">Evita solicitar una contraseña. Si el servidor requiere
+  autenticación de contraseña y no hay una contraseña disponible por otros
+  medios, como un archivo .pgpass, el intento de conexión fallará. Esta opción
+  puede ser útil en trabajos por lotes y scripts donde no hay ningún usuario
+  presente para ingresar una contraseña.</div>
+<p class="Pp"><b>-W</b>
+  <br/>
+  <b>--password</b></p>
+<div class="Bd-indent">Obliga a pg_basebackup a solicitar una contraseña antes de
+  conectarse al servidor de origen.
+<p class="Pp">Esta opción nunca es esencial, ya que pg_basebackup solicitará
+    automáticamente una contraseña si el servidor exige autenticación de
+    contraseña. Sin embargo, pg_basebackup desperdiciará un intento de conexión
+    al descubrir que el servidor quiere una contraseña. En algunos casos, vale la
+    pena escribir <b>-W</b> para evitar el intento de conexión adicional.</p>
+</div>
+<p class="Pp">También hay otras opciones disponibles:</p>
+<p class="Pp"><b>-V</b>
+  <br/>
+  <b>--version</b></p>
+<div class="Bd-indent">Imprime la versión de pg_basebackup y sale.</div>
+<p class="Pp"><b>-?</b>
+  <br/>
+  <b>--help</b></p>
+<div class="Bd-indent">Muestra ayuda sobre los argumentos de la línea de
+  comandos de pg_basebackup y sale.</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ENVIRONMENT'><a class='permalink' href='#ENVIRONMENT'>ENTORNO</a></h1>
+<p class="Pp">Esta utilidad, como la mayoría de las otras utilidades de PostgreSQL,
+    utiliza las variables de entorno compatibles con libpq (ver Sección&#x00A0;32.15).</p>
+<p class="Pp">La variable de entorno <b>PG_COLOR</b> especifica si se debe usar
+    color en los mensajes de diagnóstico. Los valores posibles son always, auto y
+  never.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<p class="Pp">Al principio de la copia de seguridad, se necesita realizar un punto
+    de control en el servidor de origen. Esto puede llevar algún tiempo (especialmente
+    si no se usa la opción --checkpoint=fast), durante el cual pg_basebackup
+    parecerá inactivo.</p>
+<p class="Pp">La copia de seguridad incluirá todos los archivos en el directorio
+    de datos y las tablespaces, incluidos los archivos de configuración y cualquier
+    archivo adicional colocado en el directorio por terceros, excepto ciertos
+    archivos temporales administrados por PostgreSQL y archivos del sistema
+    operativo. Pero solo se copian archivos y directorios regulares, excepto que
+    se conservan los enlaces simbólicos utilizados para las tablespaces. Los
+    enlaces simbólicos que apuntan a ciertos directorios conocidos por PostgreSQL
+    se copian como directorios vacíos. Otros enlaces simbólicos y archivos de
+    dispositivos especiales se omiten. Ver Sección&#x00A0;54.4 para los detalles
+  precisos.</p>
+<p class="Pp">En formato plano, las tablespaces se copiarán a la misma ruta que
+    tienen en el servidor de origen, a menos que se utilice la opción
+    --tablespace-mapping. Sin esta opción, ejecutar una copia de seguridad base
+    en formato plano en el mismo host que el servidor no funcionará si se usan
+    tablespaces, ya que la copia de seguridad tendría que escribirse en las mismas
+    ubicaciones de directorio que las tablespaces originales.</p>
+<p class="Pp">Cuando se utiliza el formato tar, es responsabilidad del usuario
+    descomprimir cada archivo tar antes de iniciar un servidor PostgreSQL que
+    utilice los datos. Si hay tablespaces adicionales, los archivos tar para
+    ellos deben descomprimirse en las ubicaciones correctas. En este caso, los
+    enlaces simbólicos para esas tablespaces serán creados por el servidor de
+    acuerdo con el contenido del archivo tablespace_map que se incluye en el
+    archivo base.tar.</p>
+<p class="Pp">pg_basebackup funciona con servidores de la misma versión o de
+    versiones anteriores, hasta la 9.1. Sin embargo, el modo de transmisión de WAL
+    (-X stream) solo funciona con servidores de la versión 9.3 y posteriores, el
+    formato tar (--format=tar) solo funciona con servidores de la versión 9.5 y
+    posteriores, y la copia de seguridad incremental (--incremental) solo funciona
+    con servidores de la versión 17 y posteriores.</p>
+<p class="Pp">pg_basebackup preservará los permisos de grupo para los archivos de
+    datos si los permisos de grupo están habilitados en el clúster de origen.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EXAMPLES'><a class='permalink' href='#EXAMPLES'>EJEMPLOS</a></h1>
+<p class="Pp">Para crear una copia de seguridad base del servidor en mydbserver y
+    almacenarla en el directorio local /usr/local/pgsql/data:</p>
+<div class="Bd-indent">
+<pre>$ <b>pg_basebackup -h mydbserver -D /usr/local/pgsql/data</b></pre>
+</div>
+<p class="Pp">Para crear una copia de seguridad del servidor local con un archivo
+    tar comprimido para cada tablespace, y almacenarla en el directorio backup,
+    mostrando un informe de progreso mientras se ejecuta:</p>
+<div class="Bd-indent">
+<pre>$ <b>pg_basebackup -D backup -Ft -z -P</b></pre>
+</div>
+<p class="Pp">Para crear una copia de seguridad de una base de datos local con una
+    sola tablespace y comprimirla con bzip2:</p>
+<div class="Bd-indent">
+<pre>$ <b>pg_basebackup -D - -Ft -X fetch | bzip2 &gt; backup.tar.bz2</b></pre>
+</div>
+<p class="Pp">(Este comando fallará si hay varias tablespaces en la base de
+    datos).</p>
+<p class="Pp">Para crear una copia de seguridad de una base de datos local donde
+    la tablespace en /opt/ts se reubica a ./backup/ts:</p>
+<div class="Bd-indent">
+<pre>$ <b>pg_basebackup -D backup/data -T /opt/ts=$(pwd)/backup/ts</b></pre>
+</div>
+<p class="Pp">Para crear una copia de seguridad del servidor local con un archivo
+    tar para cada tablespace comprimido con gzip en el nivel 9, almacenado en
+    el directorio backup:</p>
+<div class="Bd-indent">
+<pre>$ <b>pg_basebackup -D backup -Ft --compress=gzip:9</b></pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER   TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/pg_dump.1.en'>pg_dump(1)</a>, Sección&#x00A0;27.4.6</p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025</td>
+    <td class="foot-os">PostgreSQL 18.1</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/postgresql/">extra/postgresql</a></dd>
+        <dt>Versión:</dt>
+        <dd>18.1-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.postgresql.org/">https://www.postgresql.org/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>PostgreSQL</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/postgresql/">/listing/extra/postgresql/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenido</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#OPTIONS">OPCIONES</a></li>
+        
+            <li><a href="#ENVIRONMENT">ENTORNO</a></li>
+        
+            <li><a href="#NOTES">NOTAS</a></li>
+        
+            <li><a href="#E<!DOCTYPE html>
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bulma@0.9.4/css/bulma.min.css">
+        <title>pg_basebackup(1) — Arch Linux man pages</title>
+        <meta name="description" content="pg_basebackup PostgreSQL database backup utility">
+        <meta name="keywords" content="postgres, PostgreSQL, pg_basebackup, database, backup, utility, 1, manual, man, pages">
+        <link rel="stylesheet" href="/styles.css">
+    </head>
+    <body>
+        
+        <main>
+            <aside>
+                
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav>
+        <ul>
+            <li><a href="#NAME">NOMBRE</a></li>
+            <li><a href="#SYNOPSIS">SINOPSIS</a></li>
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+            <li><a href="#OPTIONS">OPCIONES</a></li>
+            <li><a href="#EXAMPLES">EJEMPLOS</a></li>
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        </ul>
+    </nav>
+</details>
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/pg_basebackup.1.en.txt">txt</a>, 
+        
+            <a href="/man/pg_basebackup.1.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+            <article>
+                <h2 id="NAME">NOMBRE</h2>
+<p>pg_basebackup — utilidad de copia de seguridad de la base de datos PostgreSQL</p>
+
+<h2 id="SYNOPSIS">SINOPSIS</h2>
+<p><code class="docutils literal notranslate">pg_basebackup</code> [<code>OPTION</code>]...</p>
+
+<h2 id="DESCRIPTION">DESCRIPCIÓN</h2>
+<p><code>pg_basebackup</code> es una utilidad para crear una copia de seguridad base (física) de un clúster de base de datos PostgreSQL. Una copia de seguridad base es una copia de todo el directorio de datos del clúster, junto con un segmento de WAL (Write-Ahead Logging) que cubre el período de tiempo durante el cual se realizó la copia de seguridad. Se puede utilizar para crear un nuevo servidor de réplica o como punto de partida para una recuperación incremental.</p>
+<p>La copia de seguridad se transfiere a través de una conexión SSL a un servidor PostgreSQL en ejecución. El servidor puede estar en el modo de servidor principal o de réplica. Se pueden especificar varios parámetros de conexión para conectarse al servidor.</p>
+<p>La copia de seguridad se puede realizar en formato tar o como un archivo de datos sin formato. El archivo tar se puede comprimir con gzip, bzip2 o xz. El archivo de datos sin formato se puede comprimir con gzip. Los archivos resultantes se pueden escribir en la salida estándar o en un directorio especificado.</p>
+
+<h2 id="OPTIONS">OPCIONES</h2>
+<dl class="docutils">
+<dt><code>-D, --directory=DIRECTORY</code></dt>
+<dd>Escribe la copia de seguridad en el directorio especificado. Si el directorio no existe, se creará. Si ya existe y está vacío, se utilizará. De lo contrario, se producirá un error.</dd>
+<dt><code>-F, --format=FORMAT</code></dt>
+<dd>Especifica el formato de la copia de seguridad. <code class="docutils literal notranslate">t</code> (tar) o <code class="docutils literal notranslate">p</code> (plain, sin formato). El valor predeterminado es <code class="docutils literal notranslate">p</code>.</dd>
+<dt><code>-z, --gzip</code></dt>
+<dd>Comprime la copia de seguridad con gzip. Solo se puede utilizar con el formato <code class="docutils literal notranslate">t</code>.</dd>
+<dt><code>-Z, --compress=COMPRESS</code></dt>
+<dd>Comprime la copia de seguridad con la utilidad especificada. Solo se puede utilizar con el formato <code class="docutils literal notranslate">t</code>.</dd>
+<dt><code>-j, --jobs=NUMBER</code></dt>
+<dd>Especifica el número de conexiones paralelas que se utilizarán para transferir los datos. Los valores mayores que 1 solo son compatibles con el formato <code class="docutils literal notranslate">p</code>.</dd>
+<dt><code>-l, --label=LABEL</code></dt>
+<dd>Especifica una etiqueta para la copia de seguridad. Esto es útil para identificar la copia de seguridad más tarde.</dd>
+<dt><code>-v, --verbose</code></dt>
+<dd>Habilita la salida detallada. Muestra el progreso de la copia de seguridad y otra información útil.</dd>
+<dt><code>-V, --version</code></dt>
+<dd>Imprime la versión de <code class="docutils literal notranslate">pg_basebackup</code> y sal.</dd>
+<dt><code>-?, --help</code></dt>
+<dd>Muestra la ayuda y sal.</dd>
+</dl>
+
+<h2 id="EXAMPLES">EJEMPLOS</h2>
+<p>Crear una copia de seguridad base del clúster de base de datos en el directorio <code class="docutils literal notranslate">/var/lib/pgsql/backups/mydb</code>:</p>
+<pre><code>pg_basebackup -D /var/lib/pgsql/backups/mydb
+</code></pre>
+
+<p>Crear una copia de seguridad base comprimida con gzip en formato tar en el directorio <code class="docutils literal notranslate">/var/lib/pgsql/backups/mydb</code>:</p>
+<pre><code>pg_basebackup -D /var/lib/pgsql/backups/mydb -F t -z
+</code></pre>
+
+<p>Crear una copia de seguridad base con 4 trabajos paralelos en formato sin formato en el directorio <code class="docutils literal notranslate">/var/lib/pgsql/backups/mydb</code>:</p>
+<pre><code>pg_basebackup -D /var/lib/pgsql/backups/mydb -j 4
+</code></pre>
+
+<h2 id="SEE_ALSO">VER TAMBIÉN</h2>
+<p><a href="/man/pg_dump.1.html">pg_dump(1)</a>, <a href="/man/pg_restore.1.html">pg_restore(1)</a>, <a href="/man/postgres.1.html">postgres(1)</a></p>
+
+            </article>
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

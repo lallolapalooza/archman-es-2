@@ -1,0 +1,1447 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>perlreguts(1perl) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">perlreguts.1perl</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/core/x86_64/perl/">perl</a></p>
+<p class="lic">Licencias: Artistic-1.0-Perl OR GPL-1.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">PERLREGUTS(1perl)</td>
+    <td class="head-vol">Guía de referencia del programador de Perl</td>
+    <td class="head-rtitle">PERLREGUTS(1perl)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<br/>
+<section class="Sh">
+<h1 class="Sh" id="NOMBRE"><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">perlreguts - Descripción del motor de expresiones regulares de Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN"><a class='permalink' href='#DESCRIPCIÓN'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Este documento es un intento de arrojar algo de luz sobre las tripas del motor de regex y cómo funciona. El motor de regex representa una parte importante de la base de código de perl, pero es relativamente poco comprendido. Este documento es un humilde intento de abordar esta situación. Se deriva de la experiencia del autor, comentarios en el código fuente, otros artículos sobre el motor de regex, comentarios en la lista de correo de perl5-porters, y sin duda de otros lugares también.</p>
+<p class="Pp"><b>¡AVISO!</b> Debe entenderse claramente que el comportamiento y las estructuras discutidas aquí representan el estado del motor tal como el autor lo entendió en el momento de escribir. **NO** es una definición de API, es puramente una guía interna para aquellos que quieran modificar el motor de regex, o entender cómo funciona. Se espera que los lectores de este documento comprendan la sintaxis de las expresiones regulares de perl y su uso en detalle. Si desea aprender sobre los conceptos básicos de las expresiones regulares de Perl, consulte perlre. Y si desea reemplazar el motor de regex por el suyo propio, consulte perlreapi.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id="DESCRIPCIÓN_GENERAL"><a class='permalink' href='#DESCRIPCIÓN_GENERAL'>DESCRIPCIÓN GENERAL</a></h1>
+<section class="Ss">
+<h2 class="Ss" id="Una_nota_rápida_sobre_términos"><a class='permalink' href='#Una_nota_rápida_sobre_términos'>Una nota rápida sobre términos</a></h2>
+<p class="Pp">Existe cierto debate sobre si decir "regexp" o "regex". En este documento usaremos el término "regex" a menos que haya una razón especial para no hacerlo, en cuyo caso explicaremos por qué.</p>
+<p class="Pp">Al hablar de regex, necesitamos distinguir entre su forma de código fuente y su forma interna. En este documento usaremos el término "patrón" cuando hablemos de su forma textual, de código fuente, y el término "programa" cuando hablemos de su representación interna. Estos corresponden a los términos *S-regex* y *B-regex* que Mark Jason Dominus emplea en su artículo sobre "Rx" ([1] en "REFERENCIAS").</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="¿Qué_es_un_motor_de_expresiones_regulares?"><a class='permalink' href='#¿Qué_es_un_motor_de_expresiones_regulares?'>¿Qué es un motor de expresiones regulares?</a></h2>
+<p class="Pp">Un motor de expresiones regulares es un programa que toma un conjunto de restricciones especificadas en un minilenguaje, y luego aplica esas restricciones a una cadena objetivo, y determina si la cadena cumple o no las restricciones. Consulte perlre para una definición completa del lenguaje.</p>
+<p class="Pp">En términos menos grandilocuentes, la primera parte del trabajo es convertir un patrón en algo que el ordenador pueda usar eficientemente para encontrar el punto coincidente en la cadena, y la segunda parte es realizar la búsqueda en sí misma.</p>
+<p class="Pp">Para hacer esto, necesitamos producir un programa analizando el texto. Luego, necesitamos ejecutar el programa para encontrar el punto en la cadena que coincide. Y necesitamos hacer todo de manera eficiente.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id="Estructura_de_un_Programa_Regex"><a class='permalink' href='#Estructura_de_un_Programa_Regex'>Estructura de un Programa Regex</a></h2>
+<p class="Pp"><i>Alto Nivel</i></p>
+<p class="Pp">Aunque es un poco confuso y algunas personas se oponen a la terminología, vale la pena echar un vistazo a un comentario que ha estado en *regexp.h* durante años:</p>
+<p class="Pp"><i>Esto es esencialmente una codificación lineal de una máquina</i>
+    <i>de estados finitos no determinista (también conocida como gráficos de sintaxis o</i>
+    <i>"forma normal de ferrocarril" en la tecnología de análisis).</i></p>
+<p class="Pp">El término "forma normal de ferrocarril" es un poco esotérico, siendo
+    "diagrama/gráfico de sintaxis" o "diagrama/gráfico de ferrocarril" términos más comunes. Sin embargo, proporciona una imagen mental útil de un programa regex: cada nodo puede considerarse como una unidad de vía, con un único punto de entrada y en la mayoría de los casos un único punto de salida (hay piezas de vía que se bifurcan, pero estadísticamente no muchas), y el conjunto forma un diseño con un único punto de entrada y salida. El proceso de coincidencia puede considerarse como un coche que se mueve a lo largo de la vía, con la ruta particular a través del sistema determinada por el carácter leído en cada posible punto de conexión. Un coche puede caerse de la vía en cualquier momento, pero sólo puede continuar mientras coincida con la vía.</p>
+<p class="Pp">Así, el patrón
+    <span class="Li">&quot;/foo(?:\w+|\d+|\s+)bar/&quot;</span> puede ser
+    pensado como el siguiente gráfico:</p>
+<pre>     [inicio]
+        |
+      &lt;foo&gt;
+        |
+  +-----+-----+
+  |     |     |
+&lt;\w+&gt; &lt;\d+&gt; &lt;\s+&gt;
+  |     |     |
+  +-----+-----+
+        |
+      &lt;bar&gt;
+        |
+      [fin]</pre>
+<p class="Pp">La verdad es que las expresiones regulares de perl hoy en día son
+    mucho más complejas que este tipo de estructura, pero visualizarlo de esta
+    manera puede ayudar a orientarse, y se ajusta bastante bien a la
+    implementación actual.</p>
+<p class="Pp">Para ser más precisos, diremos que un programa regex es una
+    codificación de un grafo. Cada nodo del grafo corresponde a una parte del
+    patrón original, como una cadena literal o una rama, y tiene un puntero a
+    los nodos que representan el siguiente componente a hacer coincidir. Dado que
+    "nodo" y "opcode" ya tienen otros significados en el código de perl,
+    llamaremos a los nodos de un programa regex
+  "regops".</p>
+<p class="Pp">El programa está representado por un array de estructuras
+    <span class="Li">&quot;regnode&quot;</span>, una o más de las cuales
+    representan un único regop del programa. La estructura
+    <span class="Li">&quot;regnode&quot;</span> es la estructura más pequeña
+    necesaria, y tiene una estructura de campos que se comparte con todas las
+    demás estructuras más grandes. (Fuera de este documento, el término
+    "regnode" a veces se usa para significar "regop", lo que podría ser
+    confuso).</p>
+<p class="Pp">Los punteros "next" de todos los regops excepto
+    <span class="Li">&quot;BRANCH&quot;</span> implementan la concatenación; un
+    puntero "next" con un <span class="Li">&quot;BRANCH&quot;</span> en ambos
+    extremos conecta dos alternativas. [Aquí tenemos una de las dependencias
+    sintácticas sutiles: una <span class="Li">&quot;BRANCH&quot;</span>
+    individual (a diferencia de una colección de ellas) nunca se concatena con
+    nada debido a la precedencia de los operadores.]</p>
+<p class="Pp">El operando de algunos tipos de regop es una cadena literal; para
+    otros, es un regop que conduce a un subprograma. En particular, el operando
+    de un nodo <span class="Li">&quot;BRANCH&quot;</span> es el primer regop de
+    la rama.</p>
+<p class="Pp"><b>NOTA</b>: Como sugiere la metáfora del ferrocarril, esta **NO**
+    es una estructura de árbol: la cola de la rama se conecta a la cosa que
+    sigue al conjunto de <span class="Li">&quot;BRANCH&quot;</span>es. Es como
+    una única línea de vía de ferrocarril que se bifurca al entrar en una
+    estación o patio de ferrocarril y se une al salir por el otro lado.</p>
+<p class="Pp"><i>Regops</i></p>
+<p class="Pp">La estructura base de un regop se define en
+    <i>regexp.h</i> de la siguiente manera:</p>
+<pre>struct regnode {
+    U8  flags;    /* Varios propósitos, a veces anulados */
+    U8  type;     /* Valor del opcode según lo especificado en regnodes.h */
+    U16 next_off; /* Desplazamiento en tamaño regnode */
+};</pre>
+<p class="Pp">Otras estructuras más grandes parecidas a
+    <span class="Li">&quot;regnode&quot;</span> se definen en
+    <i>regcomp.h</i>. Son casi como subclases en el sentido de que tienen los
+    mismos campos que <span class="Li">&quot;regnode&quot;</span>, con campos
+    adicionales posiblemente siguientes en la estructura, y en algunos casos el
+    significado específico (y nombre) de algunos de los campos base se anulan.
+    La siguiente es una descripción más completa.</p>
+<dl class="Bl-tag">
+  <dt>&quot;regnode_1&quot;</dt>
+  <dd></dd>
+  <dt>&quot;regnode_2&quot;</dt>
+  <dd>Las estructuras <span class="Li">&quot;regnode_1&quot;</span> tienen la
+      misma cabecera, seguida de un único argumento de cuatro bytes; las
+      estructuras <span class="Li">&quot;regnode_2&quot;</span> contienen dos
+      argumentos de dos bytes en su lugar:
+        <pre>regnode_1                U32 arg1;
+regnode_2                U16 arg1;  U16 arg2;
+</pre>
+  </dd>
+  <dt>&quot;regnode_string&quot;</dt>
+  <dd>Las estructuras <span class="Li">&quot;regnode_string&quot;</span>,
+      utilizadas para cadenas literales, siguen la cabecera con una longitud de
+      un byte y luego los datos de la cadena. Las cadenas se rellenan en el extremo
+      con bytes cero para que la longitud total del nodo sea un múltiplo de cuatro
+      bytes:
+        <pre>regnode_string           char string[1];
+                         U8 str_len; /* anula flags */
+</pre>
+  </dd>
+  <dt>&quot;regnode_charclass&quot;</dt>
+  <dd>Las clases de caracteres entre corchetes se representan mediante estructuras
+      <span class="Li">&quot;regnode_charclass&quot;</span>, que tienen un
+      argumento de cuatro bytes y luego un mapa de bits de 32 bytes (256 bits)
+      que indica qué caracteres en el rango Latin1 están incluidos en la clase.
+        <pre>regnode_charclass        U32 arg1;
+                         char bitmap[ANYOF_BITMAP_SIZE];
+</pre>
+    <p class="Pp">Se utilizan varios flags cuyos nombres empiezan por
+        <span class="Li">&quot;ANYOF_&quot;</span> para situaciones especiales.
+        Arriba L</p>
+</dl>
+</div>
+</section>
+
+</article>
+        </main>
+    </body>
+</html>
+<section class="Sh">
+<h1 class="Sh" id='Regnodes'><a class='permalink' href='#Regnodes'>Regnodes</a></h1>
+<p class="Pp">The structure of the compiled regular expression is a linear sequence
+    of <code class="Nm">regnode</code> structures. A <code class="Nm">regnode</code>
+    is a generic structure, which is actually a pointer to the real structure
+    containing the opcode and its arguments. There are a number of different
+    types of <code class="Nm">regnode</code>, each of which corresponds to a specific
+    operation or operator in the regular expression syntax.</p>
+<p class="Pp"><code class="Nm">regnode</code> structures are allocated from the
+    Perl heap. They are usually allocated in contiguous chunks by the compiler.
+    Each <code class="Nm">regnode</code> structure starts with an opcode, which
+    indicates the type of operation. This is followed by zero or more arguments
+    that are specific to the opcode. Some opcodes require variable amounts of
+    storage, which are also stored in the <code class="Nm">regnode</code> structure.</p>
+<p class="Pp">For instance, the <code class="Nm">EXACT</code> opcode, which
+    matches a literal string, stores the length of the string and then the string
+    itself. The <code class="Nm">charclass</code> opcode, which matches a set of
+    characters, stores a bitmap of the characters that are to be matched.</p>
+<p class="Pp">The <code class="Nm">regnodes.h</code> file defines the various
+    <code class="Nm">regnode</code> structures. The basic structure is:</p>
+<pre>    struct regnode {
+        U8  op;
+        U8  flags;
+        U16 len;
+    };
+</pre>
+<p class="Pp">Where <code class="Nm">op</code> is the opcode, <code class="Nm">flags</code>
+    are optional flags, and <code class="Nm">len</code> is the total length of the
+    <code class="Nm">regnode</code> in bytes.</p>
+<p class="Pp">Some opcodes have arguments that are pointers to other <code class="Nm">regnode</code>
+    structures. These pointers are often relative offsets rather than absolute
+    pointers, to allow the compiled regex to be easily moved in memory. For
+    example, the <code class="Nm">BRANCH</code> opcode has two arguments,
+    <code class="Nm">regnext</code> and <code class="Nm">regnext_fail</code>, which
+    point to the next <code class="Nm">regnode</code> to execute in the true and
+    false cases, respectively.</p>
+<p class="Pp">Arguments that are not pointers to other <code class="Nm">regnode</code>
+    structures are stored directly in the <code class="Nm">regnode</code> structure.
+    For example, the <code class="Nm">EXACT</code> opcode stores the length of the
+    string and then the string itself. The <code class="Nm">charclass</code> opcode
+    stores a bitmap of the characters to be matched.</p>
+<p class="Pp">The following are some of the more common <code class="Nm">regnode</code>
+    structures:</p>
+<dl class="Bl-tag">
+  <dt>&quot;regnode_base&quot;</dt>
+  <dd>The generic structure that all other <code class="Nm">regnode</code> types
+      are based on. It contains the opcode, flags, and length of the node.</dd>
+  <dt>&quot;regnode_exact&quot;</dt>
+  <dd>Represents a literal string match. It contains the length of the string
+      and the string itself.
+    <pre>regnode_exact {
+        U32 str_len;
+        char str[];
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_charclass&quot;</dt>
+  <dd>Represents a character class match. It contains a bitmap indicating which
+      characters are to be matched.
+    <pre>regnode_charclass {
+        char bitmap[ANYOF_BITMAP_SIZE];
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_star&quot;</dt>
+  <dd>Represents the Kleene star operator (*). It contains a pointer to the
+      <code class="Nm">regnode</code> that is to be repeated.
+    <pre>regnode_star {
+        regnode *reg_next;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_plus&quot;</dt>
+  <dd>Represents the Kleene plus operator (+). It contains a pointer to the
+      <code class="Nm">regnode</code> that is to be repeated.
+    <pre>regnode_plus {
+        regnode *reg_next;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_opt&quot;</dt>
+  <dd>Represents the optional operator (?). It contains a pointer to the
+      <code class="Nm">regnode</code> that is optional.
+    <pre>regnode_opt {
+        regnode *reg_next;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_branch&quot;</dt>
+  <dd>Represents a branching point in the regex. It contains pointers to the
+      next <code class="Nm">regnode</code> to execute in the true and false cases.
+    <pre>regnode_branch {
+        regnode *reg_next;
+        regnode *reg_fail;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_backtrack&quot;</dt>
+  <dd>Used for backtracking. It contains a pointer to the <code class="Nm">regnode</code>
+      to backtrack to.
+    <pre>regnode_backtrack {
+        regnode *reg_next;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_memory&quot;</dt>
+  <dd>Used for capturing groups. It contains the index of the capture group.
+    <pre>regnode_memory {
+        U32 number;
+    };
+</pre>
+  </dd>
+  <dt>&quot;regnode_paren_start&quot;</dt>
+  <dd>Marks the start of a capturing group.</dd>
+  <dt>&quot;regnode_paren_end&quot;</dt>
+  <dd>Marks the end of a capturing group.</dd>
+  <dt>&quot;regnode_wordboundary&quot;</dt>
+  <dd>Matches a word boundary.</dd>
+  <dt>&quot;regnode_lookahead&quot;</dt>
+  <dd>Positive lookahead assertion.</dd>
+  <dt>&quot;regnode_lookbehind&quot;</dt>
+  <dd>Positive lookbehind assertion.</dd>
+  <dt>&quot;regnode_norange&quot;</dt>
+  <dd>Matches any character except those in the specified range.</dd>
+  <dt>&quot;regnode_range&quot;</dt>
+  <dd>Matches any character in the specified range.</dd>
+  <dt>&quot;regnode_utf8&quot;</dt>
+  <dd>Handles UTF-8 characters. Its internal structure depends on the specific
+      UTF-8 operation being performed.</dd>
+  <dt>&quot;regnode_anyof_utf8&quot;</dt>
+  <dd>Similar to <code class="Nm">regnode_charclass</code> but for UTF-8 characters.</dd>
+  <dt>&quot;regnode_utf8_class&quot;</dt>
+  <dd>Another variation for matching UTF-8 character classes.</dd>
+  <dt>&quot;regnode_utf8_exact&quot;</dt>
+  <dd>Similar to <code class="Nm">regnode_exact</code> but for UTF-8 strings.</dd>
+  <dt>&quot;regnode_any&quot;</dt>
+  <dd>Matches any single character (including newline by default).</dd>
+  <dt>&quot;regnode_anybyte&quot;</dt>
+  <dd>Matches any single byte.</dd>
+  <dt>&quot;regnode_null&quot;</dt>
+  <dd>Represents the end of the regular expression.</dd>
+  <dt>&quot;regnode_start&quot;</dt>
+  <dd>Represents the start of the string anchor (^).</dd>
+  <dt>&quot;regnode_end&quot;</dt>
+  <dd>Represents the end of the string anchor ($).</dd>
+  <dt>&quot;regnode_bol&quot;</dt>
+  <dd>Represents the beginning of the line anchor (\\A).</dd>
+  <dt>&quot;regnode_eol&quot;</dt>
+  <dd>Represents the end of the line anchor (\\z).</dd>
+  <dt>&quot;regnode_string&quot;</dt>
+  <dd>Matches a literal string. This is an older opcode, largely superseded by
+      <code class="Nm">regnode_exact</code>.</dd>
+  <dt>&quot;regnode_compiler_backend&quot;</dt>
+  <dd>Internal compiler node.</dd>
+  <dt>&quot;regnode_cclass_posix&quot;</dt>
+  <dd>Represents POSIX character classes like [:digit:].</dd>
+  <dt>&quot;regnode_charclass_alt&quot;</dt>
+  <dd>Alternative character class representation.</dd>
+  <dt>&quot;regnode_charclass_posixl&quot;</dt>
+  <dd>There is also a larger form of a char class structure used to represent
+      POSIX char classes under <span class="Li">&quot;/l&quot;</span> matching,
+      called <span class="Li">&quot;regnode_charclass_posixl&quot;</span> which
+      has an additional 32-bit bitmap indicating which POSIX char classes have
+      been included.
+    <pre>regnode_charclass_posixl U32 arg1;
+                         char bitmap[ANYOF_BITMAP_SIZE];
+                         U32 classflags;
+</pre>
+  </dd>
+</dl>
+<p class="Pp"><i>regnodes.h</i> defines an array called
+    <span class="Li">&quot;PL_regnode_arg_len[]&quot;</span> which gives the
+    size of each opcode in units of <span class="Li">&quot;size
+    regnode&quot;</span> (4-byte). A macro is used to calculate the size of an
+    <span class="Li">&quot;EXACT&quot;</span> node based on its
+    <span class="Li">&quot;str_len&quot;</span> field.</p>
+<p class="Pp">The regops are defined in <i>regnodes.h</i> which is generated
+    from <i>regcomp.sym</i> by <i>regcomp.pl</i>. Currently the maximum possible
+    number of distinct regops is restricted to 256, with about a quarter already
+    used.</p>
+<p class="Pp">A set of macros makes accessing the fields easier and more
+    consistent. These include <span class="Li">OP()</span>, which is used to
+    determine the type of a <span class="Li">&quot;regnode&quot;</span>-like
+    structure; <span class="Li">NEXT_OFF()</span>, which is the offset to the
+    next node (more on this later); <span class="Li">ARG()</span>,
+    <span class="Li">ARG1()</span>, <span class="Li">ARG2()</span>,
+    <span class="Li">ARG_SET()</span>, and equivalents for reading and setting
+    the arguments; and <span class="Li">STR_LEN()</span>,
+    <span class="Li">STRING()</span> and <span class="Li">OPERAND()</span> for
+    manipulating strings and regop bearing types.</p>
+<p class="Pp"><i>What regnode is next?</i></p>
+<p class="Pp">There are two distinct concepts of &quot;next regnode&quot; in the
+    regex engine, and it is important to keep them distinct in your thinking as
+    they overlap conceptually in many places, but where they don't overlap the
+    difference is critical. For the majority of regnode types the two concepts
+    are (nearly) identical in practice. The two types are
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> which is used heavily
+    during compilation but only occasionally during execution and
+    <span class="Li">&quot;regnext&quot;</span> which is used heavily during
+    execution, and only occasionally during compilation.</p>
+<dl class="Bl-tag">
+  <dt>&quot;REGNODE_AFTER&quot;</dt>
+  <dd>This is the &quot;positionally next regnode&quot; in the compiled regex
+      program. For the smaller regnode types it is
+      <span class="Li">&quot;regnode_ptr+1&quot;</span> under the hood, but as
+      regnode sizes vary and can change over time we offer macros which hide the
+      gory details.
+    <p class="Pp">It is heavily used in the compiler phase but is only used by a
+        few select regnode types in the execution phase. It is also heavily used
+        in the code for dumping the regexp program for debugging.</p>
+    <p class="Pp">There are a selection of macros which can be used to compute
+        this as efficiently as possible depending on the circumstances. The
+        canonical macro is <span class="Li">REGNODE_AFTER()</span>, which is the
+        most powerful and should handle any case we have, but is also
+        potentially the slowest. There are two additional macros for the special
+        case that you KNOW the current regnode size is constant, and you know
+        its type or opcode. In which case you can use
+        <span class="Li">REGNODE_AFTER_opcode()</span> or
+        <span class="Li">REGNODE_AFTER_type()</span>.</p>
+    <p class="Pp">In older versions of the regex engine
+        <span class="Li">REGNODE_AFTER()</span> was called
+        <span class="Li">&quot;NEXTOPER&quot;</span> but this was found to be
+        confusing and it was renamed. There is also a
+        <span class="Li">REGNODE_BEFORE()</span>, but it is unsafe and should
+        not be used in new code.</p>
+  </dd>
+  <dt>&quot;regnext&quot;</dt>
+  <dd>This is the regnode which can be reached by jumping forward by the value
+      of the <span class="Li">NEXT_OFF()</span> member of the regnode, or in a
+      few cases for longer jumps by the <span class="Li">&quot;arg1&quot;</span>
+      field of the <span class="Li">&quot;regnode_1&quot;</span> structure. The
+      subroutine <span class="Li">regnext()</span> handles this transparently.
+      In the majority of cases the <span class="Li">&quot;regnext&quot;</span>
+      for a regnode is the regnode which should be executed after the current
+      one has successfully matched, but in some cases this may not be true. In
+      loop control and branch control regnode types the regnext may signify
+      something special, for BRANCH nodes
+      <span class="Li">&quot;regnext&quot;</span> is the next BRANCH that should
+      be executed if the current one fails execution, and some loop control
+      regnodes set the regnext to be the end of the loop so they can jump to
+      their cleanup if the current iteration fails to match.</dd>
+</dl>
+<p class="Pp">Most regnode types do not create a branch in the execution flow,
+    and leaving aside optimizations the two concepts of &quot;next&quot; are the
+    same. For instance the <span class="Li">&quot;regnext&quot;</span> and
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> of a SBOL opcode are the
+    same during compilation phase. The main place this is not true is
+    <span class="Li">&quot;BRANCH&quot;</span> regnodes where the
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> represents the start of
+    the pattern in the branch and the
+    <span class="Li">&quot;regnext&quot;</span> represents the linkage to the
+    next BRANCH should this one fail to match, or 0 if it is the last branch.
+    The looping logic for quantifiers also makes similar use of the distinction
+    between the two types, with
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> being the inside of the
+    loop construct, and the <span class="Li">&quot;regnext&quot;</span> pointing
+    at the end of the loop.</p>
+<p class="Pp">During compilation the engine may not know what the regnext is for
+    a given node, so during compilation
+    <span class="Li">&quot;regnext&quot;</span> is only used where it must be
+    used and is known to be correct. At the very end of the compilation phase we
+    walk the regex program and correct the regnext data as appropriate, and also
+    perform various optimizations which may result in regnodes that were
+    required during construction becoming redundant, or we may replace a large
+    regnode with a much smaller one and filling in the gap with OPTIMIZED
+    regnodes. Thus we might start with something like this:</p>
+<pre>BRANCH
+  EXACT &quot;foo&quot;
+BRANCH
+  EXACT &quot;bar&quot;
+EXACT &quot;!&quot;</pre>
+<p class="Pp">and replace it with something like:</p>
+<pre>TRIE foo|bar
+OPTIMIZED
+OPTIMIZED
+OPTIMIZED
+EXACT &quot;!&quot;</pre>
+<p class="Pp">the <span class="Li">&quot;REGNODE_AFTER&quot;</span> for the
+    <span class="Li">&quot;TRIE&quot;</span> node would be an
+    <span class="Li">&quot;OPTIMIZED&quot;</span> regnode, and in theory the
+    <span class="Li">&quot;regnext&quot;</span> would be the same as the
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span>. But it would be
+    inefficient to execute the OPTIMIZED regnode as a noop three times, so the
+    optimizer fixes the <span class="Li">&quot;regnext&quot;</span> so such
+    nodes are skipped during execution phase.</p>
+<p class="Pp">During execution phases we use the
+    <span class="Li">regnext()</span> almost exclusively, and only use
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> in special cases where it
+    has a well defined meaning for a given regnode type. For instance /x+/
+    results in</p>
+<pre>PLUS
+    EXACT &quot;x&quot;
+END</pre>
+<p class="Pp">the <span class="Li">&quot;regnext&quot;</span> of the
+    <span class="Li">&quot;PLUS&quot;</span> regnode is the
+    <span class="Li">&quot;END&quot;</span> regnode, and the
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> of the
+    <span class="Li">&quot;PLUS&quot;</span> regnode is the
+    <span class="Li">&quot;EXACT&quot;</span> regnode. The
+    <span class="Li">&quot;regnext&quot;</span> and
+    <span class="Li">&quot;REGNODE_AFTER&quot;</span> of the
+    <span class="Li">&quot;EXACT&quot;</span> regnode is the
+    <span class="Li">&quot;END&quot;</span> regnode.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='Process_Overview'><a class='permalink' href='#Process_Overview'>Process   Overview</a></h1>
+<p class="Pp">Broadly speaking, performing a match of a string against a pattern
+    involves the following steps:</p>
+<dl class="Bl-tag">
+  <dt id="A."><a class="permalink" href="#A.">A. Compilation</a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>1. Parsing</dt>
+  <dd></dd>
+  <dt>2. Peep-hole optimisation and analysis</dt>
+  <dd></dd>
+</dl>
+</div>
+<dl class="Bl-tag">
+  <dt id="B."><a class="permalink" href="#B.">B. Execution</a></dt>
+  <dd></dd>
+</dl>
+<div class="Bd-indent">
+<dl class="Bl-tag">
+  <dt>3. Start position and no-match optimisations</dt>
+  <dd></dd>
+  <dt>4. Program execution</dt>
+  <dd></dd>
+</dl>
+</div>
+<p class="Pp">Where these steps occur in the actual execution of a perl program
+    is determined by whether the pattern involves interpolating any string
+    variables. If interpolation occurs, then compilation happens at run time. If
+    it does not, then compilation is performed at compile time. (The
+    <span class="Li">&quot;/o&quot;</span> modifier changes this, as does
+    <span class="Li">&quot;qr//&quot;</span> to a certain extent.) The engine
+    doesn't really care that much.</p>
+<section class="Ss">
+<h2 class="Ss" id='Compilation'><a class='permalink' href='#Compilation'>Compilation</a></h2>
+<p class="Pp">This code resides primarily in <i>regcomp.c</i>, along with the
+    header files <i>regcomp.h</i>, <i>regexp.h</i> and <i>regnodes.h</i>.</p>
+<p class="Pp">Compilation starts with <span class="Li">pregcomp()</span>, which
+    is mostly an initialisation wrapper which farms work out to two other
+    routines for the heavy lifting: the first is <span class="Li">reg()</span>,
+    which is the start point for parsing; the second,
+    <span class="Li">study_chunk()</span>, is responsible for optimisation.</p>
+<p class="Pp">Initialisation in <span class="Li">pregcomp()</span> mostly
+    involves the creation and data-filling of a special structure,
+    <span class="Li">&quot;RExC_state_t&quot;</span> (defined in
+    <i>regcomp.c</i>). Almost all internally-used routines in <i>regcomp.h</i>
+    take a pointer to one of these structures as their first argument, with the
+    name <span class="Li">&quot;pRExC_state&quot;</span>. This structure is used
+    to store the compilation state and contains many fields. Likewise there are
+    many macros which operate on this variable: anything that looks like
+    <span class="Li">&quot;RExC_xxxx&quot;</span> is a macro that operates on
+    this pointer/structure.</p>
+<p class="Pp"><span class="Li">reg()</span> is the start of the parse process.
+    It is responsible for parsing an arbitrary chunk of pattern up to either the
+    end of the string, or the first closing parenthesis it encounters in the
+    pattern. This means it can be used to parse the top-level regex, or any
+    section inside of a grouping parenthesis. It also handles the &quot;special
+    parens&quot; that perl's regexes have. For instance when parsing
+    <span class="Li">&quot;/x(?:foo)y/&quot;</span>,
+    <span class="Li">reg()</span> will at one point be called to parse from</p>
+</section>
+</section>
+<p class="Pp">Además, <span class="Li">reg()</span> es responsable de
+    analizar una o más ramas del patrón, y de "finalizarlas" estableciendo correctamente sus punteros siguientes. Para realizar el análisis, llama repetidamente a <span class="Li">regbranch()</span>, que es responsable de manejar hasta el primer
+    símbolo <span class="Li">&quot;|&quot;</span> que encuentra.</p>
+<p class="Pp"><span class="Li">regbranch()</span> a su vez llama a
+    <span class="Li">regpiece()</span>, que maneja "cosas" seguidas de un cuantificador. Para analizar las "cosas", se llama a <span class="Li">regatom()</span>. Esta es la rutina de nivel más bajo, que analiza cadenas constantes, clases de caracteres y varios símbolos especiales como <span class="Li">&quot;$&quot;</span>. Si <span class="Li">regatom()</span> encuentra un carácter "(" llama a su vez a <span class="Li">reg()</span>.</p>
+<p class="Pp">Solía haber dos pasadas principales involucradas en el análisis, la primera para calcular el tamaño del programa compilado y la segunda para compilarlo realmente. Pero ahora solo hay una pasada principal, con una estimación inicial aproximada basada en la longitud del patrón de entrada, que se incrementa si es necesario a medida que avanza el análisis, y después se recorta a la cantidad real utilizada.</p>
+<p class="Pp">Sin embargo, puede ocurrir que el análisis deba reiniciarse desde el principio cuando ocurren diversas circunstancias en el camino. Un ejemplo es si el programa resulta ser tan grande que hay saltos en él que no caben en los 16 bits normales disponibles. Hay dos regops especiales que pueden contener destinos de salto más grandes, BRANCHJ y LONGBRANCH. El análisis se reinicia y se utilizan en lugar de los más cortos normales. Siempre que se requiera reiniciar el análisis, la función devuelve un fallo y establece una bandera indicando qué se debe hacer. Esto se pasa a la rutina de nivel superior que toma la acción apropiada y reinicia desde cero. En el caso de necesitar saltos más largos, la
+    bandera <span class="Li">&quot;RExC_use_BRANCHJ&quot;</span> se establece en la
+    estructura <span class="Li">&quot;RExC_state_t&quot;</span>, que las funciones saben que deben inspeccionar antes de decidir cómo hacer los saltos.</p>
+<p class="Pp">En la mayoría de los casos, la función que descubre el problema establece la bandera causal y devuelve un fallo inmediatamente. "Complicaciones del análisis" contiene un ejemplo explícito de cómo funciona esto. En otros casos, como una referencia anticipada a una agrupación entre paréntesis numerada, necesitamos terminar el análisis para saber si esa agrupación numerada aparece realmente en el patrón. En esos casos, el análisis se rehace al final, con el conocimiento de cuántas agrupaciones ocurren en él.</p>
+<p class="Pp">La rutina <span class="Li">regtail()</span> es llamada tanto por
+    <span class="Li">reg()</span> como por <span class="Li">regbranch()</span> para "establecer el puntero final" correctamente. Al ejecutar y llegar al final de una rama, necesitamos ir al nodo que sigue a los paréntesis de agrupación. Al analizar, sin embargo, no sabemos dónde estará el final hasta que llegamos allí, por lo que cuando lo hacemos debemos retroceder y actualizar las compensaciones según corresponda. <span class="Li">&quot;regtail&quot;</span> se utiliza para facilitar esto.</p>
+<p class="Pp">Una sutileza del proceso de análisis significa que una expresión regular como <span class="Li">&quot;/foo/&quot;</span> se analiza originalmente en una alternancia con una sola rama. Es solo después que el optimizador convierte las alternancias de rama única en la forma más simple.</p>
+<p class="Pp"><i>Gráfico de llamadas de análisis y una gramática</i></p>
+<p class="Pp">El gráfico de llamadas se ve así:</p>
+<pre>reg()                        # analiza una expresión regular de nivel superior, o dentro de
+                             # paréntesis
+    regbranch()              # analiza una sola rama de una alternancia
+        regpiece()           # analiza un patrón seguido de un cuantificador
+            regatom()        # analiza un patrón simple
+                regclass()   #   utilizado para manejar una clase
+                reg()        #   utilizado para manejar un subpatrón
+                             #   entre paréntesis
+                ....
+        ...
+        regtail()            # finaliza la rama
+    ...
+    regtail()                # finaliza la secuencia de ramas. Vincula la cola de cada
+                             # rama a la cola de la
+                             # secuencia
+                             # (NUEVO) En modo Debug, esto es
+                             # regtail_study().</pre>
+<p class="Pp">Una forma de gramática podría ser algo como esto:</p>
+<pre>atom  : constante | clase
+quant : '*' | '+' | '?' | '{min,max}'
+_branch: pieza
+       | pieza _branch
+       | nada
+rama: _rama
+      | _rama '|' rama
+grupo : '(' rama ')'
+_pieza: atomo | grupo
+pieza : _pieza
+      | _pieza quant</pre>
+<p class="Pp"><i>Complicaciones del análisis</i></p>
+<p class="Pp">La implicación de la descripción anterior es que un patrón que contiene paréntesis anidados dará como resultado un gráfico de llamadas que cicla a través de <span class="Li">reg()</span>, <span class="Li">regbranch()</span>, <span class="Li">regpiece()</span>, <span class="Li">regatom()</span>, <span class="Li">reg()</span>, <span class="Li">regbranch()</span> *etcétera* múltiples veces, hasta que se alcance el nivel más profundo de anidamiento. Todas las rutinas anteriores devuelven un puntero a un
+    <span class="Li">&quot;regnode&quot;</span>, que suele ser el último regnode añadido al programa. Sin embargo, una complicación es que <b>reg()</b> devuelve NULL para el análisis de la sintaxis <span class="Li">&quot;(?:)&quot;</span> para modificadores incrustados, estableciendo la bandera
+    <span class="Li">&quot;TRYAGAIN&quot;</span>. El
+    <span class="Li">&quot;TRYAGAIN&quot;</span> se propaga hacia arriba hasta que es capturado, en algunos casos por <span class="Li">regatom()</span>, pero de lo contrario incondicionalmente por <span class="Li">regbranch()</span>. Por lo tanto, nunca será devuelto por <span class="Li">regbranch()</span> a
+    <span class="Li">reg()</span>. Esta bandera permite que patrones como
+    <span class="Li">&quot;(?i)+&quot;</span> sean detectados como errores
+    (<i>El cuantificador sigue a nada en la expresión regular; marcado por &lt;-- AQUÍ en
+    m/(?i)+</i> <i>&lt;-- AQUÍ /</i>).</p>
+<p class="Pp">Otra complicación es que la representación utilizada para el programa difiere si necesita almacenar Unicode, pero no siempre es posible saber con certeza si lo hace hasta la mitad del análisis. La representación Unicode para el programa es más grande y no se puede igualar de manera tan eficiente. (Ver "Soporte de Unicode y localización" a continuación para más detalles sobre el porqué). Si el patrón contiene Unicode literal, es obvio que el programa necesita almacenar Unicode. De lo contrario, el analizador asume optimísticamente que se puede usar la representación más eficiente y comienza a dimensionar basándose en esto. Sin embargo, si luego encuentra algo en el patrón que debe almacenarse como Unicode, como una secuencia de escape
+    <span class="Li">&quot;\x{...}&quot;</span> que representa un literal de carácter, esto significa que todos los tamaños calculados previamente deben rehacerse, utilizando valores apropiados para la representación Unicode. Este es otro caso en el que el análisis necesita reiniciarse, y se puede hacer inmediatamente. La función devuelve un fallo y establece la bandera
+    <span class="Li">&quot;RESTART_UTF8&quot;</span> (encapsulada usando la macro
+    <span class="Li">&quot;REQUIRE_UTF8&quot;</span>). Esta solicitud de reinicio se propaga por la cadena de llamadas de manera similar, hasta que es "capturada" en <span class="Li">Perl_re_op_compile()</span>, que marca el patrón como que contiene Unicode y reinicia la pasada de dimensionamiento. También es posible que construcciones dentro de bloques de código de tiempo de ejecución necesiten representación Unicode, lo que se indica mediante
+    <span class="Li">S_compile_runtime_code()</span> devolviendo false a
+    <span class="Li">Perl_re_op_compile()</span>.</p>
+<p class="Pp">El reinicio se implementó anteriormente utilizando un
+    <span class="Li">&quot;longjmp&quot;</span> en <span class="Li">regatom()</span> hacia un
+    <span class="Li">&quot;setjmp&quot;</span> en <span class="Li">Perl_re_op_compile()</span>, pero esto resultó ser problemático ya que esta última es una función grande que contiene muchas variables automáticas, que interactúan mal con el flujo de control emergente de
+    <span class="Li">&quot;setjmp&quot;</span>.</p>
+<p class="Pp"><i>Salida de depuración</i></p>
+<p class="Pp">A partir de la versión de desarrollo 5.9.x de perl, puede
+    <span class="Li">&quot;use re</span> <span class="Li">Debug =&gt;
+    'PARSE'&quot;</span> para ver información de rastreo sobre el proceso de análisis.
+    Comenzaremos con algunos patrones simples y construiremos patrones más complejos.</p>
+<p class="Pp">Así que cuando analizamos <span class="Li">&quot;/foo/&quot;</span> vemos algo como la siguiente tabla. La izquierda muestra lo que se está analizando, y el número indica dónde iría el próximo regop. La parte derecha es la salida de rastreo del gráfico. Los nombres se eligen para que sean cortos y hacer que sea menos denso en la pantalla. 'tsdy' es una forma especial de
+    <span class="Li">regtail()</span> que realiza un análisis adicional.</p>
+<pre>&gt;foo&lt;             1    reg
+                         brnc
+                           piec
+                             atom
+&gt;&lt;                4      tsdy~ EXACT &lt;foo&gt; (EXACT) (1)
+                             ~ adjuntar a END (3) offset a 2</pre>
+<p class="Pp">El programa resultante se ve entonces así:</p>
+<pre>1: EXACT &lt;foo&gt;(3)
+3: END(0)</pre>
+<p class="Pp">Como puede ver, aunque analizamos una rama y una pieza, en última instancia fue solo un átomo. El programa final nos muestra cómo funcionan las cosas. Tenemos un regop
+    <span class="Li">&quot;EXACT&quot;</span>, seguido de un regop
+    <span class="Li">&quot;END&quot;</span>. El número entre paréntesis indica a dónde va el
+    <span class="Li">&quot;regnext&quot;</span> del nodo. El
+    <span class="Li">&quot;regnext&quot;</span> de un regop
+    <span class="Li">&quot;END&quot;</span> no se utiliza, ya que los regops
+    <span class="Li">&quot;END&quot;</span> significan que hemos coincidido con éxito. El número a la izquierda indica la posición del regop en la matriz regnode.</p>
+<p class="Pp">Ahora intentemos un patrón más difícil. Añadiremos un cuantificador, así que ahora tenemos el patrón <span class="Li">&quot;/foo+/&quot;</span>. Veremos que
+    <span class="Li">regbranch()</span> llama a
+    <span class="Li">regpiece()</span> dos veces.</p>
+<pre>&gt;foo+&lt;            1    reg
+                         brnc
+                           piec
+                             atom
+&gt;o+&lt;              3        piec
+                             atom
+&gt;&lt;                6        tail~ EXACT &lt;fo&gt; (1)
+                  7      tsdy~ EXACT &lt;fo&gt; (EXACT) (1)
+                             ~ PLUS (END) (3)
+                             ~ adjuntar a END (6) offset a 3</pre>
+<p class="Pp">Y terminamos con el programa:</p>
+<pre>1: EXACT &lt;fo&gt;(3)
+3: PLUS(6)
+4:   EXACT &lt;o&gt;(0)
+6: END(0)</pre>
+<p class="Pp">Ahora tenemos un caso especial. El regop
+    <span class="Li">&quot;EXACT&quot;</span> tiene un
+    <span class="Li">&quot;regnext&quot;</span> de 0. Esto se debe a que si coincide, debería intentar coincidir consigo mismo de nuevo. El regop
+    <span class="Li">&quot;PLUS&quot;</span> maneja el fallo real del regop
+    <span class="Li">&quot;EXACT&quot;</span> y actúa apropiadamente (yendo al nodo reg 6 si el
+    <span class="Li">&quot;EXACT&quot;</span> coincidió al menos una vez, o fallando si no lo hizo).</p>
+<p class="Pp">Ahora, para algo mucho más complejo:
+    <span class="Li">&quot;/x(?:foo*|b[a][rR]</span>"
+<document>
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NAME</a></h1>
+<p class="Pp">Perl_reg_compile - regular expression compiler</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SYNOPSIS</a></h1>
+<pre> #include "perly.h"
+ SV *
+ Perl_reg_compile(pTHX_ REGEXP *const rev, SV *const sv, const U32 flags)
+</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPTION</a></h1>
+<p class="Pp">This routine compiles a regular expression.</p>
+<p class="Pp">The <code class="Li">rev</code> argument is a pointer to a
+    <code class="Li">REGEXP</code> structure which holds the compiled regex.
+    It is expected that this structure has already been allocated and initialised
+    to zeros. It is also expected that the fields <code class="Li">charclass</code>
+    and <code class="Li">namepath</code> have been initialised using
+    <code class="Li">Perl_charclass_compile()</code> and
+    <code class="Li">Perl_namepath_compile()</code> respectively.</p>
+<p class="Pp">The <code class="Li">sv</code> argument is the scalar containing
+    the regular expression to be compiled.</p>
+<p class="Pp">The <code class="Li">flags</code> argument is a bitmask of flags
+    which affect compilation. These are:</p>
+<ul class="Bl-bullet">
+  <li><code class="Li">PMf_ ...</code></li>
+</ul>
+<p class="Pp">The routine returns a pointer to the <code class="Li">REGEXP</code>
+    structure that was passed in.</p>
+<p class="Pp">After the compilation is complete, the regex is analysed by
+    <code class="Li">study_chunk()</code> and any optimisations that can be
+    made are made.</p>
+<p class="Pp">Finally the <code class="Li">reg</code> field of the
+    <code class="Li">REGEXP</code> structure is set to point to the compiled
+    regex.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='INTERNAL_STRUCTURE'><a class='permalink' href='#INTERNAL_STRUCTURE'>INTERNAL STRUCTURE</a></h1>
+<p class="Pp">The compiled regular expression is a sequence of operations, each
+    represented by a <code class="Li">regop</code> structure. These structures
+    are linked together in a list, and are executed by the regex interpreter.</p>
+<p class="Pp">The operations include things like:</p>
+<ul class="Bl-bullet">
+  <li><code class="Li">EXACT</code>: Match a specific character.</li>
+  <li><code class="Li">STAR</code>: Match the preceding operation zero or more times.</li>
+  <li><code class="Li">BRANCH</code>: Match one of a number of alternative operations.</li>
+  <li><code class="Li">OPEN</code>/<code class="Li">CLOSE</code>: Mark the start/end of a capture group.</li>
+  <li><code class="Li">EOL</code>: Match the end of the line.</li>
+  <li><code class="Li">END</code>: Match the end of the string.</li>
+</ul>
+<p class="Pp">The interpreter traverses the operations, attempting to match the
+    string. If a path fails, it backtracks and tries an alternative.</p>
+<p class="Pp">Below is an example of the internal structure of a compiled regex
+    for <code class="Li">/x(?:foo*|bar)$/</code>.</p>
+<pre> # regex = qr/x(?:foo*|bar)$/
+ #
+ # After parsing and before optimisation:
+ #
+ # Regcode:
+ #   regcode_t   *regcode;
+ #   unsigned    *regsize;
+ #
+ # regcode = &amp;aTHx-&gt;reg_code[0];
+ # regsize = &amp;aTHx-&gt;reg_size;
+ #
+ # reg = regcode;
+ # *regsize = 0;
+ #
+ # start = regcode;
+ #
+ #       reg = START(3)
+ #       NEXT(atom)
+ #       atom = EXACT &lt;x&gt;
+ #       NEXT(branch(9))
+ #       branch = BRANCH(9)
+ #       NEXT(group(25))
+ #       group = OPEN1
+ #       NEXT(branch(28))
+ #       branch = BRANCH(28)
+ #       NEXT(group(34))
+ #       group = OPEN2
+ #       NEXT(atom)
+ #       atom = EXACT &lt;f&gt;
+ #       NEXT(star(6))
+ #       star = STAR
+ #       NEXT(atom)
+ #       atom = EXACT &lt;o&gt;
+ #       NEXT(tail)
+ #       tail = TAIL()
+ #       NEXT(tail)
+ #       tail = TAIL(25)
+ #       NEXT(branch(31))
+ #       branch = BRANCH(31)
+ #       NEXT(group(34))
+ #       group = OPEN2
+ #       NEXT(atom)
+ #       atom = EXACT &lt;b&gt;
+ #       NEXT(atom)
+ #       atom = EXACT &lt;a&gt;
+ #       NEXT(atom)
+ #       atom = ANYOF[Rr]
+ #       NEXT(tail)
+ #       tail = TAIL(25)
+ #       NEXT(tail)
+ #       tail = TAIL(25)
+ #       NEXT(close1(34))
+ #       close1 = CLOSE1(34)
+ #       NEXT(close2(36))
+ #       close2 = CLOSE2(36)
+ #       NEXT(eol(37))
+ #       eol = EOL
+ #       NEXT(end(37))
+ #       end = END()
+ #
+ # The above is a slight simplification. The structure is actually a bit more
+ # complex, with pointers being relative offsets rather than absolute pointers.
+ #
+ # The following diagram shows the structure after optimisation:
+ #
+ # &gt;x(?:foo*|b...    1    reg
+ #                         brnc
+ #                           piec
+ #                             atom
+ # &gt;(?:foo*|b[...    3        piec
+ #                             atom
+ # &gt;?:foo*|b[a...                 reg
+ # &gt;foo*|b[a][...                   brnc
+ #                                   piec
+ #                                     atom
+ # &gt;o*|b[a][rR...    5                piec
+ #                                     atom
+ # &gt;|b[a][rR])...    8                tail~ EXACT &lt;fo&gt; (3)
+ # &gt;b[a][rR])(...    9              brnc
+ #                 10                piec
+ #                                     atom
+ # &gt;[a][rR])(f...   12                piec
+ #                                     atom
+ # &gt;a][rR])(fo...                         clas
+ # &gt;[rR])(foo|...   14                tail~ EXACT &lt;b&gt; (10)
+ #                                   piec
+ #                                     atom
+ # &gt;rR])(foo|b...                         clas
+ # &gt;)(foo|bar)...   25                tail~ EXACT &lt;a&gt; (12)
+ #                                 tail~ BRANCH (3)
+ #                 26              tsdy~ BRANCH (END) (9)
+ #                                     ~ attach to TAIL (25) offset to 16
+ #                                 tsdy~ EXACT &lt;fo&gt; (EXACT) (4)
+ #                                     ~ STAR (END) (6)
+ #                                     ~ attach to TAIL (25) offset to 19
+ #                                 tsdy~ EXACT &lt;b&gt; (EXACT) (10)
+ #                                     ~ EXACT &lt;a&gt; (EXACT) (12)
+ #                                     ~ ANYOF[Rr] (END) (14)
+ #                                     ~ attach to TAIL (25) offset to 11
+ # &gt;(foo|bar)$&lt;               tail~ EXACT &lt;x&gt; (1)
+ #                           piec
+ #                             atom
+ # &gt;foo|bar)$&lt;                    reg
+ #                 28              brnc
+ #                                   piec
+ #                                     atom
+ # &gt;|bar)$&lt;         31              tail~ OPEN1 (26)
+ # &gt;bar)$&lt;                          brnc
+ #                 32                piec
+ #                                     atom
+ # &gt;)$&lt;             34              tail~ BRANCH (28)
+ #                 36              tsdy~ BRANCH (END) (31)
+ #                                    ~ attach to CLOSE1 (34) offset to 3
+ #                                 tsdy~ EXACT &lt;foo&gt; (EXACT) (29)
+ #                                    ~ attach to CLOSE1 (34) offset to 5
+ #                                 tsdy~ EXACT &lt;bar&gt; (EXACT) (32)
+ #                                    ~ attach to CLOSE1 (34) offset to 2
+ # &gt;$&lt;                        tail~ BRANCH (3)
+ #                               ~ BRANCH (9)
+ #                               ~ TAIL (25)
+ #                           piec
+ #                             atom
+ # &gt;&lt;               37        tail~ OPEN1 (26)
+ #                               ~ BRANCH (28)
+ #                               ~ BRANCH (31)
+ #                               ~ CLOSE1 (34)
+ #                 38      tsdy~ EXACT &lt;x&gt; (EXACT) (1)
+ #                             ~ BRANCH (END) (3)
+ #                             ~ BRANCH (END) (9)
+ #                             ~ TAIL (END) (25)
+ #                             ~ OPEN1 (END) (26)
+ #                             ~ BRANCH (END) (28)
+ #                             ~ BRANCH (END) (31)
+ #                             ~ CLOSE1 (END) (34)
+ #                             ~ EOL (END) (36)
+ #                             ~ attach to END (37) offset to 1
+</pre>
+<p class="Pp">Resulting in the program</p>
+<pre> 1: EXACT &lt;x&gt;(3)
+ 3: BRANCH(9)
+ 4:   EXACT &lt;fo&gt;(6)
+ 6:   STAR(26)
+ 7:     EXACT &lt;o&gt;(0)
+ 9: BRANCH(25)
+10:   EXACT &lt;ba&gt;(14)
+12:   OPTIMIZED (2 nodes)
+14:   ANYOF[Rr](26)
+25: TAIL(26)
+26: OPEN1(28)
+28:   TRIE-EXACT(34)
+      [StS:1 Wds:2 Cs:6 Uq:5 #Sts:7 Mn:3 Mx:3 Stcls:bf]
+        &lt;foo&gt;
+        &lt;bar&gt;
+30:   OPTIMIZED (4 nodes)
+34: CLOSE1(36)
+36: EOL(37)
+37: END(0)
+</pre>
+<p class="Pp">Here we can see a much more complex program, with various
+    optimisations in play. At regnode 10 we see an example where a character
+    class with only one character in it was turned into an
+    <span class="Li">&quot;EXACT&quot;</span> node. We can also see where an
+    entire alternation was turned into a
+    <span class="Li">&quot;TRIE-EXACT&quot;</span> node. As a consequence, some
+    of the regnodes have been marked as optimised away. We can see that the
+    <span class="Li">&quot;$&quot;</span> symbol has been converted into an
+    <span class="Li">&quot;EOL&quot;</span> regop, a special piece of code that
+    looks for <span class="Li">&quot;\n&quot;</span> or the end of the
+  string.</p>
+<p class="Pp">The next pointer for <span class="Li">&quot;BRANCH&quot;</span>es
+    is interesting in that it points at where execution should go if the branch
+    fails. When executing, if the engine tries to traverse from a branch to a
+    <span class="Li">&quot;regnext&quot;</span> that isn't a branch then the
+    engine will know that the entire set of branches has failed.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Peep-hole_Optimisation_and_Analysis'><a class='permalink' href='#Peep-hole_Optimisation_and_Analysis'>Peep-hole Optimisation and Analysis</a></h2>
+<p class="Pp">The regular expression engine can be a weighty tool to wield. On
+    long strings and complex patterns it can end up having to do a lot of work
+    to find a match, and even more to decide that no match is possible. Consider
+    a situation like the following pattern.</p>
+<pre>'ababababababababababab' =~ /(a|b)*z/</pre>
+<p class="Pp">The <span class="Li">&quot;(a|b)*&quot;</span> part can match at
+    every char in the string, and then fail every time because there is no
+    <span class="Li">&quot;z&quot;</span> in the string. So obviously we can
+    avoid using the regex engine unless there is a
+    <span class="Li">&quot;z&quot;</span> in the string. Likewise in a pattern
+    like:</p>
+<pre>/foo(\w+)bar/</pre>
+<p class="Pp">In this case we know that the string must contain a
+    <span class="Li">&quot;foo&quot;</span> which must be followed by
+    <span class="Li">&quot;bar&quot;</span>. We can use Fast Boyer-Moore
+    matching as implemented in <span class="Li">fbm_instr()</span> to find the
+    location of these strings. If they don't exist then we don't need to resort
+    to the much more expensive regex engine. Even better, if they do exist then
+    we can use their positions to reduce the search space that the regex engine
+    needs to cover to determine if the entire pattern matches.</p>
+<p class="Pp">There are various aspects of the pattern that can be used to
+    facilitate optimisations along these lines:</p>
+<ul class="Bl-bullet">
+  <li>anchored fixed strings</li>
+  <li>floating fixed strings</li>
+  <li>minimum and maximum length requirements</li>
+  <li>start class</li>
+  <li>Beginning/End of line positions</li>
+</ul>
+<p class="Pp">Another form of optimisation that can occur is the post-parse
+    &quot;peep-hole&quot; optimisation, where inefficient constructs are
+    replaced by more efficient constructs. The
+    <span class="Li">&quot;TAIL&quot;</span> regops which are used during
+    parsing to mark the end of branches and the end of groups are examples of
+    this. These regops are used as place-holders during construction and
+    &quot;always match&quot; so they can be &quot;optimised away&quot; by making
+    the things that point to the <span class="Li">&quot;TAIL&quot;</span> point
+    to the thing that <span class="Li">&quot;TAIL&quot;</span> points to, thus
+    &quot;skipping&quot; the node.</p>
+<p class="Pp">Another optimisation that can occur is that of
+    &quot;<span class="Li">&quot;EXACT&quot;</span> merging&quot; which is where
+    two consecutive <span class="Li">&quot;EXACT&quot;</span> nodes are merged
+    into a single regop. An even more aggressive form of this is that a branch
+    sequence of the form <span class="Li">&quot;EXACT BRANCH ...
+    EXACT&quot;</span> can be converted into a
+    <span class="Li">&quot;TRIE-EXACT&quot;</span> regop.</p>
+<p class="Pp">All of this occurs in the routine
+    <span class="Li">study_chunk()</span> which uses a special structure
+    <span class="Li">&quot;scan_data_t&quot;</span> to store the analysis that
+    it has performed, and does the &quot;peep-hole&quot; optimisations as it
+    goes.</p>
+<p class="Pp">The code involved in <span class="Li">study_chunk()</span> is
+    extremely cryptic. Be careful. :-)</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Execution'><a class='permalink' href='#Execution'>Execution</a></h2>
+<p class="Pp">Execution of a regex generally involves two phases, the first
+    being finding the start point in the string where we should match from, and
+    the second being running the regop interpreter.</p>
+<p class="Pp">If we can tell that there is no valid start point then we don't
+    bother running the interpreter at all. Likewise, if we know from the
+    analysis phase that we cannot detect a short-cut to the start position, we
+    go straight to the interpreter.</p>
+<p class="Pp">The two entry points are <span class="Li">re_intuit_start()</span>
+    and <span class="Li">pregexec()</span>. These routines have a somewhat
+    incestuous relationship with overlap between their functions, and
+    <span class="Li">pregexec()</span> may even call
+    <span class="Li">re_intuit_start()</span> on its own. Nevertheless other
+    parts of the perl source code may call into either, or both.</p>
+<p class="Pp">Execution of the interpreter itself used to be recursive, but
+    thanks to the efforts of Dave Mitchell in the 5.9.x development track, that
+    has changed: now an internal stack is maintained on the heap and the routine
+    is fully iterative. This can make it tricky as the code is quite
+    conservative about what state it stores, with the result that two
+    consecutive lines in the code can actually be running in totally different
+    contexts due to the simulated recursion.</p>
+<p class="Pp"><i>Start position and no-match optimisations</i></p>
+<p class="Pp"><span class="Li">re_intuit_start()</span> is responsible for
+    handling start points and no-match optimisations as determined by the
+    results of the analysis done by <span class="Li">study_chunk()</span> (and
+    described in &quot;Peep-hole Optimisation and Analysis&quot;).</p>
+<p class="Pp">The basic structure of this routine is to try to find the start-
+    and/or end-points of where the pattern could match, and to ensure that the
+    string is long enough to match the pattern. It tries to use more efficient
+    methods over less efficient methods and may involve considerable
+    cross-checking of constraints to find the place in the string that matches.
+    For instance it may try to determine that a given fixed string must be not
+    only present but a certain number of chars before the end of the string, or
+    whatever.</p>
+<p class="Pp">It calls several other routines, such as
+    <span class="Li">fbm_instr()</span> which does Fast Boyer Moore matching and
+    <span class="Li">find_byclass()</span> which is responsible for finding the
+    start using the first mandatory regop in the program.</p>
+<p class="Pp">When the optimisation criteria have been satisfied,
+    <span class="Li">reg_try()</span> is called to perform the match.</p>
+<p class="Pp"><i>Program execution</i></p>
+<p class="Pp"><span class="Li">pregexec()</span> is the main entry point for
+    running a regex. It contains support for initialising the regex
+    interpreter's state, running <span class="Li">re_intuit_start()</span> if
+    needed, and running the interpreter on the string from various start
+    positions as needed. When it is necessary to use the regex interpreter
+    <span class="Li">pregexec()</span> calls
+  <span class="Li">regtry()</span>.</p>
+<p class="Pp"><span class="Li">regtry()</span> is the entry point into the regex
+    interpreter. It expects as arguments a pointer to a
+    <span class="Li">&quot;regmatch_info&quot;</span> structure and a pointer to
+    a string. It returns an integer 1 for success and a 0 for failu</p>
+</section>
+</document>
+re. Es
+    básicamente un envoltorio de configuración para <span class="Li">regmatch()</span>.</p>
+<p class="Pp"><span class="Li">&quot;regmatch&quot;</span> es el bucle
+    recursivo principal del intérprete. Es básicamente una gran declaración switch
+    que implementa una máquina de estados, donde los estados posibles son los
+    regops mismos, más una serie de estados intermedios y de fallo adicionales.
+    Algunos de los estados se implementan como subrutinas, pero la mayor parte es
+    código en línea.</p>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VARIOS'><a class='permalink' href='#VARIOS'>VARIOS</a></h1>
+<section class="Ss">
+<h2 class="Ss" id='Soporte_Unicode_y_localizaci%C3%B3n'><a class='permalink' href='#Soporte_Unicode_y_localizaci%C3%B3n'>Soporte Unicode y Localización</a></h2>
+<p class="Pp">Al tratar con cadenas que contienen caracteres que no se pueden
+    representar con un conjunto de caracteres de ocho bits, perl utiliza una
+    representación interna que es una versión permisiva de la codificación
+    UTF-8 de Unicode[2]. Utiliza bytes individuales para representar caracteres
+    del conjunto de caracteres ASCII y secuencias de dos o más bytes para todos
+    los demás caracteres. (Ver perlunitut para más información sobre la relación
+    entre UTF-8 y la codificación de perl, utf8. La diferencia no es importante
+    para esta discusión).</p>
+<p class="Pp">No importa cómo se mire, el soporte de Unicode va a ser un
+    problema en un motor de expresiones regulares. Los trucos que podrían estar
+    bien cuando tienes 256 caracteres posibles a menudo no escalarán para manejar
+    el tamaño del conjunto de caracteres UTF-8. Las cosas que puedes dar por
+    sentadas con ASCII pueden no ser ciertas con Unicode. Por ejemplo, en ASCII,
+    es seguro asumir que <span class="Li">&quot;sizeof(char1) == sizeof(char2)&quot;</span>,
+    pero en UTF-8 no lo es. El plegado de mayúsculas y minúsculas en Unicode es
+    vastamente más complejo que las reglas simples de ASCII, e incluso cuando no
+    se utiliza Unicode sino solo codificaciones de un solo byte localizadas, las
+    cosas pueden volverse complicadas (por ejemplo, <b>LATIN SMALL LETTER
+    SHARP S</b> (U+00DF, &#x00DF;;) debe coincidir con 'SS' en la coincidencia
+    insensible a mayúsculas y minúsculas localizada).</p>
+<p class="Pp">Lo que empeora las cosas es que el soporte de UTF-8 fue una adición
+    posterior al motor de expresiones regulares (como lo fue a perl) y esto
+    necesariamente hizo las cosas mucho más complicadas. Obviamente, es más fácil
+    diseñar un motor de expresiones regulares con el soporte de Unicode en mente
+    desde el principio que adaptarlo a uno que no lo tenía.</p>
+<p class="Pp">Casi todos los regops que implican mirar la cadena de entrada tienen
+    dos casos, uno para UTF-8 y otro para no UTF-8. De hecho, a menudo es más
+    complejo que eso, ya que el patrón también puede ser UTF-8.</p>
+<p class="Pp">Se debe tener cuidado al hacer cambios para asegurarse de que maneja
+    UTF-8 correctamente, tanto en tiempo de compilación como en tiempo de
+    ejecución, incluyendo cuando la cadena y el patrón no coinciden.</p>
+</section>
+<section class="Ss">
+<h2 class="Ss" id='Estructuras_base'><a class='permalink' href='#Estructuras_base'>Estructuras Base</a></h2>
+<p class="Pp">La estructura <span class="Li">&quot;regexp&quot;</span> descrita en
+    perlreapi es común a todos los motores de expresiones regulares. Dos de sus
+    campos están destinados al uso privado del motor de expresiones regulares
+    que compiló el patrón. Estos son los miembros <span class="Li">&quot;intflags&quot;</span>
+    y pprivate. El <span class="Li">&quot;pprivate&quot;</span> es un puntero void
+    a una estructura arbitraria cuyo uso y gestión es responsabilidad del motor
+    compilador. perl nunca modificará ninguno de estos valores. En el caso del
+    motor predeterminado, la estructura a la que apunta
+    <span class="Li">&quot;pprivate&quot;</span> se llama
+    <span class="Li">&quot;regexp_internal&quot;</span>.</p>
+<p class="Pp">Sus campos <span class="Li">&quot;pprivate&quot;</span> y
+    <span class="Li">&quot;intflags&quot;</span> contienen datos específicos de
+    cada motor.</p>
+<p class="Pp">Hay dos estructuras utilizadas para almacenar una expresión regular
+    compilada. Una, la estructura <span class="Li">&quot;regexp&quot;</span>
+    descrita en perlreapi es poblada por el motor que se está utilizando y algunos
+    de sus campos son leídos por perl para implementar cosas como la
+    estratificación de <span class="Li">&quot;qr//&quot;</span>.</p>
+<p class="Pp">La otra estructura es apuntada por el campo
+    <span class="Li">&quot;pprivate&quot;</span> de la estructura
+    <span class="Li">&quot;regexp&quot;</span> y, además de
+    <span class="Li">&quot;intflags&quot;</span> en la misma estructura, se
+    considera propiedad del motor de expresiones regulares que compiló la
+    expresión regular;</p>
+<p class="Pp">La estructura regexp contiene todos los datos que perl necesita
+    conocer para trabajar correctamente con la expresión regular. Incluye datos
+    sobre optimizaciones que perl puede utilizar para determinar si realmente se
+    debería usar el motor de expresiones regulares, y diversa información de
+    control adicional que se necesita para ejecutar correctamente patrones en
+    varios contextos, como si el patrón está anclado de alguna manera, o qué
+    banderas se utilizaron durante la compilación, o si el programa contiene
+    construcciones especiales de las que perl necesita ser consciente.</p>
+<p class="Pp">Además, contiene dos campos que están destinados al uso privado del
+    motor de expresiones regulares que compiló el patrón. Estos son los miembros
+    <span class="Li">&quot;intflags&quot;</span> y pprivate. El
+    <span class="Li">&quot;pprivate&quot;</span> es un puntero void a una
+    estructura arbitraria cuyo uso y gestión es responsabilidad del motor
+    compilador. perl nunca modificará ninguno de estos valores.</p>
+<p class="Pp">Como se mencionó anteriormente, en el caso de los motores
+    predeterminados, el <span class="Li">&quot;pprivate&quot;</span> será un
+    puntero a una estructura regexp_internal que contiene el programa compilado
+    y cualquier dato adicional que sea privado para la implementación del motor de
+    expresiones regulares.</p>
+<p class="Pp"><i>Estructura
+    </i><span class="Li"><i>&quot;pprivate&quot;</i></span><i> de Perl</i></p>
+<p class="Pp">La siguiente estructura se utiliza como struct
+    <span class="Li">&quot;pprivate&quot;</span> por el motor de expresiones
+    regulares de perl. Dado que es específica de perl, solo tiene valor de
+    curiosidad para otras implementaciones de motores.</p>
+<pre>typedef struct regexp_internal {
+    regnode *regstclass;
+    struct reg_data *data;
+    struct reg_code_blocks *code_blocks;
+    U32 proglen;
+    U32 name_list_idx;
+    regnode program[1];
+} regexp_internal;</pre>
+<p class="Pp">La descripción de los atributos es la siguiente:</p>
+<dl class="Bl-tag">
+  <dt>&quot;regstclass&quot;</dt>
+  <dd>Regop especial que es utilizado por <span class="Li">re_intuit_start()</span>
+      para comprobar si un patrón puede coincidir en una posición determinada.
+      Por ejemplo, si el motor de expresiones regulares sabe que el patrón debe
+      comenzar con una 'Z', entonces puede escanear la cadena hasta que encuentre
+      una y luego lanzar el motor de expresiones regulares desde allí. La rutina
+      que maneja esto se llama <span class="Li">find_by_class()</span>. A veces
+      este campo apunta a un regop incrustado en el programa, y a veces apunta
+      a un regop sintético independiente que ha sido construido por el optimizador.</dd>
+  <dt>&quot;data&quot;</dt>
+  <dd>Este campo apunta a una estructura
+      <span class="Li">&quot;reg_data&quot;</span>, que se define de la siguiente
+      manera:
+        <pre>struct reg_data {
+    U32 count;
+    U8 *what;
+    void* data[1];
+};
+</pre>
+    <p class="Pp">Esta estructura se utiliza para manejar estructuras de datos
+        que el motor de expresiones regulares necesita manejar especialmente
+        durante una operación de clonación o liberación del producto compilado.
+        Cada elemento en el array de datos tiene un elemento correspondiente en
+        el array 'what'. Durante la compilación, los regops que necesitan
+        estructuras especiales almacenadas agregarán un elemento a cada array
+        utilizando la rutina <b>add_data()</b> y luego almacenarán el índice en
+        el regop.</p>
+    <p class="Pp">En las versiones modernas de perl, el elemento 0 de esta
+        estructura está reservado y NUNCA se utiliza para almacenar nada útil.
+        Esto es para permitir que las cosas que necesitan indexar este array
+        representen "sin valor".</p>
+  </dd>
+  <dt>&quot;code_blocks&quot;</dt>
+  <dd>Esta estructura opcional se utiliza para administrar las construcciones
+      <span class="Li">&quot;(?{})&quot;</span> en el patrón. Está compuesta
+      por las siguientes estructuras.
+        <pre>/* record the position of a (?{...}) within a pattern */
+struct reg_code_block {
+    STRLEN start;
+    STRLEN end;
+    OP     *block;
+    REGEXP *src_regex;
+};
+/* array of reg_code_block's plus header info */
+struct reg_code_blocks {
+    int refcnt; /* we may be pointed to from a regex
+                   and from the savestack */
+    int  count; /* how many code blocks */
+    struct reg_code_block *cb; /* array of reg_code_block's */
+};
+</pre>
+  </dd>
+  <dt>&quot;proglen&quot;</dt>
+  <dd>Almacena la longitud del programa compilado en unidades de regops.</dd>
+  <dt>&quot;name_list_idx&quot;</dt>
+  <dd>Este es el índice en el array de datos donde se almacena un AV que contiene
+      los nombres de cualquier búfer de captura con nombre en el patrón, si los
+      hubiere. Esto solo se utiliza en la versión de depuración del motor de
+      expresiones regulares y cuando RXp_PAREN_NAMES(prog) es verdadero. Será 0
+      si no hay tales datos.</dd>
+  <dt>&quot;program&quot;</dt>
+  <dd>Programa compilado. Incrustado en la estructura para que toda la estructura
+      pueda ser tratada como un solo bloque.</dd>
+</dl>
+</section>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBI%C3%89N'><a class='permalink' href='#VER_TAMBI%C3%89N'>VER TAMBIÉN</a></h1>
+<p class="Pp">perlreapi</p>
+<p class="Pp">perlre</p>
+<p class="Pp">perlunitut</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<p class="Pp">por Yves Orton, 2006.</p>
+<p class="Pp">Con extractos de Perl, y contribuciones y sugerencias de Ronald J.
+    Kimball, Dave Mitchell, Dominic Dunlop, Mark Jason Dominus, Stephen McCamant y
+    David Landgren.</p>
+<p class="Pp">Ahora mantenido por Perl 5 Porters.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENCIA'><a class='permalink' href='#LICENCIA'>LICENCIA</a></h1>
+<p class="Pp">Mismos términos que Perl.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REFERENCIAS'><a class='permalink' href='#REFERENCIAS'>REFERENCIAS</a></h1>
+<p class="Pp">[1] <a href='https://perl.plover.com/Rx/paper/'>https://perl.plover.com/Rx/paper/</a></p>
+<p class="Pp">[2] <a href='https://www.unicode.org/'>https://www.unicode.org/</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">2025-07-13</td>
+    <td class="foot-os">perl v5.42.0</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Search manual page" name="q" value=""
+         />
+    <input type="submit" name="go" value="Go" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Package information:</p>
+    <dl>
+        <dt>Package name:</dt>
+        <dd><a href="https://www.archlinux.org/packages/core/x86_64/perl/">core/perl</a></dd>
+        <dt>Version:</dt>
+        <dd>5.42.0-1</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://www.perl.org">https://www.perl.org</a></dd>
+        <dt>Licenses:</dt>
+        <dd>Artistic-1.0-Perl OR GPL-1.0-or-later</dd>
+        <dt>Manuals:</dt>
+        <dd><a href="/listing/core/perl/">/listing/core/perl/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Table of contents</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#DESCRIPCI%C3%93N">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VISTA_GENERAL">VISTA GENERAL</a></li>
+        
+            <li><a href="#Vista_general_del_proceso">Vista general del proceso</a></li>
+        
+            <li><a href="#VARIOS">VARIOS</a></li>
+        
+            <li><a href="#VER_TAMBI%C3%89N">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#LICENCIA">LICENCIA</a></li>
+        
+            <li><a href="#REFERENCIAS">REFERENCIAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+            </aside>
+        </div>
+    </main>
+    <footer>
+        <p>
+            Manual page generated by
+            <a href="https://github.com/man-pages/man-pages-generator">man-pages-generator</a>
+            on 2025-07-13
+        </p>
+    </footer>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="es">
+    <head>
+        <meta charset="utf-8">
+        <title>perlreguts - Perl regular expression substitutions</title>
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="/style.css">
+        <link rel="stylesheet" href="/fonts.css">
+    </head>
+    <body>
+        
+        <main>
+            <aside>
+                
+<details>
+    <summary>Contenido</summary>
+    <nav>
+        <ul>
+            
+                <li><a href="#NAME">NOMBRE</a></li>
+            
+                <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+            
+                <li><a href="#BASIC-FEATURES">CARACTERÍSTICAS BÁSICAS</a></li>
+            
+                <li><a href="#MATCH-OPERATORS">OPERADORES DE COINCIDENCIA</a></li>
+            
+                <li><a href="#REPLACEMENT-OPERATORS">OPERADORES DE REEMPLAZO</a></li>
+            
+                <li><a href="#ESCAPES">ESCAPES</a></li>
+            
+                <li><a href="#ADVANCED-FEATURES">CARACTERÍSTICAS AVANZADAS</a></li>
+            
+                <li><a href="#SPECIAL-VARS">VARIABLES ESPECIALES</a></li>
+            
+                <li><a href="#PERL-VS-OTHER-LANGUAGES">PERL VS OTROS LENGUAJES</a></li>
+            
+                <li><a href="#DEBUGGING">DEPURACIÓN</a></li>
+            
+                <li><a href="#SEE-ALSO">VER TAMBIÉN</a></li>
+            
+                <li><a href="#AUTHOR">AUTOR</a></li>
+            
+                <li><a href="#LICENCE">LICENCIA</a></li>
+            
+                <li><a href="#REFERENCES">REFERENCIAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/perlreguts.1perl.en.txt">txt</a>, 
+        
+            <a href="/man/perlreguts.1perl.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+            <article>
+                <h1>perlreguts - Sustituciones de expresiones regulares de Perl</h1>
+
+<h2 id="NAME">NOMBRE</h2>
+<p>perlreguts - Sustituciones de expresiones regulares de Perl</p>
+
+<h2 id="DESCRIPTION">DESCRIPCIÓN</h2>
+<p>Esta página de manual proporciona una introducción a las expresiones regulares y a las operaciones de sustitución en Perl. Cubre los conceptos básicos, los operadores comunes, los caracteres de escape, las características avanzadas, las variables especiales, las diferencias con otros lenguajes y las técnicas de depuración.</p>
+
+<h2 id="BASIC-FEATURES">CARACTERÍSTICAS BÁSICAS</h2>
+<p>Las expresiones regulares en Perl son patrones que se utilizan para hacer coincidir combinaciones de caracteres dentro de las cadenas de texto.</p>
+<ul>
+    <li><strong>Literal Matching:</strong> Coincide con caracteres exactos. Ejemplo: <code>/abc/</code> coincidirá con la cadena "abc".</li>
+    <li><strong>Metacharacters:</strong> Caracteres con significados especiales. Ejemplos: <code>.</code> (cualquier carácter excepto nueva línea), <code>^</code> (inicio de la línea), <code>$</code> (fin de la línea), <code>*</code> (cero o más veces), <code>+</code> (una o más veces), <code>?</code> (cero o una vez).</li>
+    <li><strong>Character Classes:</strong> Coincide con cualquier carácter dentro de un conjunto. Ejemplo: <code>/[aeiou]/</code> coincidirá con cualquier vocal. <code>/[^aeiou]/</code> coincidirá con cualquier carácter que no sea una vocal.</li>
+    <li><strong>Shorthand Character Classes:</strong> Clases predefinidas. Ejemplos: <code>\d</code> (dígito), <code>\w</code> (carácter de palabra), <code>\s</code> (espacio en blanco).</li>
+    <li><strong>Quantifiers:</strong> Especifican cuántas veces debe aparecer un elemento. Ejemplos: <code>{n}</code> (exactamente n veces), <code>{n,}</code> (n o más veces), <code>{n,m}</code> (entre n y m veces).</li>
+</ul>
+
+<h2 id="MATCH-OPERATORS">OPERADORES DE COINCIDENCIA</h2>
+<p>El operador de coincidencia principal es <code>m//</code> (o simplemente <code>//</code> si es el último operador de coincidencia). Devuelve 1 si hay una coincidencia, 0 si no la hay.</p>
+<p>Ejemplo:</p>
+<pre><code class="language-perl">my $string = "Hello, World!";
+if ($string =~ /World/) {
+    print "Found World!\n";
+}
+</code></pre>
+
+<h2 id="REPLACEMENT-OPERATORS">OPERADORES DE REEMPLAZO</h2>
+<p>El operador de sustitución es <code>s///</code>. Reemplaza la primera ocurrencia de un patrón con una cadena de reemplazo.</p>
+<ul>
+    <li><code>s/pattern/replacement/</code>: Reemplaza la primera coincidencia.</li>
+    <li><code>s/pattern/replacement/g</code>: Reemplaza todas las coincidencias (global).</li>
+</ul>
+<p>Ejemplo:</p>
+<pre><code class="language-perl">my $string = "The quick brown fox jumps over the lazy dog.";
+$string =~ s/fox/cat/g; # Reemplaza todas las ocurrencias de 'fox' con 'cat'
+print "$string\n"; # Salida: The quick brown cat jumps over the lazy dog.
+</code></pre>
+
+<h2 id="ESCAPES">ESCAPES</h2>
+<p>Los caracteres con significado especial en las expresiones regulares deben ser escapados con una barra invertida (<code>\</code>) para ser tratados literalmente.</p>
+<ul>
+    <li><code>\.</code> coincide con un punto literal.</li>
+    <li><code>\\</code> coincide con una barra invertida literal.</li>
+    <li><code>\^</code> coincide con un circunflejo literal.</li>
+    <li><code>\$</code> coincide con un signo de dólar literal.</li>
+</ul>
+<p>También hay secuencias de escape especiales:</p>
+<ul>
+    <li><code>\n</code> (nueva línea), <code>\t</code> (tabulación), <code>\r</code> (retorno de carro).</li>
+    <li><code>\A</code> (inicio de la cadena), <code>\Z</code> (fin de la cadena).</li>
+    <li><code>\b</code> (límite de palabra), <code>\B</code> (no límite de palabra).</li>
+</ul>
+
+<h2 id="ADVANCED-FEATURES">CARACTERÍSTICAS AVANZADAS</h2>
+<ul>
+    <li><strong>Grouping and Capturing:</strong> Los paréntesis <code>()</code> se utilizan para agrupar partes de un patrón y capturar el texto coincidente.</li>
+    <li><strong>Alternation:</strong> El operador <code>|</code> permite especificar alternativas. Ejemplo: <code>/cat|dog/</code> coincide con "cat" o "dog".</li>
+    <li><strong>Lookarounds:</strong> Afirmaciones positivas y negativas que no consumen caracteres. Ejemplos: <code>(?=...)</code> (lookahead positivo), <code>(?!...)</code> (lookahead negativo), <code>(?<=...)</code> (lookbehind positivo), <code>(?&lt;!...)</code> (lookbehind negativo).</li>
+    <li><strong>Modifiers:</strong> Se pueden especificar después del delimitador de cierre. Ejemplos: <code>/i</code> (ignorar mayúsculas/minúsculas), <code>/m</code> (modo multilínea), <code>/s</code> (modo "dotall").</li>
+</ul>
+
+<h2 id="SPECIAL-VARS">VARIABLES ESPECIALES</h2>
+<p>Después de una coincidencia de expresión regular, varias variables especiales se llenan con información:</p>
+<ul>
+    <li><code>$&</code>: La cadena completa que coincidió.</li>
+    <li><code>$n</code> (<code>$1</code>, <code>$2</code>, etc.): El texto capturado por el n-ésimo grupo de paréntesis.</li>
+    <li><code>$`</code>: La parte de la cadena anterior a la coincidencia.</li>
+    <li><code>$'</code>: La parte de la cadena posterior a la coincidencia.</li>
+    <li><code>$+</code>: El último grupo capturado.</li>
+</ul>
+
+<h2 id="PERL-VS-OTHER-LANGUAGES">PERL VS OTROS LENGUAJES</h2>
+<p>Las expresiones regulares de Perl son muy potentes y a menudo se consideran el estándar de oro. Tienen características que no se encuentran en implementaciones más simples (como las de JavaScript o Python en sus formas básicas), como los lookarounds y una sintaxis más rica para cuantificadores y anclajes.</p>
+
+<h2 id="DEBUGGING">DEPURACIÓN</h2>
+<p>Depurar expresiones regulares puede ser complicado. Algunas técnicas incluyen:</p>
+<ul>
+    <li><strong>Verbose Mode:</strong> Usa el modificador <code>/x</code> para permitir espacios en blanco y comentarios en la expresión regular, haciéndola más legible.</li>
+    <li><strong>Printing Variables:</strong> Imprime las variables especiales (<code>$&</code>, <code>$1</code>, etc.) para ver qué se está coincidiendo y capturando.</li>
+    <li><strong>Using <code>Data::Dumper</code>:</strong> Para inspeccionar estructuras de datos complejas que puedan estar involucradas.</li>
+    <li><strong>Using Debugging Modules:</strong> Módulos como <code>Regexp::Debugger</code> pueden proporcionar una ayuda visual paso a paso.</li>
+</ul>
+
+<h2 id="SEE-ALSO">VER TAMBIÉN</h2>
+<p><a href="/man/perlre.html">perlre</a>, <a href="/man/perlop.html">perlop</a></p>
+
+<h2 id="AUTHOR">AUTOR</h2>
+<p>Este manual fue generado automáticamente a partir de la página de manual original de Perl.</p>
+
+<h2 id="LICENCE">LICENCIA</h2>
+<p>Este documento se distribuye bajo la misma licencia que Perl.</p>
+
+<h2 id="REFERENCES">REFERENCIAS</h2>
+<p>Perl Documentation - Regular Expressions</p>
+
+            </article>
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>mlx5dv_qp_cancel_posted_send_wrs(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">mlx5dv_qp_cancel_posted_send_wrs(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/rdma-core/">rdma-core</a></p>
+<p class="lic">Licencias: GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">mlx5dv_qp_cancel_posted_send_wrs(3)</td>
+    <td class="head-vol">Manual de Funciones de Biblioteca</td>
+    <td class="head-rtitle">mlx5dv_qp_cancel_posted_send_wrs(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NAME'><a class='permalink' href='#NAME'>NOMBRE</a></h1>
+<p class="Pp">mlx5dv_qp_cancel_posted_send_wrs - Cancelar todas las solicitudes de trabajo de envío pendientes con WRID proporcionado en una QP en estado SQD</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SYNOPSIS'><a class='permalink' href='#SYNOPSIS'>SINPSIS</a></h1>
+<dl class="Bl-tag">
+  <dt></dt>
+  <dd>
+    <pre>#include <b>&lt;infiniband/mlx5dv.h&gt;</b>
+int mlx5dv_qp_cancel_posted_send_wrs(<b>struct</b> mlx5dv_qp_ex *mqp, uint64_t wr_id);
+</pre>
+  </dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPTION'><a class='permalink' href='#DESCRIPTION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Las solicitudes de trabajo canceladas se reemplazan por NOPs (no operation), y generarán finalizaciones correctas según la señalización solicitada originalmente en las banderas de envío, o finalizaciones "flushed" en caso de que la QP pase a error. Una solicitud de trabajo solo puede ser cancelada cuando la QP está en estado SQD.</p>
+<p class="Pp">La función de cancelación es parte de la característica de canalización de firmas. La característica permite publicar una operación de transferencia relacionada con una firma junto con un SEND con una respuesta correcta al cliente. Normalmente, la aplicación debe esperar a que termine la transferencia, comprobar si hay errores en la MKEY y solo entonces enviar una respuesta correcta o incorrecta. Sin embargo, esto aumenta la latencia del flujo correcto de una transacción.</p>
+<p class="Pp">Para habilitar esta característica, se debe crear una QP con la bandera de creación
+    <b>MLX5DV_QP_CREATE_SIG_PIPELINING</b>. Dicha QP se detendrá después de una operación de transferencia que falle la validación de la firma en estado SQD. Se genera <b>IBV_EVENT_SQ_DRAINED</b> para informar sobre el nuevo estado.</p>
+<p class="Pp">La operación SEND que podría necesitar ser cancelada debido a una firma incorrecta de una operación anterior debe publicarse con la opción <b>IBV_SEND_FENCE</b> en el campo <b>ibv_qp_ex-&gt;wr_flags</b>.</p>
+<p class="Pp">Cuando la QP se detiene en SQD, significa que al menos una WR causó un error de firma. Puede que no sea la última WR. Puede que más de una WR causen errores de firma para cuando la QP finalmente se detenga. Se garantiza que la QP se ha detenido en algún punto entre la WQE que generó el error de firma y la siguiente WQE que tiene <b>IBV_SEND_FENCE</b>.</p>
+<p class="Pp">El software debe manejar el evento SQD como se describe a continuación:</p>
+<dl class="Bl-tag">
+  <dt>1.</dt>
+  <dd>Realizar polling de todo (polling hasta 0 una vez) en la CQ respectiva, permitiendo el descubrimiento de todos los posibles errores de firma.</dd>
+  <dt>2.</dt>
+  <dd>Examinar todas las transacciones "abiertas", comprobar las MKEY de firma relacionadas usando <a href='/man/mlx5dv_mkey_check.3.en'>mlx5dv_mkey_check(3)</a>, encontrar la que tiene el error de firma, obtener un <b>WRID</b> del contexto de software de la operación y manejar la operación fallida.</dd>
+  <dt>3.</dt>
+  <dd>Cancelar la WR de SEND por el WRID usando
+      <b>mlx5dv_qp_cancel_posted_send_wrs</b>().</dd>
+  <dt>4.</dt>
+  <dd>Modificar la QP de nuevo al estado RTS.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ARGUMENTS'><a class='permalink' href='#ARGUMENTS'>ARGUMENTOS</a></h1>
+<dl class="Bl-tag">
+  <dt id="mqp"><a class="permalink" href="#mqp"><i>mqp</i></a></dt>
+  <dd>La QP a investigar, la cual debe estar en estado SQD.</dd>
+  <dt id="wr_id"><a class="permalink" href="#wr_id"><i>wr_id</i></a></dt>
+  <dd>El WRID a cancelar.</dd>
+</dl>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RETURN_VALUE'><a class='permalink' href='#RETURN_VALUE'>VALOR DE RETORNO</a></h1>
+<p class="Pp">Número de solicitudes de trabajo que fueron canceladas, o -errno en caso de error.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTES'><a class='permalink' href='#NOTES'>NOTAS</a></h1>
+<p class="Pp">Se debe abrir un contexto DEVX usando
+    <a href='/man/mlx5dv_open_device.3.en'>mlx5dv_open_device(3)</a>.</p>
+<p class="Pp">Debe llamarse con una QP en estado SQD.</p>
+<p class="Pp">La QP debe crearse con la bandera de creación
+    <b>MLX5DV_QP_CREATE_SIG_PIPELINING</b>. La aplicación debe escuchar los eventos de la QP y esperar un evento SQD.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/mlx5dv_mkey_check.3.en'>mlx5dv_mkey_check(3)</a>, <a href='/man/mlx5dv_wr_mkey_configure.3.en'>mlx5dv_wr_mkey_configure(3)</a>,
+    <a href='/man/mlx5dv_wr_set_mkey_sig_block.3.en'>mlx5dv_wr_set_mkey_sig_block(3)</a>, <a href='/man/mlx5dv_create_mkey.3.en'>mlx5dv_create_mkey(3)</a>,
+    <a href='/man/mlx5dv_destroy_mkey.3.en'>mlx5dv_destroy_mkey(3)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTHORS'><a class='permalink' href='#AUTHORS'>AUTORES</a></h1>
+<p class="Pp">Oren Duer
+    <a class="Mt" href="mailto:oren@nvidia.com">oren@nvidia.com</a></p>
+<p class="Pp">Sergey Gorenko
+    <a class="Mt" href="mailto:sergeygo@nvidia.com">sergeygo@nvidia.com</a></p>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date"></td>
+    <td class="foot-os"></td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página de manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/rdma-core/">extra/rdma-core</a></dd>
+        <dt>Versión:</dt>
+        <dd>60.0-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://github.com/linux-rdma/rdma-core">https://github.com/linux-rdma/rdma-core</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-MIT, GPL-2.0-or-later OR LicenseRef-OpenIB.org-BSD-FreeBSD, GPL-2.0-or-later OR LicenseRef-Intel-BSD-3-Clause, GPL-2.0-or-later OR LicenseRef-PathScale-BSD-Patent-License, CC0-1.0, MIT, BSD-2-Clause, CPL-1.0 OR BSD-2-Clause OR GPL-2.0-or-later</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/rdma-core/">/listing/extra/rdma-core/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NAME">NOMBRE</a></li>
+        
+            <li><a href="#SYNOPSIS">SINPSIS</a></li>
+        
+            <li><a href="#DESCRIPTION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#ARGUMENTS">ARGUMENTOS</a></li>
+        
+            <li><a href="#RETURN_VALUE">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#NOTES">NOTAS</a></li>
+        
+            <li><a href="#SEE_ALSO">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTHORS">AUTORES</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/mlx5dv_qp_cancel_posted_send_wrs.3.en.txt">txt</a>, 
+        
+            <a href="/man/mlx5dv_qp_cancel_posted_send_wrs.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>

@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="es" dir="ltr">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>tracefs_instance_get_subbuf_size(3) — Páginas del manual de Arch</title>
+        
+        
+        
+        
+        
+    
+    
+
+    <link rel="stylesheet" href="basic.css">
+</head>
+    <body>
+<p class="back"><a href="/archman-es-2/">← Índice</a></p>
+<h1 class="page-title">tracefs_instance_get_subbuf_size(3)</h1>
+<p class="pkg">Paquete: <a href="https://archlinux.org/packages/extra/x86_64/libtracefs/">libtracefs</a></p>
+<p class="lic">Licencias: GPL-2.0-only, LGPL-2.1-only</p>
+
+        
+        <main id="content">
+            
+            <article id="content-left">
+                
+<section class="man-page-content">
+    <table class="head">
+  <tr>
+    <td class="head-ltitle">LIBTRACEFS(3)</td>
+    <td class="head-vol">Manual de libtracefs</td>
+    <td class="head-rtitle">LIBTRACEFS(3)</td>
+  </tr>
+</table>
+<div class="manual-text">
+<section class="Sh">
+<h1 class="Sh" id='NOMBRE'><a class='permalink' href='#NOMBRE'>NOMBRE</a></h1>
+<p class="Pp">tracefs_instance_get_subbuf_size, tracefs_instance_set_subbuf_size
+    - Funciones auxiliares para trabajar con sub-búferes del búfer de anillo.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='SINOPSIS'><a class='permalink' href='#SINOPSIS'>SINOPSIS</a></h1>
+<pre><b>#include &lt;tracefs.h&gt;</b>
+size_t <b>tracefs_instance_get_subbuf_size</b>(struct tracefs_instance *<i>instance</i>);
+int <b>tracefs_instance_set_subbuf_size</b>(struct tracefs_instance *<i>instance</i>, size_t <i>size</i>);</pre>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='DESCRIPCION'><a class='permalink' href='#DESCRIPCION'>DESCRIPCIÓN</a></h1>
+<p class="Pp">Funciones auxiliares para trabajar con los sub-búferes del búfer
+    de anillo de rastreo. El búfer de anillo de rastreo se divide en
+    <b>sub-búferes</b>. Un evento no puede ser más grande que la sección de
+    datos del sub-búfer (ver <a href='/man/tep_get_sub_buffer_data_size.3.en'>tep_get_sub_buffer_data_size(3)</a>). Por defecto, el búfer de anillo
+    utiliza el tamaño de página de la arquitectura como tamaño por defecto del
+    sub-búfer, pero esto puede ser limitante si hay necesidad de eventos
+    grandes, por ejemplo, si la aplicación quiere escribir cadenas grandes en el
+    archivo trace_marker.</p>
+<p class="Pp">La función <b>tracefs_instance_get_subbuf_size()</b> devuelve el
+    tamaño actual en kilobytes de los sub-búferes del búfer de anillo.</p>
+<p class="Pp">La función <b>tracefs_instance_set_subbuf_size()</b> escribirá el
+    tamaño en kilobytes de lo que debería ser el nuevo tamaño del sub-búfer.
+    Tenga en cuenta que esto es solo una sugerencia sobre el tamaño mínimo del
+    sub-búfer. Tampoco tiene en cuenta los metadatos que se utilizan en el
+    sub-búfer, por lo que el tamaño escrito no debe ser inferior a 16 bytes más
+    que el tamaño máximo del evento que se utilizará. Es probable que el kernel
+    haga que el tamaño del sub-búfer sea mayor de lo especificado, ya que puede
+    necesitar alinear el tamaño por motivos de implementación.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VALOR_DE_RETORNO'><a class='permalink' href='#VALOR_DE_RETORNO'>VALOR DE RETORNO</a></h1>
+<p class="Pp">La función <b>tracefs_instance_get_subbuf_size()</b> devuelve el
+    tamaño del sub-búfer actual para el búfer de anillo de <i>instance</i> dado
+    o -1 en caso de error.</p>
+<p class="Pp">La función <b>tracefs_instance_set_subbuf_size()</b> devolverá 0
+    si estableció con éxito el tamaño del sub-búfer del búfer de anillo de
+    <i>instance</i> en kilobytes, o -1 en caso de error.</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='EJEMPLO'><a class='permalink' href='#EJEMPLO'>EJEMPLO</a></h1>
+<div class="Bd-indent">
+<pre>#include &lt;stdlib.h&gt;
+#include &lt;tracefs.h&gt;
+#include &lt;errno.h&gt;
+int main(int argc, char **argv)
+{
+        struct tep_handle *tep;
+        ssize_t save_subsize;
+        ssize_t subsize;
+        char *trace;
+        char buf[3000];
+        int meta_size;
+        int ret;
+        int i;
+        tep = tep_alloc();
+        ret = tracefs_load_headers(NULL, tep);
+        tep_free(tep);
+        if (ret &lt; 0) {
+                perror(&quot;reading headers&quot;);
+                exit(-1);
+        }
+        meta_size = tep_get_sub_buffer_size(tep) - tep_get_sub_buffer_data_size(tep);
+        save_subsize = tracefs_instance_get_subbuf_size(NULL);
+        if (save_subsize &lt; 0) {
+                printf(&quot;Changing sub-buffer size not available\n&quot;);
+                exit(-1);
+        }
+        subsize = save_subsize * 1024;
+        /* Have at least 4 writes fit on a sub-buffer */
+        if (subsize - meta_size &lt; sizeof(buf) *4 ) {
+                subsize = ((sizeof(buf) * 4 + meta_size) + 1023) / 1024;
+                tracefs_instance_set_subbuf_size(NULL, subsize);
+        }
+        for (i = 0; i &lt; sizeof(buf) - 1; i++) {
+                buf[i] = '0' + i % 10;
+        }
+        buf[i] = '\0';
+        tracefs_instance_clear(NULL);
+        for (i = 0; i &lt; 4; i++) {
+                ret = tracefs_printf(NULL, &quot;%s\n&quot;, buf);
+                if (ret &lt; 0)
+                        perror(&quot;write&quot;);
+        }
+        trace = tracefs_instance_file_read(NULL, &quot;trace&quot;, NULL);
+        printf(&quot;%s\n&quot;, trace);
+        free(trace);
+        printf(&quot;Buffer size was: %zd * 1024\n&quot;,
+               tracefs_instance_get_subbuf_size(NULL));
+        tracefs_instance_set_subbuf_size(NULL, save_subsize);
+}</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='ARCHIVOS'><a class='permalink' href='#ARCHIVOS'>ARCHIVOS</a></h1>
+<div class="Bd-indent">
+<pre><b>tracefs.h</b>
+        Archivo de cabecera para incluir con el fin de tener acceso a las API de la biblioteca.
+<b>-ltracefs</b>
+        Opción del enlazador para añadir al compilar un programa que utiliza la biblioteca.</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='VER_TAMBIEN'><a class='permalink' href='#VER_TAMBIEN'>VER TAMBIÉN</a></h1>
+<p class="Pp"><a href='/man/libtracefs.3.en'>libtracefs(3)</a>, <a href='/man/libtraceevent.3.en'>libtraceevent(3)</a>,
+  <a href='/man/trace-cmd.1.en'>trace-cmd(1)</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='AUTOR'><a class='permalink' href='#AUTOR'>AUTOR</a></h1>
+<div class="Bd-indent">
+<pre><b>Steven Rostedt</b> &lt;<b>rostedt@goodmis.org</b>[1]&gt;
+<b>Tzvetomir Stoyanov</b> &lt;<b>tz.stoyanov@gmail.com</b>[2]&gt;</pre>
+</div>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='REPORTAR_ERRORES'><a class='permalink' href='#REPORTAR_ERRORES'>REPORTAR ERRORES</a></h1>
+<p class="Pp">Reportar errores a
+  &lt;<b>linux-trace-devel@vger.kernel.org</b>[3]&gt;</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='LICENCIA'><a class='permalink' href='#LICENCIA'>LICENCIA</a></h1>
+<p class="Pp">libtracefs es Software Libre con licencia GNU LGPL 2.1</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='RECURSOS'><a class='permalink' href='#RECURSOS'>RECURSOS</a></h1>
+<p class="Pp"><a href='https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/'>https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/</a></p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='COPIA'><a class='permalink' href='#COPIA'>COPIA</a></h1>
+<p class="Pp">Copyright (C) 2020 VMware, Inc. El uso gratuito de este software se
+    concede bajo los términos de la Licencia Pública de GNU (GPL).</p>
+</section>
+<section class="Sh">
+<h1 class="Sh" id='NOTAS'><a class='permalink' href='#NOTAS'>NOTAS</a></h1>
+<dl class="Bl-tag">
+  <dt> 1.</dt>
+  <dd>rostedt@goodmis.org</dd>
+</dl>
+<div class="Bd-indent">mailto:rostedt@goodmis.org</div>
+<dl class="Bl-tag">
+  <dt> 2.</dt>
+  <dd>tz.stoyanov@gmail.com</dd>
+</dl>
+<div class="Bd-indent">mailto:tz.stoyanov@gmail.com</div>
+<dl class="Bl-tag">
+  <dt> 3.</dt>
+  <dd>linux-trace-devel@vger.kernel.org</dd>
+</dl>
+<div class="Bd-indent">mailto:linux-trace-devel@vger.kernel.org</div>
+</section>
+</div>
+<table class="foot">
+  <tr>
+    <td class="foot-date">08/24/2025</td>
+    <td class="foot-os">libtracefs 1.8.2</td>
+  </tr>
+</table>
+
+</section>
+
+            </article>
+            <aside id="sidebar">
+                
+<section class="search">
+    <form action="/search" class="search direct-search" role="search">
+    <input type="search" placeholder="Buscar página del manual" name="q" value=""
+         />
+    <input type="submit" name="go" value="Ir" />
+</form>
+
+</section>
+
+<section class="package-info">
+    <p>Información del paquete:</p>
+    <dl>
+        <dt>Nombre del paquete:</dt>
+        <dd><a href="https://www.archlinux.org/packages/extra/x86_64/libtracefs/">extra/libtracefs</a></dd>
+        <dt>Versión:</dt>
+        <dd>1.8.2-2</dd>
+        <dt>Upstream:</dt>
+        <dd><a href="https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/">https://git.kernel.org/pub/scm/libs/libtrace/libtracefs.git/about/</a></dd>
+        <dt>Licencias:</dt>
+        <dd>GPL-2.0-only, LGPL-2.1-only</dd>
+        <dt>Manuales:</dt>
+        <dd><a href="/listing/extra/libtracefs/">/listing/extra/libtracefs/</a></dd>
+    </dl>
+</section>
+
+<details>
+    <summary>Tabla de contenidos</summary>
+    <nav class="toc">
+        <ul>
+        
+            <li><a href="#NOMBRE">NOMBRE</a></li>
+        
+            <li><a href="#SINOPSIS">SINOPSIS</a></li>
+        
+            <li><a href="#DESCRIPCION">DESCRIPCIÓN</a></li>
+        
+            <li><a href="#VALOR_DE_RETORNO">VALOR DE RETORNO</a></li>
+        
+            <li><a href="#EJEMPLO">EJEMPLO</a></li>
+        
+            <li><a href="#ARCHIVOS">ARCHIVOS</a></li>
+        
+            <li><a href="#VER_TAMBIEN">VER TAMBIÉN</a></li>
+        
+            <li><a href="#AUTOR">AUTOR</a></li>
+        
+            <li><a href="#REPORTAR_ERRORES">REPORTAR ERRORES</a></li>
+        
+            <li><a href="#LICENCIA">LICENCIA</a></li>
+        
+            <li><a href="#RECURSOS">RECURSOS</a></li>
+        
+            <li><a href="#COPIA">COPIA</a></li>
+        
+            <li><a href="#NOTAS">NOTAS</a></li>
+        
+        </ul>
+    </nav>
+</details>
+
+
+
+
+
+
+
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/tracefs_instance_get_subbuf_size.3.en.txt">txt</a>, 
+        
+            <a href="/man/tracefs_instance_get_subbuf_size.3.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
+            
+        </main>
+        <footer>
+            
+            <p>El sitio web está disponible bajo los términos de la licencia <a href="https://www.gnu.org/licenses/gpl-3.0.en.html">GPL-3.0</a>,
+               excepto por el contenido de las páginas del manual, que tienen su propia licencia
+               especificada en el paquete correspondiente de Arch Linux.
+            </p>
+        </footer>
+    </body>
+</html>
+/footer>
+    </body>
+</html>
