@@ -51,15 +51,15 @@
 <p class="Pp">El modelo de programación general que necesita seguir para
     <b>io_uring</b> se describe a continuación</p>
 <ul class="Bl-bullet">
-  <li>Establezca buffers compartidos con io_uring_setup(2) y mmap(2), mapeando en el espacio de usuario los buffers compartidos para la cola de envío (SQ) y la cola de finalización (CQ). Usted coloca las solicitudes de E/S que desea realizar en la SQ, mientras que el kernel coloca los resultados de esas operaciones en la CQ.</li>
+  <li>Establezca buffers compartidos con <a href='/man/io_uring_setup.2.en'>io_uring_setup(2)</a> y <a href='/man/mmap.2.en'>mmap(2)</a>, mapeando en el espacio de usuario los buffers compartidos para la cola de envío (SQ) y la cola de finalización (CQ). Usted coloca las solicitudes de E/S que desea realizar en la SQ, mientras que el kernel coloca los resultados de esas operaciones en la CQ.</li>
   <li>Por cada solicitud de E/S que necesite realizar (como leer un archivo, escribir un archivo, aceptar una conexión de socket, etc), crea una entrada de cola de envío, o SQE, describe la operación de E/S que necesita que se realice y la agrega al final de la cola de envío (SQ). Cada operación de E/S es, en esencia, el equivalente a una llamada al sistema que habría hecho de otro modo, si no estuviera usando <b>io_uring</b>. Por ejemplo, una SQE con el <i>opcode</i> establecido en
-      <b>IORING_OP_READ</b> solicitará que se emita una operación de lectura similar a la read(2) llamada al sistema. Consulte la documentación de opcodes en io_uring_enter(2) para todos los opcodes soportados y sus propiedades. Puede agregar más de una SQE a la cola dependiendo del número de operaciones que desee solicitar.</li>
-  <li>Después de agregar una o más SQEs, necesita llamar a io_uring_enter(2)
+      <b>IORING_OP_READ</b> solicitará que se emita una operación de lectura similar a la <a href='/man/read.2.en'>read(2)</a> llamada al sistema. Consulte la documentación de opcodes en <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> para todos los opcodes soportados y sus propiedades. Puede agregar más de una SQE a la cola dependiendo del número de operaciones que desee solicitar.</li>
+  <li>Después de agregar una o más SQEs, necesita llamar a <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>
       para decirle al kernel que saque de la cola sus solicitudes de E/S de la SQ y comience a procesarlas.</li>
   <li>Por cada SQE que envíe, una vez que termine de procesar la solicitud, el kernel coloca un evento de cola de finalización o CQE al final de la cola de finalización o CQ. El kernel coloca exactamente una CQE coincidente en la CQ por cada SQE que envíe en la SQ. Después de recuperar una CQE, como mínimo, podría estar interesado en verificar el campo <i>res</i> de la estructura CQE, que corresponde al valor de retorno de la llamada al sistema equivalente, si la hubiera usado directamente sin usar <b>io_uring</b>. Dado que <b>io_uring</b> es una interfaz asíncrona, <i>errno</i> nunca se usa para pasar información de error de vuelta. En su lugar, <i>res</i> contendrá lo que la llamada al sistema equivalente habría devuelto en caso de éxito, y en caso de error <i>res</i> contendrá <i>-errno</i>. Por ejemplo, si la llamada normal al sistema read hubiera devuelto -1 y establecido <i>errno</i> en
       <b>EINVAL</b>, entonces <i>res</i> contendría <b>-EINVAL</b>. Si la llamada normal al sistema hubiera devuelto un tamaño de lectura de 1024, entonces <i>res</i> contendría 1024.</li>
-  <li>Opcionalmente, io_uring_enter(2) también puede esperar a que el kernel procese un número específico de solicitudes antes de regresar. Si especificó un cierto número de finalizaciones por las cuales esperar, el kernel habría colocado al menos ese número de CQEs en la CQ, las cuales puede leer fácilmente justo después del regreso de
-    io_uring_enter(2).</li>
+  <li>Opcionalmente, <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> también puede esperar a que el kernel procese un número específico de solicitudes antes de regresar. Si especificó un cierto número de finalizaciones por las cuales esperar, el kernel habría colocado al menos ese número de CQEs en la CQ, las cuales puede leer fácilmente justo después del regreso de
+    <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>.</li>
   <li>Es importante recordar que las solicitudes de E/S enviadas al kernel pueden completarse en cualquier orden. No es necesario que el kernel procese una solicitud tras otra, en el orden en que las colocó. Dado que la interfaz es un ring, las solicitudes se intentan en orden, sin embargo eso no implica ningún tipo de orden en su ejecución o finalización. Cuando más de una solicitud está en vuelo, no es posible determinar cuál se ejecutará o completará primero. Cuando saque CQEs de la CQ, siempre debe verificar a qué solicitud enviada corresponde. El método más común para hacerlo es utilizar el campo <i>user_data</i> en la solicitud, el cual se devuelve en el lado de la finalización.</li>
   <li>Concretamente, para operaciones donde se requiere un orden estricto, como para envíos y recepciones en un socket TCP orientado a flujo, generalmente no es seguro tener más de un envío pendiente, o más de una recepción pendiente (las dos direcciones son independientes) en un socket dado a la vez, ya que el kernel podría reordenar su ejecución si hay armado de poll u otras actividades de fondo del kernel involucradas. Sin embargo, <b>io_uring</b>
       proporciona varias instalaciones para permitir a las aplicaciones canalizar sus operaciones de manera eficiente y segura. Si las solicitudes se envían en un solo lote, la aplicación puede usar <b>IOSQE_IO_LINK</b> para hacer cumplir un orden de ejecución en el kernel. De lo contrario, <b>io_uring</b> proporciona características avanzadas como
@@ -70,16 +70,16 @@
   <li>Usted agrega SQEs al final de la SQ. El kernel lee SQEs de la cabeza de la cola.</li>
   <li>El kernel agrega CQEs al final de la CQ. Usted lee CQEs de la cabeza de la cola.</li>
 </ul>
-<p class="Pp">Debe notarse que dependiendo de la configuración el comportamiento de io_uring puede desviarse del comportamiento descrito arriba, como no publicar una CQE por cada SQE al establecer <b>IOSQE_CQE_SKIP_SUCCESS</b> en la SQE o publicar múltiples CQEs para una sola SQE en operaciones multi shot o requerir una io_uring_enter(2) llamada al sistema para que el kernel comience a procesar SQEs recién agregadas cuando se usa el sondeo de la cola de envío.</p>
+<p class="Pp">Debe notarse que dependiendo de la configuración el comportamiento de io_uring puede desviarse del comportamiento descrito arriba, como no publicar una CQE por cada SQE al establecer <b>IOSQE_CQE_SKIP_SUCCESS</b> en la SQE o publicar múltiples CQEs para una sola SQE en operaciones multi shot o requerir una <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> llamada al sistema para que el kernel comience a procesar SQEs recién agregadas cuando se usa el sondeo de la cola de envío.</p>
 <section class="Ss">
 <h2 class="Ss" id='Submission_queue_polling'><a class='permalink' href='#Submission_queue_polling'>Sondeo de la cola de envío</a></h2>
-<p class="Pp">Uno de los objetivos de <b>io_uring</b> es proporcionar un medio para E/S eficiente. Para este fin, <b>io_uring</b> soporta un modo de sondeo que le permite evitar la llamada a io_uring_enter(2), la cual usa para informar al kernel que ha encolado SQEs en la SQ. Con Sondeo de SQ,
-    <b>io_uring</b> inicia un hilo del kernel que sondea la cola de envío por cualquier solicitud de E/S que envíe agregando SQEs. Con Sondeo de SQ habilitado, no hay necesidad de que llame a io_uring_enter(2), evitando el sobrecosto de las llamadas al sistema. Un hilo designado del kernel saca SQEs de la SQ a medida que las agrega y las despacha para procesamiento asíncrono.</p>
+<p class="Pp">Uno de los objetivos de <b>io_uring</b> es proporcionar un medio para E/S eficiente. Para este fin, <b>io_uring</b> soporta un modo de sondeo que le permite evitar la llamada a <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>, la cual usa para informar al kernel que ha encolado SQEs en la SQ. Con Sondeo de SQ,
+    <b>io_uring</b> inicia un hilo del kernel que sondea la cola de envío por cualquier solicitud de E/S que envíe agregando SQEs. Con Sondeo de SQ habilitado, no hay necesidad de que llame a <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>, evitando el sobrecosto de las llamadas al sistema. Un hilo designado del kernel saca SQEs de la SQ a medida que las agrega y las despacha para procesamiento asíncrono.</p>
 </section>
 <section class="Ss">
 <h2 class="Ss" id='Setting_up_io_uring'><a class='permalink' href='#Setting_up_io_uring'>Estableciendo io_uring</a></h2>
-<p class="Pp">Los pasos principales para establecer <b>io_uring</b> consisten en mapear los buffers compartidos con mmap(2) llamadas. En el programa de ejemplo incluido en esta página man, la función <b>app_setup_uring</b>() establece
-    <b>io_uring</b> con una cola de envío de profundidad QUEUE_DEPTH. Preste atención a las 2 mmap(2) llamadas que establecen las colas de envío y finalización compartidas. Si su kernel es más antiguo que la versión 5.4, se requieren tres mmap(2) llamadas.</p>
+<p class="Pp">Los pasos principales para establecer <b>io_uring</b> consisten en mapear los buffers compartidos con <a href='/man/mmap.2.en'>mmap(2)</a> llamadas. En el programa de ejemplo incluido en esta página man, la función <b>app_setup_uring</b>() establece
+    <b>io_uring</b> con una cola de envío de profundidad QUEUE_DEPTH. Preste atención a las 2 <a href='/man/mmap.2.en'>mmap(2)</a> llamadas que establecen las colas de envío y finalización compartidas. Si su kernel es más antiguo que la versión 5.4, se requieren tres <a href='/man/mmap.2.en'>mmap(2)</a> llamadas.</p>
 </section>
 <section class="Ss">
 <h2 class="Ss" id='Submitting_I/O_requests'><a class='permalink' href='#Submitting_I/O_requests'>Enviando solicitudes de E/S</a></h2>
@@ -184,9 +184,9 @@
 <p class="Pp">Para enviar una petición de E/S a <b>io_uring</b>, necesitas adquirir una
     entrada de la cola de envío (SQE) desde la cola de envío (SQ), llenarla con
     los detalles de la operación que deseas enviar y llamar a
-    io_uring_enter(2). Hay funciones auxiliares de la forma
+    <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>. Hay funciones auxiliares de la forma
     io_uring_prep_X para habilitar la configuración adecuada del SQE. Si deseas evitar
-    llamar a io_uring_enter(2), tienes la opción de configurar
+    llamar a <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>, tienes la opción de configurar
     el sondeo de la cola de envío (Submission Queue Polling).</p>
 <p class="Pp">Los SQEs se añaden a la cola de la cola de envío. El núcleo
     recoge los SQEs de la cabeza de la SQ. El algoritmo general para obtener el siguiente
@@ -213,7 +213,7 @@ atomic_store_explicit(sqring-&gt;tail, tail, memory_order_release);</pre>
     El búfer de anillo del lado de envío es un índice hacia este array, que a su vez
     contiene el índice hacia los SQEs.</p>
 <p class="Pp">El siguiente fragmento de código demuestra cómo una operación de lectura, un
-    equivalente a una preadv2(2) llamada al sistema se describe rellenando un
+    equivalente a una <a href='/man/preadv2.2.en'>preadv2(2)</a> llamada al sistema se describe rellenando un
     SQE con los parámetros necesarios.</p>
 <p class="Pp">
   <br/>
@@ -247,7 +247,7 @@ sqe-&gt;flags = 0;</pre>
     sobre envíos de E/S</b></a></dt>
   <dd>Una vez que colocas uno o más SQEs en la SQ, necesitas informar
       al núcleo que lo has hecho. Puedes hacerlo llamando a
-      io_uring_enter(2) la llamada al sistema. Esta llamada al sistema también es capaz de
+      <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> la llamada al sistema. Esta llamada al sistema también es capaz de
       esperar a que un número especificado de eventos se completen. De esta manera, puedes
       estar seguro de encontrar eventos de finalización en la cola de finalización sin tener que
       sondearla para eventos más adelante.</dd>
@@ -354,9 +354,9 @@ atomic_store_explicit(cqring-&gt;head, head, memory_order_release);</pre>
     estas soluciones temporales, se puede esperar que el hardware con estas vulnerabilidades esté
     en circulación por mucho tiempo. Aunque usando interfaces de programación sincrónicas
     o incluso cuando se usan interfaces de programación asincrónicas bajo Linux, hay al menos una llamada al sistema involucrada en el envío de cada solicitud. En
-    <b>io_uring</b>, por otro lado, puedes agrupar varias solicitudes de una sola vez, simplemente encolando múltiples SQEs, cada uno describiendo una operación de E/S que deseas, y realizar una única llamada a io_uring_enter(2). Esto es
+    <b>io_uring</b>, por otro lado, puedes agrupar varias solicitudes de una sola vez, simplemente encolando múltiples SQEs, cada uno describiendo una operación de E/S que deseas, y realizar una única llamada a <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a>. Esto es
     posible debido al diseño basado en búferes compartidos de <b>io_uring</b>.</p>
-<p class="Pp">Si bien este agrupamiento en sí mismo puede evitar la sobrecarga asociada con potencialmente múltiples y frecuentes llamadas al sistema, puedes reducir aún más esta sobrecarga con el Sondeo de la Cola de Envío (Submission Queue Polling), haciendo que el kernel sondee y recoja tus SQEs para su procesamiento a medida que los añades a la cola de envío. Esto evita la io_uring_enter(2) llamada que necesitas realizar para
+<p class="Pp">Si bien este agrupamiento en sí mismo puede evitar la sobrecarga asociada con potencialmente múltiples y frecuentes llamadas al sistema, puedes reducir aún más esta sobrecarga con el Sondeo de la Cola de Envío (Submission Queue Polling), haciendo que el kernel sondee y recoja tus SQEs para su procesamiento a medida que los añades a la cola de envío. Esto evita la <a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> llamada que necesitas realizar para
     decirle al kernel que recoja los SQEs. Para aplicaciones de alto rendimiento, esto significa aún menos sobrecarga de llamadas al sistema.</p>
 </section>
 </section>
@@ -589,8 +589,8 @@ int main(int argc, char *argv[]) {
 </section>
 <section class="Sh">
 <h1 class="Sh" id='SEE_ALSO'><a class='permalink' href='#SEE_ALSO'>VER   TAMBIÉN</a></h1>
-<p class="Pp">io_uring_enter(2) io_uring_register(2)
-    io_uring_setup(2)</p>
+<p class="Pp"><a href='/man/io_uring_enter.2.en'>io_uring_enter(2)</a> <a href='/man/io_uring_register.2.en'>io_uring_register(2)</a>
+    <a href='/man/io_uring_setup.2.en'>io_uring_setup(2)</a></p>
 </section>
 </div>
 <table class="foot">
@@ -626,7 +626,7 @@ int main(int argc, char *argv[]) {
         <dt>Licencias:</dt>
         <dd>GPL-2.0-only WITH Linux-syscall-note OR MIT, LGPL-2.0-or-later, MIT</dd>
         <dt>Manuales:</dt>
-        <dd><a href="https://archlinux.org/packages/?q=liburing">/listing/extra/liburing/</a></dd>
+        <dd><a href="/listing/extra/liburing/">/listing/extra/liburing/</a></dd>
     </dl>
 </section>
 
@@ -657,7 +657,17 @@ int main(int argc, char *argv[]) {
 
 
 
-</aside>
+<nav class="other-formats">
+    <p>Otros formatos:
+        
+            <a href="/man/io_uring.7.en.txt">txt</a>, 
+        
+            <a href="/man/io_uring.7.en.raw">raw</a>
+        
+    </p>
+</nav>
+
+            </aside>
             
         </main>
         <footer>
